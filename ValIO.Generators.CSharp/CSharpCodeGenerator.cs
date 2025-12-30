@@ -351,8 +351,23 @@ public class CSharpCodeGenerator : ICodeGenerator
             Type = p.Type,
             Description = DecodeHtmlEntities(p.Description),
             AccessorType = csharpOptions.PropertyAccessor,
-            IsRequired = csharpOptions.UseRequired && p.IsRequired
+            IsRequired = csharpOptions.UseRequired && p.IsRequired,
+            IsNullable = csharpOptions.UseNullable && p.IsNullable,
+            DefaultValue = p.DefaultValue,
+            Min = p.Min,
+            Max = p.Max,
+            ExclusiveMin = p.ExclusiveMin,
+            ExclusiveMax = p.ExclusiveMax,
+            MinLength = p.MinLength,
+            MaxLength = p.MaxLength,
+            Pattern = p.Pattern
         }).ToList();
+
+        // Определяем, нужны ли using директивы
+        bool needsDataAnnotations = csharpOptions.GenerateValidationAttributes && properties.Any(p => 
+            p.IsRequired || p.MinLength.HasValue || p.MaxLength.HasValue || 
+            p.Min.HasValue || p.Max.HasValue || !string.IsNullOrEmpty(p.Pattern));
+        bool needsRegularExpressions = properties.Any(p => !string.IsNullOrEmpty(p.Pattern));
 
         var templateData = new ModelTemplateData
         {
@@ -362,7 +377,11 @@ public class CSharpCodeGenerator : ICodeGenerator
             Properties = properties,
             ModelType = csharpOptions.ModelType,
             IsSealed = csharpOptions.UseSealed,
-            GenerateEqualityMembers = csharpOptions.GenerateEqualityMembers
+            GenerateEqualityMembers = csharpOptions.GenerateEqualityMembers,
+            GenerateValidationConstants = csharpOptions.GenerateValidationConstants,
+            GenerateValidationAttributes = csharpOptions.GenerateValidationAttributes,
+            NeedsDataAnnotations = needsDataAnnotations,
+            NeedsRegularExpressions = needsRegularExpressions
         };
 
         return _templateRegistry.Render("csharp-model.cshtml", templateData);

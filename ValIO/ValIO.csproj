@@ -27,4 +27,10 @@
       <ProjectReference Include="..\ValIO.Generators.Cpp\ValIO.Generators.Cpp.csproj" />
     </ItemGroup>
 
+    <ItemGroup>
+      <Content Include="..\valio.config.json">
+        <Link>valio.config.json</Link>
+      </Content>
+    </ItemGroup>
+
 </Project>

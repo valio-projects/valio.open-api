@@ -29,6 +29,21 @@ public class CSharpGenerationOptions
     /// Генерировать методы сравнения (Equals, GetHashCode) для record
     /// </summary>
     public bool GenerateEqualityMembers { get; set; } = true;
+
+    /// <summary>
+    /// Использовать nullable reference types ("?") для nullable свойств
+    /// </summary>
+    public bool UseNullable { get; set; } = true;
+
+    /// <summary>
+    /// Генерировать статические классы с константами (Min, Max, MinLength, MaxLength, DefaultValue)
+    /// </summary>
+    public bool GenerateValidationConstants { get; set; } = false;
+
+    /// <summary>
+    /// Генерировать атрибуты валидации для свойств ([Required], [MinLength], [MaxLength], [Range], [RegularExpression])
+    /// </summary>
+    public bool GenerateValidationAttributes { get; set; } = false;
 }
 
 /// <summary>

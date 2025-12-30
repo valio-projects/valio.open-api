@@ -1,6 +1,35 @@
 @using ValIO.Generators.CSharp.Models
 @using ValIO.Generators.CSharp.Helpers
 @model ModelTemplateData
+@functions {
+    string FormatDefaultValue(object? value, string type)
+    {
+        if (value == null)
+            return "null";
+        
+        if (type == "string" || type == "string?")
+        {
+            return $"\"{value}\"";
+        }
+        
+        if (type == "bool" || type == "bool?")
+        {
+            return value.ToString()?.ToLowerInvariant() ?? "false";
+        }
+        
+        if (type == "float" || type == "float?")
+        {
+            return $"{value}f";
+        }
+        
+        if (type == "double" || type == "double?")
+        {
+            return value.ToString() ?? "0.0";
+        }
+        
+        return value.ToString() ?? "0";
+    }
+}
 @{
     var namespaceName = Model.Namespace;
     var className = Model.ClassName;
@@ -9,6 +38,8 @@
     var modelType = Model.ModelType;
     var isSealed = Model.IsSealed;
     var generateEqualityMembers = Model.GenerateEqualityMembers;
+    var generateValidationConstants = Model.GenerateValidationConstants;
+    var generateValidationAttributes = Model.GenerateValidationAttributes;
     
     // Определяем ключевое слово типа модели
     string typeKeyword = modelType switch
@@ -25,6 +56,14 @@
     // Для record синтаксис отличается - используем primary constructor
     bool isRecord = modelType == ModelType.Record || modelType == ModelType.RecordStruct;
 }
+@if (Model.NeedsDataAnnotations)
+{
+@:using System.ComponentModel.DataAnnotations;
+}
+@if (Model.NeedsRegularExpressions)
+{
+@:using System.Text.RegularExpressions;
+}
 namespace @(namespaceName);
 
 @if (!string.IsNullOrEmpty(description))
@@ -37,6 +76,62 @@ namespace @(namespaceName);
 {
 @:@(sealedModifier)public @typeKeyword @(className)
 @:{
+@if (generateValidationConstants)
+{
+@foreach (var property in properties)
+{
+    var hasConstants = property.DefaultValue != null || property.Min.HasValue || property.Max.HasValue || 
+                       property.ExclusiveMin.HasValue || property.ExclusiveMax.HasValue ||
+                       property.MinLength.HasValue || property.MaxLength.HasValue || 
+                       !string.IsNullOrEmpty(property.Pattern);
+    if (hasConstants)
+    {
+    @:/// <summary>
+    @:/// Константы валидации для свойства @(property.Name)
+    @:/// </summary>
+    @:    public static class @(property.Name)Constants
+    @:    {
+        @if (property.MinLength.HasValue)
+        {
+    @:        public const int MinLength = @(property.MinLength.Value);
+        }
+        @if (property.MaxLength.HasValue)
+        {
+    @:        public const int MaxLength = @(property.MaxLength.Value);
+        }
+        @if (property.Min.HasValue)
+        {
+    @:        public const decimal Min = @(property.Min.Value);
+        }
+        @if (property.Max.HasValue)
+        {
+    @:        public const decimal Max = @(property.Max.Value);
+        }
+        @if (property.ExclusiveMin.HasValue)
+        {
+    @:        public const decimal ExclusiveMin = @(property.ExclusiveMin.Value);
+        }
+        @if (property.ExclusiveMax.HasValue)
+        {
+    @:        public const decimal ExclusiveMax = @(property.ExclusiveMax.Value);
+        }
+        @if (!string.IsNullOrEmpty(property.Pattern))
+        {
+            var escapedPattern = property.Pattern.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    @:        public const string Pattern = "@Raw(escapedPattern)";
+    @:
+    @:        public static readonly Regex PatternRegex = new Regex(Pattern, RegexOptions.Compiled);
+        }
+        @if (property.DefaultValue != null)
+        {
+            var defaultValueString = FormatDefaultValue(property.DefaultValue, property.Type);
+    @:        public const @property.Type DefaultValue = @defaultValueString;
+        }
+    @:    }
+    @:
+    }
+}
+}
 @foreach (var property in properties)
 {
     @if (!string.IsNullOrEmpty(property.Description))
@@ -45,20 +140,166 @@ namespace @(namespaceName);
     @:/// @Raw(property.Description)
     @:/// </summary>
     }
+    @if (generateValidationAttributes)
+    {
+        var propertyHasConstants = generateValidationConstants && (property.DefaultValue != null || property.Min.HasValue || property.Max.HasValue || 
+                       property.ExclusiveMin.HasValue || property.ExclusiveMax.HasValue ||
+                       property.MinLength.HasValue || property.MaxLength.HasValue || 
+                       !string.IsNullOrEmpty(property.Pattern));
+        // Генерируем атрибуты валидации
+        @if (property.IsRequired)
+        {
+    @:    [Required]
+        }
+        @if (propertyHasConstants)
+        {
+            // Используем константы из класса
+            @if (property.MinLength.HasValue && property.MaxLength.HasValue)
+            {
+    @:    [StringLength(@(property.Name)Constants.MaxLength, MinimumLength = @(property.Name)Constants.MinLength)]
+            }
+            else
+            {
+                @if (property.MinLength.HasValue)
+                {
+    @:    [MinLength(@(property.Name)Constants.MinLength)]
+                }
+                @if (property.MaxLength.HasValue)
+                {
+    @:    [MaxLength(@(property.Name)Constants.MaxLength)]
+                }
+            }
+            @if (property.Min.HasValue && property.Max.HasValue)
+            {
+    @:    [Range(@(property.Name)Constants.Min, @(property.Name)Constants.Max)]
+            }
+            else
+            {
+                @if (property.Min.HasValue)
+                {
+    @:    [Range(@(property.Name)Constants.Min, double.MaxValue)]
+                }
+                @if (property.Max.HasValue)
+                {
+    @:    [Range(double.MinValue, @(property.Name)Constants.Max)]
+                }
+            }
+            @if (!string.IsNullOrEmpty(property.Pattern))
+            {
+    @:    [RegularExpression(@(property.Name)Constants.Pattern)]
+            }
+        }
+        else
+        {
+            // Используем прямые значения
+            @if (property.MinLength.HasValue && property.MaxLength.HasValue)
+            {
+    @:    [StringLength(@(property.MaxLength.Value), MinimumLength = @(property.MinLength.Value))]
+            }
+            else
+            {
+                @if (property.MinLength.HasValue)
+                {
+    @:    [MinLength(@(property.MinLength.Value))]
+                }
+                @if (property.MaxLength.HasValue)
+                {
+    @:    [MaxLength(@(property.MaxLength.Value))]
+                }
+            }
+            @if (property.Min.HasValue && property.Max.HasValue)
+            {
+    @:    [Range(@(property.Min.Value), @(property.Max.Value))]
+            }
+            else
+            {
+                @if (property.Min.HasValue)
+                {
+    @:    [Range(@(property.Min.Value), double.MaxValue)]
+                }
+                @if (property.Max.HasValue)
+                {
+    @:    [Range(double.MinValue, @(property.Max.Value))]
+                }
+            }
+            @if (!string.IsNullOrEmpty(property.Pattern))
+            {
+                var escapedPattern = property.Pattern.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    @:    [RegularExpression("@Raw(escapedPattern)")]
+            }
+        }
+    }
     var requiredModifier = property.IsRequired ? "required " : string.Empty;
+    var nullableModifier = property.IsNullable ? "?" : string.Empty;
     var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
-    @:public @requiredModifier@property.Type @property.Name { get; @accessorType; }
+    @:public @requiredModifier@property.Type@nullableModifier @property.Name { get; @accessorType; }
 }
 @:}
 @if (!generateEqualityMembers)
 {
-@:// Методы сравнения (Equals, GetHashCode) не генерируются автоматически
+@:// Методы сравнения (Equals, GetHashCode) генерируются автоматически компилятором для record
 }
 }
 else
 {
 @:@(sealedModifier)public @typeKeyword @(className)
 @:{
+@if (generateValidationConstants)
+{
+@foreach (var property in properties)
+{
+    var hasConstants = property.DefaultValue != null || property.Min.HasValue || property.Max.HasValue || 
+                       property.ExclusiveMin.HasValue || property.ExclusiveMax.HasValue ||
+                       property.MinLength.HasValue || property.MaxLength.HasValue || 
+                       !string.IsNullOrEmpty(property.Pattern);
+    if (hasConstants)
+    {
+    @:/// <summary>
+    @:/// Константы валидации для свойства @(property.Name)
+    @:/// </summary>
+    @:    public static class @(property.Name)Constants
+    @:    {
+        @if (property.MinLength.HasValue)
+        {
+    @:        public const int MinLength = @(property.MinLength.Value);
+        }
+        @if (property.MaxLength.HasValue)
+        {
+    @:        public const int MaxLength = @(property.MaxLength.Value);
+        }
+        @if (property.Min.HasValue)
+        {
+    @:        public const decimal Min = @(property.Min.Value);
+        }
+        @if (property.Max.HasValue)
+        {
+    @:        public const decimal Max = @(property.Max.Value);
+        }
+        @if (property.ExclusiveMin.HasValue)
+        {
+    @:        public const decimal ExclusiveMin = @(property.ExclusiveMin.Value);
+        }
+        @if (property.ExclusiveMax.HasValue)
+        {
+    @:        public const decimal ExclusiveMax = @(property.ExclusiveMax.Value);
+        }
+        @if (!string.IsNullOrEmpty(property.Pattern))
+        {
+            var escapedPattern = property.Pattern.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    @:        public const string Pattern = "@Raw(escapedPattern)";
+    @:
+    @:        public static readonly Regex PatternRegex = new Regex(Pattern, RegexOptions.Compiled);
+        }
+        @if (property.DefaultValue != null)
+        {
+            var defaultValueString = FormatDefaultValue(property.DefaultValue, property.Type);
+    @:        public const @property.Type DefaultValue = @defaultValueString;
+        }
+    @:    }
+    @:
+    }
+}
+}
 @foreach (var property in properties)
 {
     @if (!string.IsNullOrEmpty(property.Description))
@@ -67,9 +308,137 @@ else
     @:/// @Raw(property.Description)
     @:/// </summary>
     }
+    @if (generateValidationAttributes)
+    {
+        var propertyHasConstants = generateValidationConstants && (property.DefaultValue != null || property.Min.HasValue || property.Max.HasValue || 
+                       property.ExclusiveMin.HasValue || property.ExclusiveMax.HasValue ||
+                       property.MinLength.HasValue || property.MaxLength.HasValue || 
+                       !string.IsNullOrEmpty(property.Pattern));
+        // Генерируем атрибуты валидации
+        @if (property.IsRequired)
+        {
+    @:    [Required]
+        }
+        @if (propertyHasConstants)
+        {
+            // Используем константы из класса
+            @if (property.MinLength.HasValue && property.MaxLength.HasValue)
+            {
+    @:    [StringLength(@(property.Name)Constants.MaxLength, MinimumLength = @(property.Name)Constants.MinLength)]
+            }
+            else
+            {
+                @if (property.MinLength.HasValue)
+                {
+    @:    [MinLength(@(property.Name)Constants.MinLength)]
+                }
+                @if (property.MaxLength.HasValue)
+                {
+    @:    [MaxLength(@(property.Name)Constants.MaxLength)]
+                }
+            }
+            @if (property.Min.HasValue && property.Max.HasValue)
+            {
+    @:    [Range(@(property.Name)Constants.Min, @(property.Name)Constants.Max)]
+            }
+            else
+            {
+                @if (property.Min.HasValue)
+                {
+    @:    [Range(@(property.Name)Constants.Min, double.MaxValue)]
+                }
+                @if (property.Max.HasValue)
+                {
+    @:    [Range(double.MinValue, @(property.Name)Constants.Max)]
+                }
+            }
+            @if (!string.IsNullOrEmpty(property.Pattern))
+            {
+    @:    [RegularExpression(@(property.Name)Constants.Pattern)]
+            }
+        }
+        else
+        {
+            // Используем прямые значения
+            @if (property.MinLength.HasValue && property.MaxLength.HasValue)
+            {
+    @:    [StringLength(@(property.MaxLength.Value), MinimumLength = @(property.MinLength.Value))]
+            }
+            else
+            {
+                @if (property.MinLength.HasValue)
+                {
+    @:    [MinLength(@(property.MinLength.Value))]
+                }
+                @if (property.MaxLength.HasValue)
+                {
+    @:    [MaxLength(@(property.MaxLength.Value))]
+                }
+            }
+            @if (property.Min.HasValue && property.Max.HasValue)
+            {
+    @:    [Range(@(property.Min.Value), @(property.Max.Value))]
+            }
+            else
+            {
+                @if (property.Min.HasValue)
+                {
+    @:    [Range(@(property.Min.Value), double.MaxValue)]
+                }
+                @if (property.Max.HasValue)
+                {
+    @:    [Range(double.MinValue, @(property.Max.Value))]
+                }
+            }
+            @if (!string.IsNullOrEmpty(property.Pattern))
+            {
+                var escapedPattern = property.Pattern.Replace("\\", "\\\\").Replace("\"", "\\\"");
+    @:    [RegularExpression("@Raw(escapedPattern)")]
+            }
+        }
+    }
     var requiredModifier = property.IsRequired ? "required " : string.Empty;
+    var nullableModifier = property.IsNullable ? "?" : string.Empty;
     var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
-    @:public @requiredModifier@Raw(property.Type) @property.Name { get; @accessorType; }
+    @:public @requiredModifier@property.Type@nullableModifier @property.Name { get; @accessorType; }
+}
+@if (generateEqualityMembers)
+{
+@:
+@:    public override bool Equals(object? obj)
+@:    {
+@:        if (obj is not @(className) other)
+@:            return false;
+@:
+@if (properties.Count > 0)
+{
+@:        return 
+@for (int i = 0; i < properties.Count; i++)
+{
+    var property = properties[i];
+    if (i > 0)
+    {
+@:            && 
+    }
+@:@property.Name == other.@property.Name
+}
+@:;
+}
+else
+{
+@:        return true;
+}
+@:    }
+@:
+@:    public override int GetHashCode()
+@:    {
+@:        var hash = new HashCode();
+@foreach (var property in properties)
+{
+@:        hash.Add(@property.Name);
+}
+@:        return hash.ToHashCode();
+@:    }
 }
 @:}
 }

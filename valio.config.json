@@ -11,7 +11,10 @@
       "useRequired": true,
       "useSealed": true,
       "modelType": "Class",
-      "generateEqualityMembers": true
+      "generateEqualityMembers": true,
+      "useNullable": true,
+      "generateValidationConstants": true,
+      "generateValidationAttributes": true
     }
   },
   "fileOrganization": {

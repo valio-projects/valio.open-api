@@ -262,6 +262,24 @@ public class ConfigurationLoader : IConfigurationLoader
             options.GenerateEqualityMembers = config.GenerateEqualityMembers.Value;
         }
 
+        // Парсинг UseNullable
+        if (config.UseNullable.HasValue)
+        {
+            options.UseNullable = config.UseNullable.Value;
+        }
+
+        // Парсинг GenerateValidationConstants
+        if (config.GenerateValidationConstants.HasValue)
+        {
+            options.GenerateValidationConstants = config.GenerateValidationConstants.Value;
+        }
+
+        // Парсинг GenerateValidationAttributes
+        if (config.GenerateValidationAttributes.HasValue)
+        {
+            options.GenerateValidationAttributes = config.GenerateValidationAttributes.Value;
+        }
+
         return options;
     }
 }

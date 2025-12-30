@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
@@ -76,6 +77,57 @@ public class ModelExtractor : IModelExtractor
         var isRequired = parentSchema.Required?.Contains(propertyName) ?? false;
         var isNullable = IsSchemaNullable(resolvedPropertySchema);
 
+        // Извлекаем min/max значения
+        // Minimum и Maximum в OpenAPI - это строки, нужно парсить их
+        decimal? min = null;
+        decimal? max = null;
+        if (!string.IsNullOrEmpty(resolvedPropertySchema.Minimum))
+        {
+            if (decimal.TryParse(resolvedPropertySchema.Minimum, out var parsedMin))
+            {
+                min = parsedMin;
+            }
+        }
+        if (!string.IsNullOrEmpty(resolvedPropertySchema.Maximum))
+        {
+            if (decimal.TryParse(resolvedPropertySchema.Maximum, out var parsedMax))
+            {
+                max = parsedMax;
+            }
+        }
+
+        // Извлекаем exclusiveMin/exclusiveMax значения
+        decimal? exclusiveMin = null;
+        decimal? exclusiveMax = null;
+        if (!string.IsNullOrEmpty(resolvedPropertySchema.ExclusiveMinimum))
+        {
+            if (decimal.TryParse(resolvedPropertySchema.ExclusiveMinimum, out var parsedExclusiveMin))
+            {
+                exclusiveMin = parsedExclusiveMin;
+            }
+        }
+        if (!string.IsNullOrEmpty(resolvedPropertySchema.ExclusiveMaximum))
+        {
+            if (decimal.TryParse(resolvedPropertySchema.ExclusiveMaximum, out var parsedExclusiveMax))
+            {
+                exclusiveMax = parsedExclusiveMax;
+            }
+        }
+
+        // Извлекаем minLength/maxLength для строк
+        int? minLength = resolvedPropertySchema.MinLength;
+        int? maxLength = resolvedPropertySchema.MaxLength;
+        
+        // Извлекаем pattern (regex) для строк
+        string? pattern = resolvedPropertySchema.Pattern;
+
+        // Извлекаем значение по умолчанию из JsonNode
+        object? defaultValue = null;
+        if (resolvedPropertySchema.Default != null)
+        {
+            defaultValue = ExtractDefaultValue(resolvedPropertySchema.Default);
+        }
+
         return new ApiProperty
         {
             Name = propertyName,
@@ -83,7 +135,31 @@ public class ModelExtractor : IModelExtractor
             IsRequired = isRequired,
             IsNullable = isNullable,
             Description = resolvedPropertySchema.Description,
-            DefaultValue = resolvedPropertySchema.Default
+            DefaultValue = defaultValue,
+            Min = min,
+            Max = max,
+            ExclusiveMin = exclusiveMin,
+            ExclusiveMax = exclusiveMax,
+            MinLength = minLength,
+            MaxLength = maxLength,
+            Pattern = pattern
+        };
+    }
+
+    /// <summary>
+    /// Извлекает значение по умолчанию из JsonNode
+    /// </summary>
+    private static object? ExtractDefaultValue(JsonNode? jsonNode)
+    {
+        if (jsonNode == null)
+            return null;
+
+        return jsonNode switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<object>(),
+            JsonObject jsonObject => jsonObject,
+            JsonArray jsonArray => jsonArray,
+            _ => jsonNode.ToString()
         };
     }
 

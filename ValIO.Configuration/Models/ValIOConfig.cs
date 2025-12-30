@@ -62,6 +62,21 @@ public class ConfigCSharpOptions
     /// Генерировать методы сравнения для record
     /// </summary>
     public bool? GenerateEqualityMembers { get; set; }
+    
+    /// <summary>
+    /// Использовать nullable reference types ("?") для nullable свойств
+    /// </summary>
+    public bool? UseNullable { get; set; }
+    
+    /// <summary>
+    /// Генерировать статические классы с константами валидации
+    /// </summary>
+    public bool? GenerateValidationConstants { get; set; }
+
+    /// <summary>
+    /// Генерировать атрибуты валидации для свойств ([Required], [MinLength], [MaxLength], [Range], [RegularExpression])
+    /// </summary>
+    public bool? GenerateValidationAttributes { get; set; }
 }
 
 /// <summary>
