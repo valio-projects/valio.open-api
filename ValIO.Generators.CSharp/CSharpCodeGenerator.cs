@@ -275,7 +275,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         {
             Name = _namingConverter.ToPascalCase(v.Name),
             Value = v.Value,
-            Description = v.Description,
+            Description = DecodeHtmlEntities(v.Description),
             ValueString = FormatEnumValue(v.Value, apiEnum.UnderlyingType)
         }).ToList();
 
@@ -289,6 +289,18 @@ public class CSharpCodeGenerator : ICodeGenerator
         };
 
         return _templateRegistry.Render("csharp-enum.cshtml", templateData);
+    }
+
+    /// <summary>
+    /// Декодирует HTML-сущности в тексте
+    /// </summary>
+    private static string? DecodeHtmlEntities(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return text;
+
+        // Декодируем HTML-сущности (например, &#x418; -> И)
+        return System.Net.WebUtility.HtmlDecode(text);
     }
 
     private static string FormatEnumValue(object? value, string underlyingType)
@@ -334,14 +346,14 @@ public class CSharpCodeGenerator : ICodeGenerator
         {
             Name = _namingConverter.ToPascalCase(p.Name),
             Type = p.Type,
-            Description = p.Description
+            Description = DecodeHtmlEntities(p.Description)
         }).ToList();
 
         var templateData = new ModelTemplateData
         {
             Namespace = namespaceName,
             ClassName = className,
-            Description = model.Description,
+            Description = DecodeHtmlEntities(model.Description),
             Properties = properties
         };
 
@@ -446,7 +458,7 @@ public class CSharpCodeGenerator : ICodeGenerator
                 VariableName = paramName,
                 Type = paramType,
                 IsRequired = parameter.IsRequired,
-                Description = parameter.Description
+                Description = DecodeHtmlEntities(parameter.Description)
             };
 
             switch (parameter.Location)
@@ -502,7 +514,7 @@ public class CSharpCodeGenerator : ICodeGenerator
             MethodName = methodName,
             HttpMethod = httpMethod,
             Path = path,
-            Summary = operation.Summary,
+            Summary = DecodeHtmlEntities(operation.Summary),
             Parameters = string.Join(", ", allParameters),
             ReturnType = returnType,
             ResponseType = responseType,
