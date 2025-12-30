@@ -342,11 +342,16 @@ public class CSharpCodeGenerator : ICodeGenerator
         var namespaceName = config.Namespace ?? "Generated";
         var className = _namingConverter.ToPascalCase(model.Name);
 
+        // Получаем C# специфичные опции из конфигурации
+        var csharpOptions = GetCSharpOptions(config);
+
         var properties = model.Properties.Select(p => new PropertyTemplateData
         {
             Name = _namingConverter.ToPascalCase(p.Name),
             Type = p.Type,
-            Description = DecodeHtmlEntities(p.Description)
+            Description = DecodeHtmlEntities(p.Description),
+            AccessorType = csharpOptions.PropertyAccessor,
+            IsRequired = csharpOptions.UseRequired && p.IsRequired
         }).ToList();
 
         var templateData = new ModelTemplateData
@@ -354,10 +359,28 @@ public class CSharpCodeGenerator : ICodeGenerator
             Namespace = namespaceName,
             ClassName = className,
             Description = DecodeHtmlEntities(model.Description),
-            Properties = properties
+            Properties = properties,
+            ModelType = csharpOptions.ModelType,
+            IsSealed = csharpOptions.UseSealed,
+            GenerateEqualityMembers = csharpOptions.GenerateEqualityMembers
         };
 
         return _templateRegistry.Render("csharp-model.cshtml", templateData);
+    }
+
+    /// <summary>
+    /// Получает C# специфичные опции из конфигурации
+    /// </summary>
+    private static CSharpGenerationOptions GetCSharpOptions(GenerationConfiguration config)
+    {
+        // Пытаемся получить C# опции из config.Options
+        if (config.Options?.CSharpOptions is CSharpGenerationOptions csharpOptions)
+        {
+            return csharpOptions;
+        }
+        
+        // Используем значения по умолчанию
+        return new CSharpGenerationOptions();
     }
 
     private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, GenerationConfiguration config)

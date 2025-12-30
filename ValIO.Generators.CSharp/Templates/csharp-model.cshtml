@@ -6,6 +6,24 @@
     var className = Model.ClassName;
     var description = Model.Description;
     var properties = Model.Properties;
+    var modelType = Model.ModelType;
+    var isSealed = Model.IsSealed;
+    var generateEqualityMembers = Model.GenerateEqualityMembers;
+    
+    // Определяем ключевое слово типа модели
+    string typeKeyword = modelType switch
+    {
+        ModelType.Record => "record",
+        ModelType.Struct => "struct",
+        ModelType.RecordStruct => "record struct",
+        _ => "class"
+    };
+    
+    // Определяем модификатор sealed
+    string sealedModifier = isSealed && modelType == ModelType.Class ? "sealed " : string.Empty;
+    
+    // Для record синтаксис отличается - используем primary constructor
+    bool isRecord = modelType == ModelType.Record || modelType == ModelType.RecordStruct;
 }
 namespace @(namespaceName);
 
@@ -15,8 +33,10 @@ namespace @(namespaceName);
 @:/// @Raw(description)
 @:/// </summary>
 }
-public class @(className)
+@if (isRecord)
 {
+@:@(sealedModifier)public @typeKeyword @(className)
+@:{
 @foreach (var property in properties)
 {
     @if (!string.IsNullOrEmpty(property.Description))
@@ -25,6 +45,31 @@ public class @(className)
     @:/// @Raw(property.Description)
     @:/// </summary>
     }
-    @:public @property.Type @property.Name { get; set; }
+    var requiredModifier = property.IsRequired ? "required " : string.Empty;
+    var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
+    @:public @requiredModifier@property.Type @property.Name { get; @accessorType; }
 }
+@:}
+@if (!generateEqualityMembers)
+{
+@:// Методы сравнения (Equals, GetHashCode) не генерируются автоматически
+}
+}
+else
+{
+@:@(sealedModifier)public @typeKeyword @(className)
+@:{
+@foreach (var property in properties)
+{
+    @if (!string.IsNullOrEmpty(property.Description))
+    {
+    @:/// <summary>
+    @:/// @Raw(property.Description)
+    @:/// </summary>
+    }
+    var requiredModifier = property.IsRequired ? "required " : string.Empty;
+    var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
+    @:public @requiredModifier@property.Type @property.Name { get; @accessorType; }
+}
+@:}
 }
