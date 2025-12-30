@@ -699,24 +699,46 @@ public class CSharpCodeGenerator : ICodeGenerator
         foreach (var parameter in operation.Parameters)
         {
             var paramName = _namingConverter.ToCamelCase(parameter.Name);
-            var paramType = parameter.Type;
             
-            // Если тип не определен или базовый, пытаемся определить его
-            if (string.IsNullOrEmpty(paramType) || paramType == "object" || paramType == "string")
+            // Получаем TypeInfo для параметра
+            TypeInfo paramTypeInfo;
+            if (string.IsNullOrEmpty(parameter.Type) || parameter.Type == "object" || parameter.Type == "string")
             {
-                // Для параметров обычно используется базовый тип, но можно улучшить
-                paramType = paramType == "object" ? "object" : "string";
+                // Если тип не определен, создаем простой тип
+                paramTypeInfo = TypeInfo.Simple(parameter.Type == "object" ? "object" : "string", isPrimitive: true);
+            }
+            else
+            {
+                // Пытаемся найти оригинальную операцию для получения схемы параметра
+                var originalOperation = FindOriginalOperation(document, operation);
+                if (originalOperation != null)
+                {
+                    var openApiParam = originalOperation.Parameters
+                        .FirstOrDefault(p => p.Name == parameter.Name);
+                    if (openApiParam?.Schema != null)
+                    {
+                        var schemaResolver = new SchemaResolver(document);
+                        paramTypeInfo = _csharpTypeMapper.MapPropertyTypeInfo(openApiParam.Schema, parameter.IsRequired, schemaResolver);
+                    }
+                    else
+                    {
+                        paramTypeInfo = TypeInfo.Simple(parameter.Type);
+                    }
+                }
+                else
+                {
+                    paramTypeInfo = TypeInfo.Simple(parameter.Type);
+                }
             }
             
-            var paramModifier = parameter.IsRequired ? "" : "?";
-            var paramString = $"{paramType}{paramModifier} {paramName}";
+            var paramString = FormatParameterString(paramTypeInfo, paramName, parameter.IsRequired);
             allParameters.Add(paramString);
 
             var paramTemplate = new ParameterTemplateData
             {
                 Name = parameter.Name,
                 VariableName = paramName,
-                Type = paramType,
+                TypeInfo = paramTypeInfo,
                 IsRequired = parameter.IsRequired,
                 Description = DecodeHtmlEntities(parameter.Description)
             };

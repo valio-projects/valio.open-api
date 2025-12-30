@@ -56,7 +56,12 @@ public class ParameterTemplateData
 {
     public string Name { get; set; } = string.Empty;
     public string VariableName { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Информация о типе параметра с мета-данными
+    /// </summary>
+    public TypeInfo TypeInfo { get; set; } = null!;
+    
     public bool IsRequired { get; set; }
     public string? Description { get; set; }
 }

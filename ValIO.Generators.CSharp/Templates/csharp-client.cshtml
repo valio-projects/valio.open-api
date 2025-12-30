@@ -105,7 +105,7 @@ public class @(className)
             {
         @:if (@(param.VariableName) != null)
         @:{
-                    @if (param.Type.StartsWith("List<") || param.Type.StartsWith("IEnumerable<") || param.Type.StartsWith("IReadOnlyList<") || param.Type.StartsWith("IList<") || param.Type.StartsWith("Array"))
+                    @if (param.TypeInfo.IsCollection)
                     {
         @:    foreach (var item in @(param.VariableName))
         @:    {
@@ -115,14 +115,14 @@ public class @(className)
         @:        }
         @:    }
                     }
-                    else if (param.Type == "Dictionary<string, string>" || param.Type == "IDictionary<string, string>" || param.Type.StartsWith("Dictionary<") || param.Type.StartsWith("IDictionary<"))
+                    else if (param.TypeInfo.IsDictionary)
                     {
         @:    foreach (var kvp in @(param.VariableName))
         @:    {
         @:        queryParams.Add($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value?.ToString() ?? string.Empty)}");
         @:    }
                     }
-                    else if (param.Type != "string" && param.Type != "int" && param.Type != "long" && param.Type != "double" && param.Type != "float" && param.Type != "decimal" && param.Type != "bool" && !param.Type.EndsWith("?") && param.Type != "object")
+                    else if (!param.TypeInfo.IsPrimitive && param.TypeInfo.BaseType != "object")
                     {
         @:    // Complex object - serialize to JSON and add as query parameter
         @:    var jsonValue = System.Text.Json.JsonSerializer.Serialize(@(param.VariableName));
@@ -274,9 +274,7 @@ public class @(className)
         
         @if (operation.HasResponseType)
         {
-            @{
-                var responseType = GetResponseType(operation.ReturnTypeInfo);
-            }
+            var responseType = GetResponseType(operation.ReturnTypeInfo);
             @if (!string.IsNullOrEmpty(responseType) && !operation.ReturnTypeInfo.IsVoid && !operation.ReturnTypeInfo.IsHttpResponseMessage)
             {
         @:response.EnsureSuccessStatusCode();
