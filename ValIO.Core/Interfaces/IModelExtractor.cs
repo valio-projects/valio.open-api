@@ -1,4 +1,4 @@
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using ValIO.Core.Models;
 
 namespace ValIO.Core.Interfaces;
@@ -9,6 +9,6 @@ namespace ValIO.Core.Interfaces;
 public interface IModelExtractor
 {
     IReadOnlyList<ApiModel> ExtractModels(OpenApiDocument document);
-    ApiModel ExtractModel(OpenApiSchema schema, string modelName);
+    ApiModel ExtractModel(IOpenApiSchema schema, string modelName);
 }
 

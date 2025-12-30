@@ -1,5 +1,4 @@
 using Microsoft.OpenApi;
-using Microsoft.OpenApi.Models;
 using ValIO.Core.Interfaces;
 
 namespace ValIO.Core.Services;
@@ -16,7 +15,7 @@ public class SchemaResolver : ISchemaResolver
         _document = document;
     }
 
-    public OpenApiSchema ResolveReference(OpenApiReference reference)
+    public IOpenApiSchema ResolveReference(BaseOpenApiReference reference)
     {
         if (reference == null || string.IsNullOrEmpty(reference.Id))
             throw new ArgumentException("Reference is null or empty", nameof(reference));
@@ -27,6 +26,11 @@ public class SchemaResolver : ISchemaResolver
             var schemaName = reference.Id;
             if (_document.Components.Schemas.TryGetValue(schemaName, out var schema))
             {
+                // Если схема является ссылкой, получаем целевую схему
+                if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
+                {
+                    return referenceHolder.Target ?? schema;
+                }
                 return schema;
             }
         }
@@ -34,29 +38,45 @@ public class SchemaResolver : ISchemaResolver
         throw new InvalidOperationException($"Cannot resolve reference: {reference.Id}");
     }
 
-    public OpenApiSchema ResolveSchema(OpenApiSchema schema)
+    public IOpenApiSchema ResolveSchema(IOpenApiSchema schema)
     {
         if (schema == null)
             throw new ArgumentNullException(nameof(schema));
 
-        // Если схема содержит ссылку, разрешаем ее
-        if (schema.Reference != null)
+        // Если схема является ссылкой, получаем целевую схему
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
-            return ResolveReference(schema.Reference);
+            var target = referenceHolder.Target;
+            if (target != null)
+            {
+                // Рекурсивно разрешаем, если целевая схема тоже ссылка
+                return ResolveSchema(target);
+            }
+            
+            // Если Target не разрешен, пытаемся разрешить через документ
+            var reference = referenceHolder.Reference;
+            if (reference != null)
+            {
+                return ResolveReference(reference);
+            }
         }
 
         return schema;
     }
 
-    public string GetSchemaName(OpenApiSchema schema, string defaultName)
+    public string GetSchemaName(IOpenApiSchema schema, string defaultName)
     {
         if (schema == null)
             return defaultName;
 
-        // Если есть ссылка, используем имя из ссылки
-        if (schema.Reference != null && !string.IsNullOrEmpty(schema.Reference.Id))
+        // Если схема является ссылкой, используем имя из ссылки
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
-            return schema.Reference.Id;
+            var reference = referenceHolder.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+            {
+                return reference.Id;
+            }
         }
 
         // Если есть заголовок в расширениях

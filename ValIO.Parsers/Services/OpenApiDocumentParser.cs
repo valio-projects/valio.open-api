@@ -1,8 +1,7 @@
 using System.Net.Http;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
-using Microsoft.OpenApi.Models;
-using Microsoft.OpenApi.Readers;
+using Microsoft.OpenApi.Reader;
 using ValIO.Parsers.Interfaces;
 
 namespace ValIO.Parsers.Services;
@@ -14,15 +13,11 @@ public class OpenApiDocumentParser : IOpenApiDocumentParser
 {
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<OpenApiDocumentParser> _logger;
-    private readonly OpenApiStreamReader _jsonReader;
-    private readonly OpenApiStreamReader _yamlReader;
 
     public OpenApiDocumentParser(IHttpClientFactory httpClientFactory, ILogger<OpenApiDocumentParser> logger)
     {
         _httpClientFactory = httpClientFactory;
         _logger = logger;
-        _jsonReader = new OpenApiStreamReader();
-        _yamlReader = new OpenApiStreamReader();
     }
 
     public async Task<OpenApiDocument> ParseFromFileAsync(string filePath)
@@ -62,37 +57,35 @@ public class OpenApiDocumentParser : IOpenApiDocumentParser
         return await ParseFromStreamAsync(stream, format);
     }
 
-    public Task<OpenApiDocument> ParseFromStreamAsync(Stream stream, string? format)
+    public async Task<OpenApiDocument> ParseFromStreamAsync(Stream stream, string? format)
     {
         if (stream == null)
             throw new ArgumentNullException(nameof(stream));
 
-        var reader = format?.ToLowerInvariant() switch
+        // Если формат не указан, пытаемся определить
+        if (string.IsNullOrEmpty(format))
         {
-            "json" => _jsonReader,
-            "yaml" or "yml" => _yamlReader,
-            _ => DetectFormatFromStream(stream)
-        };
+            format = DetectFormatFromStream(stream);
+        }
 
-        var parseResult = reader.Read(stream, out var diagnostic);
+        var readResult = await OpenApiDocument.LoadAsync(stream, format);
 
-        if (diagnostic.Errors.Any())
+        if (readResult.Document == null)
         {
-            var errors = string.Join(", ", diagnostic.Errors.Select(e => e.Message));
+            var errors = readResult.Diagnostic?.Errors.Any() == true
+                ? string.Join(", ", readResult.Diagnostic.Errors.Select(e => e.Message))
+                : "Unknown error";
             _logger.LogError("OpenAPI parsing errors: {Errors}", errors);
             throw new InvalidOperationException($"Failed to parse OpenAPI document: {errors}");
         }
 
-        if (parseResult == null)
-            throw new InvalidOperationException("Failed to parse OpenAPI document: result is null");
-
-        if (diagnostic.Warnings.Any())
+        if (readResult.Diagnostic?.Warnings.Any() == true)
         {
-            var warnings = string.Join(", ", diagnostic.Warnings.Select(w => w.Message));
+            var warnings = string.Join(", ", readResult.Diagnostic.Warnings.Select(w => w.Message));
             _logger.LogWarning("OpenAPI parsing warnings: {Warnings}", warnings);
         }
 
-        return Task.FromResult(parseResult);
+        return readResult.Document;
     }
 
     private static string DetectFormat(string filePath)
@@ -119,7 +112,7 @@ public class OpenApiDocumentParser : IOpenApiDocumentParser
         };
     }
 
-    private OpenApiStreamReader DetectFormatFromStream(Stream stream)
+    private string DetectFormatFromStream(Stream stream)
     {
         var position = stream.Position;
         stream.Position = 0;
@@ -132,10 +125,10 @@ public class OpenApiDocumentParser : IOpenApiDocumentParser
 
             // JSON начинается с { или [
             if (content.StartsWith('{') || content.StartsWith('['))
-                return _jsonReader;
+                return "json";
 
             // YAML обычно начинается с --- или без специальных символов
-            return _yamlReader;
+            return "yaml";
         }
         finally
         {

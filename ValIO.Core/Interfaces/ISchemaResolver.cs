@@ -1,4 +1,5 @@
-using Microsoft.OpenApi.Models;
+
+using Microsoft.OpenApi;
 
 namespace ValIO.Core.Interfaces;
 
@@ -7,8 +8,8 @@ namespace ValIO.Core.Interfaces;
 /// </summary>
 public interface ISchemaResolver
 {
-    OpenApiSchema ResolveReference(OpenApiReference reference);
-    OpenApiSchema ResolveSchema(OpenApiSchema schema);
-    string GetSchemaName(OpenApiSchema schema, string defaultName);
+    IOpenApiSchema ResolveReference(BaseOpenApiReference reference);
+    IOpenApiSchema ResolveSchema(IOpenApiSchema schema);
+    string GetSchemaName(IOpenApiSchema schema, string defaultName);
 }
 

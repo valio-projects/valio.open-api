@@ -1,4 +1,5 @@
-using Microsoft.OpenApi.Models;
+
+using Microsoft.OpenApi;
 
 namespace ValIO.Core.Models;
 
@@ -11,6 +12,6 @@ public class ApiModel
     public string? Description { get; set; }
     public IReadOnlyList<ApiProperty> Properties { get; set; } = Array.Empty<ApiProperty>();
     public IReadOnlyList<string> RequiredProperties { get; set; } = Array.Empty<string>();
-    public OpenApiSchema? OriginalSchema { get; set; }
+    public IOpenApiSchema? OriginalSchema { get; set; }
 }
 

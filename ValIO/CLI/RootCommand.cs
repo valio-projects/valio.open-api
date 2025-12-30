@@ -9,10 +9,14 @@ namespace ValIO.CLI;
 public class RootCommand : System.CommandLine.RootCommand
 {
     public RootCommand(IServiceProvider serviceProvider)
-        : base("ValIO - Code generator from OpenAPI schemas")
     {
-        this.AddCommand(new GenerateCommand(serviceProvider));
-        this.AddCommand(new ValidateCommand(serviceProvider));
+        Description = "ValIO - Code generator from OpenAPI schemas";
+        
+        var generateCommand = new GenerateCommand(serviceProvider);
+        var validateCommand = new ValidateCommand(serviceProvider);
+        
+        Add(generateCommand);
+        Add(validateCommand);
     }
 }
 

@@ -1,3 +1,6 @@
+
+using System.Net.Http;
+
 namespace ValIO.Core.Models;
 
 /// <summary>
@@ -7,7 +10,7 @@ public class ApiOperation
 {
     public string OperationId { get; set; } = string.Empty;
     public string Path { get; set; } = string.Empty;
-    public OperationType HttpMethod { get; set; }
+    public HttpMethod HttpMethod { get; set; } = null!;
     public string? Summary { get; set; }
     public string? Description { get; set; }
     public IReadOnlyList<string> Tags { get; set; } = Array.Empty<string>();

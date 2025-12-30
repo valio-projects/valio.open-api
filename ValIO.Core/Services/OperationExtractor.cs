@@ -1,4 +1,5 @@
-using Microsoft.OpenApi.Models;
+using System.Net.Http;
+using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 
@@ -29,12 +30,11 @@ public class OperationExtractor : IOperationExtractor
             var pathItem = pathEntry.Value;
 
             // Извлекаем операции для каждого HTTP метода
-            foreach (var operationType in Enum.GetValues<OperationType>())
+            if (pathItem.Operations != null)
             {
-                var operation = pathItem.Operations?.FirstOrDefault(o => o.Key == operationType);
-                if (operation.HasValue && operation.Value.Value != null)
+                foreach (var operationEntry in pathItem.Operations)
                 {
-                    var apiOperation = ExtractOperation(pathItem, operationType, path);
+                    var apiOperation = ExtractOperation(pathItem, operationEntry.Key, path);
                     operations.Add(apiOperation);
                 }
             }
@@ -43,14 +43,12 @@ public class OperationExtractor : IOperationExtractor
         return operations;
     }
 
-    public ApiOperation ExtractOperation(OpenApiPathItem pathItem, OperationType operationType, string path)
+    public ApiOperation ExtractOperation(IOpenApiPathItem pathItem, HttpMethod operationType, string path)
     {
-        var operation = pathItem.Operations?.FirstOrDefault(o => o.Key == operationType);
-        if (!operation.HasValue || operation.Value.Value == null)
-            throw new ArgumentException($"Operation {operationType} not found for path {path}");
+        if (pathItem.Operations == null || !pathItem.Operations.TryGetValue(operationType, out var openApiOperation) || openApiOperation == null)
+            throw new ArgumentException($"Operation {operationType.Method} not found for path {path}");
 
-        var openApiOperation = operation.Value.Value;
-        var operationId = openApiOperation.OperationId ?? $"{operationType.ToString().ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
+        var operationId = openApiOperation.OperationId ?? $"{operationType.Method.ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
 
         var apiOperation = new ApiOperation
         {
@@ -59,7 +57,7 @@ public class OperationExtractor : IOperationExtractor
             HttpMethod = operationType,
             Summary = openApiOperation.Summary,
             Description = openApiOperation.Description,
-            Tags = openApiOperation.Tags?.Select(t => t.Name).ToList() ?? new List<string>(),
+            Tags = openApiOperation.Tags?.Select(t => t.Name).Where(n => n != null).Cast<string>().ToList() ?? new List<string>(),
             Parameters = ExtractParameters(openApiOperation.Parameters),
             RequestBody = ExtractRequestBody(openApiOperation.RequestBody),
             Responses = ExtractResponses(openApiOperation.Responses)
@@ -68,7 +66,7 @@ public class OperationExtractor : IOperationExtractor
         return apiOperation;
     }
 
-    private IReadOnlyList<ApiParameter> ExtractParameters(IList<OpenApiParameter>? parameters)
+    private IReadOnlyList<ApiParameter> ExtractParameters(IList<IOpenApiParameter>? parameters)
     {
         if (parameters == null)
             return Array.Empty<ApiParameter>();
@@ -79,10 +77,11 @@ public class OperationExtractor : IOperationExtractor
             var resolvedSchema = parameter.Schema != null ? _schemaResolver.ResolveSchema(parameter.Schema) : null;
             var parameterType = resolvedSchema != null ? "object" : "string"; // Будет определено TypeMapper'ом
 
+            var location = parameter.In ?? Microsoft.OpenApi.ParameterLocation.Query;
             apiParameters.Add(new ApiParameter
             {
-                Name = parameter.Name,
-                Location = MapParameterLocation(parameter.In),
+                Name = parameter.Name ?? string.Empty,
+                Location = MapParameterLocation(location),
                 Type = parameterType,
                 IsRequired = parameter.Required,
                 Description = parameter.Description
@@ -92,14 +91,14 @@ public class OperationExtractor : IOperationExtractor
         return apiParameters;
     }
 
-    private ApiRequestBody? ExtractRequestBody(OpenApiRequestBody? requestBody)
+    private ApiRequestBody? ExtractRequestBody(IOpenApiRequestBody? requestBody)
     {
         if (requestBody == null)
             return null;
 
         // Берем первый content type и схему
         var content = requestBody.Content?.FirstOrDefault();
-        var schema = content.Value.Value?.Schema;
+        var schema = content.HasValue ? content.Value.Value?.Schema : null;
         var resolvedSchema = schema != null ? _schemaResolver.ResolveSchema(schema) : null;
         var contentType = content.HasValue ? content.Value.Key : "application/json";
         var requestBodyType = resolvedSchema != null ? "object" : "object"; // Будет определено TypeMapper'ом
@@ -113,7 +112,7 @@ public class OperationExtractor : IOperationExtractor
         };
     }
 
-    private IReadOnlyDictionary<string, ApiResponse> ExtractResponses(OpenApiResponses? responses)
+    private IReadOnlyDictionary<string, ApiResponse> ExtractResponses(IDictionary<string, IOpenApiResponse>? responses)
     {
         if (responses == null)
             return new Dictionary<string, ApiResponse>();
@@ -125,7 +124,7 @@ public class OperationExtractor : IOperationExtractor
             var response = responseEntry.Value;
 
             var content = response.Content?.FirstOrDefault();
-            var schema = content.Value.Value?.Schema;
+            var schema = content.HasValue ? content.Value.Value?.Schema : null;
             var resolvedSchema = schema != null ? _schemaResolver.ResolveSchema(schema) : null;
             var responseType = resolvedSchema != null ? "object" : null; // Будет определено TypeMapper'ом
 
@@ -140,14 +139,14 @@ public class OperationExtractor : IOperationExtractor
         return apiResponses;
     }
 
-    private static ParameterLocation MapParameterLocation(ParameterLocation location)
+    private static Models.ParameterLocation MapParameterLocation(Microsoft.OpenApi.ParameterLocation location)
     {
         return location switch
         {
-            Microsoft.OpenApi.Models.ParameterLocation.Query => Models.ParameterLocation.Query,
-            Microsoft.OpenApi.Models.ParameterLocation.Path => Models.ParameterLocation.Path,
-            Microsoft.OpenApi.Models.ParameterLocation.Header => Models.ParameterLocation.Header,
-            Microsoft.OpenApi.Models.ParameterLocation.Cookie => Models.ParameterLocation.Cookie,
+            Microsoft.OpenApi.ParameterLocation.Query => Models.ParameterLocation.Query,
+            Microsoft.OpenApi.ParameterLocation.Path => Models.ParameterLocation.Path,
+            Microsoft.OpenApi.ParameterLocation.Header => Models.ParameterLocation.Header,
+            Microsoft.OpenApi.ParameterLocation.Cookie => Models.ParameterLocation.Cookie,
             _ => Models.ParameterLocation.Query
         };
     }

@@ -21,7 +21,8 @@ class Program
         var serviceProvider = services.BuildServiceProvider();
         var rootCommand = serviceProvider.GetRequiredService<RootCommand>();
 
-        return await rootCommand.InvokeAsync(args);
+        var parseResult = rootCommand.Parse(args);
+        return await parseResult.InvokeAsync();
     }
 
     static void ConfigureServices(IServiceCollection services)

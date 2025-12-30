@@ -16,38 +16,53 @@ public class GenerateCommand : Command
     public GenerateCommand(IServiceProvider serviceProvider) 
         : base("generate", "Generate code from OpenAPI schema")
     {
-        var schemaOption = new Option<string>(
-            aliases: new[] { "--schema", "-s" },
-            description: "Path or URL to OpenAPI schema file")
+        var schemaOption = new Option<string>("--schema", "-s")
         {
-            IsRequired = true
+            Description = "Path or URL to OpenAPI schema file"
+        };
+        schemaOption.Arity = ArgumentArity.ExactlyOne;
+
+        var outputOption = new Option<string>("--output", "-o")
+        {
+            Description = "Output directory path"
+        };
+        outputOption.Arity = ArgumentArity.ExactlyOne;
+
+        var languageOption = new Option<GenerationLanguage>("--language", "-l")
+        {
+            Description = "Target programming language"
+        };
+        languageOption.Arity = ArgumentArity.ExactlyOne;
+
+        var configOption = new Option<FileInfo?>("--config", "-c")
+        {
+            Description = "Path to configuration file (JSON or YAML)"
         };
 
-        var outputOption = new Option<string>(
-            aliases: new[] { "--output", "-o" },
-            description: "Output directory path")
+        Options.Add(schemaOption);
+        Options.Add(outputOption);
+        Options.Add(languageOption);
+        Options.Add(configOption);
+
+        SetAction(async (ParseResult parseResult) =>
         {
-            IsRequired = true
-        };
+            var schema = parseResult.GetValue(schemaOption);
+            var output = parseResult.GetValue(outputOption);
+            var language = parseResult.GetValue(languageOption);
+            var config = parseResult.GetValue(configOption);
 
-        var languageOption = new Option<GenerationLanguage>(
-            aliases: new[] { "--language", "-l" },
-            description: "Target programming language")
-        {
-            IsRequired = true
-        };
+            if (string.IsNullOrWhiteSpace(schema))
+            {
+                await Console.Error.WriteLineAsync("Schema path or URL is required");
+                return 1;
+            }
 
-        var configOption = new Option<FileInfo?>(
-            aliases: new[] { "--config", "-c" },
-            description: "Path to configuration file (JSON or YAML)");
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                await Console.Error.WriteLineAsync("Output directory path is required");
+                return 1;
+            }
 
-        this.AddOption(schemaOption);
-        this.AddOption(outputOption);
-        this.AddOption(languageOption);
-        this.AddOption(configOption);
-
-        this.SetHandler(async (schema, output, language, config) =>
-        {
             var logger = serviceProvider.GetRequiredService<ILogger<GenerateCommand>>();
             var parser = serviceProvider.GetRequiredService<IOpenApiDocumentParser>();
             var configLoader = serviceProvider.GetRequiredService<IConfigurationLoader>();
@@ -137,7 +152,7 @@ public class GenerateCommand : Command
                 logger.LogError(ex, "An error occurred during code generation");
                 return 1;
             }
-        }, schemaOption, outputOption, languageOption, configOption);
+        });
     }
 }
 

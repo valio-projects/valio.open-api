@@ -1,4 +1,5 @@
-using Microsoft.OpenApi.Models;
+using System.Text.Json;
+using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 
@@ -37,7 +38,7 @@ public class ModelExtractor : IModelExtractor
         return models;
     }
 
-    public ApiModel ExtractModel(OpenApiSchema schema, string modelName)
+    public ApiModel ExtractModel(IOpenApiSchema schema, string modelName)
     {
         var resolvedSchema = _schemaResolver.ResolveSchema(schema);
         var sanitizedName = _namingConverter.SanitizeIdentifier(modelName);
@@ -69,20 +70,41 @@ public class ModelExtractor : IModelExtractor
         return apiModel;
     }
 
-    private ApiProperty ExtractProperty(string propertyName, OpenApiSchema propertySchema, OpenApiSchema parentSchema)
+    private ApiProperty ExtractProperty(string propertyName, IOpenApiSchema propertySchema, IOpenApiSchema parentSchema)
     {
         var resolvedPropertySchema = _schemaResolver.ResolveSchema(propertySchema);
         var isRequired = parentSchema.Required?.Contains(propertyName) ?? false;
+        var isNullable = IsSchemaNullable(resolvedPropertySchema);
 
         return new ApiProperty
         {
             Name = propertyName,
             Type = "object", // Будет определено TypeMapper'ом
             IsRequired = isRequired,
-            IsNullable = resolvedPropertySchema.Nullable,
+            IsNullable = isNullable,
             Description = resolvedPropertySchema.Description,
             DefaultValue = resolvedPropertySchema.Default
         };
+    }
+
+    private static bool IsSchemaNullable(IOpenApiSchema schema)
+    {
+        // Проверяем, содержит ли тип Null
+        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Null))
+        {
+            return true;
+        }
+
+        // Проверяем расширения для обратной совместимости с OpenAPI 3.0
+        if (schema.Extensions != null && schema.Extensions.TryGetValue(OpenApiConstants.NullableExtension, out var nullableExtension))
+        {
+            if (nullableExtension is JsonNodeExtension { Node: { } jsonNode } && jsonNode.GetValueKind() == JsonValueKind.True)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 }
 

@@ -13,17 +13,23 @@ public class ValidateCommand : Command
     public ValidateCommand(IServiceProvider serviceProvider)
         : base("validate", "Validate OpenAPI schema")
     {
-        var schemaOption = new Option<string>(
-            aliases: new[] { "--schema", "-s" },
-            description: "Path or URL to OpenAPI schema file")
+        var schemaOption = new Option<string>("--schema", "-s")
         {
-            IsRequired = true
+            Description = "Path or URL to OpenAPI schema file"
         };
+        schemaOption.Arity = ArgumentArity.ExactlyOne;
 
-        this.AddOption(schemaOption);
+        Options.Add(schemaOption);
 
-        this.SetHandler(async (schema) =>
+        SetAction(async (ParseResult parseResult) =>
         {
+            var schema = parseResult.GetValue(schemaOption);
+            if (string.IsNullOrWhiteSpace(schema))
+            {
+                await Console.Error.WriteLineAsync("Schema path or URL is required");
+                return 1;
+            }
+
             var logger = serviceProvider.GetRequiredService<ILogger<ValidateCommand>>();
             var parser = serviceProvider.GetRequiredService<IOpenApiDocumentParser>();
 
@@ -47,7 +53,7 @@ public class ValidateCommand : Command
                 logger.LogError(ex, "OpenAPI schema validation failed");
                 return 1;
             }
-        }, schemaOption);
+        });
     }
 }
 

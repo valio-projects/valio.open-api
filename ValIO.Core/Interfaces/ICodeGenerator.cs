@@ -1,4 +1,3 @@
-using Microsoft.OpenApi.Models;
 using ValIO.Core.Models;
 
 namespace ValIO.Core.Interfaces;

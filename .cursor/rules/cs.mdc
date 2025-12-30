@@ -18,10 +18,12 @@ alwaysApply: true
 
 Технологии и библиотеки
 .NET 9.0 и современный синсаксис C# - основная платформа
-Microsoft.OpenApi - парсинг OpenAPI
-System.CommandLine - CLI интерфейс
+Microsoft.OpenApi - парсинг OpenAPI (смотри Examples\OpenAPI.NET-main что-бы увидеть актуальный список классов, моделей, методов и их типов)
+System.CommandLine - CLI интерфейс (смотри Examples\command-line-api-main)
 Microsoft.Extensions.DependencyInjection - DI
 Microsoft.Extensions.Logging - логирование
 Scriban - шаблонный движок
 System.Text.Json - работа с JSON
 NUnit - тестирование
+
+Смотри код в папке Examples что-бы понять как реализован тот или иной функционал в других библиотеках.

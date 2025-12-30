@@ -1,4 +1,5 @@
-using Microsoft.OpenApi.Models;
+using System.Net.Http;
+using Microsoft.OpenApi;
 using ValIO.Core.Models;
 
 namespace ValIO.Core.Interfaces;
@@ -9,6 +10,6 @@ namespace ValIO.Core.Interfaces;
 public interface IOperationExtractor
 {
     IReadOnlyList<ApiOperation> ExtractOperations(OpenApiDocument document);
-    ApiOperation ExtractOperation(OpenApiPathItem pathItem, OperationType operationType, string path);
+    ApiOperation ExtractOperation(IOpenApiPathItem pathItem, HttpMethod operationType, string path);
 }
 
