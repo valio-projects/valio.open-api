@@ -1,0 +1,16 @@
+{{~ if description && description != "" ~}}
+/**
+ * {{ description }}
+ */
+{{~ end ~}}
+export interface {{ interface_name }} {
+{{~ for property in properties ~}}
+  {{~ if property.description && property.description != "" ~}}
+  /**
+   * {{ property.description }}
+   */
+  {{~ end ~}}
+  {{ property.name }}{{ property.optional }}: {{ property.type }};
+{{~ end ~}}
+}
+

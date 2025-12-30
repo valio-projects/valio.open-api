@@ -1,0 +1,36 @@
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Threading.Tasks;
+
+namespace {{ namespace }};
+
+/// <summary>
+/// HTTP клиент для {{ client_name }}
+/// </summary>
+public class {{ class_name }}
+{
+    private readonly HttpClient _httpClient;
+
+    public {{ class_name }}(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+{{~ for operation in operations ~}}
+    {{~ if operation.summary && operation.summary != "" ~}}
+    /// <summary>
+    /// {{ operation.summary }}
+    /// </summary>
+    {{~ end ~}}
+    public async {{ operation.return_type }} {{ operation.method_name }}Async({{ operation.parameters }})
+    {
+        var request = new HttpRequestMessage(HttpMethod.{{ operation.http_method }}, "{{ operation.path }}");
+        {{~ if operation.has_request_body ~}}
+        request.Content = JsonContent.Create({{ operation.request_body_parameter }});
+        {{~ end ~}}
+        return await _httpClient.SendAsync(request);
+    }
+
+{{~ end ~}}
+}
+

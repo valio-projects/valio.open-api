@@ -82,12 +82,12 @@ todos: []
 
 - `ICodeGenerator` - базовый интерфейс для всех генераторов
   ```csharp
-      public interface ICodeGenerator
-      {
-          Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config);
-          bool SupportsLanguage(GenerationLanguage language);
-          bool SupportsOptions(GenerationOptions options);
-      }
+          public interface ICodeGenerator
+          {
+              Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config);
+              bool SupportsLanguage(GenerationLanguage language);
+              bool SupportsOptions(GenerationOptions options);
+          }
   ```
 
 
@@ -95,12 +95,12 @@ todos: []
 
 - `ISchemaResolver` - разрешение ссылок в OpenAPI схеме
   ```csharp
-      public interface ISchemaResolver
-      {
-          OpenApiSchema ResolveReference(OpenApiReference reference);
-          OpenApiSchema ResolveSchema(OpenApiSchema schema);
-          string GetSchemaName(OpenApiSchema schema, string defaultName);
-      }
+          public interface ISchemaResolver
+          {
+              OpenApiSchema ResolveReference(OpenApiReference reference);
+              OpenApiSchema ResolveSchema(OpenApiSchema schema);
+              string GetSchemaName(OpenApiSchema schema, string defaultName);
+          }
   ```
 
 
@@ -108,11 +108,11 @@ todos: []
 
 - `IModelExtractor` - извлечение моделей из схемы
   ```csharp
-      public interface IModelExtractor
-      {
-          IReadOnlyList<ApiModel> ExtractModels(OpenApiDocument document);
-          ApiModel ExtractModel(OpenApiSchema schema, string modelName);
-      }
+          public interface IModelExtractor
+          {
+              IReadOnlyList<ApiModel> ExtractModels(OpenApiDocument document);
+              ApiModel ExtractModel(OpenApiSchema schema, string modelName);
+          }
   ```
 
 
@@ -120,11 +120,11 @@ todos: []
 
 - `IOperationExtractor` - извлечение операций из схемы
   ```csharp
-      public interface IOperationExtractor
-      {
-          IReadOnlyList<ApiOperation> ExtractOperations(OpenApiDocument document);
-          ApiOperation ExtractOperation(OpenApiPathItem pathItem, OperationType operationType, string path);
-      }
+          public interface IOperationExtractor
+          {
+              IReadOnlyList<ApiOperation> ExtractOperations(OpenApiDocument document);
+              ApiOperation ExtractOperation(OpenApiPathItem pathItem, OperationType operationType, string path);
+          }
   ```
 
 
@@ -132,11 +132,11 @@ todos: []
 
 - `ITemplateRenderer` - рендеринг шаблонов кода
   ```csharp
-      public interface ITemplateRenderer
-      {
-          string Render(string template, object model);
-          Task<string> RenderFileAsync(string templatePath, object model);
-      }
+          public interface ITemplateRenderer
+          {
+              string Render(string template, object model);
+              Task<string> RenderFileAsync(string templatePath, object model);
+          }
   ```
 
 
@@ -144,12 +144,12 @@ todos: []
 
 - `IFileWriter` - запись сгенерированных файлов
   ```csharp
-      public interface IFileWriter
-      {
-          Task WriteFileAsync(string path, string content);
-          Task WriteFilesAsync(IReadOnlyDictionary<string, string> files);
-          void EnsureDirectoryExists(string directoryPath);
-      }
+          public interface IFileWriter
+          {
+              Task WriteFileAsync(string path, string content);
+              Task WriteFilesAsync(IReadOnlyDictionary<string, string> files);
+              void EnsureDirectoryExists(string directoryPath);
+          }
   ```
 
 
@@ -157,14 +157,14 @@ todos: []
 
 - `INamingConverter` - конвертация имен (camelCase, PascalCase, etc.)
   ```csharp
-      public interface INamingConverter
-      {
-          string ToPascalCase(string name);
-          string ToCamelCase(string name);
-          string ToSnakeCase(string name);
-          string ToKebabCase(string name);
-          string SanitizeIdentifier(string name);
-      }
+          public interface INamingConverter
+          {
+              string ToPascalCase(string name);
+              string ToCamelCase(string name);
+              string ToSnakeCase(string name);
+              string ToKebabCase(string name);
+              string SanitizeIdentifier(string name);
+          }
   ```
 
 
@@ -172,12 +172,12 @@ todos: []
 
 - `ITypeMapper` - маппинг типов OpenAPI на типы целевого языка
   ```csharp
-      public interface ITypeMapper
-      {
-          string MapType(OpenApiSchema schema);
-          string MapPropertyType(OpenApiSchema schema, bool isRequired);
-          string MapEnumType(OpenApiSchema schema);
-      }
+          public interface ITypeMapper
+          {
+              string MapType(OpenApiSchema schema);
+              string MapPropertyType(OpenApiSchema schema, bool isRequired);
+              string MapEnumType(OpenApiSchema schema);
+          }
   ```
 
 
@@ -187,12 +187,12 @@ todos: []
 
 - `GenerationLanguage` - enum языков генерации
   ```csharp
-      public enum GenerationLanguage
-      {
-          CSharp,
-          TypeScript,
-          Cpp
-      }
+          public enum GenerationLanguage
+          {
+              CSharp,
+              TypeScript,
+              Cpp
+          }
   ```
 
 
@@ -200,12 +200,12 @@ todos: []
 
 - `GenerationOptions` - опции генерации (Strategy pattern)
   ```csharp
-      public class GenerationOptions
-      {
-          public ValidationLibrary? ValidationLibrary { get; set; }
-          public HttpClientLibrary? HttpClientLibrary { get; set; }
-          public QueryWrapperLibrary? QueryWrapperLibrary { get; set; }
-      }
+          public class GenerationOptions
+          {
+              public ValidationLibrary? ValidationLibrary { get; set; }
+              public HttpClientLibrary? HttpClientLibrary { get; set; }
+              public QueryWrapperLibrary? QueryWrapperLibrary { get; set; }
+          }
   ```
 
 
@@ -213,19 +213,19 @@ todos: []
 
 - `GenerationConfiguration` - конфигурация генерации
   ```csharp
-      public class GenerationConfiguration
-      {
-          public GenerationLanguage Language { get; set; }
-          public GenerationOptions Options { get; set; }
-          public FileOrganization FileOrganization { get; set; }
-          public NamingConvention NamingConvention { get; set; }
-          public string OutputPath { get; set; }
-          public string? Namespace { get; set; }
-          public bool GenerateEnums { get; set; }
-          public bool GenerateModels { get; set; }
-          public bool GenerateClients { get; set; }
-          // ... другие настройки
-      }
+          public class GenerationConfiguration
+          {
+              public GenerationLanguage Language { get; set; }
+              public GenerationOptions Options { get; set; }
+              public FileOrganization FileOrganization { get; set; }
+              public NamingConvention NamingConvention { get; set; }
+              public string OutputPath { get; set; }
+              public string? Namespace { get; set; }
+              public bool GenerateEnums { get; set; }
+              public bool GenerateModels { get; set; }
+              public bool GenerateClients { get; set; }
+              // ... другие настройки
+          }
   ```
 
 
@@ -233,14 +233,14 @@ todos: []
 
 - `FileOrganization` - организация файлов
   ```csharp
-      public class FileOrganization
-      {
-          public FileGroupingStrategy GroupingStrategy { get; set; } // ByTag, ByRoute, SingleFile
-          public bool SeparateModels { get; set; }
-          public bool SeparateClients { get; set; }
-          public string? ModelsPath { get; set; }
-          public string? ClientsPath { get; set; }
-      }
+          public class FileOrganization
+          {
+              public FileGroupingStrategy GroupingStrategy { get; set; } // ByTag, ByRoute, SingleFile
+              public bool SeparateModels { get; set; }
+              public bool SeparateClients { get; set; }
+              public string? ModelsPath { get; set; }
+              public string? ClientsPath { get; set; }
+          }
   ```
 
 
@@ -248,14 +248,14 @@ todos: []
 
 - `ApiModel` - модель данных API
   ```csharp
-      public class ApiModel
-      {
-          public string Name { get; set; }
-          public string? Description { get; set; }
-          public IReadOnlyList<ApiProperty> Properties { get; set; }
-          public IReadOnlyList<string> RequiredProperties { get; set; }
-          public OpenApiSchema OriginalSchema { get; set; }
-      }
+          public class ApiModel
+          {
+              public string Name { get; set; }
+              public string? Description { get; set; }
+              public IReadOnlyList<ApiProperty> Properties { get; set; }
+              public IReadOnlyList<string> RequiredProperties { get; set; }
+              public OpenApiSchema OriginalSchema { get; set; }
+          }
   ```
 
 
@@ -263,15 +263,15 @@ todos: []
 
 - `ApiProperty` - свойство модели
   ```csharp
-      public class ApiProperty
-      {
-          public string Name { get; set; }
-          public string Type { get; set; }
-          public bool IsRequired { get; set; }
-          public bool IsNullable { get; set; }
-          public string? Description { get; set; }
-          public object? DefaultValue { get; set; }
-      }
+          public class ApiProperty
+          {
+              public string Name { get; set; }
+              public string Type { get; set; }
+              public bool IsRequired { get; set; }
+              public bool IsNullable { get; set; }
+              public string? Description { get; set; }
+              public object? DefaultValue { get; set; }
+          }
   ```
 
 
@@ -279,18 +279,18 @@ todos: []
 
 - `ApiOperation` - операция API
   ```csharp
-      public class ApiOperation
-      {
-          public string OperationId { get; set; }
-          public string Path { get; set; }
-          public OperationType HttpMethod { get; set; }
-          public string? Summary { get; set; }
-          public string? Description { get; set; }
-          public IReadOnlyList<string> Tags { get; set; }
-          public IReadOnlyList<ApiParameter> Parameters { get; set; }
-          public ApiRequestBody? RequestBody { get; set; }
-          public IReadOnlyDictionary<string, ApiResponse> Responses { get; set; }
-      }
+          public class ApiOperation
+          {
+              public string OperationId { get; set; }
+              public string Path { get; set; }
+              public OperationType HttpMethod { get; set; }
+              public string? Summary { get; set; }
+              public string? Description { get; set; }
+              public IReadOnlyList<string> Tags { get; set; }
+              public IReadOnlyList<ApiParameter> Parameters { get; set; }
+              public ApiRequestBody? RequestBody { get; set; }
+              public IReadOnlyDictionary<string, ApiResponse> Responses { get; set; }
+          }
   ```
 
 
@@ -298,14 +298,14 @@ todos: []
 
 - `ApiParameter` - параметр операции
   ```csharp
-      public class ApiParameter
-      {
-          public string Name { get; set; }
-          public ParameterLocation Location { get; set; } // query, path, header, cookie
-          public string Type { get; set; }
-          public bool IsRequired { get; set; }
-          public string? Description { get; set; }
-      }
+          public class ApiParameter
+          {
+              public string Name { get; set; }
+              public ParameterLocation Location { get; set; } // query, path, header, cookie
+              public string Type { get; set; }
+              public bool IsRequired { get; set; }
+              public string? Description { get; set; }
+          }
   ```
 
 
@@ -313,13 +313,13 @@ todos: []
 
 - `GenerationResult` - результат генерации
   ```csharp
-      public class GenerationResult
-      {
-          public bool Success { get; set; }
-          public IReadOnlyDictionary<string, string> GeneratedFiles { get; set; }
-          public IReadOnlyList<string> Errors { get; set; }
-          public IReadOnlyList<string> Warnings { get; set; }
-      }
+          public class GenerationResult
+          {
+              public bool Success { get; set; }
+              public IReadOnlyDictionary<string, string> GeneratedFiles { get; set; }
+              public IReadOnlyList<string> Errors { get; set; }
+              public IReadOnlyList<string> Warnings { get; set; }
+          }
   ```
 
 
@@ -340,17 +340,17 @@ todos: []
 
 - `OpenApiDocumentParser` - основной парсер OpenAPI документов
   ```csharp
-      public class OpenApiDocumentParser : IOpenApiDocumentParser
-      {
-          private readonly IOpenApiReader _jsonReader;
-          private readonly IOpenApiReader _yamlReader;
-          private readonly IHttpClient _httpClient;
-          private readonly ILogger<OpenApiDocumentParser> _logger;
-          
-          public Task<OpenApiDocument> ParseFromFileAsync(string filePath);
-          public Task<OpenApiDocument> ParseFromUrlAsync(string url);
-          public Task<OpenApiDocument> ParseFromStreamAsync(Stream stream, string? format);
-      }
+          public class OpenApiDocumentParser : IOpenApiDocumentParser
+          {
+              private readonly IOpenApiReader _jsonReader;
+              private readonly IOpenApiReader _yamlReader;
+              private readonly IHttpClient _httpClient;
+              private readonly ILogger<OpenApiDocumentParser> _logger;
+              
+              public Task<OpenApiDocument> ParseFromFileAsync(string filePath);
+              public Task<OpenApiDocument> ParseFromUrlAsync(string url);
+              public Task<OpenApiDocument> ParseFromStreamAsync(Stream stream, string? format);
+          }
   ```
 
 
@@ -358,13 +358,13 @@ todos: []
 
 - `OpenApiSchemaResolver` - разрешение ссылок в схеме
   ```csharp
-      public class OpenApiSchemaResolver : ISchemaResolver
-      {
-          private readonly OpenApiDocument _document;
-          
-          public OpenApiSchema ResolveReference(OpenApiReference reference);
-          public OpenApiSchema ResolveSchema(OpenApiSchema schema);
-      }
+          public class OpenApiSchemaResolver : ISchemaResolver
+          {
+              private readonly OpenApiDocument _document;
+              
+              public OpenApiSchema ResolveReference(OpenApiReference reference);
+              public OpenApiSchema ResolveSchema(OpenApiSchema schema);
+          }
   ```
 
 
@@ -377,12 +377,12 @@ todos: []
 
 - `IOpenApiDocumentParser`
   ```csharp
-      public interface IOpenApiDocumentParser
-      {
-          Task<OpenApiDocument> ParseFromFileAsync(string filePath);
-          Task<OpenApiDocument> ParseFromUrlAsync(string url);
-          Task<OpenApiDocument> ParseFromStreamAsync(Stream stream, string? format);
-      }
+          public interface IOpenApiDocumentParser
+          {
+              Task<OpenApiDocument> ParseFromFileAsync(string filePath);
+              Task<OpenApiDocument> ParseFromUrlAsync(string url);
+              Task<OpenApiDocument> ParseFromStreamAsync(Stream stream, string? format);
+          }
   ```
 
 
@@ -396,12 +396,12 @@ todos: []
 
 - `ConfigurationLoader` - загрузка конфигурации из файла/строки
   ```csharp
-      public class ConfigurationLoader : IConfigurationLoader
-      {
-          public Task<GenerationConfiguration> LoadFromFileAsync(string filePath);
-          public GenerationConfiguration LoadFromJson(string json);
-          public GenerationConfiguration LoadFromYaml(string yaml);
-      }
+          public class ConfigurationLoader : IConfigurationLoader
+          {
+              public Task<GenerationConfiguration> LoadFromFileAsync(string filePath);
+              public GenerationConfiguration LoadFromJson(string json);
+              public GenerationConfiguration LoadFromYaml(string yaml);
+          }
   ```
 
 
@@ -409,10 +409,10 @@ todos: []
 
 - `ConfigurationValidator` - валидация конфигурации
   ```csharp
-      public class ConfigurationValidator : IConfigurationValidator
-      {
-          public ValidationResult Validate(GenerationConfiguration config);
-      }
+          public class ConfigurationValidator : IConfigurationValidator
+          {
+              public ValidationResult Validate(GenerationConfiguration config);
+          }
   ```
 
 
@@ -420,13 +420,13 @@ todos: []
 
 - `ConfigurationBuilder` - строитель конфигурации (Builder pattern)
   ```csharp
-      public class ConfigurationBuilder
-      {
-          public ConfigurationBuilder WithLanguage(GenerationLanguage language);
-          public ConfigurationBuilder WithOptions(GenerationOptions options);
-          public ConfigurationBuilder WithFileOrganization(FileOrganization fileOrganization);
-          public GenerationConfiguration Build();
-      }
+          public class ConfigurationBuilder
+          {
+              public ConfigurationBuilder WithLanguage(GenerationLanguage language);
+              public ConfigurationBuilder WithOptions(GenerationOptions options);
+              public ConfigurationBuilder WithFileOrganization(FileOrganization fileOrganization);
+              public GenerationConfiguration Build();
+          }
   ```
 
 
@@ -446,18 +446,18 @@ todos: []
 
 - `CSharpCodeGenerator` - основной генератор (Strategy pattern)
   ```csharp
-      public class CSharpCodeGenerator : ICodeGenerator
-      {
-          private readonly IModelExtractor _modelExtractor;
-          private readonly IOperationExtractor _operationExtractor;
-          private readonly ITypeMapper _typeMapper;
-          private readonly INamingConverter _namingConverter;
-          private readonly ITemplateRenderer _templateRenderer;
-          private readonly IFileWriter _fileWriter;
-          private readonly ILogger<CSharpCodeGenerator> _logger;
-          
-          public Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config);
-      }
+          public class CSharpCodeGenerator : ICodeGenerator
+          {
+              private readonly IModelExtractor _modelExtractor;
+              private readonly IOperationExtractor _operationExtractor;
+              private readonly ITypeMapper _typeMapper;
+              private readonly INamingConverter _namingConverter;
+              private readonly ITemplateRenderer _templateRenderer;
+              private readonly IFileWriter _fileWriter;
+              private readonly ILogger<CSharpCodeGenerator> _logger;
+              
+              public Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config);
+          }
   ```
 
 
@@ -465,11 +465,11 @@ todos: []
 
 - `CSharpModelGenerator` - генератор моделей C#
   ```csharp
-      public class CSharpModelGenerator
-      {
-          public string GenerateModel(ApiModel model, CSharpGenerationOptions options);
-          public string GenerateProperty(ApiProperty property, CSharpGenerationOptions options);
-      }
+          public class CSharpModelGenerator
+          {
+              public string GenerateModel(ApiModel model, CSharpGenerationOptions options);
+              public string GenerateProperty(ApiProperty property, CSharpGenerationOptions options);
+          }
   ```
 
 
@@ -477,11 +477,11 @@ todos: []
 
 - `CSharpClientGenerator` - генератор клиентов C#
   ```csharp
-      public class CSharpClientGenerator
-      {
-          public string GenerateClient(IReadOnlyList<ApiOperation> operations, CSharpGenerationOptions options);
-          public string GenerateMethod(ApiOperation operation, CSharpGenerationOptions options);
-      }
+          public class CSharpClientGenerator
+          {
+              public string GenerateClient(IReadOnlyList<ApiOperation> operations, CSharpGenerationOptions options);
+              public string GenerateMethod(ApiOperation operation, CSharpGenerationOptions options);
+          }
   ```
 
 
@@ -511,11 +511,11 @@ todos: []
 
 - `ZodSchemaGenerator` - генератор Zod схем
   ```csharp
-      public class ZodSchemaGenerator
-      {
-          public string GenerateSchema(ApiModel model);
-          public string GeneratePropertySchema(ApiProperty property);
-      }
+          public class ZodSchemaGenerator
+          {
+              public string GenerateSchema(ApiModel model);
+              public string GeneratePropertySchema(ApiProperty property);
+          }
   ```
 
 
@@ -531,11 +531,11 @@ todos: []
 
 - `AxiosClientGenerator` - генератор клиентов с Axios
   ```csharp
-      public class AxiosClientGenerator : TypeScriptClientGenerator
-      {
-          public override string GenerateClient(IReadOnlyList<ApiOperation> operations, TypeScriptGenerationOptions options);
-          public string GenerateAxiosMethod(ApiOperation operation);
-      }
+          public class AxiosClientGenerator : TypeScriptClientGenerator
+          {
+              public override string GenerateClient(IReadOnlyList<ApiOperation> operations, TypeScriptGenerationOptions options);
+              public string GenerateAxiosMethod(ApiOperation operation);
+          }
   ```
 
 
@@ -549,12 +549,12 @@ todos: []
 
 - `TanStackQueryGenerator` - генератор хуков TanStack Query
   ```csharp
-      public class TanStackQueryGenerator
-      {
-          public string GenerateQueryHook(ApiOperation operation);
-          public string GenerateMutationHook(ApiOperation operation);
-          public string GenerateHookName(string operationId);
-      }
+          public class TanStackQueryGenerator
+          {
+              public string GenerateQueryHook(ApiOperation operation);
+              public string GenerateMutationHook(ApiOperation operation);
+              public string GenerateHookName(string operationId);
+          }
   ```
 
 
@@ -568,22 +568,22 @@ todos: []
 
 - `GenerateCommand` - команда генерации
   ```csharp
-      public class GenerateCommand : Command
-      {
-          public GenerateCommand() : base("generate", "Generate code from OpenAPI schema")
+          public class GenerateCommand : Command
           {
-              // Options
-              var schemaOption = new Option<string>("--schema", "-s") { Required = true };
-              var outputOption = new Option<string>("--output", "-o") { Required = true };
-              var languageOption = new Option<GenerationLanguage>("--language", "-l") { Required = true };
-              var configOption = new Option<FileInfo>("--config", "-c");
+              public GenerateCommand() : base("generate", "Generate code from OpenAPI schema")
+              {
+                  // Options
+                  var schemaOption = new Option<string>("--schema", "-s") { Required = true };
+                  var outputOption = new Option<string>("--output", "-o") { Required = true };
+                  var languageOption = new Option<GenerationLanguage>("--language", "-l") { Required = true };
+                  var configOption = new Option<FileInfo>("--config", "-c");
+                  
+                  // Handler
+                  this.SetHandler(ExecuteAsync, schemaOption, outputOption, languageOption, configOption);
+              }
               
-              // Handler
-              this.SetHandler(ExecuteAsync, schemaOption, outputOption, languageOption, configOption);
+              private async Task<int> ExecuteAsync(string schema, string output, GenerationLanguage language, FileInfo? config);
           }
-          
-          private async Task<int> ExecuteAsync(string schema, string output, GenerationLanguage language, FileInfo? config);
-      }
   ```
 
 
@@ -600,24 +600,24 @@ todos: []
 
 - `Program.cs` - точка входа
   ```csharp
-      class Program
-      {
-          static async Task<int> Main(string[] args)
+          class Program
           {
-              var services = new ServiceCollection();
-              ConfigureServices(services);
+              static async Task<int> Main(string[] args)
+              {
+                  var services = new ServiceCollection();
+                  ConfigureServices(services);
+                  
+                  var serviceProvider = services.BuildServiceProvider();
+                  var rootCommand = serviceProvider.GetRequiredService<RootCommand>();
+                  
+                  return await rootCommand.InvokeAsync(args);
+              }
               
-              var serviceProvider = services.BuildServiceProvider();
-              var rootCommand = serviceProvider.GetRequiredService<RootCommand>();
-              
-              return await rootCommand.InvokeAsync(args);
+              static void ConfigureServices(IServiceCollection services)
+              {
+                  // Регистрация всех сервисов
+              }
           }
-          
-          static void ConfigureServices(IServiceCollection services)
-          {
-              // Регистрация всех сервисов
-          }
-      }
   ```
 
 
@@ -636,12 +636,12 @@ todos: []
 - **Применение**: Создание генераторов в зависимости от языка и опций
 - **Класс**: `CodeGeneratorFactory`
   ```csharp
-      public class CodeGeneratorFactory
-      {
-          private readonly IServiceProvider _serviceProvider;
-          
-          public ICodeGenerator CreateGenerator(GenerationLanguage language, GenerationOptions? options);
-      }
+          public class CodeGeneratorFactory
+          {
+              private readonly IServiceProvider _serviceProvider;
+              
+              public ICodeGenerator CreateGenerator(GenerationLanguage language, GenerationOptions? options);
+          }
   ```
 
 
@@ -833,5 +833,3 @@ Output/
 
 - Новые языки программирования (создать новый проект Generator)
 - Новые библиотеки валидации для TypeScript
-- Новые HTTP клиенты
-- Новые обертки над HTTP клиентами

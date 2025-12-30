@@ -1,3 +1,4 @@
+using ValIO.Core.Models;
 
 namespace ValIO.Core.Interfaces;
 
@@ -6,8 +7,19 @@ namespace ValIO.Core.Interfaces;
 /// </summary>
 public interface ITypeMapper
 {
-    string MapType(OpenApiSchema schema);
-    string MapPropertyType(OpenApiSchema schema, bool isRequired);
-    string MapEnumType(OpenApiSchema schema);
+    /// <summary>
+    /// Маппинг типа схемы на тип целевого языка
+    /// </summary>
+    string MapType(IOpenApiSchema schema, ISchemaResolver schemaResolver);
+    
+    /// <summary>
+    /// Маппинг типа свойства с учетом обязательности
+    /// </summary>
+    string MapPropertyType(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver);
+    
+    /// <summary>
+    /// Маппинг типа enum
+    /// </summary>
+    string MapEnumType(IOpenApiSchema schema, ISchemaResolver schemaResolver);
 }
 
