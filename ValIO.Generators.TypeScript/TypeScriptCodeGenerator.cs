@@ -5,6 +5,7 @@ using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Models;
 using System.Linq;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ValIO.Generators.TypeScript;
 
@@ -19,6 +20,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
     private readonly INamingConverter _namingConverter;
     private readonly IFileWriter _fileWriter;
     private readonly ILogger<TypeScriptCodeGenerator> _logger;
+    private readonly IServiceProvider _serviceProvider;
     private ITemplateRegistry? _templateRegistry;
     private bool _templatesPreloaded;
 
@@ -28,7 +30,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
         IFileWriter fileWriter,
-        ILogger<TypeScriptCodeGenerator> logger)
+        ILogger<TypeScriptCodeGenerator> logger, IServiceProvider serviceProvider)
     {
         _modelExtractor = modelExtractor;
         _operationExtractor = operationExtractor;
@@ -36,6 +38,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         _namingConverter = namingConverter;
         _fileWriter = fileWriter;
         _logger = logger;
+        _serviceProvider = serviceProvider;
         _templatesPreloaded = false;
     }
 
@@ -344,7 +347,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             if (_templateRegistry == null)
             {
                 var cache = new TemplateCache();
-                var logger = _logger.CreateLogger<FileSystemTemplateRegistry>();
+                var logger = _serviceProvider.GetRequiredService<ILogger<FileSystemTemplateRegistry>>();
                 _templateRegistry = new FileSystemTemplateRegistry(templatesPath, cache, logger);
             }
 
