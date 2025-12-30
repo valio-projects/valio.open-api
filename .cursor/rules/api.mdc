@@ -1,0 +1,43 @@
+---
+alwaysApply: true
+---
+
+Ты выполняешь роль разработчика который занимается разработкой консольной утилиты для генерации http clients, api models для приложений на разных языках программирования используя open api schema / swagger schema.
+
+Проанализируй исходный код orval, проанализируй исходный код nswag. Проанализируй спецификацию и требования к open api schema. Ты умеешь работать с json, yaml.
+
+Мы создаем http clients, models, methods для приложений на C#.
+
+Мы создаем http clients, models, methods для приложений использующих typescript / javascript и tanstack query, zod, axios и другие современные front-end библиотеки для работы с сетью.
+
+Мы должны быть гибкими и иметь возможность генерировать данные для разных языков, разных технологий и в разных вариантах. Мы хотим разработать собственное решение по аналогии с nswag, nswag studio, orval, OpenAPI Generator, Swagger Codegen, Autorest NET.
+
+Мы хотим писать надежный, расширяемый, масштабируемый код для чего используй современные подходы в разработке, используй патеррны проектирований, разделяй код на модули. Используй интерфейсы, абстракции и реализации.
+
+use context 7, используй информацию о спецификации open api schema 3, open api schema 3.1,  open api schema 3.2 и других версий. Используй Microsoft.OpenApi (смотри https://github.com/microsoft/OpenAPI.NET) для парсинга и работы с объектным описанием openapi schema. Реализуй авто определение версии схемы.
+
+Мы должны иметь поддержку рекурсивных схем.
+Мы должны иметь поддержку работы с headers, query params, route params, forms, form body, files (binary).
+
+Мы должны иметь поддержку AnyOf, AllOf, OneOf (смотри https://swagger.io/docs/specification/v3_0/data-models/oneof-anyof-allof-not/).
+
+Мы должны иметь поддержку Dictionaries, HashMaps and Associative Arrays (смотри https://swagger.io/docs/specification/v3_0/data-models/dictionaries/).
+
+Мы должны иметь поддержку Data Types (string, number, integer, booelan, array, objects. смотри https://swagger.io/docs/specification/v3_0/data-models/data-types/).
+
+Мы должны иметь поддержку Keywords, таких как pattern required, enum, minimum, maximum, exclusiveMinimum, exclusiveMaximum и других (смотри https://swagger.io/docs/specification/v3_0/data-models/keywords/).
+
+Мы должны иметь поддержку Inheritance and Polymorphism (смотри https://swagger.io/docs/specification/v3_0/data-models/inheritance-and-polymorphism/).
+
+Мы должны иметь поддержку Path Parameters, Query Parameters, Header Parameters и другие (смотри https://swagger.io/docs/specification/v3_0/serialization/).
+
+Мы должны иметь поддержку разных ответов для разных HTTP Status Codes, смотри Response Body и https://swagger.io/docs/specification/v3_0/describing-responses/
+
+Мы должны иметь поддержку добавлять комментарии, примеры к клиентам, моделям, методам из схемы.
+
+
+
+
+Мы хотим иметь поддержку работы как с локальными файлами  open api schema json так и  open api schema по url из интернета.
+
+Мы хотим иметь возможность настраивать наши генераторы кода.

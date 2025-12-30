@@ -1,0 +1,207 @@
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using ValIO.Configuration.Interfaces;
+using ValIO.Configuration.Models;
+using ValIO.Core.Models;
+using YamlDotNet.Serialization;
+
+namespace ValIO.Configuration.Services;
+
+/// <summary>
+/// Загрузчик конфигурации
+/// </summary>
+public class ConfigurationLoader : IConfigurationLoader
+{
+    private readonly ILogger<ConfigurationLoader> _logger;
+    private readonly IDeserializer _yamlDeserializer;
+    private readonly JsonSerializerOptions _jsonOptions;
+
+    public ConfigurationLoader(ILogger<ConfigurationLoader> logger)
+    {
+        _logger = logger;
+        _yamlDeserializer = new DeserializerBuilder().Build();
+        _jsonOptions = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        };
+    }
+
+    public async Task<GenerationConfiguration> LoadFromFileAsync(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+            throw new ArgumentException("File path cannot be null or empty", nameof(filePath));
+
+        if (!File.Exists(filePath))
+            throw new FileNotFoundException($"Configuration file not found: {filePath}");
+
+        var extension = Path.GetExtension(filePath).ToLowerInvariant();
+        var content = await File.ReadAllTextAsync(filePath);
+
+        return extension switch
+        {
+            ".json" => LoadFromJson(content),
+            ".yaml" or ".yml" => LoadFromYaml(content),
+            _ => throw new NotSupportedException($"Configuration file format not supported: {extension}")
+        };
+    }
+
+    public GenerationConfiguration LoadFromJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            throw new ArgumentException("JSON content cannot be null or empty", nameof(json));
+
+        try
+        {
+            var config = JsonSerializer.Deserialize<ValIOConfig>(json, _jsonOptions);
+            if (config == null)
+                throw new InvalidOperationException("Failed to deserialize configuration");
+
+            return MapToGenerationConfiguration(config);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse JSON configuration");
+            throw new InvalidOperationException("Invalid JSON configuration", ex);
+        }
+    }
+
+    public GenerationConfiguration LoadFromYaml(string yaml)
+    {
+        if (string.IsNullOrWhiteSpace(yaml))
+            throw new ArgumentException("YAML content cannot be null or empty", nameof(yaml));
+
+        try
+        {
+            var config = _yamlDeserializer.Deserialize<ValIOConfig>(yaml);
+            if (config == null)
+                throw new InvalidOperationException("Failed to deserialize configuration");
+
+            return MapToGenerationConfiguration(config);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to parse YAML configuration");
+            throw new InvalidOperationException("Invalid YAML configuration", ex);
+        }
+    }
+
+    private GenerationConfiguration MapToGenerationConfiguration(ValIOConfig config)
+    {
+        var generationConfig = new GenerationConfiguration
+        {
+            Language = ParseGenerationLanguage(config.Language),
+            OutputPath = config.OutputPath,
+            Namespace = config.Namespace,
+            GenerateEnums = config.GenerateEnums,
+            GenerateModels = config.GenerateModels,
+            GenerateClients = config.GenerateClients
+        };
+
+        // Маппинг опций
+        if (config.Options != null)
+        {
+            generationConfig.Options = new GenerationOptions
+            {
+                ValidationLibrary = ParseValidationLibrary(config.Options.ValidationLibrary),
+                HttpClientLibrary = ParseHttpClientLibrary(config.Options.HttpClientLibrary),
+                QueryWrapperLibrary = ParseQueryWrapperLibrary(config.Options.QueryWrapperLibrary)
+            };
+        }
+
+        // Маппинг организации файлов
+        if (config.FileOrganization != null)
+        {
+            generationConfig.FileOrganization = new FileOrganization
+            {
+                GroupingStrategy = ParseFileGroupingStrategy(config.FileOrganization.GroupingStrategy),
+                SeparateModels = config.FileOrganization.SeparateModels,
+                SeparateClients = config.FileOrganization.SeparateClients,
+                ModelsPath = config.FileOrganization.ModelsPath,
+                ClientsPath = config.FileOrganization.ClientsPath
+            };
+        }
+
+        // Маппинг конвенций именования
+        if (config.NamingConvention != null)
+        {
+            generationConfig.NamingConvention = new NamingConventions
+            {
+                Models = ParseNamingConvention(config.NamingConvention.Models),
+                Properties = ParseNamingConvention(config.NamingConvention.Properties),
+                Methods = ParseNamingConvention(config.NamingConvention.Methods),
+                Enums = ParseNamingConvention(config.NamingConvention.Enums)
+            };
+        }
+
+        return generationConfig;
+    }
+
+    private static GenerationLanguage ParseGenerationLanguage(string? language)
+    {
+        return language?.ToLowerInvariant() switch
+        {
+            "csharp" or "c#" => GenerationLanguage.CSharp,
+            "typescript" or "ts" => GenerationLanguage.TypeScript,
+            "cpp" or "c++" => GenerationLanguage.Cpp,
+            _ => throw new ArgumentException($"Unknown language: {language}")
+        };
+    }
+
+    private static ValidationLibrary? ParseValidationLibrary(string? library)
+    {
+        return library?.ToLowerInvariant() switch
+        {
+            "zod" => ValidationLibrary.Zod,
+            "yup" => ValidationLibrary.Yup,
+            "valli" => ValidationLibrary.Valli,
+            null or "" => null,
+            _ => throw new ArgumentException($"Unknown validation library: {library}")
+        };
+    }
+
+    private static HttpClientLibrary? ParseHttpClientLibrary(string? library)
+    {
+        return library?.ToLowerInvariant() switch
+        {
+            "fetch" => HttpClientLibrary.Fetch,
+            "axios" => HttpClientLibrary.Axios,
+            null or "" => null,
+            _ => throw new ArgumentException($"Unknown HTTP client library: {library}")
+        };
+    }
+
+    private static QueryWrapperLibrary? ParseQueryWrapperLibrary(string? library)
+    {
+        return library?.ToLowerInvariant() switch
+        {
+            "tanstackquery" or "tanstack-query" or "react-query" => QueryWrapperLibrary.TanStackQuery,
+            "swr" => QueryWrapperLibrary.SWR,
+            null or "" => null,
+            _ => throw new ArgumentException($"Unknown query wrapper library: {library}")
+        };
+    }
+
+    private static FileGroupingStrategy ParseFileGroupingStrategy(string? strategy)
+    {
+        return strategy?.ToLowerInvariant() switch
+        {
+            "bytag" or "by-tag" => FileGroupingStrategy.ByTag,
+            "byroute" or "by-route" => FileGroupingStrategy.ByRoute,
+            "singlefile" or "single-file" => FileGroupingStrategy.SingleFile,
+            _ => FileGroupingStrategy.SingleFile
+        };
+    }
+
+    private static NamingConvention ParseNamingConvention(string? convention)
+    {
+        return convention?.ToLowerInvariant() switch
+        {
+            "pascalcase" or "pascal-case" => NamingConvention.PascalCase,
+            "camelcase" or "camel-case" => NamingConvention.CamelCase,
+            "snakecase" or "snake-case" => NamingConvention.SnakeCase,
+            "kebabcase" or "kebab-case" => NamingConvention.KebabCase,
+            _ => NamingConvention.PascalCase
+        };
+    }
+}
+
