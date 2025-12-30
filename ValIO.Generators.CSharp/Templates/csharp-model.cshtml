@@ -230,7 +230,8 @@ namespace @(namespaceName);
         }
     }
     var requiredModifier = property.IsRequired ? "required " : string.Empty;
-    var nullableModifier = property.IsNullable ? "?" : string.Empty;
+    // Проверяем, не заканчивается ли тип уже на "?" (nullable struct types)
+    var nullableModifier = property.IsNullable && !property.Type.EndsWith("?") ? "?" : string.Empty;
     var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
     @:public @requiredModifier@property.Type@nullableModifier @property.Name { get; @accessorType; }
 }
@@ -398,7 +399,8 @@ else
         }
     }
     var requiredModifier = property.IsRequired ? "required " : string.Empty;
-    var nullableModifier = property.IsNullable ? "?" : string.Empty;
+    // Проверяем, не заканчивается ли тип уже на "?" (nullable struct types)
+    var nullableModifier = property.IsNullable && !property.Type.EndsWith("?") ? "?" : string.Empty;
     var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
     @:public @requiredModifier@property.Type@nullableModifier @property.Name { get; @accessorType; }
 }
