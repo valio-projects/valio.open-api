@@ -843,6 +843,27 @@ public class CSharpCodeGenerator : ICodeGenerator
             files[filePath] = exceptionCode;
         }
 
+        // Генерируем модели query параметров
+        foreach (var queryModel in queryParametersModels)
+        {
+            var modelCode = GenerateQueryParametersModelCode(queryModel.Key, queryModel.Value, config);
+            var fileName = $"{queryModel.Key}.cs";
+            
+            // Определяем путь для файла модели
+            string filePath;
+            if (config.FileOrganization.SeparateModels)
+            {
+                var modelsPath = config.FileOrganization.ModelsPath ?? "Models";
+                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
+            }
+            else
+            {
+                filePath = Path.Combine(config.OutputPath, fileName);
+            }
+
+            files[filePath] = modelCode;
+        }
+
         // Генерируем клиенты
         foreach (var group in groupedOperations)
         {
@@ -1336,10 +1357,19 @@ public class ValioHttpRequestException : HttpRequestException
 
         // Формируем параметры метода в зависимости от стиля
         var methodParameters = new List<string>();
+        var usedParameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         
         // Path параметры всегда передаются отдельно
         foreach (var pathParam in pathParameters)
         {
+            // Проверяем на дубликаты
+            if (usedParameterNames.Contains(pathParam.VariableName))
+            {
+                _logger.LogWarning("Duplicate parameter name '{ParameterName}' found in operation '{OperationId}'. Skipping duplicate.", 
+                    pathParam.VariableName, operation.OperationId);
+                continue;
+            }
+            usedParameterNames.Add(pathParam.VariableName);
             var paramString = FormatParameterString(pathParam.TypeInfo, pathParam.VariableName, pathParam.IsRequired);
             methodParameters.Add(paramString);
         }
@@ -1355,6 +1385,14 @@ public class ValioHttpRequestException : HttpRequestException
         {
             foreach (var queryParam in queryParameters)
             {
+                // Проверяем на дубликаты (не должно быть конфликта с path параметрами)
+                if (usedParameterNames.Contains(queryParam.VariableName))
+                {
+                    _logger.LogWarning("Duplicate parameter name '{ParameterName}' found in operation '{OperationId}'. Skipping duplicate.", 
+                        queryParam.VariableName, operation.OperationId);
+                    continue;
+                }
+                usedParameterNames.Add(queryParam.VariableName);
                 var paramString = FormatParameterString(queryParam.TypeInfo, queryParam.VariableName, queryParam.IsRequired);
                 methodParameters.Add(paramString);
             }
@@ -1363,6 +1401,14 @@ public class ValioHttpRequestException : HttpRequestException
         // Header параметры всегда передаются отдельно
         foreach (var headerParam in headerParameters)
         {
+            // Проверяем на дубликаты
+            if (usedParameterNames.Contains(headerParam.VariableName))
+            {
+                _logger.LogWarning("Duplicate parameter name '{ParameterName}' found in operation '{OperationId}'. Skipping duplicate.", 
+                    headerParam.VariableName, operation.OperationId);
+                continue;
+            }
+            usedParameterNames.Add(headerParam.VariableName);
             var paramString = FormatParameterString(headerParam.TypeInfo, headerParam.VariableName, headerParam.IsRequired);
             methodParameters.Add(paramString);
         }
@@ -1375,6 +1421,14 @@ public class ValioHttpRequestException : HttpRequestException
                 // Form-data параметры передаются отдельно
                 foreach (var formDataProp in formDataProperties)
                 {
+                    // Проверяем на дубликаты
+                    if (usedParameterNames.Contains(formDataProp.VariableName))
+                    {
+                        _logger.LogWarning("Duplicate parameter name '{ParameterName}' found in operation '{OperationId}'. Skipping duplicate.", 
+                            formDataProp.VariableName, operation.OperationId);
+                        continue;
+                    }
+                    usedParameterNames.Add(formDataProp.VariableName);
                     var paramString = FormatParameterString(formDataProp.TypeInfo, formDataProp.VariableName, formDataProp.IsRequired);
                     methodParameters.Add(paramString);
                 }

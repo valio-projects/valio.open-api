@@ -77,6 +77,11 @@ public class ConfigCSharpOptions
     /// Генерировать атрибуты валидации для свойств ([Required], [MinLength], [MaxLength], [Range], [RegularExpression])
     /// </summary>
     public bool? GenerateValidationAttributes { get; set; }
+
+    /// <summary>
+    /// Стиль передачи query параметров: "IndividualParameters" или "ModelClass"
+    /// </summary>
+    public string? QueryParametersStyle { get; set; }
 }
 
 /// <summary>
