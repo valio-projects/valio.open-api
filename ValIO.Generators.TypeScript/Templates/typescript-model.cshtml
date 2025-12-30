@@ -1,0 +1,38 @@
+@using ValIO.Generators.CSharp.Models
+@using ValIO.Generators.TypeScript.Models
+@model TypeScriptModelTemplateData
+@functions {
+    string FormatType(TypeInfo typeInfo)
+    {
+        return typeInfo.FullTypeName;
+    }
+    
+    string FormatOptional(bool isOptional)
+    {
+        return isOptional ? "?" : "";
+    }
+}
+@{
+    var interfaceName = Model.InterfaceName;
+    var description = Model.Description;
+    var properties = Model.Properties;
+    var useStrictNullChecks = Model.UseStrictNullChecks;
+}
+@if (!string.IsNullOrEmpty(description))
+{
+@://**
+@: * @Raw(description)
+@: */
+}
+export interface @interfaceName {
+@foreach (var property in properties)
+{
+    @if (!string.IsNullOrEmpty(property.Description))
+    {
+    @:  /**
+    @:   * @Raw(property.Description)
+    @:   */
+    }
+    @:  @property.Name@FormatOptional(property.IsOptional): @FormatType(property.TypeInfo);
+}
+}

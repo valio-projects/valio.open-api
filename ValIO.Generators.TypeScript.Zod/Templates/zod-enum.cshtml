@@ -1,0 +1,24 @@
+@using ValIO.Generators.TypeScript.Models
+@model ZodEnumSchemaTemplateData
+@{
+    var schemaName = Model.SchemaName;
+    var typeName = Model.TypeName;
+    var enumValues = Model.EnumValues;
+    var description = Model.Description;
+}
+@if (!string.IsNullOrEmpty(description))
+{
+@://**
+@: * @Raw(description)
+@: */
+}
+import { z } from 'zod';
+
+export const @schemaName = z.enum([
+@foreach (var enumValue in enumValues)
+{
+    @:@Raw(enumValue)@(enumValue == enumValues.Last() ? "" : ",")
+}
+]);
+
+export type @typeName = z.infer<typeof @schemaName>;

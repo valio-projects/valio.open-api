@@ -7,6 +7,7 @@ using ValIO.Core.Factories;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Services;
 using ValIO.Generators.CSharp;
+using ValIO.Generators.TypeScript;
 using ValIO.Parsers.Interfaces;
 using ValIO.Parsers.Services;
 using System.Reflection;
@@ -46,14 +47,14 @@ class Program
         // Template Cache
         services.AddSingleton<ITemplateCache, TemplateCache>();
         
-        // Template Registry - для C# генератора используем embedded resources
+        // Template Registry Factory
+        services.AddSingleton<TemplateRegistryFactory>();
+        
+        // Template Registry - для C# генератора используем embedded resources (по умолчанию)
         services.AddSingleton<ITemplateRegistry>(sp =>
         {
-            var assembly = typeof(CSharpCodeGenerator).Assembly;
-            var resourceNamespace = $"{assembly.GetName().Name}.Templates";
-            var cache = sp.GetRequiredService<ITemplateCache>();
-            var logger = sp.GetRequiredService<ILogger<EmbeddedResourceTemplateRegistry>>();
-            return new EmbeddedResourceTemplateRegistry(assembly, resourceNamespace, cache, logger);
+            var factory = sp.GetRequiredService<TemplateRegistryFactory>();
+            return factory.CreateRegistry(typeof(CSharpCodeGenerator).Assembly);
         });
         
         // Note: Extractors создаются внутри генераторов, так как они требуют SchemaResolver,
@@ -68,10 +69,20 @@ class Program
 
         // Code Generators - Type Mappers
         services.AddSingleton<ITypeMapper, CSharpTypeMapper>();
+        services.AddSingleton<ITypeMapper, TypeScriptTypeMapper>();
 
         // Code Generators
         services.AddSingleton<ICodeGenerator, CSharpCodeGenerator>();
-        // services.AddSingleton<ICodeGenerator, TypeScriptCodeGenerator>();
+        services.AddSingleton<ICodeGenerator>(sp =>
+        {
+            var typeMapper = sp.GetServices<ITypeMapper>().OfType<TypeScriptTypeMapper>().First();
+            var namingConverter = sp.GetRequiredService<INamingConverter>();
+            var fileWriter = sp.GetRequiredService<IFileWriter>();
+            var templateRegistryFactory = sp.GetRequiredService<TemplateRegistryFactory>();
+            var templateRegistry = templateRegistryFactory.CreateRegistry(typeof(TypeScriptCodeGenerator).Assembly);
+            var logger = sp.GetRequiredService<ILogger<TypeScriptCodeGenerator>>();
+            return new TypeScriptCodeGenerator(typeMapper, namingConverter, fileWriter, templateRegistry, logger, templateRegistryFactory);
+        });
 
         // Factory
         services.AddSingleton<CodeGeneratorFactory>();

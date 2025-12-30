@@ -1,0 +1,33 @@
+{
+  "language": "TypeScript",
+  "outputPath": "./generated",
+  "namespace": "Generated",
+  "generateEnums": true,
+  "generateModels": true,
+  "generateClients": true,
+  "options": {
+    "typescript": {
+      "modelFormat": "Interfaces",
+      "validationLibrary": "Zod",
+      "httpClientLibrary": "Axios",
+      "useTanStackQuery": true,
+      "serializeWithSchemas": true,
+      "deserializeWithSchemas": true,
+      "enumFormat": "Enum",
+      "useStrictNullChecks": true
+    }
+  },
+  "fileOrganization": {
+    "groupingStrategy": "ByTag",
+    "separateModels": true,
+    "separateClients": true,
+    "modelsPath": "models",
+    "clientsPath": "api"
+  },
+  "namingConvention": {
+    "models": "PascalCase",
+    "properties": "CamelCase",
+    "methods": "CamelCase",
+    "enums": "PascalCase"
+  }
+}

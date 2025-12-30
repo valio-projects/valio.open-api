@@ -114,6 +114,12 @@ public class ConfigurationLoader : IConfigurationLoader
                 generationOptions.CSharpOptions = ParseCSharpOptions(config.Options.CSharp);
             }
             
+            // Маппинг TypeScript опций
+            if (config.Options.TypeScript != null)
+            {
+                generationOptions.TypeScriptOptions = ParseTypeScriptOptions(config.Options.TypeScript, config.Options);
+            }
+            
             generationConfig.Options = generationOptions;
         }
 
@@ -289,6 +295,99 @@ public class ConfigurationLoader : IConfigurationLoader
                 "individualparameters" or "individual-parameters" => ValIO.Generators.CSharp.Models.QueryParametersStyle.IndividualParameters,
                 _ => ValIO.Generators.CSharp.Models.QueryParametersStyle.IndividualParameters
             };
+        }
+
+        return options;
+    }
+
+    private static ValIO.Generators.TypeScript.Models.TypeScriptGenerationOptions ParseTypeScriptOptions(ConfigTypeScriptOptions? config, ConfigOptions? parentOptions = null)
+    {
+        if (config == null)
+            return new ValIO.Generators.TypeScript.Models.TypeScriptGenerationOptions();
+
+        var options = new ValIO.Generators.TypeScript.Models.TypeScriptGenerationOptions();
+
+        // Парсинг ModelFormat
+        if (!string.IsNullOrEmpty(config.ModelFormat))
+        {
+            options.ModelFormat = config.ModelFormat.ToLowerInvariant() switch
+            {
+                "interfaces" => ValIO.Generators.TypeScript.Models.ModelFormat.Interfaces,
+                "validationschemas" or "validation-schemas" => ValIO.Generators.TypeScript.Models.ModelFormat.ValidationSchemas,
+                _ => ValIO.Generators.TypeScript.Models.ModelFormat.Interfaces
+            };
+        }
+
+        // Парсинг ValidationLibrary - сначала из TypeScript опций, затем из родительских опций
+        if (!string.IsNullOrEmpty(config.ValidationLibrary))
+        {
+            options.ValidationLibrary = ParseValidationLibrary(config.ValidationLibrary);
+        }
+        else if (parentOptions != null && !string.IsNullOrEmpty(parentOptions.ValidationLibrary))
+        {
+            options.ValidationLibrary = ParseValidationLibrary(parentOptions.ValidationLibrary);
+        }
+
+        // Парсинг HttpClientLibrary - сначала из TypeScript опций, затем из родительских опций
+        if (!string.IsNullOrEmpty(config.HttpClientLibrary))
+        {
+            var httpClientLib = ParseHttpClientLibrary(config.HttpClientLibrary);
+            if (httpClientLib.HasValue)
+            {
+                options.HttpClientLibrary = httpClientLib.Value;
+            }
+        }
+        else if (parentOptions != null && !string.IsNullOrEmpty(parentOptions.HttpClientLibrary))
+        {
+            var httpClientLib = ParseHttpClientLibrary(parentOptions.HttpClientLibrary);
+            if (httpClientLib.HasValue)
+            {
+                options.HttpClientLibrary = httpClientLib.Value;
+            }
+        }
+
+        // Парсинг UseTanStackQuery
+        if (config.UseTanStackQuery.HasValue)
+        {
+            options.UseTanStackQuery = config.UseTanStackQuery.Value;
+        }
+        else if (parentOptions != null && !string.IsNullOrEmpty(parentOptions.QueryWrapperLibrary))
+        {
+            // Если QueryWrapperLibrary задан на верхнем уровне, считаем что UseTanStackQuery = true
+            var queryWrapper = ParseQueryWrapperLibrary(parentOptions.QueryWrapperLibrary);
+            if (queryWrapper == QueryWrapperLibrary.TanStackQuery)
+            {
+                options.UseTanStackQuery = true;
+            }
+        }
+
+        // Парсинг SerializeWithSchemas
+        if (config.SerializeWithSchemas.HasValue)
+        {
+            options.SerializeWithSchemas = config.SerializeWithSchemas.Value;
+        }
+
+        // Парсинг DeserializeWithSchemas
+        if (config.DeserializeWithSchemas.HasValue)
+        {
+            options.DeserializeWithSchemas = config.DeserializeWithSchemas.Value;
+        }
+
+        // Парсинг EnumFormat
+        if (!string.IsNullOrEmpty(config.EnumFormat))
+        {
+            options.EnumFormat = config.EnumFormat.ToLowerInvariant() switch
+            {
+                "enum" => ValIO.Generators.TypeScript.Models.EnumFormat.Enum,
+                "uniontype" or "union-type" => ValIO.Generators.TypeScript.Models.EnumFormat.UnionType,
+                _ => ValIO.Generators.TypeScript.Models.EnumFormat.Enum
+            };
+        }
+
+        // Парсинг UseStrictNullChecks
+        if (config.UseStrictNullChecks.HasValue)
+        {
+            options.UseStrictNullChecks = config.UseStrictNullChecks.Value;
         }
 
         return options;

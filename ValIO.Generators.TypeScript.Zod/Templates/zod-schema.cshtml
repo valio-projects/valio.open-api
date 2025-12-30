@@ -1,0 +1,30 @@
+@using ValIO.Generators.TypeScript.Models
+@model ZodSchemaTemplateData
+@{
+    var schemaName = Model.SchemaName;
+    var typeName = Model.TypeName;
+    var properties = Model.Properties;
+    var description = Model.Description;
+}
+@if (!string.IsNullOrEmpty(description))
+{
+@://**
+@: * @Raw(description)
+@: */
+}
+import { z } from 'zod';
+
+export const @schemaName = z.object({
+@foreach (var property in properties)
+{
+    @if (!string.IsNullOrEmpty(property.Description))
+    {
+    @:  /**
+    @:   * @Raw(property.Description)
+    @:   */
+    }
+    @:  @property.Name: @Raw(property.ZodSchema)@(property.IsRequired ? "" : ".optional()"),
+}
+});
+
+export type @typeName = z.infer<typeof @schemaName>;

@@ -13,5 +13,10 @@ public class GenerationOptions
     /// C# специфичные опции (используется только для C# генератора)
     /// </summary>
     public object? CSharpOptions { get; set; }
+    
+    /// <summary>
+    /// TypeScript специфичные опции (используется только для TypeScript генератора)
+    /// </summary>
+    public object? TypeScriptOptions { get; set; }
 }
 

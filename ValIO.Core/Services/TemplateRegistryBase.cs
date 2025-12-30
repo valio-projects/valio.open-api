@@ -15,18 +15,18 @@ public abstract class TemplateRegistryBase : ITemplateRegistry
     protected readonly ILogger _logger;
     protected readonly RazorLightEngine _razorEngine;
 
-    protected TemplateRegistryBase(ITemplateCache cache, ILogger logger)
+    protected TemplateRegistryBase(ITemplateCache cache, ILogger logger, Assembly? operatingAssembly = null)
     {
         _cache = cache ?? throw new ArgumentNullException(nameof(cache));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         
         // Инициализируем RazorLight engine с правильной конфигурацией
-        // Используем entry assembly для загрузки metadata references
-        var entryAssembly = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+        // Используем переданную сборку или entry assembly для загрузки metadata references
+        var assembly = operatingAssembly ?? Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
         
         _razorEngine = new RazorLightEngineBuilder()
             .UseMemoryCachingProvider()
-            .SetOperatingAssembly(entryAssembly)
+            .SetOperatingAssembly(assembly)
             .Build();
     }
 

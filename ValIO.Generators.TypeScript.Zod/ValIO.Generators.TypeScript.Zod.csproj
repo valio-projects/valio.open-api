@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
     <ProjectReference Include="..\ValIO.Generators.TypeScript\ValIO.Generators.TypeScript.csproj" />
   </ItemGroup>
 
@@ -8,6 +9,13 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PreserveCompilationContext>true</PreserveCompilationContext>
   </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Templates\*.cshtml">
+      <LogicalName>$(MSBuildProjectName).Templates.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
 
 </Project>

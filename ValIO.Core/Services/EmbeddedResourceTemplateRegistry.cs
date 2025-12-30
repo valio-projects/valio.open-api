@@ -17,7 +17,7 @@ public class EmbeddedResourceTemplateRegistry : TemplateRegistryBase
         string resourceNamespace,
         ITemplateCache cache,
         ILogger<EmbeddedResourceTemplateRegistry> logger)
-        : base(cache, logger)
+        : base(cache, logger, resourceAssembly) // Передаем resourceAssembly как operatingAssembly для RazorLight
     {
         _resourceAssembly = resourceAssembly ?? throw new ArgumentNullException(nameof(resourceAssembly));
         _resourceNamespace = resourceNamespace ?? throw new ArgumentNullException(nameof(resourceNamespace));

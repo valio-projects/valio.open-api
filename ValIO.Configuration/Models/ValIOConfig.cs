@@ -31,6 +31,11 @@ public class ConfigOptions
     /// C# специфичные опции
     /// </summary>
     public ConfigCSharpOptions? CSharp { get; set; }
+    
+    /// <summary>
+    /// TypeScript специфичные опции
+    /// </summary>
+    public ConfigTypeScriptOptions? TypeScript { get; set; }
 }
 
 /// <summary>
@@ -82,6 +87,52 @@ public class ConfigCSharpOptions
     /// Стиль передачи query параметров: "IndividualParameters" или "ModelClass"
     /// </summary>
     public string? QueryParametersStyle { get; set; }
+}
+
+/// <summary>
+/// TypeScript специфичные опции конфигурации
+/// </summary>
+public class ConfigTypeScriptOptions
+{
+    /// <summary>
+    /// Формат моделей: "Interfaces" или "ValidationSchemas"
+    /// </summary>
+    public string? ModelFormat { get; set; }
+    
+    /// <summary>
+    /// Библиотека валидации: "Zod", "Yup", "Valli"
+    /// </summary>
+    public string? ValidationLibrary { get; set; }
+    
+    /// <summary>
+    /// HTTP клиент: "Fetch" или "Axios"
+    /// </summary>
+    public string? HttpClientLibrary { get; set; }
+    
+    /// <summary>
+    /// Использовать TanStack Query
+    /// </summary>
+    public bool? UseTanStackQuery { get; set; }
+    
+    /// <summary>
+    /// Сериализовать/валидировать payload через схемы
+    /// </summary>
+    public bool? SerializeWithSchemas { get; set; }
+    
+    /// <summary>
+    /// Десериализовать/валидировать response через схемы
+    /// </summary>
+    public bool? DeserializeWithSchemas { get; set; }
+    
+    /// <summary>
+    /// Формат enum'ов: "Enum" или "UnionType"
+    /// </summary>
+    public string? EnumFormat { get; set; }
+    
+    /// <summary>
+    /// Использовать strict null checks
+    /// </summary>
+    public bool? UseStrictNullChecks { get; set; }
 }
 
 /// <summary>
