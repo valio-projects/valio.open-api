@@ -14,6 +14,7 @@ namespace ValIO.Generators.CSharp;
 public class CSharpCodeGenerator : ICodeGenerator
 {
     private readonly ITypeMapper _typeMapper;
+    private readonly CSharpTypeMapper _csharpTypeMapper;
     private readonly INamingConverter _namingConverter;
     private readonly IFileWriter _fileWriter;
     private readonly ITemplateRegistry _templateRegistry;
@@ -28,6 +29,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         ILogger<CSharpCodeGenerator> logger)
     {
         _typeMapper = typeMapper;
+        _csharpTypeMapper = typeMapper as CSharpTypeMapper ?? throw new InvalidOperationException("TypeMapper must be CSharpTypeMapper");
         _namingConverter = namingConverter;
         _fileWriter = fileWriter;
         _templateRegistry = templateRegistry ?? throw new ArgumentNullException(nameof(templateRegistry));
@@ -77,68 +79,196 @@ public class CSharpCodeGenerator : ICodeGenerator
             // Извлекаем модели
             var models = modelExtractor.ExtractModels(document);
             _logger.LogInformation("Extracted {Count} models", models.Count);
+            
+            if (config.GenerateModels && models.Count == 0)
+            {
+                result.Warnings = new List<string> { "No models found in OpenAPI schema" };
+            }
 
             // Извлекаем операции
             var operations = operationExtractor.ExtractOperations(document);
             _logger.LogInformation("Extracted {Count} operations", operations.Count);
+            
+            if (config.GenerateClients && operations.Count == 0)
+            {
+                var warnings = result.Warnings.ToList();
+                warnings.Add("No operations found in OpenAPI schema");
+                result.Warnings = warnings;
+            }
 
             // Маппим типы для моделей
+            var mappingErrors = new List<string>();
+            var mappingWarnings = new List<string>();
             foreach (var model in models)
             {
-                MapModelTypes(model, schemaResolver);
+                try
+                {
+                    MapModelTypes(model, schemaResolver);
+                }
+                catch (Exception ex)
+                {
+                    var errorMsg = $"Failed to map types for model '{model.Name}': {ex.Message}";
+                    mappingErrors.Add(errorMsg);
+                    _logger.LogWarning(ex, "Failed to map types for model: {ModelName}", model.Name);
+                }
             }
 
             // Маппим типы для операций
             foreach (var operation in operations)
             {
-                MapOperationTypes(operation, document, schemaResolver);
+                try
+                {
+                    MapOperationTypes(operation, document, schemaResolver);
+                }
+                catch (Exception ex)
+                {
+                    var warningMsg = $"Failed to map types for operation '{operation.OperationId}': {ex.Message}";
+                    mappingWarnings.Add(warningMsg);
+                    _logger.LogWarning(ex, "Failed to map types for operation: {OperationId}", operation.OperationId);
+                }
             }
 
             // Извлекаем enum'ы
             var enums = enumExtractor.ExtractEnums(document);
             _logger.LogInformation("Extracted {Count} enums", enums.Count);
+            
+            if (config.GenerateEnums && enums.Count == 0)
+            {
+                var warnings = result.Warnings.ToList();
+                warnings.Add("No enums found in OpenAPI schema");
+                result.Warnings = warnings;
+            }
+
+            // Добавляем ошибки и предупреждения маппинга
+            if (mappingErrors.Count > 0)
+            {
+                var errors = result.Errors.ToList();
+                errors.AddRange(mappingErrors);
+                result.Errors = errors;
+            }
+            
+            if (mappingWarnings.Count > 0)
+            {
+                var warnings = result.Warnings.ToList();
+                warnings.AddRange(mappingWarnings);
+                result.Warnings = warnings;
+            }
+
+            // Если есть критические ошибки, прекращаем генерацию
+            if (mappingErrors.Count > 0)
+            {
+                result.Success = false;
+                return result;
+            }
 
             // Генерируем файлы
             var generatedFiles = new Dictionary<string, string>();
+            var generationErrors = new List<string>();
+            var generationWarnings = new List<string>();
 
             if (config.GenerateEnums)
             {
-                var enumFiles = GenerateEnums(enums, config);
-                foreach (var file in enumFiles)
+                try
                 {
-                    generatedFiles[file.Key] = file.Value;
+                    var enumFiles = GenerateEnums(enums, config);
+                    foreach (var file in enumFiles)
+                    {
+                        generatedFiles[file.Key] = file.Value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorMsg = $"Failed to generate enums: {ex.Message}";
+                    generationErrors.Add(errorMsg);
+                    _logger.LogError(ex, "Failed to generate enums");
                 }
             }
 
             if (config.GenerateModels)
             {
-                var modelFiles = GenerateModels(models, config);
-                foreach (var file in modelFiles)
+                try
                 {
-                    generatedFiles[file.Key] = file.Value;
+                    var modelFiles = GenerateModels(models, config);
+                    foreach (var file in modelFiles)
+                    {
+                        generatedFiles[file.Key] = file.Value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorMsg = $"Failed to generate models: {ex.Message}";
+                    generationErrors.Add(errorMsg);
+                    _logger.LogError(ex, "Failed to generate models");
                 }
             }
 
             if (config.GenerateClients)
             {
-                var clientFiles = GenerateClients(operations, config);
-                foreach (var file in clientFiles)
+                try
                 {
-                    generatedFiles[file.Key] = file.Value;
+                    var clientFiles = GenerateClients(operations, document, config);
+                    foreach (var file in clientFiles)
+                    {
+                        generatedFiles[file.Key] = file.Value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    var errorMsg = $"Failed to generate clients: {ex.Message}";
+                    generationErrors.Add(errorMsg);
+                    _logger.LogError(ex, "Failed to generate clients");
                 }
             }
 
-            // Записываем файлы
-            await _fileWriter.WriteFilesAsync(generatedFiles);
+            // Добавляем ошибки генерации
+            if (generationErrors.Count > 0)
+            {
+                var errors = result.Errors.ToList();
+                errors.AddRange(generationErrors);
+                result.Errors = errors;
+            }
 
-            result.Success = true;
+            // Записываем файлы
+            if (generatedFiles.Count > 0)
+            {
+                try
+                {
+                    await _fileWriter.WriteFilesAsync(generatedFiles);
+                }
+                catch (Exception ex)
+                {
+                    var errorMsg = $"Failed to write generated files: {ex.Message}";
+                    var errors = result.Errors.ToList();
+                    errors.Add(errorMsg);
+                    result.Errors = errors;
+                    _logger.LogError(ex, "Failed to write generated files");
+                }
+            }
+            else
+            {
+                var warnings = result.Warnings.ToList();
+                warnings.Add("No files were generated");
+                result.Warnings = warnings;
+            }
+
+            result.Success = result.Errors.Count == 0;
             result.GeneratedFiles = generatedFiles;
-            _logger.LogInformation("C# code generation completed successfully. Generated {Count} files", generatedFiles.Count);
+            
+            if (result.Success)
+            {
+                _logger.LogInformation("C# code generation completed successfully. Generated {Count} files", generatedFiles.Count);
+            }
+            else
+            {
+                _logger.LogWarning("C# code generation completed with errors. Generated {Count} files, {ErrorCount} errors", 
+                    generatedFiles.Count, result.Errors.Count);
+            }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error during C# code generation");
             result.Errors = new List<string> { ex.Message };
+            result.Success = false;
         }
 
         return result;
@@ -256,9 +386,19 @@ public class CSharpCodeGenerator : ICodeGenerator
         {
             var enumCode = GenerateEnumCode(apiEnum, config);
             var fileName = $"{_namingConverter.ToPascalCase(apiEnum.Name)}.cs";
-            var filePath = config.FileOrganization.SeparateModels && !string.IsNullOrEmpty(config.FileOrganization.ModelsPath)
-                ? Path.Combine(config.OutputPath, config.FileOrganization.ModelsPath, fileName)
-                : Path.Combine(config.OutputPath, fileName);
+            
+            // Определяем путь для файла enum
+            // Enum'ы обычно размещаются вместе с моделями или в отдельной папке
+            string filePath;
+            if (config.FileOrganization.SeparateModels)
+            {
+                var modelsPath = config.FileOrganization.ModelsPath ?? "Models";
+                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
+            }
+            else
+            {
+                filePath = Path.Combine(config.OutputPath, fileName);
+            }
 
             files[filePath] = enumCode;
         }
@@ -327,9 +467,18 @@ public class CSharpCodeGenerator : ICodeGenerator
         {
             var modelCode = GenerateModelCode(model, config);
             var fileName = $"{_namingConverter.ToPascalCase(model.Name)}.cs";
-            var filePath = config.FileOrganization.SeparateModels && !string.IsNullOrEmpty(config.FileOrganization.ModelsPath)
-                ? Path.Combine(config.OutputPath, config.FileOrganization.ModelsPath, fileName)
-                : Path.Combine(config.OutputPath, fileName);
+            
+            // Определяем путь для файла модели
+            string filePath;
+            if (config.FileOrganization.SeparateModels)
+            {
+                var modelsPath = config.FileOrganization.ModelsPath ?? "Models";
+                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
+            }
+            else
+            {
+                filePath = Path.Combine(config.OutputPath, fileName);
+            }
 
             files[filePath] = modelCode;
         }
@@ -402,7 +551,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         return new CSharpGenerationOptions();
     }
 
-    private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, GenerationConfiguration config)
+    private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, OpenApiDocument document, GenerationConfiguration config)
     {
         var files = new Dictionary<string, string>();
 
@@ -411,11 +560,20 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         foreach (var group in groupedOperations)
         {
-            var clientCode = GenerateClientCode(group.Value, group.Key, config);
+            var clientCode = GenerateClientCode(group.Value, group.Key, document, config);
             var fileName = $"{_namingConverter.ToPascalCase(group.Key)}Client.cs";
-            var filePath = config.FileOrganization.SeparateClients && !string.IsNullOrEmpty(config.FileOrganization.ClientsPath)
-                ? Path.Combine(config.OutputPath, config.FileOrganization.ClientsPath, fileName)
-                : Path.Combine(config.OutputPath, fileName);
+            
+            // Определяем путь для файла клиента
+            string filePath;
+            if (config.FileOrganization.SeparateClients)
+            {
+                var clientsPath = config.FileOrganization.ClientsPath ?? "Clients";
+                filePath = Path.Combine(config.OutputPath, clientsPath, fileName);
+            }
+            else
+            {
+                filePath = Path.Combine(config.OutputPath, fileName);
+            }
 
             files[filePath] = clientCode;
         }
@@ -427,33 +585,93 @@ public class CSharpCodeGenerator : ICodeGenerator
     {
         var groups = new Dictionary<string, List<ApiOperation>>();
 
-        if (config.FileOrganization.GroupingStrategy == FileGroupingStrategy.ByTag)
+        switch (config.FileOrganization.GroupingStrategy)
         {
-            foreach (var operation in operations)
-            {
-                var tag = operation.Tags.FirstOrDefault() ?? "Default";
-                if (!groups.ContainsKey(tag))
+            case FileGroupingStrategy.ByTag:
+                foreach (var operation in operations)
                 {
-                    groups[tag] = new List<ApiOperation>();
+                    var tag = operation.Tags.FirstOrDefault() ?? "Default";
+                    var sanitizedTag = _namingConverter.SanitizeIdentifier(tag);
+                    if (!groups.ContainsKey(sanitizedTag))
+                    {
+                        groups[sanitizedTag] = new List<ApiOperation>();
+                    }
+                    groups[sanitizedTag].Add(operation);
                 }
-                groups[tag].Add(operation);
-            }
-        }
-        else
-        {
-            // SingleFile - все операции в одном клиенте
-            groups["Api"] = operations.ToList();
+                break;
+
+            case FileGroupingStrategy.ByRoute:
+                foreach (var operation in operations)
+                {
+                    // Извлекаем базовый путь из route (например, /api/users -> Users)
+                    var routeGroup = ExtractRouteGroup(operation.Path);
+                    if (!groups.ContainsKey(routeGroup))
+                    {
+                        groups[routeGroup] = new List<ApiOperation>();
+                    }
+                    groups[routeGroup].Add(operation);
+                }
+                break;
+
+            case FileGroupingStrategy.SingleFile:
+            default:
+                // SingleFile - все операции в одном клиенте
+                groups["Api"] = operations.ToList();
+                break;
         }
 
         return groups;
     }
 
-    private string GenerateClientCode(List<ApiOperation> operations, string clientName, GenerationConfiguration config)
+    /// <summary>
+    /// Извлекает имя группы из пути операции
+    /// Например: /api/users/{id} -> Users, /api/products -> Products
+    /// </summary>
+    private string ExtractRouteGroup(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return "Default";
+
+        // Убираем начальный и конечный слэши
+        var cleanPath = path.Trim('/');
+        
+        // Разбиваем путь на сегменты
+        var segments = cleanPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        
+        if (segments.Length == 0)
+            return "Default";
+
+        // Берем последний сегмент пути (или предпоследний, если последний - параметр)
+        // Например: /api/users/{id} -> users, /api/products -> products
+        var lastSegment = segments[^1];
+        
+        // Если последний сегмент - параметр (начинается с {), берем предыдущий
+        if (lastSegment.StartsWith("{") && segments.Length > 1)
+        {
+            lastSegment = segments[^2];
+        }
+
+        // Убираем префиксы типа "api", "v1", "v2" и т.д.
+        if (segments.Length > 1 && (lastSegment.StartsWith("api", StringComparison.OrdinalIgnoreCase) || 
+                                     lastSegment.StartsWith("v", StringComparison.OrdinalIgnoreCase)))
+        {
+            if (segments.Length > 2)
+            {
+                lastSegment = segments[^2];
+            }
+        }
+
+        // Конвертируем в PascalCase и санитизируем
+        var sanitized = _namingConverter.SanitizeIdentifier(lastSegment);
+        return _namingConverter.ToPascalCase(sanitized);
+    }
+
+    private string GenerateClientCode(List<ApiOperation> operations, string clientName, OpenApiDocument document, GenerationConfiguration config)
     {
         var namespaceName = config.Namespace ?? "Generated";
         var className = $"{_namingConverter.ToPascalCase(clientName)}Client";
 
-        var operationTemplates = operations.Select(op => CreateOperationTemplateData(op, config)).ToList();
+        var operationTemplates = operations.Select(op => CreateOperationTemplateData(op, document, config)).ToList();
 
         var templateData = new ClientTemplateData
         {
@@ -466,7 +684,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         return _templateRegistry.Render("csharp-client.cshtml", templateData);
     }
 
-    private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, GenerationConfiguration config)
+    private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config)
     {
         var methodName = _namingConverter.ToPascalCase(operation.OperationId);
         var httpMethod = operation.HttpMethod.Method.ToUpperInvariant();
@@ -538,23 +756,62 @@ public class CSharpCodeGenerator : ICodeGenerator
             // Если это form-data, создаем параметры для каждого свойства
             if (isFormData && operation.RequestBody.FormDataProperties != null)
             {
+                // Нужен SchemaResolver для маппинга типов
+                var formDataSchemaResolver = new SchemaResolver(document);
+                
                 foreach (var formDataPropEntry in operation.RequestBody.FormDataProperties)
                 {
                     var formDataProp = formDataPropEntry.Value;
                     var propName = _namingConverter.ToCamelCase(formDataProp.Name);
-                    var propType = formDataProp.Type;
-                    var propModifier = formDataProp.IsRequired ? "" : "?";
-                    var paramString = $"{propType}{propModifier} {propName}";
+                    
+                    // Получаем TypeInfo для свойства
+                    TypeInfo typeInfo;
+                    if (formDataProp.TypeInfo is TypeInfo existingTypeInfo)
+                    {
+                        typeInfo = existingTypeInfo;
+                    }
+                    else
+                    {
+                        // Если TypeInfo не установлен, нужно получить схему и маппить
+                        // Находим оригинальную операцию для получения схемы
+                        var originalOperation = FindOriginalOperation(document, operation);
+                        if (originalOperation?.RequestBody?.Content != null)
+                        {
+                            var content = originalOperation.RequestBody.Content.FirstOrDefault();
+                            if (content.Key != null && content.Value?.Schema?.Properties != null)
+                            {
+                                var propertySchema = content.Value.Schema.Properties
+                                    .FirstOrDefault(p => p.Key == formDataProp.Name).Value;
+                                if (propertySchema != null)
+                                {
+                                    typeInfo = _csharpTypeMapper.MapFormDataPropertyTypeInfo(propertySchema, formDataProp.IsRequired, formDataSchemaResolver);
+                                }
+                                else
+                                {
+                                    typeInfo = TypeInfo.Simple("string", isPrimitive: true);
+                                }
+                            }
+                            else
+                            {
+                                typeInfo = TypeInfo.Simple("string", isPrimitive: true);
+                            }
+                        }
+                        else
+                        {
+                            typeInfo = TypeInfo.Simple("string", isPrimitive: true);
+                        }
+                    }
+                    
+                    // Формируем строку параметра на основе TypeInfo
+                    var paramString = FormatParameterString(typeInfo, propName, formDataProp.IsRequired);
                     allParameters.Add(paramString);
                     
                     formDataProperties.Add(new FormDataPropertyTemplateData
                     {
                         Name = formDataProp.Name,
                         VariableName = propName,
-                        Type = propType,
+                        TypeInfo = typeInfo,
                         IsRequired = formDataProp.IsRequired,
-                        IsFile = formDataProp.IsFile,
-                        IsArray = formDataProp.IsArray,
                         Description = DecodeHtmlEntities(formDataProp.Description)
                     });
                 }
@@ -565,22 +822,13 @@ public class CSharpCodeGenerator : ICodeGenerator
             }
         }
 
-        // Определяем тип ответа на основе успешных ответов (2xx)
-        var returnType = DetermineReturnType(operation, config);
+        // Определяем тип ответа на основе успешных ответов (2xx) через TypeInfo
+        var returnTypeInfo = DetermineReturnTypeInfo(operation, document, config);
         
-        // Извлекаем тип ответа без Task<> обертки
-        string? responseType = null;
-        if (!string.IsNullOrEmpty(returnType) && 
-            returnType != "Task" && 
-            returnType != "Task<HttpResponseMessage>" && 
-            returnType != "Task<void>")
-        {
-            // Извлекаем тип из Task<T>
-            if (returnType.StartsWith("Task<") && returnType.EndsWith(">"))
-            {
-                responseType = returnType.Substring(5, returnType.Length - 6);
-            }
-        }
+        // Определяем, есть ли тип ответа (не void, не просто Task, не HttpResponseMessage)
+        var hasResponseType = returnTypeInfo.IsTask && returnTypeInfo.GenericArguments.Count > 0 &&
+                             !returnTypeInfo.GenericArguments[0].IsVoid &&
+                             !returnTypeInfo.GenericArguments[0].IsHttpResponseMessage;
 
         return new OperationTemplateData
         {
@@ -589,12 +837,11 @@ public class CSharpCodeGenerator : ICodeGenerator
             Path = path,
             Summary = DecodeHtmlEntities(operation.Summary),
             Parameters = string.Join(", ", allParameters),
-            ReturnType = returnType,
-            ResponseType = responseType,
+            ReturnTypeInfo = returnTypeInfo,
             HasRequestBody = operation.RequestBody != null,
             RequestBodyParameter = requestBodyParameter,
             RequestBodyContentType = requestBodyContentType,
-            HasResponseType = !string.IsNullOrEmpty(responseType),
+            HasResponseType = hasResponseType,
             HasPathParameters = pathParameters.Count > 0,
             HasQueryParameters = queryParameters.Count > 0,
             HasHeaderParameters = headerParameters.Count > 0,
@@ -606,8 +853,13 @@ public class CSharpCodeGenerator : ICodeGenerator
         };
     }
 
-    private string DetermineReturnType(ApiOperation operation, GenerationConfiguration config)
+    /// <summary>
+    /// Определяет тип возврата операции через TypeInfo
+    /// </summary>
+    private TypeInfo DetermineReturnTypeInfo(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config)
     {
+        var schemaResolver = new SchemaResolver(document);
+        
         // Ищем успешные ответы (2xx), приоритет: 200, 201, 202, 204, default
         var successResponseKeys = new[] { "200", "201", "202", "204", "default" };
         var successResponse = operation.Responses
@@ -622,26 +874,66 @@ public class CSharpCodeGenerator : ICodeGenerator
         if (successResponse.Key == null)
         {
             // Если нет ответов, возвращаем HttpResponseMessage
-            return "Task<HttpResponseMessage>";
+            return TypeInfo.Task(TypeInfo.HttpResponseMessage());
         }
 
-        var responseType = successResponse.Value.Type;
+        var response = successResponse.Value;
+        
+        // Находим оригинальную операцию в документе для получения схемы ответа
+        var originalOperation = FindOriginalOperation(document, operation);
+        if (originalOperation != null)
+        {
+            var openApiResponse = originalOperation.Responses
+                .FirstOrDefault(r => r.Key == successResponse.Key);
+            
+            if (openApiResponse.Key != null && openApiResponse.Value.Content != null)
+            {
+                var content = openApiResponse.Value.Content.FirstOrDefault();
+                if (content.Key != null && content.Value?.Schema != null)
+                {
+                    var responseTypeInfo = _csharpTypeMapper.MapTypeInfo(content.Value.Schema, schemaResolver);
+                    return TypeInfo.Task(responseTypeInfo);
+                }
+            }
+        }
 
+        // Если тип не определен через схему, используем строковый тип из ApiResponse
+        var responseType = response.Type;
+        
         if (string.IsNullOrEmpty(responseType))
         {
             // Если тип не определен, возвращаем HttpResponseMessage
-            return "Task<HttpResponseMessage>";
+            return TypeInfo.Task(TypeInfo.HttpResponseMessage());
         }
 
         // Если тип void или пустой, возвращаем Task
         if (responseType == "void" || responseType == "null")
         {
-            return "Task";
+            return TypeInfo.Task();
         }
 
-        // Возвращаем Task<T>
-        return $"Task<{responseType}>";
+        // Создаем простой тип из строки (для обратной совместимости)
+        var resultTypeInfo = TypeInfo.Simple(responseType);
+        return TypeInfo.Task(resultTypeInfo);
     }
+
+    /// <summary>
+    /// Форматирует строку параметра из TypeInfo
+    /// </summary>
+    private string FormatParameterString(TypeInfo typeInfo, string parameterName, bool isRequired)
+    {
+        var typeString = typeInfo.FullTypeName;
+        var nullableModifier = !isRequired && !typeInfo.IsNullable ? "?" : "";
+        
+        // Если тип уже nullable, не добавляем "?"
+        if (typeInfo.IsNullable && typeString.EndsWith("?"))
+        {
+            nullableModifier = "";
+        }
+        
+        return $"{typeString}{nullableModifier} {parameterName}";
+    }
+
 
     private async Task EnsureTemplatesPreloadedAsync()
     {

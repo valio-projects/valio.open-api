@@ -28,10 +28,13 @@ public class ApiRequestBody
 public class FormDataProperty
 {
     public string Name { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Информация о типе с мета-данными
+    /// </summary>
+    public object? TypeInfo { get; set; }
+    
     public bool IsRequired { get; set; }
-    public bool IsFile { get; set; }
-    public bool IsArray { get; set; }
     public string? Description { get; set; }
 }
 

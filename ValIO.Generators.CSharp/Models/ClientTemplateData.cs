@@ -21,8 +21,12 @@ public class OperationTemplateData
     public string Path { get; set; } = string.Empty;
     public string? Summary { get; set; }
     public string Parameters { get; set; } = string.Empty;
-    public string ReturnType { get; set; } = string.Empty;
-    public string? ResponseType { get; set; } // Тип ответа без Task<> обертки (например, "User" из "Task<User>")
+    
+    /// <summary>
+    /// Информация о типе возвращаемого значения с мета-данными
+    /// </summary>
+    public TypeInfo ReturnTypeInfo { get; set; } = null!;
+    
     public bool HasRequestBody { get; set; }
     public string RequestBodyParameter { get; set; } = "request";
     public string? RequestBodyContentType { get; set; }
@@ -64,10 +68,13 @@ public class FormDataPropertyTemplateData
 {
     public string Name { get; set; } = string.Empty;
     public string VariableName { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Информация о типе свойства с мета-данными
+    /// </summary>
+    public TypeInfo TypeInfo { get; set; } = null!;
+    
     public bool IsRequired { get; set; }
-    public bool IsFile { get; set; }
-    public bool IsArray { get; set; }
     public string? Description { get; set; }
 }
 

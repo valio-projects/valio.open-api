@@ -1,6 +1,21 @@
 @using ValIO.Generators.CSharp.Models
 @using ValIO.Generators.CSharp.Helpers
 @model ClientTemplateData
+@functions {
+    string FormatType(TypeInfo typeInfo)
+    {
+        return typeInfo.FullTypeName;
+    }
+    
+    string GetResponseType(TypeInfo returnTypeInfo)
+    {
+        if (returnTypeInfo.IsTask && returnTypeInfo.GenericArguments.Count > 0)
+        {
+            return returnTypeInfo.GenericArguments[0].FullTypeName;
+        }
+        return returnTypeInfo.FullTypeName;
+    }
+}
 @{
     var namespaceName = Model.Namespace;
     var className = Model.ClassName;
@@ -40,7 +55,7 @@ public class @(className)
     @:/// @Raw(operation.Summary)
     @:/// </summary>
     }
-    @:public async @(operation.ReturnType) @(operation.MethodName)(@(operation.Parameters), CancellationToken cancellationToken = default)
+    @:public async @(FormatType(operation.ReturnTypeInfo)) @(operation.MethodName)(@(operation.Parameters), CancellationToken cancellationToken = default)
     @:{
         @foreach (var param in operation.PathParameters)
         {
@@ -163,7 +178,7 @@ public class @(className)
                         }
         @:if (@(prop.VariableName) != null)
         @:{
-                            @if (prop.IsArray)
+                            @if (prop.TypeInfo.IsCollection)
                             {
         @:    foreach (var item in @(prop.VariableName))
         @:    {
@@ -190,9 +205,9 @@ public class @(className)
                         }
         @:if (@(prop.VariableName) != null)
         @:{
-                            @if (prop.IsFile)
+                            @if (prop.TypeInfo.IsFile)
                             {
-                                @if (prop.IsArray)
+                                @if (prop.TypeInfo.IsCollection)
                                 {
         @:    foreach (var file in @(prop.VariableName))
         @:    {
@@ -209,7 +224,7 @@ public class @(className)
         @:    multipartContent.Add(streamContent, "@(prop.Name)", "file");
                                 }
                             }
-                            else if (prop.IsArray)
+                            else if (prop.TypeInfo.IsCollection)
                             {
         @:    foreach (var item in @(prop.VariableName))
         @:    {
@@ -259,16 +274,19 @@ public class @(className)
         
         @if (operation.HasResponseType)
         {
-            @if (!string.IsNullOrEmpty(operation.ResponseType))
+            @{
+                var responseType = GetResponseType(operation.ReturnTypeInfo);
+            }
+            @if (!string.IsNullOrEmpty(responseType) && !operation.ReturnTypeInfo.IsVoid && !operation.ReturnTypeInfo.IsHttpResponseMessage)
             {
         @:response.EnsureSuccessStatusCode();
         @:
         @:if (response.Content.Headers.ContentLength == 0)
         @:{
-        @:    return default(@(operation.ResponseType));
+        @:    return default(@(responseType));
         @:}
         @:
-        @:return await response.Content.ReadFromJsonAsync<@(operation.ResponseType)>(cancellationToken: cancellationToken) ?? throw new InvalidOperationException("Response deserialization returned null");
+        @:return await response.Content.ReadFromJsonAsync<@(responseType)>(cancellationToken: cancellationToken) ?? throw new InvalidOperationException("Response deserialization returned null");
             }
             else
             {
