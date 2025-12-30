@@ -283,7 +283,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         {
             Namespace = namespaceName,
             EnumName = enumName,
-            Description = apiEnum.Description,
+            Description = DecodeHtmlEntities(apiEnum.Description),
             UnderlyingType = apiEnum.UnderlyingType,
             Values = enumValues
         };

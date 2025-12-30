@@ -1,4 +1,5 @@
 @using ValIO.Generators.CSharp.Models
+@using ValIO.Generators.CSharp.Helpers
 @model ModelTemplateData
 @{
     var namespaceName = Model.Namespace;
@@ -11,7 +12,7 @@ namespace @(namespaceName);
 @if (!string.IsNullOrEmpty(description))
 {
 @:/// <summary>
-@:/// @(description)
+@:/// @Raw(description)
 @:/// </summary>
 }
 public class @(className)
@@ -21,9 +22,9 @@ public class @(className)
     @if (!string.IsNullOrEmpty(property.Description))
     {
     @:/// <summary>
-    @:/// @(property.Description)
+    @:/// @Raw(property.Description)
     @:/// </summary>
     }
-    @:public @(property.Type) @(property.Name) { get; set; }
+    @:public @property.Type @property.Name { get; set; }
 }
 }
