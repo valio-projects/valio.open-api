@@ -68,36 +68,66 @@ public class CSharpTypeMapper : ITypeMapper
         }
 
         // Обрабатываем allOf (наследование)
+        // allOf означает, что схема должна включать все свойства из всех указанных схем
+        // В C# это обычно реализуется через наследование или композицию
         if (schema.AllOf != null && schema.AllOf.Count > 0)
         {
-            // Берем последнюю схему из allOf как основную
-            var lastSchema = schema.AllOf.Last();
-            var resolvedLastSchema = schemaResolver.ResolveSchema(lastSchema);
-            
-            // Если последняя схема - ссылка, используем её имя
-            if (resolvedLastSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> lastRefHolder)
+            // Ищем первую схему-ссылку как базовый класс
+            // Остальные схемы добавляют дополнительные свойства
+            string? baseTypeName = null;
+            foreach (var subSchema in schema.AllOf)
             {
-                var lastRef = lastRefHolder.Reference;
-                if (lastRef != null && !string.IsNullOrEmpty(lastRef.Id))
+                var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
+                if (resolvedSubSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
                 {
-                    var typeName = _namingConverter.ToPascalCase(lastRef.Id);
-                    return isNullable ? $"{typeName}?" : typeName;
+                    var reference = refHolder.Reference;
+                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                    {
+                        baseTypeName = _namingConverter.ToPascalCase(reference.Id);
+                        break; // Берем первую ссылку как базовый класс
+                    }
                 }
             }
             
-            // Иначе обрабатываем как обычную схему
+            // Если нашли базовый класс, используем его
+            if (!string.IsNullOrEmpty(baseTypeName))
+            {
+                return isNullable ? $"{baseTypeName}?" : baseTypeName;
+            }
+            
+            // Если нет ссылок, берем последнюю схему как основную
+            var lastSchema = schema.AllOf.Last();
+            var resolvedLastSchema = schemaResolver.ResolveSchema(lastSchema);
             return MapTypeInternal(resolvedLastSchema, schemaResolver, isNullable);
         }
 
-        // Обрабатываем oneOf/anyOf (union types)
+        // Обрабатываем oneOf (union type - ровно один из типов)
+        // В C# нет нативных union types, используем object или пытаемся найти общий базовый тип
         if (schema.OneOf != null && schema.OneOf.Count > 0)
         {
-            // Для C# используем object или создаем union type
+            // Пытаемся найти общий базовый тип среди всех схем
+            var commonBaseType = FindCommonBaseType(schema.OneOf, schemaResolver);
+            if (!string.IsNullOrEmpty(commonBaseType))
+            {
+                return isNullable ? $"{commonBaseType}?" : commonBaseType;
+            }
+            
+            // Если не нашли общий тип, используем object
             return isNullable ? "object?" : "object";
         }
 
+        // Обрабатываем anyOf (union type - один или несколько из типов)
+        // В C# нет нативных union types, используем object или пытаемся найти общий базовый тип
         if (schema.AnyOf != null && schema.AnyOf.Count > 0)
         {
+            // Пытаемся найти общий базовый тип среди всех схем
+            var commonBaseType = FindCommonBaseType(schema.AnyOf, schemaResolver);
+            if (!string.IsNullOrEmpty(commonBaseType))
+            {
+                return isNullable ? $"{commonBaseType}?" : commonBaseType;
+            }
+            
+            // Если не нашли общий тип, используем object
             return isNullable ? "object?" : "object";
         }
 
@@ -107,27 +137,40 @@ public class CSharpTypeMapper : ITypeMapper
             if (schema.Items != null)
             {
                 var itemType = MapTypeInternal(schema.Items, schemaResolver, false);
-                return $"List<{itemType}>";
+                // Для массивов nullable применяется к самому массиву, а не к элементам
+                // В C# List<T>? означает nullable список, но элементы могут быть nullable отдельно
+                return isNullable ? $"List<{itemType}>?" : $"List<{itemType}>";
             }
-            return "List<object>";
+            return isNullable ? "List<object>?" : "List<object>";
         }
 
         // Обрабатываем объекты
         if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Object))
         {
-            // Если есть свойства, это объект
+            // Если есть свойства, это объект (даже если есть дополнительные свойства)
             if (schema.Properties != null && schema.Properties.Count > 0)
             {
                 return isNullable ? "object?" : "object";
             }
 
-            // Если есть дополнительные свойства (dictionary)
+            // Если нет свойств, но есть дополнительные свойства - это dictionary
             if (schema.AdditionalProperties != null)
             {
                 var valueType = MapTypeInternal(schema.AdditionalProperties, schemaResolver, false);
-                return $"Dictionary<string, {valueType}>";
+                // Для словарей nullable применяется к самому словарю
+                return isNullable ? $"Dictionary<string, {valueType}>?" : $"Dictionary<string, {valueType}>";
             }
 
+            // Если additionalPropertiesAllowed = true и нет схемы - это Dictionary<string, object>
+            // По умолчанию AdditionalPropertiesAllowed = true в OpenAPI
+            // Если явно установлено false, то дополнительные свойства запрещены
+            if (schema.AdditionalPropertiesAllowed)
+            {
+                // Если нет явной схемы для дополнительных свойств, используем object
+                return isNullable ? "Dictionary<string, object>?" : "Dictionary<string, object>";
+            }
+
+            // Если дополнительные свойства запрещены и нет свойств - это пустой объект
             return isNullable ? "object?" : "object";
         }
 
@@ -167,6 +210,41 @@ public class CSharpTypeMapper : ITypeMapper
 
         // Если тип не определен, возвращаем object
         return isNullable ? "object?" : "object";
+    }
+
+    /// <summary>
+    /// Пытается найти общий базовый тип среди схем oneOf/anyOf
+    /// </summary>
+    private string? FindCommonBaseType(IList<IOpenApiSchema> schemas, ISchemaResolver schemaResolver)
+    {
+        if (schemas == null || schemas.Count == 0)
+            return null;
+
+        // Собираем все типы из ссылок
+        var typeNames = new List<string>();
+        foreach (var subSchema in schemas)
+        {
+            var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
+            if (resolvedSubSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+            {
+                var reference = refHolder.Reference;
+                if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                {
+                    var typeName = _namingConverter.ToPascalCase(reference.Id);
+                    typeNames.Add(typeName);
+                }
+            }
+        }
+
+        // Если все схемы - ссылки на один и тот же тип, возвращаем его
+        if (typeNames.Count == schemas.Count && typeNames.Distinct().Count() == 1)
+        {
+            return typeNames.First();
+        }
+
+        // Если все схемы - ссылки, но разные типы, возвращаем null (будет использован object)
+        // В будущем можно добавить логику поиска общего базового класса через анализ схем
+        return null;
     }
 
     private static bool IsSchemaNullable(IOpenApiSchema schema)
