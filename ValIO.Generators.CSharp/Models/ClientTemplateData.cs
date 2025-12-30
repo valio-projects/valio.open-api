@@ -29,6 +29,12 @@ public class OperationTemplateData
     
     public bool HasRequestBody { get; set; }
     public string RequestBodyParameter { get; set; } = "request";
+    
+    /// <summary>
+    /// Информация о типе request body с мета-данными
+    /// </summary>
+    public TypeInfo? RequestBodyTypeInfo { get; set; }
+    
     public string? RequestBodyContentType { get; set; }
     public bool HasResponseType { get; set; }
     public bool HasPathParameters { get; set; }

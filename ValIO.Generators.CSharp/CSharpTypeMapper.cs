@@ -122,7 +122,8 @@ public class CSharpTypeMapper : ITypeMapper
     /// </summary>
     private TypeInfo MapTypeInfoInternal(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable)
     {
-        // Проверяем на ссылку на схему
+        // Проверяем на ссылку на схему ДО разрешения
+        // Это важно, так как после ResolveSchema мы теряем информацию о ссылке
         if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
             var reference = referenceHolder.Reference;
@@ -132,6 +133,16 @@ public class CSharpTypeMapper : ITypeMapper
                 var typeInfo = TypeInfo.Simple(typeName);
                 return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
             }
+        }
+        
+        // Также проверяем через GetSchemaName для случаев, когда ссылка может быть в другом формате
+        // Это должно быть ДО разрешения схемы, чтобы сохранить информацию о ссылке
+        var schemaName = schemaResolver.GetSchemaName(schema, string.Empty);
+        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
+        {
+            var typeName = _namingConverter.ToPascalCase(schemaName);
+            var typeInfo = TypeInfo.Simple(typeName);
+            return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
         }
 
         // Обрабатываем allOf (наследование)
@@ -194,8 +205,32 @@ public class CSharpTypeMapper : ITypeMapper
         {
             if (schema.Properties != null && schema.Properties.Count > 0)
             {
-                var typeInfo = TypeInfo.Simple("object");
-                return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
+                // Пытаемся найти имя схемы ДО разрешения, чтобы сохранить информацию о ссылке
+                var objectSchemaName = schemaResolver.GetSchemaName(schema, string.Empty);
+                
+                // Если нашли имя схемы, используем его
+                if (!string.IsNullOrEmpty(objectSchemaName) && objectSchemaName != "object")
+                {
+                    var typeName = _namingConverter.ToPascalCase(objectSchemaName);
+                    var objectTypeInfo = TypeInfo.Simple(typeName);
+                    return isNullable ? TypeInfo.Nullable(objectTypeInfo) : objectTypeInfo;
+                }
+                
+                // Если имя не найдено, проверяем разрешенную схему
+                // Это может быть случай, когда схема уже разрешена, но ссылка потеряна
+                var resolvedSchema = schemaResolver.ResolveSchema(schema);
+                var resolvedSchemaName = schemaResolver.GetSchemaName(resolvedSchema, string.Empty);
+                
+                if (!string.IsNullOrEmpty(resolvedSchemaName) && resolvedSchemaName != "object")
+                {
+                    var typeName = _namingConverter.ToPascalCase(resolvedSchemaName);
+                    var objectTypeInfo = TypeInfo.Simple(typeName);
+                    return isNullable ? TypeInfo.Nullable(objectTypeInfo) : objectTypeInfo;
+                }
+                
+                // Иначе используем "object"
+                var defaultObjectTypeInfo = TypeInfo.Simple("object");
+                return isNullable ? TypeInfo.Nullable(defaultObjectTypeInfo) : defaultObjectTypeInfo;
             }
 
             if (schema.AdditionalProperties != null)

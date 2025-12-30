@@ -148,6 +148,10 @@ public class CSharpCodeGenerator : ICodeGenerator
                 catch (Exception ex)
                 {
                     var errorMsg = $"Failed to map types for model '{model.Name}': {ex.Message}";
+                    if (ex.InnerException != null)
+                    {
+                        errorMsg += $" (Inner: {ex.InnerException.Message})";
+                    }
                     mappingErrors.Add(errorMsg);
                     _logger.LogWarning(ex, "Failed to map types for model: {ModelName}", model.Name);
                 }
@@ -162,9 +166,14 @@ public class CSharpCodeGenerator : ICodeGenerator
                 }
                 catch (Exception ex)
                 {
-                    var warningMsg = $"Failed to map types for operation '{operation.OperationId}': {ex.Message}";
+                    var warningMsg = $"Failed to map types for operation '{operation.OperationId}' (Path: {operation.Path}, Method: {operation.HttpMethod.Method}): {ex.Message}";
+                    if (ex.InnerException != null)
+                    {
+                        warningMsg += $" (Inner: {ex.InnerException.Message})";
+                    }
                     mappingWarnings.Add(warningMsg);
-                    _logger.LogWarning(ex, "Failed to map types for operation: {OperationId}", operation.OperationId);
+                    _logger.LogWarning(ex, "Failed to map types for operation: {OperationId} at {Path} {Method}", 
+                        operation.OperationId, operation.Path, operation.HttpMethod.Method);
                 }
             }
 
@@ -219,8 +228,12 @@ public class CSharpCodeGenerator : ICodeGenerator
                 catch (Exception ex)
                 {
                     var errorMsg = $"Failed to generate enums: {ex.Message}";
+                    if (ex.InnerException != null)
+                    {
+                        errorMsg += $" (Inner: {ex.InnerException.Message})";
+                    }
                     generationErrors.Add(errorMsg);
-                    _logger.LogError(ex, "Failed to generate enums");
+                    _logger.LogError(ex, "Failed to generate enums. Count: {Count}", enums.Count);
                 }
             }
 
@@ -237,8 +250,12 @@ public class CSharpCodeGenerator : ICodeGenerator
                 catch (Exception ex)
                 {
                     var errorMsg = $"Failed to generate models: {ex.Message}";
+                    if (ex.InnerException != null)
+                    {
+                        errorMsg += $" (Inner: {ex.InnerException.Message})";
+                    }
                     generationErrors.Add(errorMsg);
-                    _logger.LogError(ex, "Failed to generate models");
+                    _logger.LogError(ex, "Failed to generate models. Count: {Count}", models.Count);
                 }
             }
 
@@ -255,8 +272,12 @@ public class CSharpCodeGenerator : ICodeGenerator
                 catch (Exception ex)
                 {
                     var errorMsg = $"Failed to generate clients: {ex.Message}";
+                    if (ex.InnerException != null)
+                    {
+                        errorMsg += $" (Inner: {ex.InnerException.Message})";
+                    }
                     generationErrors.Add(errorMsg);
-                    _logger.LogError(ex, "Failed to generate clients");
+                    _logger.LogError(ex, "Failed to generate clients. Operations count: {Count}", operations.Count);
                 }
             }
 
@@ -306,8 +327,20 @@ public class CSharpCodeGenerator : ICodeGenerator
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during C# code generation");
-            result.Errors = new List<string> { ex.Message };
+            var errorMessage = $"Unexpected error during C# code generation: {ex.Message}";
+            if (ex.InnerException != null)
+            {
+                errorMessage += $" (Inner: {ex.InnerException.Message})";
+            }
+            if (!string.IsNullOrEmpty(ex.StackTrace))
+            {
+                _logger.LogError(ex, "Error during C# code generation. Stack trace: {StackTrace}", ex.StackTrace);
+            }
+            else
+            {
+                _logger.LogError(ex, "Error during C# code generation");
+            }
+            result.Errors = new List<string> { errorMessage };
             result.Success = false;
         }
 
@@ -424,6 +457,13 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         foreach (var apiEnum in enums)
         {
+            // Валидируем имя enum
+            if (string.IsNullOrWhiteSpace(apiEnum.Name))
+            {
+                _logger.LogWarning("Skipping enum with empty name");
+                continue;
+            }
+            
             var enumCode = GenerateEnumCode(apiEnum, config);
             var fileName = $"{_namingConverter.ToPascalCase(apiEnum.Name)}.cs";
             
@@ -505,7 +545,14 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         foreach (var model in models)
         {
-                var modelCode = GenerateModelCode(model, config, document, schemaResolver);
+            // Валидируем имя модели
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                _logger.LogWarning("Skipping model with empty name");
+                continue;
+            }
+            
+            var modelCode = GenerateModelCode(model, config, document, schemaResolver);
             var fileName = $"{_namingConverter.ToPascalCase(model.Name)}.cs";
             
             // Определяем путь для файла модели
@@ -777,9 +824,22 @@ public class CSharpCodeGenerator : ICodeGenerator
 
     private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver)
     {
-        var methodName = _namingConverter.ToPascalCase(operation.OperationId);
+        // Валидируем и генерируем имя метода
+        var operationId = string.IsNullOrWhiteSpace(operation.OperationId) 
+            ? GenerateOperationId(operation.Path, operation.HttpMethod) 
+            : operation.OperationId;
+        var methodName = _namingConverter.ToPascalCase(operationId);
+        
+        // Валидируем, что имя метода не пустое
+        if (string.IsNullOrWhiteSpace(methodName))
+        {
+            methodName = "Execute";
+            _logger.LogWarning("Generated default method name 'Execute' for operation at path '{Path}' with method '{Method}'", 
+                operation.Path, operation.HttpMethod.Method);
+        }
+        
         var httpMethod = operation.HttpMethod.Method.ToUpperInvariant();
-        var path = operation.Path;
+        var path = operation.Path ?? string.Empty;
 
         // Разделяем параметры по типам
         var pathParameters = new List<ParameterTemplateData>();
@@ -849,19 +909,13 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         // Request body
         var requestBodyParameter = "request";
-        var requestBodyType = "object";
+        TypeInfo? requestBodyTypeInfo = null;
         var requestBodyContentType = "application/json";
         var isFormData = false;
         var formDataProperties = new List<FormDataPropertyTemplateData>();
         
         if (operation.RequestBody != null)
         {
-            requestBodyType = operation.RequestBody.Type;
-            if (string.IsNullOrEmpty(requestBodyType) || requestBodyType == "object")
-            {
-                requestBodyType = "object";
-            }
-            
             requestBodyContentType = operation.RequestBody.ContentType ?? "application/json";
             isFormData = operation.RequestBody.IsFormData;
             
@@ -927,7 +981,18 @@ public class CSharpCodeGenerator : ICodeGenerator
             }
             else
             {
-                allParameters.Add($"{requestBodyType} {requestBodyParameter}");
+                // Определяем тип request body из схемы
+                requestBodyTypeInfo = DetermineRequestBodyTypeInfo(operation, document, schemaResolver);
+                
+                // Если тип не определен, используем object
+                if (requestBodyTypeInfo == null)
+                {
+                    requestBodyTypeInfo = TypeInfo.Simple("object");
+                }
+                
+                // Формируем строку параметра на основе TypeInfo
+                var paramString = FormatParameterString(requestBodyTypeInfo, requestBodyParameter, operation.RequestBody.IsRequired);
+                allParameters.Add(paramString);
             }
         }
 
@@ -949,6 +1014,7 @@ public class CSharpCodeGenerator : ICodeGenerator
             ReturnTypeInfo = returnTypeInfo,
             HasRequestBody = operation.RequestBody != null,
             RequestBodyParameter = requestBodyParameter,
+            RequestBodyTypeInfo = requestBodyTypeInfo,
             RequestBodyContentType = requestBodyContentType,
             HasResponseType = hasResponseType,
             HasPathParameters = pathParameters.Count > 0,
@@ -990,16 +1056,101 @@ public class CSharpCodeGenerator : ICodeGenerator
         var originalOperation = FindOriginalOperation(document, operation);
         if (originalOperation != null && originalOperation.Responses != null)
         {
+            // Ищем ответ по статус-коду
             var openApiResponse = originalOperation.Responses
                 .FirstOrDefault(r => r.Key == successResponse.Key);
             
             if (openApiResponse.Key != null && openApiResponse.Value?.Content != null)
             {
-                var content = openApiResponse.Value.Content.FirstOrDefault();
-                if (content.Key != null && content.Value?.Schema != null)
+                // Пробуем найти схему в разных content types (приоритет: application/json)
+                var contentTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+                IOpenApiSchema? responseSchema = null;
+                
+                // Сначала ищем application/json
+                foreach (var contentType in contentTypes)
                 {
-                    var responseTypeInfo = _csharpTypeMapper.MapTypeInfo(content.Value.Schema, schemaResolver);
-                    return TypeInfo.Task(responseTypeInfo);
+                    if (openApiResponse.Value.Content.TryGetValue(contentType, out var mediaType) && 
+                        mediaType?.Schema != null)
+                    {
+                        responseSchema = mediaType.Schema;
+                        break;
+                    }
+                }
+                
+                // Если не нашли по приоритету, берем первый доступный
+                if (responseSchema == null)
+                {
+                    var firstContent = openApiResponse.Value.Content.FirstOrDefault();
+                    if (firstContent.Key != null && firstContent.Value?.Schema != null)
+                    {
+                        responseSchema = firstContent.Value.Schema;
+                    }
+                }
+                
+                if (responseSchema != null)
+                {
+                    try
+                    {
+                        // Сначала проверяем, является ли схема ссылкой напрямую
+                        string? schemaName = null;
+                        if (responseSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                        {
+                            var reference = refHolder.Reference;
+                            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                            {
+                                schemaName = reference.Id;
+                            }
+                        }
+                        
+                        // Если не нашли через прямую проверку, используем GetSchemaName
+                        if (string.IsNullOrEmpty(schemaName))
+                        {
+                            schemaName = schemaResolver.GetSchemaName(responseSchema, string.Empty);
+                        }
+                        
+                        // Если имя найдено, используем его напрямую
+                        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
+                        {
+                            var typeName = _namingConverter.ToPascalCase(schemaName);
+                            var directTypeInfo = TypeInfo.Simple(typeName);
+                            return TypeInfo.Task(directTypeInfo);
+                        }
+                        
+                        // Если имя не найдено через ссылку, пытаемся найти через маппинг
+                        var mappedTypeInfo = _csharpTypeMapper.MapTypeInfo(responseSchema, schemaResolver);
+                        
+                        // Проверяем, что это не просто "object"
+                        if (!mappedTypeInfo.IsVoid && 
+                            !mappedTypeInfo.IsHttpResponseMessage && 
+                            mappedTypeInfo.FullTypeName != "object")
+                        {
+                            return TypeInfo.Task(mappedTypeInfo);
+                        }
+                        
+                        // Если все еще "object", пытаемся найти имя схемы в документе
+                        if (mappedTypeInfo.FullTypeName == "object" && document.Components?.Schemas != null)
+                        {
+                            var resolvedResponseSchema = schemaResolver.ResolveSchema(responseSchema);
+                            foreach (var schemaEntry in document.Components.Schemas)
+                            {
+                                var componentSchema = schemaResolver.ResolveSchema(schemaEntry.Value);
+                                // Сравниваем схемы по содержимому (упрощенная проверка)
+                                if (ReferenceEquals(componentSchema, resolvedResponseSchema) || 
+                                    (componentSchema.Properties != null && resolvedResponseSchema.Properties != null &&
+                                     componentSchema.Properties.Count == resolvedResponseSchema.Properties.Count))
+                                {
+                                    var foundTypeName = _namingConverter.ToPascalCase(schemaEntry.Key);
+                                    var foundTypeInfo = TypeInfo.Simple(foundTypeName);
+                                    return TypeInfo.Task(foundTypeInfo);
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to map response type for operation '{OperationId}' at path '{Path}'. Using HttpResponseMessage.", 
+                            operation.OperationId, operation.Path);
+                    }
                 }
             }
         }
@@ -1022,6 +1173,146 @@ public class CSharpCodeGenerator : ICodeGenerator
         // Создаем простой тип из строки (для обратной совместимости)
         var resultTypeInfo = TypeInfo.Simple(responseType);
         return TypeInfo.Task(resultTypeInfo);
+    }
+
+    /// <summary>
+    /// Определяет тип request body операции через TypeInfo
+    /// </summary>
+    private TypeInfo? DetermineRequestBodyTypeInfo(ApiOperation operation, OpenApiDocument document, ISchemaResolver schemaResolver)
+    {
+        if (operation.RequestBody == null)
+        {
+            return null;
+        }
+
+        // Находим оригинальную операцию в документе для получения схемы request body
+        var originalOperation = FindOriginalOperation(document, operation);
+        if (originalOperation?.RequestBody?.Content != null)
+        {
+            // Пробуем найти схему в разных content types (приоритет: application/json)
+            var contentTypes = new[] { "application/json", "application/xml", "text/json", "text/xml", "application/octet-stream" };
+            IOpenApiSchema? requestBodySchema = null;
+            
+            // Сначала ищем application/json
+            foreach (var contentType in contentTypes)
+            {
+                if (originalOperation.RequestBody.Content.TryGetValue(contentType, out var mediaType) && 
+                    mediaType?.Schema != null)
+                {
+                    requestBodySchema = mediaType.Schema;
+                    break;
+                }
+            }
+            
+            // Если не нашли по приоритету, берем первый доступный
+            if (requestBodySchema == null)
+            {
+                var firstContent = originalOperation.RequestBody.Content.FirstOrDefault();
+                if (firstContent.Key != null && firstContent.Value?.Schema != null)
+                {
+                    requestBodySchema = firstContent.Value.Schema;
+                }
+            }
+            
+            if (requestBodySchema != null)
+            {
+                try
+                {
+                    // Сначала проверяем, является ли схема ссылкой напрямую
+                    string? schemaName = null;
+                    if (requestBodySchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                    {
+                        var reference = refHolder.Reference;
+                        if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                        {
+                            schemaName = reference.Id;
+                        }
+                    }
+                    
+                    // Если не нашли через прямую проверку, используем GetSchemaName
+                    if (string.IsNullOrEmpty(schemaName))
+                    {
+                        schemaName = schemaResolver.GetSchemaName(requestBodySchema, string.Empty);
+                    }
+                    
+                    // Если имя найдено, используем его напрямую
+                    if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
+                    {
+                        var typeName = _namingConverter.ToPascalCase(schemaName);
+                        var directTypeInfo = TypeInfo.Simple(typeName);
+                        return directTypeInfo;
+                    }
+                    
+                    // Если имя не найдено через ссылку, пытаемся найти через маппинг
+                    var mappedTypeInfo = _csharpTypeMapper.MapTypeInfo(requestBodySchema, schemaResolver);
+                    
+                    // Проверяем, что это не просто "object"
+                    if (!mappedTypeInfo.IsVoid && 
+                        !mappedTypeInfo.IsHttpResponseMessage && 
+                        mappedTypeInfo.FullTypeName != "object")
+                    {
+                        return mappedTypeInfo;
+                    }
+                    
+                    // Если все еще "object", пытаемся найти имя схемы в документе
+                    if (mappedTypeInfo.FullTypeName == "object" && document.Components?.Schemas != null)
+                    {
+                        var resolvedRequestBodySchema = schemaResolver.ResolveSchema(requestBodySchema);
+                        foreach (var schemaEntry in document.Components.Schemas)
+                        {
+                            var componentSchema = schemaResolver.ResolveSchema(schemaEntry.Value);
+                            // Сравниваем схемы по содержимому (упрощенная проверка)
+                            if (ReferenceEquals(componentSchema, resolvedRequestBodySchema) || 
+                                (componentSchema.Properties != null && resolvedRequestBodySchema.Properties != null &&
+                                 componentSchema.Properties.Count == resolvedRequestBodySchema.Properties.Count))
+                            {
+                                var foundTypeName = _namingConverter.ToPascalCase(schemaEntry.Key);
+                                var foundTypeInfo = TypeInfo.Simple(foundTypeName);
+                                return foundTypeInfo;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to map request body type for operation '{OperationId}' at path '{Path}'. Using object.", 
+                        operation.OperationId, operation.Path);
+                }
+            }
+        }
+
+        // Если тип не определен через схему, используем строковый тип из ApiRequestBody
+        var requestBodyType = operation.RequestBody.Type;
+        
+        if (string.IsNullOrEmpty(requestBodyType) || requestBodyType == "object")
+        {
+            // Если тип не определен, возвращаем null (будет использован object)
+            return null;
+        }
+
+        // Создаем простой тип из строки (для обратной совместимости)
+        var resultTypeInfo = TypeInfo.Simple(requestBodyType);
+        return resultTypeInfo;
+    }
+
+    /// <summary>
+    /// Генерирует OperationId на основе пути и HTTP метода, если он не указан
+    /// </summary>
+    private string GenerateOperationId(string path, HttpMethod httpMethod)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return $"{httpMethod.Method}Request";
+        
+        // Извлекаем последний сегмент пути
+        var segments = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var lastSegment = segments.Length > 0 ? segments[^1] : "request";
+        
+        // Убираем параметры из пути (например, {id} -> id)
+        lastSegment = lastSegment.Replace("{", "").Replace("}", "");
+        
+        // Комбинируем метод и сегмент
+        var methodPrefix = httpMethod.Method.ToUpperInvariant();
+        return $"{methodPrefix}{_namingConverter.ToPascalCase(lastSegment)}";
     }
 
     /// <summary>
