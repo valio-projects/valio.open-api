@@ -70,8 +70,6 @@ todos: []
 └─────────────────────────────────────────┘
 ```
 
-
-
 ## Детальная структура проектов
 
 ### 1. ValIO.Core
@@ -90,9 +88,6 @@ todos: []
           }
   ```
 
-
-
-
 - `ISchemaResolver` - разрешение ссылок в OpenAPI схеме
   ```csharp
           public interface ISchemaResolver
@@ -103,9 +98,6 @@ todos: []
           }
   ```
 
-
-
-
 - `IModelExtractor` - извлечение моделей из схемы
   ```csharp
           public interface IModelExtractor
@@ -114,9 +106,6 @@ todos: []
               ApiModel ExtractModel(OpenApiSchema schema, string modelName);
           }
   ```
-
-
-
 
 - `IOperationExtractor` - извлечение операций из схемы
   ```csharp
@@ -127,9 +116,6 @@ todos: []
           }
   ```
 
-
-
-
 - `ITemplateRenderer` - рендеринг шаблонов кода
   ```csharp
           public interface ITemplateRenderer
@@ -138,9 +124,6 @@ todos: []
               Task<string> RenderFileAsync(string templatePath, object model);
           }
   ```
-
-
-
 
 - `IFileWriter` - запись сгенерированных файлов
   ```csharp
@@ -151,9 +134,6 @@ todos: []
               void EnsureDirectoryExists(string directoryPath);
           }
   ```
-
-
-
 
 - `INamingConverter` - конвертация имен (camelCase, PascalCase, etc.)
   ```csharp
@@ -167,9 +147,6 @@ todos: []
           }
   ```
 
-
-
-
 - `ITypeMapper` - маппинг типов OpenAPI на типы целевого языка
   ```csharp
           public interface ITypeMapper
@@ -179,8 +156,6 @@ todos: []
               string MapEnumType(OpenApiSchema schema);
           }
   ```
-
-
 
 
 #### Модели домена
@@ -195,9 +170,6 @@ todos: []
           }
   ```
 
-
-
-
 - `GenerationOptions` - опции генерации (Strategy pattern)
   ```csharp
           public class GenerationOptions
@@ -207,9 +179,6 @@ todos: []
               public QueryWrapperLibrary? QueryWrapperLibrary { get; set; }
           }
   ```
-
-
-
 
 - `GenerationConfiguration` - конфигурация генерации
   ```csharp
@@ -228,9 +197,6 @@ todos: []
           }
   ```
 
-
-
-
 - `FileOrganization` - организация файлов
   ```csharp
           public class FileOrganization
@@ -242,9 +208,6 @@ todos: []
               public string? ClientsPath { get; set; }
           }
   ```
-
-
-
 
 - `ApiModel` - модель данных API
   ```csharp
@@ -258,9 +221,6 @@ todos: []
           }
   ```
 
-
-
-
 - `ApiProperty` - свойство модели
   ```csharp
           public class ApiProperty
@@ -273,9 +233,6 @@ todos: []
               public object? DefaultValue { get; set; }
           }
   ```
-
-
-
 
 - `ApiOperation` - операция API
   ```csharp
@@ -293,9 +250,6 @@ todos: []
           }
   ```
 
-
-
-
 - `ApiParameter` - параметр операции
   ```csharp
           public class ApiParameter
@@ -308,9 +262,6 @@ todos: []
           }
   ```
 
-
-
-
 - `GenerationResult` - результат генерации
   ```csharp
           public class GenerationResult
@@ -321,8 +272,6 @@ todos: []
               public IReadOnlyList<string> Warnings { get; set; }
           }
   ```
-
-
 
 
 #### Сервисы
@@ -353,9 +302,6 @@ todos: []
           }
   ```
 
-
-
-
 - `OpenApiSchemaResolver` - разрешение ссылок в схеме
   ```csharp
           public class OpenApiSchemaResolver : ISchemaResolver
@@ -366,9 +312,6 @@ todos: []
               public OpenApiSchema ResolveSchema(OpenApiSchema schema);
           }
   ```
-
-
-
 
 - `ReferenceResolver` - разрешение $ref ссылок (Visitor pattern)
 - `OpenApiValidator` - валидация OpenAPI документа
@@ -384,8 +327,6 @@ todos: []
               Task<OpenApiDocument> ParseFromStreamAsync(Stream stream, string? format);
           }
   ```
-
-
 
 
 ### 3. ValIO.Configuration
@@ -404,9 +345,6 @@ todos: []
           }
   ```
 
-
-
-
 - `ConfigurationValidator` - валидация конфигурации
   ```csharp
           public class ConfigurationValidator : IConfigurationValidator
@@ -414,9 +352,6 @@ todos: []
               public ValidationResult Validate(GenerationConfiguration config);
           }
   ```
-
-
-
 
 - `ConfigurationBuilder` - строитель конфигурации (Builder pattern)
   ```csharp
@@ -428,8 +363,6 @@ todos: []
               public GenerationConfiguration Build();
           }
   ```
-
-
 
 
 #### Модели конфигурации
@@ -460,9 +393,6 @@ todos: []
           }
   ```
 
-
-
-
 - `CSharpModelGenerator` - генератор моделей C#
   ```csharp
           public class CSharpModelGenerator
@@ -472,9 +402,6 @@ todos: []
           }
   ```
 
-
-
-
 - `CSharpClientGenerator` - генератор клиентов C#
   ```csharp
           public class CSharpClientGenerator
@@ -483,9 +410,6 @@ todos: []
               public string GenerateMethod(ApiOperation operation, CSharpGenerationOptions options);
           }
   ```
-
-
-
 
 - `CSharpEnumGenerator` - генератор enum'ов
 - `CSharpTypeMapper` - маппинг типов OpenAPI на C# типы
@@ -518,9 +442,6 @@ todos: []
           }
   ```
 
-
-
-
 - `ZodTypeMapper` - маппинг типов на Zod типы
 
 ### 7. ValIO.Generators.TypeScript.Axios
@@ -539,8 +460,6 @@ todos: []
   ```
 
 
-
-
 ### 8. ValIO.Generators.TypeScript.TanStackQuery
 
 **Назначение**: Генерация оберток для TanStack Query
@@ -556,8 +475,6 @@ todos: []
               public string GenerateHookName(string operationId);
           }
   ```
-
-
 
 
 ### 9. ValIO.CLI
@@ -585,9 +502,6 @@ todos: []
               private async Task<int> ExecuteAsync(string schema, string output, GenerationLanguage language, FileInfo? config);
           }
   ```
-
-
-
 
 - `ValidateCommand` - команда валидации схемы
 - `RootCommand` - корневая команда приложения
@@ -621,8 +535,6 @@ todos: []
   ```
 
 
-
-
 ## Паттерны проектирования
 
 ### 1. Strategy Pattern
@@ -643,8 +555,6 @@ todos: []
               public ICodeGenerator CreateGenerator(GenerationLanguage language, GenerationOptions? options);
           }
   ```
-
-
 
 
 ### 3. Builder Pattern
@@ -699,8 +609,6 @@ Output/
     UserRole.cs
 ```
 
-
-
 ### Пример структуры для TypeScript (группировка по tags):
 
 ```javascript
@@ -719,8 +627,6 @@ Output/
     user.schema.ts (zod)
     product.schema.ts (zod)
 ```
-
-
 
 ## Этапы разработки
 
@@ -824,8 +730,6 @@ Output/
   }
 }
 ```
-
-
 
 ## Расширяемость
 

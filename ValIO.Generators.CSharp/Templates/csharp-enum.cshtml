@@ -12,9 +12,9 @@ namespace @(namespaceName);
 
 @if (!string.IsNullOrEmpty(description))
 {
-@Raw("/// <summary>")
-@Raw("/// " + description)
-@Raw("/// </summary>")
+@:/// <summary>
+@:/// @Raw(description)
+@:/// </summary>
 }
 public enum @(enumName) : @(underlyingType)
 {
@@ -23,9 +23,9 @@ public enum @(enumName) : @(underlyingType)
     var value = values[i];
     @if (!string.IsNullOrEmpty(value.Description))
     {
-@Raw("    /// <summary>")
-@Raw("    /// " + value.Description)
-@Raw("    /// </summary>")
+    @:/// <summary>
+    @:/// @Raw(value.Description)
+    @:/// </summary>
     }
     @:@(value.Name) = @(value.ValueString)@(i < values.Count - 1 ? "," : "")
 }

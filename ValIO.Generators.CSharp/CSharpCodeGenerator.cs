@@ -521,6 +521,8 @@ public class CSharpCodeGenerator : ICodeGenerator
         var requestBodyParameter = "request";
         var requestBodyType = "object";
         var requestBodyContentType = "application/json";
+        var isFormData = false;
+        var formDataProperties = new List<FormDataPropertyTemplateData>();
         
         if (operation.RequestBody != null)
         {
@@ -531,7 +533,36 @@ public class CSharpCodeGenerator : ICodeGenerator
             }
             
             requestBodyContentType = operation.RequestBody.ContentType ?? "application/json";
-            allParameters.Add($"{requestBodyType} {requestBodyParameter}");
+            isFormData = operation.RequestBody.IsFormData;
+            
+            // Если это form-data, создаем параметры для каждого свойства
+            if (isFormData && operation.RequestBody.FormDataProperties != null)
+            {
+                foreach (var formDataPropEntry in operation.RequestBody.FormDataProperties)
+                {
+                    var formDataProp = formDataPropEntry.Value;
+                    var propName = _namingConverter.ToCamelCase(formDataProp.Name);
+                    var propType = formDataProp.Type;
+                    var propModifier = formDataProp.IsRequired ? "" : "?";
+                    var paramString = $"{propType}{propModifier} {propName}";
+                    allParameters.Add(paramString);
+                    
+                    formDataProperties.Add(new FormDataPropertyTemplateData
+                    {
+                        Name = formDataProp.Name,
+                        VariableName = propName,
+                        Type = propType,
+                        IsRequired = formDataProp.IsRequired,
+                        IsFile = formDataProp.IsFile,
+                        IsArray = formDataProp.IsArray,
+                        Description = DecodeHtmlEntities(formDataProp.Description)
+                    });
+                }
+            }
+            else
+            {
+                allParameters.Add($"{requestBodyType} {requestBodyParameter}");
+            }
         }
 
         // Определяем тип ответа на основе успешных ответов (2xx)
@@ -569,7 +600,9 @@ public class CSharpCodeGenerator : ICodeGenerator
             HasHeaderParameters = headerParameters.Count > 0,
             PathParameters = pathParameters,
             QueryParameters = queryParameters,
-            HeaderParameters = headerParameters
+            HeaderParameters = headerParameters,
+            IsFormData = isFormData,
+            FormDataProperties = formDataProperties.Count > 0 ? formDataProperties : null
         };
     }
 

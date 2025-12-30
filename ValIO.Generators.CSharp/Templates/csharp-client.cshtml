@@ -7,10 +7,16 @@
     var clientName = Model.ClientName;
     var operations = Model.Operations;
 }
+using System;
+using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Net.Http.Headers;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace @(namespaceName);
 
@@ -23,25 +29,52 @@ public class @(className)
 
     public @(className)(HttpClient httpClient)
     {
-        _httpClient = httpClient;
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
     }
 
 @foreach (var operation in operations)
 {
     @if (!string.IsNullOrEmpty(operation.Summary))
     {
-@Raw("    /// <summary>")
-@Raw("    /// " + operation.Summary)
-@Raw("    /// </summary>")
+    @:/// <summary>
+    @:/// @Raw(operation.Summary)
+    @:/// </summary>
     }
-    @:public async @(operation.ReturnType) @(operation.MethodName)(@(operation.Parameters))
+    @:public async @(operation.ReturnType) @(operation.MethodName)(@(operation.Parameters), CancellationToken cancellationToken = default)
     @:{
+        @foreach (var param in operation.PathParameters)
+        {
+            @if (param.IsRequired)
+            {
+        @:if (@(param.VariableName) == null)
+        @:    throw new ArgumentNullException(nameof(@(param.VariableName)));
+            }
+        }
+        
+        @foreach (var param in operation.QueryParameters)
+        {
+            @if (param.IsRequired)
+            {
+        @:if (@(param.VariableName) == null)
+        @:    throw new ArgumentNullException(nameof(@(param.VariableName)));
+            }
+        }
+        
+        @if (operation.HasRequestBody && operation.RequestBodyParameter != null)
+        {
+            @if (operation.RequestBodyContentType == "application/json")
+            {
+        @:if (@(operation.RequestBodyParameter) == null)
+        @:    throw new ArgumentNullException(nameof(@(operation.RequestBodyParameter)));
+            }
+        }
+        
         @if (operation.HasPathParameters)
         {
         @:var path = "@(operation.Path)";
             @foreach (var param in operation.PathParameters)
             {
-        @:path = path.Replace("{@(param.Name)}", @(param.VariableName).ToString());
+        @:path = path.Replace("{@(param.Name)}", Uri.EscapeDataString(@(param.VariableName).ToString() ?? string.Empty));
             }
         @:var url = path;
         }
@@ -50,8 +83,6 @@ public class @(className)
         @:var url = "@(operation.Path)";
         }
 
-        @:var request = new HttpRequestMessage(HttpMethod.@(operation.HttpMethod), url);
-        
         @if (operation.HasQueryParameters)
         {
         @:var queryParams = new List<string>();
@@ -59,15 +90,42 @@ public class @(className)
             {
         @:if (@(param.VariableName) != null)
         @:{
-        @:    queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName).ToString())}");
+                    @if (param.Type.StartsWith("List<") || param.Type.StartsWith("IEnumerable<") || param.Type.StartsWith("IReadOnlyList<") || param.Type.StartsWith("IList<") || param.Type.StartsWith("Array"))
+                    {
+        @:    foreach (var item in @(param.VariableName))
+        @:    {
+        @:        if (item != null)
+        @:        {
+        @:            queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(item.ToString() ?? string.Empty)}");
+        @:        }
+        @:    }
+                    }
+                    else if (param.Type == "Dictionary<string, string>" || param.Type == "IDictionary<string, string>" || param.Type.StartsWith("Dictionary<") || param.Type.StartsWith("IDictionary<"))
+                    {
+        @:    foreach (var kvp in @(param.VariableName))
+        @:    {
+        @:        queryParams.Add($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value?.ToString() ?? string.Empty)}");
+        @:    }
+                    }
+                    else if (param.Type != "string" && param.Type != "int" && param.Type != "long" && param.Type != "double" && param.Type != "float" && param.Type != "decimal" && param.Type != "bool" && !param.Type.EndsWith("?") && param.Type != "object")
+                    {
+        @:    // Complex object - serialize to JSON and add as query parameter
+        @:    var jsonValue = System.Text.Json.JsonSerializer.Serialize(@(param.VariableName));
+        @:    queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(jsonValue)}");
+                    }
+                    else
+                    {
+        @:    queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName).ToString() ?? string.Empty)}");
+                    }
         @:}
             }
         @:if (queryParams.Count > 0)
         @:{
-        @:    url += "?" + string.Join("&", queryParams);
-        @:    request.RequestUri = new Uri(url);
+        @:    url += (url.Contains("?") ? "&" : "?") + string.Join("&", queryParams);
         @:}
         }
+
+        @:var request = new HttpRequestMessage(HttpMethod.@(operation.HttpMethod), url);
 
         @if (operation.HasHeaderParameters)
         {
@@ -75,6 +133,8 @@ public class @(className)
             {
                 @if (param.IsRequired)
                 {
+        @:if (@(param.VariableName) == null)
+        @:    throw new ArgumentNullException(nameof(@(param.VariableName)));
         @:request.Headers.Add("@(param.Name)", @(param.VariableName).ToString());
                 }
                 else
@@ -89,42 +149,137 @@ public class @(className)
 
         @if (operation.HasRequestBody)
         {
-            @if (operation.RequestBodyContentType == "application/json")
+            @if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
+            {
+                @if (operation.RequestBodyContentType == "application/x-www-form-urlencoded")
+                {
+        @:var formData = new Dictionary<string, string>();
+                    @foreach (var prop in operation.FormDataProperties)
+                    {
+                        @if (prop.IsRequired)
+                        {
+        @:if (@(prop.VariableName) == null)
+        @:    throw new ArgumentNullException(nameof(@(prop.VariableName)));
+                        }
+        @:if (@(prop.VariableName) != null)
+        @:{
+                            @if (prop.IsArray)
+                            {
+        @:    foreach (var item in @(prop.VariableName))
+        @:    {
+        @:        formData.Add("@(prop.Name)", item?.ToString() ?? string.Empty);
+        @:    }
+                            }
+                            else
+                            {
+        @:    formData.Add("@(prop.Name)", @(prop.VariableName).ToString() ?? string.Empty);
+                            }
+        @:}
+                    }
+        @:request.Content = new FormUrlEncodedContent(formData);
+                }
+                else if (operation.RequestBodyContentType == "multipart/form-data")
+                {
+        @:var multipartContent = new MultipartFormDataContent();
+                    @foreach (var prop in operation.FormDataProperties)
+                    {
+                        @if (prop.IsRequired)
+                        {
+        @:if (@(prop.VariableName) == null)
+        @:    throw new ArgumentNullException(nameof(@(prop.VariableName)));
+                        }
+        @:if (@(prop.VariableName) != null)
+        @:{
+                            @if (prop.IsFile)
+                            {
+                                @if (prop.IsArray)
+                                {
+        @:    foreach (var file in @(prop.VariableName))
+        @:    {
+        @:        if (file != null)
+        @:        {
+        @:            var streamContent = new StreamContent(file);
+        @:            multipartContent.Add(streamContent, "@(prop.Name)", "file");
+        @:        }
+        @:    }
+                                }
+                                else
+                                {
+        @:    var streamContent = new StreamContent(@(prop.VariableName));
+        @:    multipartContent.Add(streamContent, "@(prop.Name)", "file");
+                                }
+                            }
+                            else if (prop.IsArray)
+                            {
+        @:    foreach (var item in @(prop.VariableName))
+        @:    {
+        @:        if (item != null)
+        @:        {
+        @:            multipartContent.Add(new StringContent(item.ToString() ?? string.Empty), "@(prop.Name)");
+        @:        }
+        @:    }
+                            }
+                            else
+                            {
+        @:    multipartContent.Add(new StringContent(@(prop.VariableName).ToString() ?? string.Empty), "@(prop.Name)");
+                            }
+        @:}
+                    }
+        @:request.Content = multipartContent;
+                }
+            }
+            else if (operation.RequestBodyContentType == "application/json")
             {
         @:request.Content = JsonContent.Create(@(operation.RequestBodyParameter));
             }
-            else if (operation.RequestBodyContentType == "application/x-www-form-urlencoded")
+            else if (operation.RequestBodyContentType == "application/octet-stream" || operation.RequestBodyContentType == "application/pdf" || operation.RequestBodyContentType?.StartsWith("image/") == true || operation.RequestBodyContentType?.StartsWith("video/") == true || operation.RequestBodyContentType?.StartsWith("audio/") == true)
             {
-        @:var formContent = new FormUrlEncodedContent(new Dictionary<string, string>());
-        @:request.Content = formContent;
-            }
-            else if (operation.RequestBodyContentType == "multipart/form-data")
-            {
-        @:var multipartContent = new MultipartFormDataContent();
-        @:request.Content = multipartContent;
+        @:if (@(operation.RequestBodyParameter) is Stream stream)
+        @:{
+        @:    request.Content = new StreamContent(stream);
+        @:    request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("@(operation.RequestBodyContentType)");
+        @:}
+        @:else if (@(operation.RequestBodyParameter) is byte[] bytes)
+        @:{
+        @:    request.Content = new ByteArrayContent(bytes);
+        @:    request.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("@(operation.RequestBodyContentType)");
+        @:}
+        @:else
+        @:{
+        @:    request.Content = new StringContent(@(operation.RequestBodyParameter)?.ToString() ?? string.Empty, Encoding.UTF8, "@(operation.RequestBodyContentType)");
+        @:}
             }
             else
             {
-        @:request.Content = new StringContent(@(operation.RequestBodyParameter).ToString() ?? string.Empty);
+        @:request.Content = new StringContent(@(operation.RequestBodyParameter)?.ToString() ?? string.Empty, Encoding.UTF8, "@(operation.RequestBodyContentType ?? "application/json")");
             }
         }
 
+        @:var response = await _httpClient.SendAsync(request, cancellationToken);
+        
         @if (operation.HasResponseType)
         {
-        @:var response = await _httpClient.SendAsync(request);
-        @:response.EnsureSuccessStatusCode();
             @if (!string.IsNullOrEmpty(operation.ResponseType))
             {
-        @:return await response.Content.ReadFromJsonAsync<@(operation.ResponseType)>();
+        @:response.EnsureSuccessStatusCode();
+        @:
+        @:if (response.Content.Headers.ContentLength == 0)
+        @:{
+        @:    return default(@(operation.ResponseType));
+        @:}
+        @:
+        @:return await response.Content.ReadFromJsonAsync<@(operation.ResponseType)>(cancellationToken: cancellationToken) ?? throw new InvalidOperationException("Response deserialization returned null");
             }
             else
             {
+        @:response.EnsureSuccessStatusCode();
         @:return response;
             }
         }
         else
         {
-        @:return await _httpClient.SendAsync(request);
+        @:response.EnsureSuccessStatusCode();
+        @:return response;
         }
     @:}
 

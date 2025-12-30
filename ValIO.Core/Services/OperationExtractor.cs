@@ -103,12 +103,125 @@ public class OperationExtractor : IOperationExtractor
         var contentType = content.HasValue ? content.Value.Key : "application/json";
         var requestBodyType = resolvedSchema != null ? "object" : "object"; // Будет определено TypeMapper'ом
 
-        return new ApiRequestBody
+        var apiRequestBody = new ApiRequestBody
         {
             ContentType = contentType,
             Type = requestBodyType,
             IsRequired = requestBody.Required,
             Description = requestBody.Description
+        };
+
+        // Если это form-data, извлекаем свойства из схемы
+        if (apiRequestBody.IsFormData && resolvedSchema != null)
+        {
+            apiRequestBody.FormDataProperties = ExtractFormDataProperties(resolvedSchema);
+        }
+
+        return apiRequestBody;
+    }
+
+    /// <summary>
+    /// Извлекает свойства из схемы для form-data
+    /// </summary>
+    private IReadOnlyDictionary<string, FormDataProperty> ExtractFormDataProperties(IOpenApiSchema schema)
+    {
+        var properties = new Dictionary<string, FormDataProperty>();
+
+        if (schema.Properties == null)
+            return properties;
+
+        foreach (var propertyEntry in schema.Properties)
+        {
+            var propertyName = propertyEntry.Key;
+            var propertySchema = propertyEntry.Value;
+            var resolvedPropertySchema = _schemaResolver.ResolveSchema(propertySchema);
+            
+            var isRequired = schema.Required?.Contains(propertyName) ?? false;
+            var isFile = IsFileProperty(resolvedPropertySchema);
+            var isArray = resolvedPropertySchema.Type.HasValue && 
+                          resolvedPropertySchema.Type.Value.HasFlag(JsonSchemaType.Array);
+            
+            // Определяем тип свойства
+            var propertyType = "string"; // По умолчанию для form-data
+            if (isFile)
+            {
+                propertyType = isArray ? "List<Stream>" : "Stream";
+            }
+            else if (isArray)
+            {
+                var itemType = resolvedPropertySchema.Items != null 
+                    ? MapFormDataPropertyType(_schemaResolver.ResolveSchema(resolvedPropertySchema.Items))
+                    : "string";
+                propertyType = $"List<{itemType}>";
+            }
+            else
+            {
+                propertyType = MapFormDataPropertyType(resolvedPropertySchema);
+            }
+
+            properties[propertyName] = new FormDataProperty
+            {
+                Name = propertyName,
+                Type = propertyType,
+                IsRequired = isRequired,
+                IsFile = isFile,
+                IsArray = isArray,
+                Description = resolvedPropertySchema.Description
+            };
+        }
+
+        return properties;
+    }
+
+    /// <summary>
+    /// Проверяет, является ли свойство файлом
+    /// </summary>
+    private static bool IsFileProperty(IOpenApiSchema schema)
+    {
+        // Проверяем format: binary или base64
+        if (schema.Format == "binary" || schema.Format == "base64")
+            return true;
+
+        // Проверяем тип string с format binary
+        if (schema.Type.HasValue && 
+            schema.Type.Value.HasFlag(JsonSchemaType.String) && 
+            (schema.Format == "binary" || schema.Format == "base64"))
+            return true;
+
+        return false;
+    }
+
+    /// <summary>
+    /// Маппит тип свойства для form-data
+    /// </summary>
+    private static string MapFormDataPropertyType(IOpenApiSchema schema)
+    {
+        if (!schema.Type.HasValue)
+            return "string";
+
+        var type = schema.Type.Value;
+        var format = schema.Format?.ToLowerInvariant();
+
+        // Убираем Null из типа
+        var baseType = type & ~JsonSchemaType.Null;
+
+        return (baseType, format) switch
+        {
+            (JsonSchemaType.Boolean, _) => "bool",
+            (JsonSchemaType.Integer, "int32") => "int",
+            (JsonSchemaType.Integer, "int64") => "long",
+            (JsonSchemaType.Integer, _) => "int",
+            (JsonSchemaType.Number, "float") => "float",
+            (JsonSchemaType.Number, "double") => "double",
+            (JsonSchemaType.Number, "decimal") => "decimal",
+            (JsonSchemaType.Number, _) => "double",
+            (JsonSchemaType.String, "date") => "DateTime",
+            (JsonSchemaType.String, "date-time") => "DateTimeOffset",
+            (JsonSchemaType.String, "uuid") => "Guid",
+            (JsonSchemaType.String, "uri") => "Uri",
+            (JsonSchemaType.String, "binary") => "Stream",
+            (JsonSchemaType.String, _) => "string",
+            _ => "string"
         };
     }
 

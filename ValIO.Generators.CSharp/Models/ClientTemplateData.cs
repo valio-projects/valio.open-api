@@ -33,6 +33,16 @@ public class OperationTemplateData
     public IReadOnlyList<ParameterTemplateData> PathParameters { get; set; } = Array.Empty<ParameterTemplateData>();
     public IReadOnlyList<ParameterTemplateData> QueryParameters { get; set; } = Array.Empty<ParameterTemplateData>();
     public IReadOnlyList<ParameterTemplateData> HeaderParameters { get; set; } = Array.Empty<ParameterTemplateData>();
+    
+    /// <summary>
+    /// Свойства form-data для request body
+    /// </summary>
+    public IReadOnlyList<FormDataPropertyTemplateData>? FormDataProperties { get; set; }
+    
+    /// <summary>
+    /// Является ли request body form-data
+    /// </summary>
+    public bool IsFormData { get; set; }
 }
 
 /// <summary>
@@ -44,6 +54,20 @@ public class ParameterTemplateData
     public string VariableName { get; set; } = string.Empty;
     public string Type { get; set; } = string.Empty;
     public bool IsRequired { get; set; }
+    public string? Description { get; set; }
+}
+
+/// <summary>
+/// Данные для шаблона свойства form-data
+/// </summary>
+public class FormDataPropertyTemplateData
+{
+    public string Name { get; set; } = string.Empty;
+    public string VariableName { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public bool IsRequired { get; set; }
+    public bool IsFile { get; set; }
+    public bool IsArray { get; set; }
     public string? Description { get; set; }
 }
 
