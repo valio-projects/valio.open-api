@@ -1,0 +1,28 @@
+{
+  "language": "CSharp",
+  "outputPath": "C:\\Workspace\\ValIO\\out",
+  "namespace": "Generated",
+  "generateEnums": true,
+  "generateModels": true,
+  "generateClients": true,
+  "options": {
+    "csharp": {
+      "propertyAccessor": "Init",
+      "useRequired": true,
+      "useSealed": true,
+      "modelType": "Class",
+      "generateEqualityMembers": true
+    }
+  },
+  "fileOrganization": {
+    "groupingStrategy": "SingleFile",
+    "separateModels": true,
+    "separateClients": true
+  },
+  "namingConvention": {
+    "models": "PascalCase",
+    "properties": "PascalCase",
+    "methods": "PascalCase",
+    "enums": "PascalCase"
+  }
+}

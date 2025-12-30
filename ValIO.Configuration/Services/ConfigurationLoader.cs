@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
 using ValIO.Core.Models;
+using ValIO.Generators.CSharp.Models;
 using YamlDotNet.Serialization;
 
 namespace ValIO.Configuration.Services;
@@ -100,12 +101,20 @@ public class ConfigurationLoader : IConfigurationLoader
         // Маппинг опций
         if (config.Options != null)
         {
-            generationConfig.Options = new GenerationOptions
+            var generationOptions = new GenerationOptions
             {
                 ValidationLibrary = ParseValidationLibrary(config.Options.ValidationLibrary),
                 HttpClientLibrary = ParseHttpClientLibrary(config.Options.HttpClientLibrary),
                 QueryWrapperLibrary = ParseQueryWrapperLibrary(config.Options.QueryWrapperLibrary)
             };
+            
+            // Маппинг C# опций
+            if (config.Options.CSharp != null)
+            {
+                generationOptions.CSharpOptions = ParseCSharpOptions(config.Options.CSharp);
+            }
+            
+            generationConfig.Options = generationOptions;
         }
 
         // Маппинг организации файлов
@@ -202,6 +211,58 @@ public class ConfigurationLoader : IConfigurationLoader
             "kebabcase" or "kebab-case" => NamingConvention.KebabCase,
             _ => NamingConvention.PascalCase
         };
+    }
+
+    private static CSharpGenerationOptions ParseCSharpOptions(ConfigCSharpOptions? config)
+    {
+        if (config == null)
+            return new ValIO.Generators.CSharp.Models.CSharpGenerationOptions();
+
+        var options = new ValIO.Generators.CSharp.Models.CSharpGenerationOptions();
+
+        // Парсинг PropertyAccessor
+        if (!string.IsNullOrEmpty(config.PropertyAccessor))
+        {
+            options.PropertyAccessor = config.PropertyAccessor.ToLowerInvariant() switch
+            {
+                "init" => ValIO.Generators.CSharp.Models.PropertyAccessorType.Init,
+                "set" => ValIO.Generators.CSharp.Models.PropertyAccessorType.Set,
+                _ => ValIO.Generators.CSharp.Models.PropertyAccessorType.Set
+            };
+        }
+
+        // Парсинг UseRequired
+        if (config.UseRequired.HasValue)
+        {
+            options.UseRequired = config.UseRequired.Value;
+        }
+
+        // Парсинг UseSealed
+        if (config.UseSealed.HasValue)
+        {
+            options.UseSealed = config.UseSealed.Value;
+        }
+
+        // Парсинг ModelType
+        if (!string.IsNullOrEmpty(config.ModelType))
+        {
+            options.ModelType = config.ModelType.ToLowerInvariant() switch
+            {
+                "class" => ValIO.Generators.CSharp.Models.ModelType.Class,
+                "record" => ValIO.Generators.CSharp.Models.ModelType.Record,
+                "struct" => ValIO.Generators.CSharp.Models.ModelType.Struct,
+                "recordstruct" or "record-struct" => ValIO.Generators.CSharp.Models.ModelType.RecordStruct,
+                _ => ValIO.Generators.CSharp.Models.ModelType.Class
+            };
+        }
+
+        // Парсинг GenerateEqualityMembers
+        if (config.GenerateEqualityMembers.HasValue)
+        {
+            options.GenerateEqualityMembers = config.GenerateEqualityMembers.Value;
+        }
+
+        return options;
     }
 }
 

@@ -69,7 +69,7 @@ else
     }
     var requiredModifier = property.IsRequired ? "required " : string.Empty;
     var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
-    @:public @requiredModifier@property.Type @property.Name { get; @accessorType; }
+    @:public @requiredModifier@Raw(property.Type) @property.Name { get; @accessorType; }
 }
 @:}
 }

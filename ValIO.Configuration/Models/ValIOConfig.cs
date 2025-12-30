@@ -26,6 +26,42 @@ public class ConfigOptions
     public string? ValidationLibrary { get; set; }
     public string? HttpClientLibrary { get; set; }
     public string? QueryWrapperLibrary { get; set; }
+    
+    /// <summary>
+    /// C# специфичные опции
+    /// </summary>
+    public ConfigCSharpOptions? CSharp { get; set; }
+}
+
+/// <summary>
+/// C# специфичные опции конфигурации
+/// </summary>
+public class ConfigCSharpOptions
+{
+    /// <summary>
+    /// Тип аксессора свойства: "Set" или "Init"
+    /// </summary>
+    public string? PropertyAccessor { get; set; }
+    
+    /// <summary>
+    /// Использовать required для обязательных свойств
+    /// </summary>
+    public bool? UseRequired { get; set; }
+    
+    /// <summary>
+    /// Делать классы sealed
+    /// </summary>
+    public bool? UseSealed { get; set; }
+    
+    /// <summary>
+    /// Тип модели: "Class", "Record", "Struct", "RecordStruct"
+    /// </summary>
+    public string? ModelType { get; set; }
+    
+    /// <summary>
+    /// Генерировать методы сравнения для record
+    /// </summary>
+    public bool? GenerateEqualityMembers { get; set; }
 }
 
 /// <summary>
