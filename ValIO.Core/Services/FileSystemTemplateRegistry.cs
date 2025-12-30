@@ -35,7 +35,7 @@ public class FileSystemTemplateRegistry : TemplateRegistryBase
             return;
         }
 
-        var templateFiles = Directory.GetFiles(_templatesDirectory, "*.sbncs", SearchOption.TopDirectoryOnly);
+        var templateFiles = Directory.GetFiles(_templatesDirectory, "*.cshtml", SearchOption.TopDirectoryOnly);
         _logger.LogInformation("Found {Count} template files", templateFiles.Length);
 
         var loadTasks = templateFiles.Select(async filePath =>

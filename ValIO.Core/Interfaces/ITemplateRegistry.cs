@@ -16,9 +16,14 @@ public interface ITemplateRegistry
     Task LoadTemplateAsync(string templateName, string? filePath = null);
 
     /// <summary>
-    /// Рендерит шаблон с использованием кэшированного шаблона
+    /// Рендерит шаблон с использованием кэшированного шаблона (синхронно)
     /// </summary>
     string Render(string templateName, object model);
+
+    /// <summary>
+    /// Рендерит шаблон с использованием кэшированного шаблона (асинхронно)
+    /// </summary>
+    Task<string> RenderAsync(string templateName, object model);
 
     /// <summary>
     /// Проверяет наличие шаблона в кэше

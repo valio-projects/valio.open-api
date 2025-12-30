@@ -1,0 +1,31 @@
+@using ValIO.Generators.CSharp.Models
+@model EnumTemplateData
+@{
+    var namespaceName = Model.Namespace;
+    var enumName = Model.EnumName;
+    var description = Model.Description;
+    var underlyingType = Model.UnderlyingType;
+    var values = Model.Values;
+}
+namespace @(namespaceName);
+
+@if (!string.IsNullOrEmpty(description))
+{
+@:/// <summary>
+@:/// @(description)
+@:/// </summary>
+}
+public enum @(enumName) : @(underlyingType)
+{
+@for (int i = 0; i < values.Count; i++)
+{
+    var value = values[i];
+    @if (!string.IsNullOrEmpty(value.Description))
+    {
+    @:/// <summary>
+    @:/// @(value.Description)
+    @:/// </summary>
+    }
+    @:@(value.Name) = @(value.ValueString)@(i < values.Count - 1 ? "," : "")
+}
+}

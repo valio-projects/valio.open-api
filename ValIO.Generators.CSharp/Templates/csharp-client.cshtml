@@ -1,0 +1,130 @@
+@using ValIO.Generators.CSharp.Models
+@model ClientTemplateData
+@{
+    var namespaceName = Model.Namespace;
+    var className = Model.ClassName;
+    var clientName = Model.ClientName;
+    var operations = Model.Operations;
+}
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Threading.Tasks;
+using System.Text;
+
+namespace @(namespaceName);
+
+/// <summary>
+/// HTTP клиент для @(clientName)
+/// </summary>
+public class @(className)
+{
+    private readonly HttpClient _httpClient;
+
+    public @(className)(HttpClient httpClient)
+    {
+        _httpClient = httpClient;
+    }
+
+@foreach (var operation in operations)
+{
+    @if (!string.IsNullOrEmpty(operation.Summary))
+    {
+    @:/// <summary>
+    @:/// @(operation.Summary)
+    @:/// </summary>
+    }
+    @:public async @(operation.ReturnType) @(operation.MethodName)(@(operation.Parameters))
+    @:{
+        @if (operation.HasPathParameters)
+        {
+        @:var path = "@(operation.Path)";
+            @foreach (var param in operation.PathParameters)
+            {
+        @:path = path.Replace("{@(param.Name)}", @(param.VariableName).ToString());
+            }
+        @:var url = path;
+        }
+        else
+        {
+        @:var url = "@(operation.Path)";
+        }
+
+        @:var request = new HttpRequestMessage(HttpMethod.@(operation.HttpMethod), url);
+        
+        @if (operation.HasQueryParameters)
+        {
+        @:var queryParams = new List<string>();
+            @foreach (var param in operation.QueryParameters)
+            {
+        @:if (@(param.VariableName) != null)
+        @:{
+        @:    queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName).ToString())}");
+        @:}
+            }
+        @:if (queryParams.Count > 0)
+        @:{
+        @:    url += "?" + string.Join("&", queryParams);
+        @:    request.RequestUri = new Uri(url);
+        @:}
+        }
+
+        @if (operation.HasHeaderParameters)
+        {
+            @foreach (var param in operation.HeaderParameters)
+            {
+                @if (param.IsRequired)
+                {
+        @:request.Headers.Add("@(param.Name)", @(param.VariableName).ToString());
+                }
+                else
+                {
+        @:if (@(param.VariableName) != null)
+        @:{
+        @:    request.Headers.Add("@(param.Name)", @(param.VariableName).ToString());
+        @:}
+                }
+            }
+        }
+
+        @if (operation.HasRequestBody)
+        {
+            @if (operation.RequestBodyContentType == "application/json")
+            {
+        @:request.Content = JsonContent.Create(@(operation.RequestBodyParameter));
+            }
+            else if (operation.RequestBodyContentType == "application/x-www-form-urlencoded")
+            {
+        @:var formContent = new FormUrlEncodedContent(new Dictionary<string, string>());
+        @:request.Content = formContent;
+            }
+            else if (operation.RequestBodyContentType == "multipart/form-data")
+            {
+        @:var multipartContent = new MultipartFormDataContent();
+        @:request.Content = multipartContent;
+            }
+            else
+            {
+        @:request.Content = new StringContent(@(operation.RequestBodyParameter).ToString() ?? string.Empty);
+            }
+        }
+
+        @if (operation.HasResponseType)
+        {
+        @:var response = await _httpClient.SendAsync(request);
+        @:response.EnsureSuccessStatusCode();
+            @if (!string.IsNullOrEmpty(operation.ResponseType))
+            {
+        @:return await response.Content.ReadFromJsonAsync<@(operation.ResponseType)>();
+            }
+            else
+            {
+        @:return response;
+            }
+        }
+        else
+        {
+        @:return await _httpClient.SendAsync(request);
+        }
+    @:}
+
+}

@@ -1,5 +1,3 @@
-using Scriban;
-
 namespace ValIO.Core.Interfaces;
 
 /// <summary>
@@ -8,19 +6,19 @@ namespace ValIO.Core.Interfaces;
 public interface ITemplateCache
 {
     /// <summary>
-    /// Добавляет скомпилированный шаблон в кэш
+    /// Добавляет содержимое шаблона в кэш
     /// </summary>
-    void AddTemplate(string name, Template template);
+    void AddTemplate(string name, string templateContent);
 
     /// <summary>
     /// Добавляет или обновляет шаблон в кэше
     /// </summary>
-    void AddOrUpdateTemplate(string name, Template template);
+    void AddOrUpdateTemplate(string name, string templateContent);
 
     /// <summary>
-    /// Получает шаблон из кэша (прототип)
+    /// Получает содержимое шаблона из кэша
     /// </summary>
-    Template? GetTemplate(string name);
+    string? GetTemplate(string name);
 
     /// <summary>
     /// Проверяет наличие шаблона в кэше

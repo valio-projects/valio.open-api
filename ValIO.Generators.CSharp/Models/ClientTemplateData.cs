@@ -22,6 +22,7 @@ public class OperationTemplateData
     public string? Summary { get; set; }
     public string Parameters { get; set; } = string.Empty;
     public string ReturnType { get; set; } = string.Empty;
+    public string? ResponseType { get; set; } // Тип ответа без Task<> обертки (например, "User" из "Task<User>")
     public bool HasRequestBody { get; set; }
     public string RequestBodyParameter { get; set; } = "request";
     public string? RequestBodyContentType { get; set; }

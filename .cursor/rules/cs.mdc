@@ -22,7 +22,7 @@ Microsoft.OpenApi - парсинг OpenAPI (смотри Examples\OpenAPI.NET-ma
 System.CommandLine - CLI интерфейс (смотри Examples\command-line-api-main)
 Microsoft.Extensions.DependencyInjection - DI
 Microsoft.Extensions.Logging - логирование
-Scriban - шаблонный движок
+RazorLight - шаблонный движок для генерации файлов с классами, моделями, клиентами и так далее.
 System.Text.Json - работа с JSON
 NUnit - тестирование
 

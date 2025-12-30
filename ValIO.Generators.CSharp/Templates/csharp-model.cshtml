@@ -1,0 +1,29 @@
+@using ValIO.Generators.CSharp.Models
+@model ModelTemplateData
+@{
+    var namespaceName = Model.Namespace;
+    var className = Model.ClassName;
+    var description = Model.Description;
+    var properties = Model.Properties;
+}
+namespace @(namespaceName);
+
+@if (!string.IsNullOrEmpty(description))
+{
+@:/// <summary>
+@:/// @(description)
+@:/// </summary>
+}
+public class @(className)
+{
+@foreach (var property in properties)
+{
+    @if (!string.IsNullOrEmpty(property.Description))
+    {
+    @:/// <summary>
+    @:/// @(property.Description)
+    @:/// </summary>
+    }
+    @:public @(property.Type) @(property.Name) { get; set; }
+}
+}

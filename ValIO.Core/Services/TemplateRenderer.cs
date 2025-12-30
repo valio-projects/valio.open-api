@@ -1,14 +1,22 @@
-using Scriban;
-using Scriban.Runtime;
+using RazorLight;
 using ValIO.Core.Interfaces;
 
 namespace ValIO.Core.Services;
 
 /// <summary>
-/// Реализация рендеринга шаблонов на основе Scriban
+/// Реализация рендеринга шаблонов на основе RazorLight
 /// </summary>
 public class TemplateRenderer : ITemplateRenderer
 {
+    private readonly RazorLightEngine _razorEngine;
+
+    public TemplateRenderer()
+    {
+        _razorEngine = new RazorLightEngineBuilder()
+            .UseMemoryCachingProvider()
+            .Build();
+    }
+
     /// <summary>
     /// Рендеринг шаблона из строки
     /// </summary>
@@ -22,18 +30,9 @@ public class TemplateRenderer : ITemplateRenderer
 
         try
         {
-            var scribanTemplate = Template.Parse(template);
-            if (scribanTemplate.HasErrors)
-            {
-                var errors = string.Join(", ", scribanTemplate.Messages.Select(m => m.Message));
-                throw new InvalidOperationException($"Template parsing errors: {errors}");
-            }
-
-            var scriptObject = CreateScriptObject(model);
-            var context = new TemplateContext();
-            context.PushGlobal(scriptObject);
-
-            return scribanTemplate.Render(context);
+            var templateKey = Guid.NewGuid().ToString();
+            var result = _razorEngine.CompileRenderStringAsync(templateKey, template, model).GetAwaiter().GetResult();
+            return result;
         }
         catch (Exception ex)
         {
@@ -54,45 +53,6 @@ public class TemplateRenderer : ITemplateRenderer
 
         var templateContent = await File.ReadAllTextAsync(templatePath);
         return Render(templateContent, model);
-    }
-
-    /// <summary>
-    /// Создает ScriptObject из модели для использования в Scriban
-    /// </summary>
-    private static ScriptObject CreateScriptObject(object model)
-    {
-        var scriptObject = new ScriptObject();
-
-        if (model == null)
-            return scriptObject;
-
-        var type = model.GetType();
-
-        // Добавляем все публичные свойства
-        foreach (var property in type.GetProperties())
-        {
-            var value = property.GetValue(model);
-            scriptObject[property.Name] = value;
-        }
-
-        // Добавляем все публичные поля
-        foreach (var field in type.GetFields())
-        {
-            var value = field.GetValue(model);
-            scriptObject[field.Name] = value;
-        }
-
-        // Если модель - словарь, добавляем все его элементы
-        if (model is System.Collections.IDictionary dictionary)
-        {
-            foreach (System.Collections.DictionaryEntry entry in dictionary)
-            {
-                var key = entry.Key?.ToString() ?? string.Empty;
-                scriptObject[key] = entry.Value;
-            }
-        }
-
-        return scriptObject;
     }
 }
 

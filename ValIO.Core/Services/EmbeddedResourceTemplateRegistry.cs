@@ -31,7 +31,7 @@ public class EmbeddedResourceTemplateRegistry : TemplateRegistryBase
         _logger.LogInformation("Starting template preload from embedded resources: {Namespace}", _resourceNamespace);
 
         var resourceNames = _resourceAssembly.GetManifestResourceNames()
-            .Where(name => name.StartsWith(_resourceNamespace) && name.EndsWith(".sbncs"))
+            .Where(name => name.StartsWith(_resourceNamespace) && name.EndsWith(".cshtml"))
             .ToArray();
 
         _logger.LogInformation("Found {Count} template resources", resourceNames.Length);
@@ -94,8 +94,8 @@ public class EmbeddedResourceTemplateRegistry : TemplateRegistryBase
         if (string.IsNullOrEmpty(_resourceNamespace))
             return Path.GetFileName(resourceName);
 
-        // Формат: Namespace.Templates.template-name.sbncs
-        // Извлекаем: template-name.sbncs
+        // Формат: Namespace.Templates.template-name.cshtml
+        // Извлекаем: template-name.cshtml
         // Убираем префикс namespace
         if (resourceName.StartsWith(_resourceNamespace + "."))
         {
@@ -123,9 +123,9 @@ public class EmbeddedResourceTemplateRegistry : TemplateRegistryBase
     /// </summary>
     private string BuildResourceName(string templateName)
     {
-        // Формат: Namespace.Templates.template-name.sbncs
+        // Формат: Namespace.Templates.template-name.cshtml
         // LogicalName в csproj: $(MSBuildProjectName).Templates.%(Filename)%(Extension)
-        // Получается: ValIO.Generators.CSharp.Templates.csharp-client.sbncs
+        // Получается: ValIO.Generators.CSharp.Templates.csharp-client.cshtml
         return $"{_resourceNamespace}.{templateName}";
     }
 }

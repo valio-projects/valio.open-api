@@ -288,7 +288,7 @@ public class CSharpCodeGenerator : ICodeGenerator
             Values = enumValues
         };
 
-        return _templateRegistry.Render("csharp-enum.sbncs", templateData);
+        return _templateRegistry.Render("csharp-enum.cshtml", templateData);
     }
 
     private static string FormatEnumValue(object? value, string underlyingType)
@@ -345,7 +345,7 @@ public class CSharpCodeGenerator : ICodeGenerator
             Properties = properties
         };
 
-        return _templateRegistry.Render("csharp-model.sbncs", templateData);
+        return _templateRegistry.Render("csharp-model.cshtml", templateData);
     }
 
     private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, GenerationConfiguration config)
@@ -409,7 +409,7 @@ public class CSharpCodeGenerator : ICodeGenerator
             Operations = operationTemplates
         };
 
-        return _templateRegistry.Render("csharp-client.sbncs", templateData);
+        return _templateRegistry.Render("csharp-client.cshtml", templateData);
     }
 
     private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, GenerationConfiguration config)
@@ -482,6 +482,20 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         // Определяем тип ответа на основе успешных ответов (2xx)
         var returnType = DetermineReturnType(operation, config);
+        
+        // Извлекаем тип ответа без Task<> обертки
+        string? responseType = null;
+        if (!string.IsNullOrEmpty(returnType) && 
+            returnType != "Task" && 
+            returnType != "Task<HttpResponseMessage>" && 
+            returnType != "Task<void>")
+        {
+            // Извлекаем тип из Task<T>
+            if (returnType.StartsWith("Task<") && returnType.EndsWith(">"))
+            {
+                responseType = returnType.Substring(5, returnType.Length - 6);
+            }
+        }
 
         return new OperationTemplateData
         {
@@ -491,10 +505,11 @@ public class CSharpCodeGenerator : ICodeGenerator
             Summary = operation.Summary,
             Parameters = string.Join(", ", allParameters),
             ReturnType = returnType,
+            ResponseType = responseType,
             HasRequestBody = operation.RequestBody != null,
             RequestBodyParameter = requestBodyParameter,
             RequestBodyContentType = requestBodyContentType,
-            HasResponseType = !string.IsNullOrEmpty(returnType) && returnType != "Task<HttpResponseMessage>" && returnType != "Task<void>",
+            HasResponseType = !string.IsNullOrEmpty(responseType),
             HasPathParameters = pathParameters.Count > 0,
             HasQueryParameters = queryParameters.Count > 0,
             HasHeaderParameters = headerParameters.Count > 0,
@@ -549,9 +564,9 @@ public class CSharpCodeGenerator : ICodeGenerator
         try
         {
             // Загружаем шаблоны
-            if (!_templateRegistry.HasTemplate("csharp-model.sbncs") || 
-                !_templateRegistry.HasTemplate("csharp-client.sbncs") ||
-                !_templateRegistry.HasTemplate("csharp-enum.sbncs"))
+            if (!_templateRegistry.HasTemplate("csharp-model.cshtml") || 
+                !_templateRegistry.HasTemplate("csharp-client.cshtml") ||
+                !_templateRegistry.HasTemplate("csharp-enum.cshtml"))
             {
                 await _templateRegistry.PreloadTemplatesAsync();
             }
