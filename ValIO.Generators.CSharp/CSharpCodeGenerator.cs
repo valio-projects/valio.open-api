@@ -1377,8 +1377,17 @@ public class ValioHttpRequestException : HttpRequestException
         // Query параметры: либо отдельно, либо как модель
         if (useQueryParametersModel && queryParameters.Count > 0)
         {
+            // Определяем, должен ли query параметр быть nullable
+            // Если хотя бы один query параметр не-nullable (required или non-nullable value type), то query должен быть не-nullable
+            // Параметр считается не-nullable если:
+            // 1. Он required (IsRequired = true) - обязательный параметр
+            // 2. Или это non-nullable value type (например, int, Guid) - не может быть null по определению
+            var hasNonNullableParameter = queryParameters.Any(p => 
+                p.IsRequired || p.TypeInfo.IsNonNullableValueType());
+            var isQueryNullable = !hasNonNullableParameter;
+            
             var queryModelType = TypeInfo.Simple(queryParametersModelClassName!);
-            var queryParamString = FormatParameterString(queryModelType, "query", false);
+            var queryParamString = FormatParameterString(queryModelType, "query", !isQueryNullable);
             methodParameters.Add(queryParamString);
         }
         else
