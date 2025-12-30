@@ -12,6 +12,12 @@ public class ApiModel
     public string? Description { get; set; }
     public IReadOnlyList<ApiProperty> Properties { get; set; } = Array.Empty<ApiProperty>();
     public IReadOnlyList<string> RequiredProperties { get; set; } = Array.Empty<string>();
+    
+    /// <summary>
+    /// Имя базового класса (для allOf - наследование)
+    /// </summary>
+    public string? BaseClassName { get; set; }
+    
     public IOpenApiSchema? OriginalSchema { get; set; }
 }
 

@@ -2,32 +2,40 @@
 @using ValIO.Generators.CSharp.Helpers
 @model ModelTemplateData
 @functions {
-    string FormatDefaultValue(object? value, string type)
+    string FormatDefaultValue(object? value, TypeInfo typeInfo)
     {
         if (value == null)
             return "null";
         
-        if (type == "string" || type == "string?")
+        var baseType = typeInfo.BaseType;
+        var isNullable = typeInfo.IsNullable;
+        
+        if (baseType == "string")
         {
             return $"\"{value}\"";
         }
         
-        if (type == "bool" || type == "bool?")
+        if (baseType == "bool")
         {
             return value.ToString()?.ToLowerInvariant() ?? "false";
         }
         
-        if (type == "float" || type == "float?")
+        if (baseType == "float")
         {
             return $"{value}f";
         }
         
-        if (type == "double" || type == "double?")
+        if (baseType == "double")
         {
             return value.ToString() ?? "0.0";
         }
         
         return value.ToString() ?? "0";
+    }
+    
+    string FormatType(TypeInfo typeInfo)
+    {
+        return typeInfo.FullTypeName;
     }
 }
 @{
@@ -74,7 +82,8 @@ namespace @(namespaceName);
 }
 @if (isRecord)
 {
-@:@(sealedModifier)public @typeKeyword @(className)
+    var baseClassDeclaration = !string.IsNullOrEmpty(Model.BaseClassName) ? $" : {Model.BaseClassName}" : string.Empty;
+@:@(sealedModifier)public @typeKeyword @(className)@baseClassDeclaration
 @:{
 @if (generateValidationConstants)
 {
@@ -124,8 +133,9 @@ namespace @(namespaceName);
         }
         @if (property.DefaultValue != null)
         {
-            var defaultValueString = FormatDefaultValue(property.DefaultValue, property.Type);
-    @:        public const @property.Type DefaultValue = @defaultValueString;
+            var defaultValueString = FormatDefaultValue(property.DefaultValue, property.TypeInfo);
+            var typeString = FormatType(property.TypeInfo);
+    @:        public const @typeString DefaultValue = @defaultValueString;
         }
     @:    }
     @:
@@ -230,10 +240,11 @@ namespace @(namespaceName);
         }
     }
     var requiredModifier = property.IsRequired ? "required " : string.Empty;
-    // Проверяем, не заканчивается ли тип уже на "?" (nullable struct types)
-    var nullableModifier = property.IsNullable && !property.Type.EndsWith("?") ? "?" : string.Empty;
+    // Используем TypeInfo для определения nullable - если тип уже nullable в TypeInfo, не добавляем "?"
+    var typeString = FormatType(property.TypeInfo);
+    var nullableModifier = property.IsNullable && !property.TypeInfo.IsNullable && !typeString.EndsWith("?") ? "?" : string.Empty;
     var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
-    @:public @requiredModifier@property.Type@nullableModifier @property.Name { get; @accessorType; }
+    @:public @requiredModifier@typeString@nullableModifier @property.Name { get; @accessorType; }
 }
 @:}
 @if (!generateEqualityMembers)
@@ -243,7 +254,8 @@ namespace @(namespaceName);
 }
 else
 {
-@:@(sealedModifier)public @typeKeyword @(className)
+    var baseClassDeclaration = !string.IsNullOrEmpty(Model.BaseClassName) ? $" : {Model.BaseClassName}" : string.Empty;
+@:@(sealedModifier)public @typeKeyword @(className)@baseClassDeclaration
 @:{
 @if (generateValidationConstants)
 {
@@ -293,8 +305,9 @@ else
         }
         @if (property.DefaultValue != null)
         {
-            var defaultValueString = FormatDefaultValue(property.DefaultValue, property.Type);
-    @:        public const @property.Type DefaultValue = @defaultValueString;
+            var defaultValueString = FormatDefaultValue(property.DefaultValue, property.TypeInfo);
+            var typeString = FormatType(property.TypeInfo);
+    @:        public const @typeString DefaultValue = @defaultValueString;
         }
     @:    }
     @:
@@ -399,10 +412,11 @@ else
         }
     }
     var requiredModifier = property.IsRequired ? "required " : string.Empty;
-    // Проверяем, не заканчивается ли тип уже на "?" (nullable struct types)
-    var nullableModifier = property.IsNullable && !property.Type.EndsWith("?") ? "?" : string.Empty;
+    // Используем TypeInfo для определения nullable - если тип уже nullable в TypeInfo, не добавляем "?"
+    var typeString = FormatType(property.TypeInfo);
+    var nullableModifier = property.IsNullable && !property.TypeInfo.IsNullable && !typeString.EndsWith("?") ? "?" : string.Empty;
     var accessorType = property.AccessorType == PropertyAccessorType.Init ? "init" : "set";
-    @:public @requiredModifier@property.Type@nullableModifier @property.Name { get; @accessorType; }
+    @:public @requiredModifier@typeString@nullableModifier @property.Name { get; @accessorType; }
 }
 @if (generateEqualityMembers)
 {

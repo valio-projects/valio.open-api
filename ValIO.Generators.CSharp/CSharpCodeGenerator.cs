@@ -48,6 +48,37 @@ public class CSharpCodeGenerator : ICodeGenerator
         return true;
     }
 
+    /// <summary>
+    /// Валидирует входные данные для генерации
+    /// </summary>
+    private List<string> ValidateInputs(OpenApiDocument? document, GenerationConfiguration? config)
+    {
+        var errors = new List<string>();
+
+        if (document == null)
+        {
+            errors.Add("OpenAPI document cannot be null");
+        }
+
+        if (config == null)
+        {
+            errors.Add("Generation configuration cannot be null");
+            return errors; // Нет смысла продолжать валидацию без конфигурации
+        }
+
+        if (string.IsNullOrWhiteSpace(config.OutputPath))
+        {
+            errors.Add("OutputPath is required in configuration");
+        }
+
+        if (config.Language != GenerationLanguage.CSharp)
+        {
+            errors.Add($"Language must be CSharp, but got {config.Language}");
+        }
+
+        return errors;
+    }
+
     public async Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config)
     {
         var result = new GenerationResult
@@ -60,6 +91,15 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         try
         {
+            // Валидация входных данных
+            var validationErrors = ValidateInputs(document, config);
+            if (validationErrors.Count > 0)
+            {
+                result.Errors = validationErrors;
+                result.Success = false;
+                return result;
+            }
+
             // Предзагружаем шаблоны при первом использовании
             if (!_templatesPreloaded)
             {
@@ -188,7 +228,7 @@ public class CSharpCodeGenerator : ICodeGenerator
             {
                 try
                 {
-                    var modelFiles = GenerateModels(models, config);
+                    var modelFiles = GenerateModels(models, config, document, schemaResolver);
                     foreach (var file in modelFiles)
                     {
                         generatedFiles[file.Key] = file.Value;
@@ -206,7 +246,7 @@ public class CSharpCodeGenerator : ICodeGenerator
             {
                 try
                 {
-                    var clientFiles = GenerateClients(operations, document, config);
+                    var clientFiles = GenerateClients(operations, document, config, schemaResolver);
                     foreach (var file in clientFiles)
                     {
                         generatedFiles[file.Key] = file.Value;
@@ -459,13 +499,13 @@ public class CSharpCodeGenerator : ICodeGenerator
         };
     }
 
-    private Dictionary<string, string> GenerateModels(IReadOnlyList<ApiModel> models, GenerationConfiguration config)
+    private Dictionary<string, string> GenerateModels(IReadOnlyList<ApiModel> models, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver)
     {
         var files = new Dictionary<string, string>();
 
         foreach (var model in models)
         {
-            var modelCode = GenerateModelCode(model, config);
+                var modelCode = GenerateModelCode(model, config, document, schemaResolver);
             var fileName = $"{_namingConverter.ToPascalCase(model.Name)}.cs";
             
             // Определяем путь для файла модели
@@ -486,7 +526,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         return files;
     }
 
-    private string GenerateModelCode(ApiModel model, GenerationConfiguration config)
+    private string GenerateModelCode(ApiModel model, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver)
     {
         var namespaceName = config.Namespace ?? "Generated";
         var className = _namingConverter.ToPascalCase(model.Name);
@@ -494,23 +534,73 @@ public class CSharpCodeGenerator : ICodeGenerator
         // Получаем C# специфичные опции из конфигурации
         var csharpOptions = GetCSharpOptions(config);
 
-        var properties = model.Properties.Select(p => new PropertyTemplateData
+        var properties = new List<PropertyTemplateData>();
+        foreach (var p in model.Properties)
         {
-            Name = _namingConverter.ToPascalCase(p.Name),
-            Type = p.Type,
-            Description = DecodeHtmlEntities(p.Description),
-            AccessorType = csharpOptions.PropertyAccessor,
-            IsRequired = csharpOptions.UseRequired && p.IsRequired,
-            IsNullable = csharpOptions.UseNullable && p.IsNullable,
-            DefaultValue = p.DefaultValue,
-            Min = p.Min,
-            Max = p.Max,
-            ExclusiveMin = p.ExclusiveMin,
-            ExclusiveMax = p.ExclusiveMax,
-            MinLength = p.MinLength,
-            MaxLength = p.MaxLength,
-            Pattern = p.Pattern
-        }).ToList();
+            // Получаем TypeInfo для свойства
+            TypeInfo typeInfo = TypeInfo.Simple("object"); // Значение по умолчанию
+            try
+            {
+                if (model.OriginalSchema?.Properties != null &&
+                    model.OriginalSchema.Properties.TryGetValue(p.Name, out var propertySchema))
+                {
+                    typeInfo = _csharpTypeMapper.MapPropertyTypeInfo(propertySchema, p.IsRequired, schemaResolver);
+                }
+                else
+                {
+                    // Пытаемся найти схему в allOf
+                    if (model.OriginalSchema?.AllOf != null)
+                    {
+                        var found = false;
+                        foreach (var subSchema in model.OriginalSchema.AllOf)
+                        {
+                            var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
+                            if (resolvedSubSchema.Properties != null &&
+                                resolvedSubSchema.Properties.TryGetValue(p.Name, out var subPropertySchema))
+                            {
+                                typeInfo = _csharpTypeMapper.MapPropertyTypeInfo(subPropertySchema, p.IsRequired, schemaResolver);
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found)
+                        {
+                            // Если схема не найдена, создаем простой тип из строки
+                            typeInfo = TypeInfo.Simple(p.Type);
+                        }
+                    }
+                    else
+                    {
+                        // Если схема не найдена, создаем простой тип из строки
+                        typeInfo = TypeInfo.Simple(p.Type);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to map type for property '{PropertyName}' in model '{ModelName}', using 'object' as fallback", 
+                    p.Name, model.Name);
+                typeInfo = TypeInfo.Simple("object");
+            }
+            
+            properties.Add(new PropertyTemplateData
+            {
+                Name = _namingConverter.ToPascalCase(p.Name),
+                TypeInfo = typeInfo,
+                Description = DecodeHtmlEntities(p.Description),
+                AccessorType = csharpOptions.PropertyAccessor,
+                IsRequired = csharpOptions.UseRequired && p.IsRequired,
+                IsNullable = csharpOptions.UseNullable && p.IsNullable,
+                DefaultValue = p.DefaultValue,
+                Min = p.Min,
+                Max = p.Max,
+                ExclusiveMin = p.ExclusiveMin,
+                ExclusiveMax = p.ExclusiveMax,
+                MinLength = p.MinLength,
+                MaxLength = p.MaxLength,
+                Pattern = p.Pattern
+            });
+        }
 
         // Определяем, нужны ли using директивы
         bool needsDataAnnotations = csharpOptions.GenerateValidationAttributes && properties.Any(p => 
@@ -530,7 +620,8 @@ public class CSharpCodeGenerator : ICodeGenerator
             GenerateValidationConstants = csharpOptions.GenerateValidationConstants,
             GenerateValidationAttributes = csharpOptions.GenerateValidationAttributes,
             NeedsDataAnnotations = needsDataAnnotations,
-            NeedsRegularExpressions = needsRegularExpressions
+            NeedsRegularExpressions = needsRegularExpressions,
+            BaseClassName = model.BaseClassName != null ? _namingConverter.ToPascalCase(model.BaseClassName) : null
         };
 
         return _templateRegistry.Render("csharp-model.cshtml", templateData);
@@ -551,7 +642,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         return new CSharpGenerationOptions();
     }
 
-    private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, OpenApiDocument document, GenerationConfiguration config)
+    private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver)
     {
         var files = new Dictionary<string, string>();
 
@@ -560,7 +651,7 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         foreach (var group in groupedOperations)
         {
-            var clientCode = GenerateClientCode(group.Value, group.Key, document, config);
+            var clientCode = GenerateClientCode(group.Value, group.Key, document, config, schemaResolver);
             var fileName = $"{_namingConverter.ToPascalCase(group.Key)}Client.cs";
             
             // Определяем путь для файла клиента
@@ -666,12 +757,12 @@ public class CSharpCodeGenerator : ICodeGenerator
         return _namingConverter.ToPascalCase(sanitized);
     }
 
-    private string GenerateClientCode(List<ApiOperation> operations, string clientName, OpenApiDocument document, GenerationConfiguration config)
+    private string GenerateClientCode(List<ApiOperation> operations, string clientName, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver)
     {
         var namespaceName = config.Namespace ?? "Generated";
         var className = $"{_namingConverter.ToPascalCase(clientName)}Client";
 
-        var operationTemplates = operations.Select(op => CreateOperationTemplateData(op, document, config)).ToList();
+        var operationTemplates = operations.Select(op => CreateOperationTemplateData(op, document, config, schemaResolver)).ToList();
 
         var templateData = new ClientTemplateData
         {
@@ -684,7 +775,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         return _templateRegistry.Render("csharp-client.cshtml", templateData);
     }
 
-    private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config)
+    private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver)
     {
         var methodName = _namingConverter.ToPascalCase(operation.OperationId);
         var httpMethod = operation.HttpMethod.Method.ToUpperInvariant();
@@ -711,13 +802,12 @@ public class CSharpCodeGenerator : ICodeGenerator
             {
                 // Пытаемся найти оригинальную операцию для получения схемы параметра
                 var originalOperation = FindOriginalOperation(document, operation);
-                if (originalOperation != null)
+                if (originalOperation != null && originalOperation.Parameters != null)
                 {
                     var openApiParam = originalOperation.Parameters
                         .FirstOrDefault(p => p.Name == parameter.Name);
                     if (openApiParam?.Schema != null)
                     {
-                        var schemaResolver = new SchemaResolver(document);
                         paramTypeInfo = _csharpTypeMapper.MapPropertyTypeInfo(openApiParam.Schema, parameter.IsRequired, schemaResolver);
                     }
                     else
@@ -778,9 +868,6 @@ public class CSharpCodeGenerator : ICodeGenerator
             // Если это form-data, создаем параметры для каждого свойства
             if (isFormData && operation.RequestBody.FormDataProperties != null)
             {
-                // Нужен SchemaResolver для маппинга типов
-                var formDataSchemaResolver = new SchemaResolver(document);
-                
                 foreach (var formDataPropEntry in operation.RequestBody.FormDataProperties)
                 {
                     var formDataProp = formDataPropEntry.Value;
@@ -806,7 +893,7 @@ public class CSharpCodeGenerator : ICodeGenerator
                                     .FirstOrDefault(p => p.Key == formDataProp.Name).Value;
                                 if (propertySchema != null)
                                 {
-                                    typeInfo = _csharpTypeMapper.MapFormDataPropertyTypeInfo(propertySchema, formDataProp.IsRequired, formDataSchemaResolver);
+                                    typeInfo = _csharpTypeMapper.MapFormDataPropertyTypeInfo(propertySchema, formDataProp.IsRequired, schemaResolver);
                                 }
                                 else
                                 {
@@ -845,7 +932,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         }
 
         // Определяем тип ответа на основе успешных ответов (2xx) через TypeInfo
-        var returnTypeInfo = DetermineReturnTypeInfo(operation, document, config);
+        var returnTypeInfo = DetermineReturnTypeInfo(operation, document, config, schemaResolver);
         
         // Определяем, есть ли тип ответа (не void, не просто Task, не HttpResponseMessage)
         var hasResponseType = returnTypeInfo.IsTask && returnTypeInfo.GenericArguments.Count > 0 &&
@@ -878,10 +965,8 @@ public class CSharpCodeGenerator : ICodeGenerator
     /// <summary>
     /// Определяет тип возврата операции через TypeInfo
     /// </summary>
-    private TypeInfo DetermineReturnTypeInfo(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config)
+    private TypeInfo DetermineReturnTypeInfo(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver)
     {
-        var schemaResolver = new SchemaResolver(document);
-        
         // Ищем успешные ответы (2xx), приоритет: 200, 201, 202, 204, default
         var successResponseKeys = new[] { "200", "201", "202", "204", "default" };
         var successResponse = operation.Responses
@@ -903,12 +988,12 @@ public class CSharpCodeGenerator : ICodeGenerator
         
         // Находим оригинальную операцию в документе для получения схемы ответа
         var originalOperation = FindOriginalOperation(document, operation);
-        if (originalOperation != null)
+        if (originalOperation != null && originalOperation.Responses != null)
         {
             var openApiResponse = originalOperation.Responses
                 .FirstOrDefault(r => r.Key == successResponse.Key);
             
-            if (openApiResponse.Key != null && openApiResponse.Value.Content != null)
+            if (openApiResponse.Key != null && openApiResponse.Value?.Content != null)
             {
                 var content = openApiResponse.Value.Content.FirstOrDefault();
                 if (content.Key != null && content.Value?.Schema != null)

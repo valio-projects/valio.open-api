@@ -50,22 +50,98 @@ public class ModelExtractor : IModelExtractor
             Description = resolvedSchema.Description,
             OriginalSchema = resolvedSchema,
             Properties = new List<ApiProperty>(),
-            RequiredProperties = resolvedSchema.Required?.ToList() ?? new List<string>()
+            RequiredProperties = new List<string>()
         };
 
-        if (resolvedSchema.Properties != null)
+        // Обрабатываем allOf - объединяем свойства из всех схем
+        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
         {
-            var properties = new List<ApiProperty>();
-            foreach (var propertyEntry in resolvedSchema.Properties)
-            {
-                var propertyName = propertyEntry.Key;
-                var propertySchema = propertyEntry.Value;
+            var allProperties = new Dictionary<string, ApiProperty>();
+            var allRequired = new HashSet<string>();
+            string? baseClassName = null;
 
-                var apiProperty = ExtractProperty(propertyName, propertySchema, resolvedSchema);
-                properties.Add(apiProperty);
+            foreach (var subSchema in resolvedSchema.AllOf)
+            {
+                var resolvedSubSchema = _schemaResolver.ResolveSchema(subSchema);
+                
+                // Проверяем, является ли под-схема ссылкой на другую модель (базовый класс)
+                if (resolvedSubSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                {
+                    var reference = refHolder.Reference;
+                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                    {
+                        // Это базовый класс - сохраняем его имя
+                        baseClassName = _namingConverter.ToPascalCase(reference.Id);
+                        continue; // Свойства базового класса не добавляем сюда
+                    }
+                }
+
+                // Объединяем свойства из этой схемы
+                if (resolvedSubSchema.Properties != null)
+                {
+                    foreach (var propertyEntry in resolvedSubSchema.Properties)
+                    {
+                        var propertyName = propertyEntry.Key;
+                        var propertySchema = propertyEntry.Value;
+                        var apiProperty = ExtractProperty(propertyName, propertySchema, resolvedSubSchema);
+                        allProperties[propertyName] = apiProperty; // Перезаписываем, если уже есть
+                    }
+                }
+
+                // Объединяем required свойства
+                if (resolvedSubSchema.Required != null)
+                {
+                    foreach (var requiredProp in resolvedSubSchema.Required)
+                    {
+                        allRequired.Add(requiredProp);
+                    }
+                }
             }
 
-            apiModel.Properties = properties;
+            // Добавляем свойства из самой схемы (если есть)
+            if (resolvedSchema.Properties != null)
+            {
+                foreach (var propertyEntry in resolvedSchema.Properties)
+                {
+                    var propertyName = propertyEntry.Key;
+                    var propertySchema = propertyEntry.Value;
+                    var apiProperty = ExtractProperty(propertyName, propertySchema, resolvedSchema);
+                    allProperties[propertyName] = apiProperty;
+                }
+            }
+
+            // Добавляем required из самой схемы
+            if (resolvedSchema.Required != null)
+            {
+                foreach (var requiredProp in resolvedSchema.Required)
+                {
+                    allRequired.Add(requiredProp);
+                }
+            }
+
+            apiModel.Properties = allProperties.Values.ToList();
+            apiModel.RequiredProperties = allRequired.ToList();
+            apiModel.BaseClassName = baseClassName;
+        }
+        else
+        {
+            // Обычная схема без allOf
+            if (resolvedSchema.Properties != null)
+            {
+                var properties = new List<ApiProperty>();
+                foreach (var propertyEntry in resolvedSchema.Properties)
+                {
+                    var propertyName = propertyEntry.Key;
+                    var propertySchema = propertyEntry.Value;
+
+                    var apiProperty = ExtractProperty(propertyName, propertySchema, resolvedSchema);
+                    properties.Add(apiProperty);
+                }
+
+                apiModel.Properties = properties;
+            }
+
+            apiModel.RequiredProperties = resolvedSchema.Required?.ToList() ?? new List<string>();
         }
 
         return apiModel;

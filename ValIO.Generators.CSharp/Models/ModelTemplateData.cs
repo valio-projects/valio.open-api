@@ -44,6 +44,11 @@ public class ModelTemplateData
     /// Нужен ли using System.Text.RegularExpressions
     /// </summary>
     public bool NeedsRegularExpressions { get; set; } = false;
+    
+    /// <summary>
+    /// Имя базового класса (для allOf - наследование)
+    /// </summary>
+    public string? BaseClassName { get; set; }
 }
 
 /// <summary>
@@ -52,7 +57,12 @@ public class ModelTemplateData
 public class PropertyTemplateData
 {
     public string Name { get; set; } = string.Empty;
-    public string Type { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Информация о типе свойства с мета-данными
+    /// </summary>
+    public TypeInfo TypeInfo { get; set; } = null!;
+    
     public string? Description { get; set; }
     
     /// <summary>
