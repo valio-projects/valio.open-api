@@ -4,6 +4,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.CSharp.Models;
+using System.Linq;
 
 namespace ValIO.Generators.CSharp;
 
@@ -12,30 +13,24 @@ namespace ValIO.Generators.CSharp;
 /// </summary>
 public class CSharpCodeGenerator : ICodeGenerator
 {
-    private readonly IModelExtractor _modelExtractor;
-    private readonly IOperationExtractor _operationExtractor;
     private readonly ITypeMapper _typeMapper;
     private readonly INamingConverter _namingConverter;
-    private readonly TemplateRegistry _templateRegistry;
     private readonly IFileWriter _fileWriter;
+    private readonly ITemplateRegistry _templateRegistry;
     private readonly ILogger<CSharpCodeGenerator> _logger;
     private bool _templatesPreloaded;
 
     public CSharpCodeGenerator(
-        IModelExtractor modelExtractor,
-        IOperationExtractor operationExtractor,
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
-        TemplateRegistry templateRegistry,
         IFileWriter fileWriter,
+        ITemplateRegistry templateRegistry,
         ILogger<CSharpCodeGenerator> logger)
     {
-        _modelExtractor = modelExtractor;
-        _operationExtractor = operationExtractor;
         _typeMapper = typeMapper;
         _namingConverter = namingConverter;
-        _templateRegistry = templateRegistry;
         _fileWriter = fileWriter;
+        _templateRegistry = templateRegistry ?? throw new ArgumentNullException(nameof(templateRegistry));
         _logger = logger;
         _templatesPreloaded = false;
     }
@@ -74,12 +69,17 @@ public class CSharpCodeGenerator : ICodeGenerator
             // Создаем SchemaResolver для документа
             var schemaResolver = new SchemaResolver(document);
 
+            // Создаем extractors с SchemaResolver
+            var modelExtractor = new ModelExtractor(schemaResolver, _namingConverter);
+            var operationExtractor = new OperationExtractor(schemaResolver);
+            var enumExtractor = new EnumExtractor(schemaResolver, _namingConverter);
+
             // Извлекаем модели
-            var models = _modelExtractor.ExtractModels(document);
+            var models = modelExtractor.ExtractModels(document);
             _logger.LogInformation("Extracted {Count} models", models.Count);
 
             // Извлекаем операции
-            var operations = _operationExtractor.ExtractOperations(document);
+            var operations = operationExtractor.ExtractOperations(document);
             _logger.LogInformation("Extracted {Count} operations", operations.Count);
 
             // Маппим типы для моделей
@@ -91,11 +91,24 @@ public class CSharpCodeGenerator : ICodeGenerator
             // Маппим типы для операций
             foreach (var operation in operations)
             {
-                MapOperationTypes(operation, schemaResolver);
+                MapOperationTypes(operation, document, schemaResolver);
             }
+
+            // Извлекаем enum'ы
+            var enums = enumExtractor.ExtractEnums(document);
+            _logger.LogInformation("Extracted {Count} enums", enums.Count);
 
             // Генерируем файлы
             var generatedFiles = new Dictionary<string, string>();
+
+            if (config.GenerateEnums)
+            {
+                var enumFiles = GenerateEnums(enums, config);
+                foreach (var file in enumFiles)
+                {
+                    generatedFiles[file.Key] = file.Value;
+                }
+            }
 
             if (config.GenerateModels)
             {
@@ -147,22 +160,151 @@ public class CSharpCodeGenerator : ICodeGenerator
         }
     }
 
-    private void MapOperationTypes(ApiOperation operation, ISchemaResolver schemaResolver)
+    private void MapOperationTypes(ApiOperation operation, OpenApiDocument document, ISchemaResolver schemaResolver)
     {
+        // Находим оригинальную операцию в документе
+        var originalOperation = FindOriginalOperation(document, operation);
+        if (originalOperation == null)
+            return;
+
         // Маппим типы параметров
-        // TODO: Реализовать маппинг типов параметров через ISchemaResolver
+        if (originalOperation.Parameters != null)
+        {
+            var parameterMap = originalOperation.Parameters
+                .Where(p => p.Name != null)
+                .ToDictionary(p => p.Name!, p => p);
+
+            foreach (var parameter in operation.Parameters)
+            {
+                if (parameterMap.TryGetValue(parameter.Name, out var originalParam) && originalParam.Schema != null)
+                {
+                    var resolvedSchema = schemaResolver.ResolveSchema(originalParam.Schema);
+                    parameter.Type = _typeMapper.MapPropertyType(resolvedSchema, parameter.IsRequired, schemaResolver);
+                }
+                else if (string.IsNullOrEmpty(parameter.Type) || parameter.Type == "object")
+                {
+                    // Если схема не найдена, используем string для параметров по умолчанию
+                    parameter.Type = "string";
+                }
+            }
+        }
 
         // Маппим тип request body
-        if (operation.RequestBody != null)
+        if (operation.RequestBody != null && originalOperation.RequestBody != null)
         {
-            // TODO: Реализовать маппинг типа request body
+            var content = originalOperation.RequestBody.Content?.FirstOrDefault();
+            var schema = content.HasValue ? content.Value.Value?.Schema : null;
+            if (schema != null)
+            {
+                var resolvedSchema = schemaResolver.ResolveSchema(schema);
+                operation.RequestBody.Type = _typeMapper.MapType(resolvedSchema, schemaResolver);
+            }
         }
 
         // Маппим типы ответов
-        foreach (var response in operation.Responses.Values)
+        if (originalOperation.Responses != null)
         {
-            // TODO: Реализовать маппинг типов ответов
+            foreach (var responseEntry in originalOperation.Responses)
+            {
+                if (operation.Responses.TryGetValue(responseEntry.Key, out var apiResponse))
+                {
+                    var originalResponse = responseEntry.Value;
+                    var content = originalResponse.Content?.FirstOrDefault();
+                    var schema = content.HasValue ? content.Value.Value?.Schema : null;
+                    if (schema != null)
+                    {
+                        var resolvedSchema = schemaResolver.ResolveSchema(schema);
+                        apiResponse.Type = _typeMapper.MapType(resolvedSchema, schemaResolver);
+                    }
+                }
+            }
         }
+    }
+
+    private OpenApiOperation? FindOriginalOperation(OpenApiDocument document, ApiOperation operation)
+    {
+        if (document.Paths == null)
+            return null;
+
+        foreach (var pathEntry in document.Paths)
+        {
+            if (pathEntry.Value.Operations == null)
+                continue;
+
+            foreach (var operationEntry in pathEntry.Value.Operations)
+            {
+                var openApiOperation = operationEntry.Value;
+                var operationId = openApiOperation.OperationId ?? 
+                    $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
+
+                if (operationId == operation.OperationId && 
+                    operationEntry.Key.Method == operation.HttpMethod.Method)
+                {
+                    return openApiOperation;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private Dictionary<string, string> GenerateEnums(IReadOnlyList<ApiEnum> enums, GenerationConfiguration config)
+    {
+        var files = new Dictionary<string, string>();
+
+        foreach (var apiEnum in enums)
+        {
+            var enumCode = GenerateEnumCode(apiEnum, config);
+            var fileName = $"{_namingConverter.ToPascalCase(apiEnum.Name)}.cs";
+            var filePath = config.FileOrganization.SeparateModels && !string.IsNullOrEmpty(config.FileOrganization.ModelsPath)
+                ? Path.Combine(config.OutputPath, config.FileOrganization.ModelsPath, fileName)
+                : Path.Combine(config.OutputPath, fileName);
+
+            files[filePath] = enumCode;
+        }
+
+        return files;
+    }
+
+    private string GenerateEnumCode(ApiEnum apiEnum, GenerationConfiguration config)
+    {
+        var namespaceName = config.Namespace ?? "Generated";
+        var enumName = _namingConverter.ToPascalCase(apiEnum.Name);
+
+        var enumValues = apiEnum.Values.Select(v => new EnumValueTemplateData
+        {
+            Name = _namingConverter.ToPascalCase(v.Name),
+            Value = v.Value,
+            Description = v.Description,
+            ValueString = FormatEnumValue(v.Value, apiEnum.UnderlyingType)
+        }).ToList();
+
+        var templateData = new EnumTemplateData
+        {
+            Namespace = namespaceName,
+            EnumName = enumName,
+            Description = apiEnum.Description,
+            UnderlyingType = apiEnum.UnderlyingType,
+            Values = enumValues
+        };
+
+        return _templateRegistry.Render("csharp-enum.sbncs", templateData);
+    }
+
+    private static string FormatEnumValue(object? value, string underlyingType)
+    {
+        if (value == null)
+            return "0";
+
+        return underlyingType switch
+        {
+            "string" => $"\"{value}\"",
+            "int" or "long" or "short" or "byte" => value.ToString() ?? "0",
+            "float" => $"{value}f",
+            "double" => value.ToString() ?? "0.0",
+            "bool" => value.ToString()?.ToLowerInvariant() ?? "false",
+            _ => value.ToString() ?? "0"
+        };
     }
 
     private Dictionary<string, string> GenerateModels(IReadOnlyList<ApiModel> models, GenerationConfiguration config)
@@ -276,24 +418,70 @@ public class CSharpCodeGenerator : ICodeGenerator
         var httpMethod = operation.HttpMethod.Method.ToUpperInvariant();
         var path = operation.Path;
 
-        // Параметры метода
-        var parameters = new List<string>();
+        // Разделяем параметры по типам
+        var pathParameters = new List<ParameterTemplateData>();
+        var queryParameters = new List<ParameterTemplateData>();
+        var headerParameters = new List<ParameterTemplateData>();
+        var allParameters = new List<string>();
+
         foreach (var parameter in operation.Parameters)
         {
             var paramName = _namingConverter.ToCamelCase(parameter.Name);
             var paramType = parameter.Type;
+            
+            // Если тип не определен или базовый, пытаемся определить его
+            if (string.IsNullOrEmpty(paramType) || paramType == "object" || paramType == "string")
+            {
+                // Для параметров обычно используется базовый тип, но можно улучшить
+                paramType = paramType == "object" ? "object" : "string";
+            }
+            
             var paramModifier = parameter.IsRequired ? "" : "?";
-            parameters.Add($"{paramType}{paramModifier} {paramName}");
+            var paramString = $"{paramType}{paramModifier} {paramName}";
+            allParameters.Add(paramString);
+
+            var paramTemplate = new ParameterTemplateData
+            {
+                Name = parameter.Name,
+                VariableName = paramName,
+                Type = paramType,
+                IsRequired = parameter.IsRequired,
+                Description = parameter.Description
+            };
+
+            switch (parameter.Location)
+            {
+                case Core.Models.ParameterLocation.Path:
+                    pathParameters.Add(paramTemplate);
+                    break;
+                case Core.Models.ParameterLocation.Query:
+                    queryParameters.Add(paramTemplate);
+                    break;
+                case Core.Models.ParameterLocation.Header:
+                    headerParameters.Add(paramTemplate);
+                    break;
+            }
         }
 
+        // Request body
         var requestBodyParameter = "request";
+        var requestBodyType = "object";
+        var requestBodyContentType = "application/json";
+        
         if (operation.RequestBody != null)
         {
-            var bodyType = operation.RequestBody.Type;
-            parameters.Add($"{bodyType} {requestBodyParameter}");
+            requestBodyType = operation.RequestBody.Type;
+            if (string.IsNullOrEmpty(requestBodyType) || requestBodyType == "object")
+            {
+                requestBodyType = "object";
+            }
+            
+            requestBodyContentType = operation.RequestBody.ContentType ?? "application/json";
+            allParameters.Add($"{requestBodyType} {requestBodyParameter}");
         }
 
-        var returnType = "Task<HttpResponseMessage>"; // TODO: Определить тип ответа
+        // Определяем тип ответа на основе успешных ответов (2xx)
+        var returnType = DetermineReturnType(operation, config);
 
         return new OperationTemplateData
         {
@@ -301,11 +489,56 @@ public class CSharpCodeGenerator : ICodeGenerator
             HttpMethod = httpMethod,
             Path = path,
             Summary = operation.Summary,
-            Parameters = string.Join(", ", parameters),
+            Parameters = string.Join(", ", allParameters),
             ReturnType = returnType,
             HasRequestBody = operation.RequestBody != null,
-            RequestBodyParameter = requestBodyParameter
+            RequestBodyParameter = requestBodyParameter,
+            RequestBodyContentType = requestBodyContentType,
+            HasResponseType = !string.IsNullOrEmpty(returnType) && returnType != "Task<HttpResponseMessage>" && returnType != "Task<void>",
+            HasPathParameters = pathParameters.Count > 0,
+            HasQueryParameters = queryParameters.Count > 0,
+            HasHeaderParameters = headerParameters.Count > 0,
+            PathParameters = pathParameters,
+            QueryParameters = queryParameters,
+            HeaderParameters = headerParameters
         };
+    }
+
+    private string DetermineReturnType(ApiOperation operation, GenerationConfiguration config)
+    {
+        // Ищем успешные ответы (2xx), приоритет: 200, 201, 202, 204, default
+        var successResponseKeys = new[] { "200", "201", "202", "204", "default" };
+        var successResponse = operation.Responses
+            .FirstOrDefault(r => successResponseKeys.Contains(r.Key));
+
+        if (successResponse.Key == null)
+        {
+            // Если нет успешных ответов, ищем любой ответ
+            successResponse = operation.Responses.FirstOrDefault();
+        }
+
+        if (successResponse.Key == null)
+        {
+            // Если нет ответов, возвращаем HttpResponseMessage
+            return "Task<HttpResponseMessage>";
+        }
+
+        var responseType = successResponse.Value.Type;
+
+        if (string.IsNullOrEmpty(responseType))
+        {
+            // Если тип не определен, возвращаем HttpResponseMessage
+            return "Task<HttpResponseMessage>";
+        }
+
+        // Если тип void или пустой, возвращаем Task
+        if (responseType == "void" || responseType == "null")
+        {
+            return "Task";
+        }
+
+        // Возвращаем Task<T>
+        return $"Task<{responseType}>";
     }
 
     private async Task EnsureTemplatesPreloadedAsync()
@@ -315,44 +548,12 @@ public class CSharpCodeGenerator : ICodeGenerator
 
         try
         {
-            // Определяем путь к директории с шаблонами
-            var assemblyLocation = Path.GetDirectoryName(typeof(CSharpCodeGenerator).Assembly.Location) ?? string.Empty;
-            var templatesPath = Path.Combine(assemblyLocation, "Templates");
-
-            // Если шаблоны не найдены в выходной директории, пробуем другие места
-            if (!Directory.Exists(templatesPath))
+            // Загружаем шаблоны
+            if (!_templateRegistry.HasTemplate("csharp-model.sbncs") || 
+                !_templateRegistry.HasTemplate("csharp-client.sbncs") ||
+                !_templateRegistry.HasTemplate("csharp-enum.sbncs"))
             {
-                var possiblePaths = new[]
-                {
-                    Path.Combine(AppContext.BaseDirectory, "Templates"),
-                    Path.Combine(Directory.GetCurrentDirectory(), "Templates"),
-                    Path.Combine(assemblyLocation, "Templates")
-                };
-
-                foreach (var path in possiblePaths)
-                {
-                    if (Directory.Exists(path))
-                    {
-                        templatesPath = path;
-                        break;
-                    }
-                }
-            }
-
-            // Загружаем шаблоны в registry
-            if (!_templateRegistry.HasTemplate("csharp-model.sbncs") || !_templateRegistry.HasTemplate("csharp-client.sbncs"))
-            {
-                var registry = new TemplateRegistry(templatesPath);
-                await registry.PreloadTemplatesAsync();
-
-                // Копируем загруженные шаблоны в основной registry
-                foreach (var templateName in registry.GetLoadedTemplateNames())
-                {
-                    if (!_templateRegistry.HasTemplate(templateName))
-                    {
-                        await _templateRegistry.LoadTemplateAsync(templateName, Path.Combine(templatesPath, templateName));
-                    }
-                }
+                await _templateRegistry.PreloadTemplatesAsync();
             }
 
             _templatesPreloaded = true;

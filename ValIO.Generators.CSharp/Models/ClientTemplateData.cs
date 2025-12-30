@@ -24,5 +24,25 @@ public class OperationTemplateData
     public string ReturnType { get; set; } = string.Empty;
     public bool HasRequestBody { get; set; }
     public string RequestBodyParameter { get; set; } = "request";
+    public string? RequestBodyContentType { get; set; }
+    public bool HasResponseType { get; set; }
+    public bool HasPathParameters { get; set; }
+    public bool HasQueryParameters { get; set; }
+    public bool HasHeaderParameters { get; set; }
+    public IReadOnlyList<ParameterTemplateData> PathParameters { get; set; } = Array.Empty<ParameterTemplateData>();
+    public IReadOnlyList<ParameterTemplateData> QueryParameters { get; set; } = Array.Empty<ParameterTemplateData>();
+    public IReadOnlyList<ParameterTemplateData> HeaderParameters { get; set; } = Array.Empty<ParameterTemplateData>();
+}
+
+/// <summary>
+/// Данные для шаблона параметра
+/// </summary>
+public class ParameterTemplateData
+{
+    public string Name { get; set; } = string.Empty;
+    public string VariableName { get; set; } = string.Empty;
+    public string Type { get; set; } = string.Empty;
+    public bool IsRequired { get; set; }
+    public string? Description { get; set; }
 }
 

@@ -16,9 +16,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="Templates\*.sbncs">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
+    <EmbeddedResource Include="Templates\*.sbncs">
+      <LogicalName>$(MSBuildProjectName).Templates.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
 </Project>

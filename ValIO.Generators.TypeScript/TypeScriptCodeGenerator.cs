@@ -4,6 +4,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Models;
+using System.Linq;
 
 namespace ValIO.Generators.TypeScript;
 
@@ -16,9 +17,9 @@ public class TypeScriptCodeGenerator : ICodeGenerator
     private readonly IOperationExtractor _operationExtractor;
     private readonly ITypeMapper _typeMapper;
     private readonly INamingConverter _namingConverter;
-    private readonly TemplateRegistry _templateRegistry;
     private readonly IFileWriter _fileWriter;
     private readonly ILogger<TypeScriptCodeGenerator> _logger;
+    private ITemplateRegistry? _templateRegistry;
     private bool _templatesPreloaded;
 
     public TypeScriptCodeGenerator(
@@ -26,7 +27,6 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         IOperationExtractor operationExtractor,
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
-        TemplateRegistry templateRegistry,
         IFileWriter fileWriter,
         ILogger<TypeScriptCodeGenerator> logger)
     {
@@ -34,7 +34,6 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         _operationExtractor = operationExtractor;
         _typeMapper = typeMapper;
         _namingConverter = namingConverter;
-        _templateRegistry = templateRegistry;
         _fileWriter = fileWriter;
         _logger = logger;
         _templatesPreloaded = false;
@@ -205,6 +204,9 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             Properties = properties
         };
 
+        if (_templateRegistry == null)
+            throw new InvalidOperationException("TemplateRegistry is not initialized. Call EnsureTemplatesPreloadedAsync first.");
+        
         return _templateRegistry.Render("typescript-interface.sbncs", templateData);
     }
 
@@ -263,6 +265,9 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             Operations = operationTemplates
         };
 
+        if (_templateRegistry == null)
+            throw new InvalidOperationException("TemplateRegistry is not initialized. Call EnsureTemplatesPreloadedAsync first.");
+        
         return _templateRegistry.Render("typescript-api.sbncs", templateData);
     }
 
@@ -306,7 +311,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
 
     private async Task EnsureTemplatesPreloadedAsync()
     {
-        if (_templatesPreloaded)
+        if (_templatesPreloaded && _templateRegistry != null)
             return;
 
         try
@@ -335,20 +340,18 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 }
             }
 
-            // Загружаем шаблоны в registry
+            // Создаем TemplateRegistry из файловой системы
+            if (_templateRegistry == null)
+            {
+                var cache = new TemplateCache();
+                var logger = _logger.CreateLogger<FileSystemTemplateRegistry>();
+                _templateRegistry = new FileSystemTemplateRegistry(templatesPath, cache, logger);
+            }
+
+            // Загружаем шаблоны
             if (!_templateRegistry.HasTemplate("typescript-interface.sbncs") || !_templateRegistry.HasTemplate("typescript-api.sbncs"))
             {
-                var registry = new TemplateRegistry(templatesPath);
-                await registry.PreloadTemplatesAsync();
-
-                // Копируем загруженные шаблоны в основной registry
-                foreach (var templateName in registry.GetLoadedTemplateNames())
-                {
-                    if (!_templateRegistry.HasTemplate(templateName))
-                    {
-                        await _templateRegistry.LoadTemplateAsync(templateName, Path.Combine(templatesPath, templateName));
-                    }
-                }
+                await _templateRegistry.PreloadTemplatesAsync();
             }
 
             _templatesPreloaded = true;

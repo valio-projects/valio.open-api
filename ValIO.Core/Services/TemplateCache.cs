@@ -1,15 +1,18 @@
+using System.Collections.Concurrent;
+using System.Linq;
 using Scriban;
-using Scriban.Runtime;
+using ValIO.Core.Interfaces;
 
 namespace ValIO.Core.Services;
 
 /// <summary>
 /// Кэш для хранения скомпилированных Scriban шаблонов
 /// Использует паттерн прототип для создания копий шаблонов
+/// Thread-safe реализация
 /// </summary>
-public class TemplateCache
+public class TemplateCache : ITemplateCache
 {
-    private readonly Dictionary<string, Template> _compiledTemplates = new();
+    private readonly ConcurrentDictionary<string, Template> _compiledTemplates = new();
 
     /// <summary>
     /// Добавляет скомпилированный шаблон в кэш
@@ -23,6 +26,20 @@ public class TemplateCache
             throw new ArgumentNullException(nameof(template));
 
         _compiledTemplates[name] = template;
+    }
+
+    /// <summary>
+    /// Добавляет или обновляет шаблон в кэше
+    /// </summary>
+    public void AddOrUpdateTemplate(string name, Template template)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Template name cannot be null or empty", nameof(name));
+
+        if (template == null)
+            throw new ArgumentNullException(nameof(template));
+
+        _compiledTemplates.AddOrUpdate(name, template, (key, oldValue) => template);
     }
 
     /// <summary>
@@ -46,7 +63,7 @@ public class TemplateCache
     /// </summary>
     public IReadOnlyCollection<string> GetTemplateNames()
     {
-        return _compiledTemplates.Keys;
+        return _compiledTemplates.Keys.ToArray();
     }
 
     /// <summary>

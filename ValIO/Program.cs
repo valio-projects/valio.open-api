@@ -6,8 +6,10 @@ using ValIO.Configuration.Services;
 using ValIO.Core.Factories;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Services;
+using ValIO.Generators.CSharp;
 using ValIO.Parsers.Interfaces;
 using ValIO.Parsers.Services;
+using System.Reflection;
 
 namespace ValIO;
 
@@ -40,6 +42,22 @@ class Program
         // Core services
         services.AddSingleton<INamingConverter, NamingConverter>();
         services.AddSingleton<IFileWriter, FileWriter>();
+        
+        // Template Cache
+        services.AddSingleton<ITemplateCache, TemplateCache>();
+        
+        // Template Registry - для C# генератора используем embedded resources
+        services.AddSingleton<ITemplateRegistry>(sp =>
+        {
+            var assembly = typeof(CSharpCodeGenerator).Assembly;
+            var resourceNamespace = $"{assembly.GetName().Name}.Templates";
+            var cache = sp.GetRequiredService<ITemplateCache>();
+            var logger = sp.GetRequiredService<ILogger<EmbeddedResourceTemplateRegistry>>();
+            return new EmbeddedResourceTemplateRegistry(assembly, resourceNamespace, cache, logger);
+        });
+        
+        // Note: Extractors создаются внутри генераторов, так как они требуют SchemaResolver,
+        // который создается для каждого документа. Генераторы создают их самостоятельно.
 
         // Parsers
         services.AddSingleton<IOpenApiDocumentParser, OpenApiDocumentParser>();
@@ -48,14 +66,17 @@ class Program
         services.AddSingleton<IConfigurationLoader, ConfigurationLoader>();
         services.AddSingleton<IConfigurationValidator, ConfigurationValidator>();
 
+        // Code Generators - Type Mappers
+        services.AddSingleton<ITypeMapper, CSharpTypeMapper>();
+
+        // Code Generators
+        services.AddSingleton<ICodeGenerator, CSharpCodeGenerator>();
+        // services.AddSingleton<ICodeGenerator, TypeScriptCodeGenerator>();
+
         // Factory
         services.AddSingleton<CodeGeneratorFactory>();
 
         // CLI
         services.AddSingleton<RootCommand>();
-
-        // Note: Генераторы будут зарегистрированы позже, когда они будут реализованы
-        // services.AddSingleton<ICodeGenerator, CSharpCodeGenerator>();
-        // services.AddSingleton<ICodeGenerator, TypeScriptCodeGenerator>();
     }
 }
