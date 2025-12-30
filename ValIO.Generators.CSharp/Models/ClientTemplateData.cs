@@ -53,6 +53,52 @@ public class OperationTemplateData
     /// Является ли request body form-data
     /// </summary>
     public bool IsFormData { get; set; }
+    
+    /// <summary>
+    /// Информация о всех ответах операции (включая ошибки)
+    /// </summary>
+    public IReadOnlyList<ResponseTemplateData> Responses { get; set; } = Array.Empty<ResponseTemplateData>();
+    
+    /// <summary>
+    /// Имя класса модели для query параметров (если используется ModelClass стиль)
+    /// </summary>
+    public string? QueryParametersModelClassName { get; set; }
+    
+    /// <summary>
+    /// Используется ли модель для query параметров
+    /// </summary>
+    public bool UseQueryParametersModel { get; set; }
+}
+
+/// <summary>
+/// Данные для шаблона ответа операции
+/// </summary>
+public class ResponseTemplateData
+{
+    /// <summary>
+    /// HTTP статус код (например, "200", "400", "404", "500")
+    /// </summary>
+    public string StatusCode { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Описание ответа
+    /// </summary>
+    public string? Description { get; set; }
+    
+    /// <summary>
+    /// Информация о типе ответа с мета-данными (если есть модель)
+    /// </summary>
+    public TypeInfo? ResponseTypeInfo { get; set; }
+    
+    /// <summary>
+    /// Является ли это успешным ответом (2xx)
+    /// </summary>
+    public bool IsSuccess { get; set; }
+    
+    /// <summary>
+    /// Имя класса исключения для этого статус кода (если это ошибка)
+    /// </summary>
+    public string? ExceptionClassName { get; set; }
 }
 
 /// <summary>
@@ -62,6 +108,11 @@ public class ParameterTemplateData
 {
     public string Name { get; set; } = string.Empty;
     public string VariableName { get; set; } = string.Empty;
+    
+    /// <summary>
+    /// Имя свойства в PascalCase (для использования в моделях)
+    /// </summary>
+    public string PropertyName { get; set; } = string.Empty;
     
     /// <summary>
     /// Информация о типе параметра с мета-данными

@@ -44,6 +44,11 @@ public class CSharpGenerationOptions
     /// Генерировать атрибуты валидации для свойств ([Required], [MinLength], [MaxLength], [Range], [RegularExpression])
     /// </summary>
     public bool GenerateValidationAttributes { get; set; } = false;
+
+    /// <summary>
+    /// Стиль передачи query параметров
+    /// </summary>
+    public QueryParametersStyle QueryParametersStyle { get; set; } = QueryParametersStyle.IndividualParameters;
 }
 
 /// <summary>
@@ -86,4 +91,20 @@ public enum ModelType
     /// record struct
     /// </summary>
     RecordStruct
+}
+
+/// <summary>
+/// Стиль передачи query параметров
+/// </summary>
+public enum QueryParametersStyle
+{
+    /// <summary>
+    /// Передавать query параметры как отдельные аргументы метода
+    /// </summary>
+    IndividualParameters,
+
+    /// <summary>
+    /// Передавать query параметры в виде класса (модели)
+    /// </summary>
+    ModelClass
 }

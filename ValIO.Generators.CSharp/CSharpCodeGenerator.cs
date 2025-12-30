@@ -20,6 +20,12 @@ public class CSharpCodeGenerator : ICodeGenerator
     private readonly ITemplateRegistry _templateRegistry;
     private readonly ILogger<CSharpCodeGenerator> _logger;
     private bool _templatesPreloaded;
+    
+    // Кэш для поиска операций (path + method -> operation)
+    private Dictionary<string, OpenApiOperation>? _operationCache;
+    
+    // Кэш для маппинга схем в TypeInfo (schema reference -> TypeInfo)
+    private Dictionary<string, TypeInfo>? _schemaTypeInfoCache;
 
     public CSharpCodeGenerator(
         ITypeMapper typeMapper,
@@ -108,6 +114,13 @@ public class CSharpCodeGenerator : ICodeGenerator
 
             _logger.LogInformation("Starting C# code generation");
 
+            // Инициализируем кэши
+            _operationCache = new Dictionary<string, OpenApiOperation>();
+            _schemaTypeInfoCache = new Dictionary<string, TypeInfo>();
+            
+            // Предзаполняем кэш операций для быстрого поиска
+            BuildOperationCache(document);
+
             // Создаем SchemaResolver для документа
             var schemaResolver = new SchemaResolver(document);
 
@@ -124,6 +137,9 @@ public class CSharpCodeGenerator : ICodeGenerator
             {
                 result.Warnings = new List<string> { "No models found in OpenAPI schema" };
             }
+            
+            // Валидируем модели на пустые имена
+            ValidateModels(models, result);
 
             // Извлекаем операции
             var operations = operationExtractor.ExtractOperations(document);
@@ -135,6 +151,9 @@ public class CSharpCodeGenerator : ICodeGenerator
                 warnings.Add("No operations found in OpenAPI schema");
                 result.Warnings = warnings;
             }
+            
+            // Валидируем операции на дублирующиеся operationId
+            ValidateOperations(operations, result);
 
             // Маппим типы для моделей
             var mappingErrors = new List<string>();
@@ -424,10 +443,13 @@ public class CSharpCodeGenerator : ICodeGenerator
         }
     }
 
-    private OpenApiOperation? FindOriginalOperation(OpenApiDocument document, ApiOperation operation)
+    /// <summary>
+    /// Предзаполняет кэш операций для быстрого поиска
+    /// </summary>
+    private void BuildOperationCache(OpenApiDocument document)
     {
-        if (document.Paths == null)
-            return null;
+        if (document.Paths == null || _operationCache == null)
+            return;
 
         foreach (var pathEntry in document.Paths)
         {
@@ -440,7 +462,57 @@ public class CSharpCodeGenerator : ICodeGenerator
                 var operationId = openApiOperation.OperationId ?? 
                     $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
 
-                if (operationId == operation.OperationId && 
+                // Создаем ключ: operationId + method + path
+                var cacheKey = $"{operationId}|{operationEntry.Key.Method}|{pathEntry.Key}";
+                _operationCache[cacheKey] = openApiOperation;
+            }
+        }
+        
+        _logger.LogDebug("Built operation cache with {Count} entries", _operationCache.Count);
+    }
+
+    /// <summary>
+    /// Находит оригинальную операцию в документе (использует кэш для производительности)
+    /// </summary>
+    private OpenApiOperation? FindOriginalOperation(OpenApiDocument document, ApiOperation operation)
+    {
+        // Пытаемся найти в кэше
+        if (_operationCache != null)
+        {
+            // Пробуем разные варианты ключа
+            var operationId = operation.OperationId ?? GenerateOperationId(operation.Path, operation.HttpMethod);
+            var cacheKey = $"{operationId}|{operation.HttpMethod.Method}|{operation.Path}";
+            
+            if (_operationCache.TryGetValue(cacheKey, out var cachedOperation))
+            {
+                return cachedOperation;
+            }
+            
+            // Если не нашли по полному ключу, ищем по operationId и method
+            var partialKey = $"{operationId}|{operation.HttpMethod.Method}";
+            var matches = _operationCache.Where(kvp => kvp.Key.StartsWith(partialKey)).ToList();
+            if (matches.Count == 1)
+            {
+                return matches[0].Value;
+            }
+        }
+
+        // Fallback: поиск без кэша (для совместимости)
+        if (document.Paths == null)
+            return null;
+
+        foreach (var pathEntry in document.Paths)
+        {
+            if (pathEntry.Value.Operations == null)
+                continue;
+
+            foreach (var operationEntry in pathEntry.Value.Operations)
+            {
+                var openApiOperation = operationEntry.Value;
+                var openApiOperationId = openApiOperation.OperationId ?? 
+                    $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
+
+                if (openApiOperationId == operation.OperationId && 
                     operationEntry.Key.Method == operation.HttpMethod.Method)
                 {
                     return openApiOperation;
@@ -693,9 +765,85 @@ public class CSharpCodeGenerator : ICodeGenerator
     {
         var files = new Dictionary<string, string>();
 
+        // Собираем все уникальные исключения из всех операций
+        var exceptionClasses = new HashSet<string>();
+        var exceptionDataMap = new Dictionary<string, ExceptionTemplateData>();
+
         // Группируем операции по тегам или создаем один клиент
         var groupedOperations = GroupOperations(operations, config);
 
+        // Получаем C# опции для определения стиля query параметров
+        var csharpOptions = GetCSharpOptions(config);
+        var useQueryParametersModel = csharpOptions.QueryParametersStyle == QueryParametersStyle.ModelClass;
+
+        // Собираем информацию о всех исключениях и моделях query параметров
+        var queryParametersModels = new Dictionary<string, List<ParameterTemplateData>>();
+        foreach (var operation in operations)
+        {
+            var operationTemplate = CreateOperationTemplateData(operation, document, config, schemaResolver, useQueryParametersModel);
+            
+            // Собираем модели query параметров для генерации
+            if (useQueryParametersModel && operationTemplate.HasQueryParameters && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelClassName))
+            {
+                if (!queryParametersModels.ContainsKey(operationTemplate.QueryParametersModelClassName))
+                {
+                    queryParametersModels[operationTemplate.QueryParametersModelClassName] = operationTemplate.QueryParameters.ToList();
+                }
+            }
+            
+            foreach (var response in operationTemplate.Responses)
+            {
+                if (!response.IsSuccess && !string.IsNullOrEmpty(response.ExceptionClassName))
+                {
+                    if (!exceptionClasses.Contains(response.ExceptionClassName))
+                    {
+                        exceptionClasses.Add(response.ExceptionClassName);
+                        
+                        var statusCodeNumber = int.TryParse(response.StatusCode, out var code) ? code : 0;
+                        exceptionDataMap[response.ExceptionClassName] = new ExceptionTemplateData
+                        {
+                            Namespace = config.Namespace ?? "Generated",
+                            ClassName = response.ExceptionClassName,
+                            StatusCode = response.StatusCode,
+                            StatusCodeNumber = statusCodeNumber,
+                            Description = response.Description,
+                            ResponseTypeInfo = response.ResponseTypeInfo
+                        };
+                    }
+                }
+            }
+        }
+
+        // Генерируем базовый класс ValioHttpRequestException (только один раз)
+        if (exceptionDataMap.Count > 0)
+        {
+            var baseExceptionCode = GenerateBaseExceptionCode(config.Namespace ?? "Generated");
+            var baseExceptionPath = Path.Combine(config.OutputPath, "Exceptions", "ValioHttpRequestException.cs");
+            files[baseExceptionPath] = baseExceptionCode;
+        }
+
+        // Генерируем классы исключений
+        foreach (var exceptionData in exceptionDataMap.Values)
+        {
+            var exceptionCode = GenerateExceptionCode(exceptionData);
+            var fileName = $"{exceptionData.ClassName}.cs";
+            
+            // Определяем путь для файла исключения
+            string filePath;
+            if (config.FileOrganization.SeparateClients)
+            {
+                var clientsPath = config.FileOrganization.ClientsPath ?? "Clients";
+                filePath = Path.Combine(config.OutputPath, clientsPath, "Exceptions", fileName);
+            }
+            else
+            {
+                filePath = Path.Combine(config.OutputPath, "Exceptions", fileName);
+            }
+
+            files[filePath] = exceptionCode;
+        }
+
+        // Генерируем клиенты
         foreach (var group in groupedOperations)
         {
             var clientCode = GenerateClientCode(group.Value, group.Key, document, config, schemaResolver);
@@ -717,6 +865,122 @@ public class CSharpCodeGenerator : ICodeGenerator
         }
 
         return files;
+    }
+
+    /// <summary>
+    /// Генерирует код модели для query параметров
+    /// </summary>
+    private string GenerateQueryParametersModelCode(string className, List<ParameterTemplateData> parameters, GenerationConfiguration config)
+    {
+        var namespaceName = config.Namespace ?? "Generated";
+        var csharpOptions = GetCSharpOptions(config);
+
+        var properties = new List<PropertyTemplateData>();
+        foreach (var param in parameters)
+        {
+            properties.Add(new PropertyTemplateData
+            {
+                Name = _namingConverter.ToPascalCase(param.Name),
+                TypeInfo = param.TypeInfo,
+                IsRequired = param.IsRequired,
+                Description = param.Description,
+                AccessorType = csharpOptions.PropertyAccessor,
+                IsNullable = !param.IsRequired && !param.TypeInfo.IsNonNullableValueType()
+            });
+        }
+
+        var templateData = new ModelTemplateData
+        {
+            Namespace = namespaceName,
+            ClassName = className,
+            Properties = properties,
+            ModelType = csharpOptions.ModelType,
+            IsSealed = csharpOptions.UseSealed,
+            GenerateEqualityMembers = csharpOptions.GenerateEqualityMembers,
+            GenerateValidationConstants = csharpOptions.GenerateValidationConstants,
+            GenerateValidationAttributes = csharpOptions.GenerateValidationAttributes
+        };
+
+        return _templateRegistry.Render("csharp-model.cshtml", templateData);
+    }
+
+    private string GenerateExceptionCode(ExceptionTemplateData exceptionData)
+    {
+        return _templateRegistry.Render("csharp-exception.cshtml", exceptionData);
+    }
+
+    private string GenerateBaseExceptionCode(string namespaceName)
+    {
+        return $@"using System;
+using System.Net.Http;
+
+namespace {namespaceName};
+
+/// <summary>
+/// Базовый класс для всех исключений HTTP запросов ValIO
+/// </summary>
+public class ValioHttpRequestException : HttpRequestException
+{{
+    /// <summary>
+    /// HTTP ответ, вызвавший исключение
+    /// </summary>
+    public HttpResponseMessage Response {{ get; }}
+
+    /// <summary>
+    /// Имя операции, которая вызвала исключение
+    /// </summary>
+    public string? OperationName {{ get; }}
+
+    /// <summary>
+    /// HTTP метод запроса
+    /// </summary>
+    public string? HttpMethod {{ get; }}
+
+    /// <summary>
+    /// Путь запроса
+    /// </summary>
+    public string? RequestPath {{ get; }}
+
+    /// <summary>
+    /// HTTP статус код ответа
+    /// </summary>
+    public int? StatusCode {{ get; }}
+
+    public ValioHttpRequestException(string message, HttpResponseMessage response) 
+        : base(message)
+    {{
+        Response = response ?? throw new ArgumentNullException(nameof(response));
+        StatusCode = (int?)response.StatusCode;
+    }}
+
+    public ValioHttpRequestException(string message, HttpResponseMessage response, Exception innerException) 
+        : base(message, innerException)
+    {{
+        Response = response ?? throw new ArgumentNullException(nameof(response));
+        StatusCode = (int?)response.StatusCode;
+    }}
+
+    public ValioHttpRequestException(string message, HttpResponseMessage response, string? operationName, string? httpMethod, string? requestPath) 
+        : base(message)
+    {{
+        Response = response ?? throw new ArgumentNullException(nameof(response));
+        OperationName = operationName;
+        HttpMethod = httpMethod;
+        RequestPath = requestPath;
+        StatusCode = (int?)response.StatusCode;
+    }}
+
+    public ValioHttpRequestException(string message, HttpResponseMessage response, Exception innerException, string? operationName, string? httpMethod, string? requestPath) 
+        : base(message, innerException)
+    {{
+        Response = response ?? throw new ArgumentNullException(nameof(response));
+        OperationName = operationName;
+        HttpMethod = httpMethod;
+        RequestPath = requestPath;
+        StatusCode = (int?)response.StatusCode;
+    }}
+}}
+";
     }
 
     private Dictionary<string, List<ApiOperation>> GroupOperations(IReadOnlyList<ApiOperation> operations, GenerationConfiguration config)
@@ -808,8 +1072,10 @@ public class CSharpCodeGenerator : ICodeGenerator
     {
         var namespaceName = config.Namespace ?? "Generated";
         var className = $"{_namingConverter.ToPascalCase(clientName)}Client";
+        var csharpOptions = GetCSharpOptions(config);
+        var useQueryParametersModel = csharpOptions.QueryParametersStyle == QueryParametersStyle.ModelClass;
 
-        var operationTemplates = operations.Select(op => CreateOperationTemplateData(op, document, config, schemaResolver)).ToList();
+        var operationTemplates = operations.Select(op => CreateOperationTemplateData(op, document, config, schemaResolver, useQueryParametersModel)).ToList();
 
         var templateData = new ClientTemplateData
         {
@@ -822,7 +1088,7 @@ public class CSharpCodeGenerator : ICodeGenerator
         return _templateRegistry.Render("csharp-client.cshtml", templateData);
     }
 
-    private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver)
+    private OperationTemplateData CreateOperationTemplateData(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, bool useQueryParametersModel = false)
     {
         // Валидируем и генерируем имя метода
         var operationId = string.IsNullOrWhiteSpace(operation.OperationId) 
@@ -845,7 +1111,6 @@ public class CSharpCodeGenerator : ICodeGenerator
         var pathParameters = new List<ParameterTemplateData>();
         var queryParameters = new List<ParameterTemplateData>();
         var headerParameters = new List<ParameterTemplateData>();
-        var allParameters = new List<string>();
 
         foreach (var parameter in operation.Parameters)
         {
@@ -880,14 +1145,12 @@ public class CSharpCodeGenerator : ICodeGenerator
                     paramTypeInfo = TypeInfo.Simple(parameter.Type);
                 }
             }
-            
-            var paramString = FormatParameterString(paramTypeInfo, paramName, parameter.IsRequired);
-            allParameters.Add(paramString);
 
             var paramTemplate = new ParameterTemplateData
             {
                 Name = parameter.Name,
                 VariableName = paramName,
+                PropertyName = _namingConverter.ToPascalCase(parameter.Name),
                 TypeInfo = paramTypeInfo,
                 IsRequired = parameter.IsRequired,
                 Description = DecodeHtmlEntities(parameter.Description)
@@ -965,10 +1228,6 @@ public class CSharpCodeGenerator : ICodeGenerator
                         }
                     }
                     
-                    // Формируем строку параметра на основе TypeInfo
-                    var paramString = FormatParameterString(typeInfo, propName, formDataProp.IsRequired);
-                    allParameters.Add(paramString);
-                    
                     formDataProperties.Add(new FormDataPropertyTemplateData
                     {
                         Name = formDataProp.Name,
@@ -989,10 +1248,6 @@ public class CSharpCodeGenerator : ICodeGenerator
                 {
                     requestBodyTypeInfo = TypeInfo.Simple("object");
                 }
-                
-                // Формируем строку параметра на основе TypeInfo
-                var paramString = FormatParameterString(requestBodyTypeInfo, requestBodyParameter, operation.RequestBody.IsRequired);
-                allParameters.Add(paramString);
             }
         }
 
@@ -1004,13 +1259,141 @@ public class CSharpCodeGenerator : ICodeGenerator
                              !returnTypeInfo.GenericArguments[0].IsVoid &&
                              !returnTypeInfo.GenericArguments[0].IsHttpResponseMessage;
 
+        // Собираем информацию о всех ответах (включая ошибки)
+        var responses = new List<ResponseTemplateData>();
+        var originalOperationForResponses = FindOriginalOperation(document, operation);
+        
+        if (originalOperationForResponses?.Responses != null)
+        {
+            foreach (var responseEntry in originalOperationForResponses.Responses)
+            {
+                var statusCode = responseEntry.Key;
+                var openApiResponse = responseEntry.Value;
+                
+                // Определяем, является ли это успешным ответом
+                var isSuccess = statusCode.StartsWith("2") || statusCode == "default";
+                
+                // Определяем тип ответа для этого статус кода
+                TypeInfo? responseTypeInfo = null;
+                if (openApiResponse?.Content != null)
+                {
+                    var contentTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
+                    var responseSchema = FindSchemaInContent(openApiResponse.Content, contentTypes);
+                    
+                    if (responseSchema != null)
+                    {
+                        try
+                        {
+                            responseTypeInfo = MapSchemaToTypeInfo(responseSchema, document, schemaResolver, operation.OperationId, operation.Path, $"response {statusCode}");
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to map response type for status code '{StatusCode}' in operation '{OperationId}'", 
+                                statusCode, operation.OperationId);
+                        }
+                    }
+                }
+                
+                // Генерируем имя класса исключения для ошибок
+                string? exceptionClassName = null;
+                if (!isSuccess && responseTypeInfo != null)
+                {
+                    // Для ошибок с моделью создаем класс исключения
+                    var statusCodeNumber = int.TryParse(statusCode, out var code) ? code : 0;
+                    var exceptionName = statusCodeNumber switch
+                    {
+                        400 => "BadRequest",
+                        401 => "Unauthorized",
+                        403 => "Forbidden",
+                        404 => "NotFound",
+                        409 => "Conflict",
+                        422 => "UnprocessableEntity",
+                        500 => "InternalServerError",
+                        502 => "BadGateway",
+                        503 => "ServiceUnavailable",
+                        _ => $"Http{statusCode}Error"
+                    };
+                    exceptionClassName = $"{exceptionName}Exception";
+                }
+                
+                responses.Add(new ResponseTemplateData
+                {
+                    StatusCode = statusCode,
+                    Description = DecodeHtmlEntities(openApiResponse?.Description),
+                    ResponseTypeInfo = responseTypeInfo,
+                    IsSuccess = isSuccess,
+                    ExceptionClassName = exceptionClassName
+                });
+            }
+        }
+
+        // Генерируем имя модели для query параметров, если используется модель
+        string? queryParametersModelClassName = null;
+        if (useQueryParametersModel && queryParameters.Count > 0)
+        {
+            queryParametersModelClassName = $"{methodName}QueryParameters";
+        }
+
+        // Формируем параметры метода в зависимости от стиля
+        var methodParameters = new List<string>();
+        
+        // Path параметры всегда передаются отдельно
+        foreach (var pathParam in pathParameters)
+        {
+            var paramString = FormatParameterString(pathParam.TypeInfo, pathParam.VariableName, pathParam.IsRequired);
+            methodParameters.Add(paramString);
+        }
+        
+        // Query параметры: либо отдельно, либо как модель
+        if (useQueryParametersModel && queryParameters.Count > 0)
+        {
+            var queryModelType = TypeInfo.Simple(queryParametersModelClassName!);
+            var queryParamString = FormatParameterString(queryModelType, "query", false);
+            methodParameters.Add(queryParamString);
+        }
+        else
+        {
+            foreach (var queryParam in queryParameters)
+            {
+                var paramString = FormatParameterString(queryParam.TypeInfo, queryParam.VariableName, queryParam.IsRequired);
+                methodParameters.Add(paramString);
+            }
+        }
+        
+        // Header параметры всегда передаются отдельно
+        foreach (var headerParam in headerParameters)
+        {
+            var paramString = FormatParameterString(headerParam.TypeInfo, headerParam.VariableName, headerParam.IsRequired);
+            methodParameters.Add(paramString);
+        }
+        
+        // Request body
+        if (operation.RequestBody != null)
+        {
+            if (isFormData && formDataProperties.Count > 0)
+            {
+                // Form-data параметры передаются отдельно
+                foreach (var formDataProp in formDataProperties)
+                {
+                    var paramString = FormatParameterString(formDataProp.TypeInfo, formDataProp.VariableName, formDataProp.IsRequired);
+                    methodParameters.Add(paramString);
+                }
+            }
+            else
+            {
+                // Request body передается как один параметр
+                var paramString = FormatParameterString(requestBodyTypeInfo ?? TypeInfo.Simple("object"), requestBodyParameter, operation.RequestBody.IsRequired);
+                methodParameters.Add(paramString);
+            }
+        }
+
         return new OperationTemplateData
         {
             MethodName = methodName,
             HttpMethod = httpMethod,
             Path = path,
             Summary = DecodeHtmlEntities(operation.Summary),
-            Parameters = string.Join(", ", allParameters),
+            Parameters = string.Join(", ", methodParameters),
             ReturnTypeInfo = returnTypeInfo,
             HasRequestBody = operation.RequestBody != null,
             RequestBodyParameter = requestBodyParameter,
@@ -1024,7 +1407,10 @@ public class CSharpCodeGenerator : ICodeGenerator
             QueryParameters = queryParameters,
             HeaderParameters = headerParameters,
             IsFormData = isFormData,
-            FormDataProperties = formDataProperties.Count > 0 ? formDataProperties : null
+            FormDataProperties = formDataProperties.Count > 0 ? formDataProperties : null,
+            Responses = responses,
+            QueryParametersModelClassName = queryParametersModelClassName,
+            UseQueryParametersModel = useQueryParametersModel
         };
     }
 
@@ -1064,86 +1450,16 @@ public class CSharpCodeGenerator : ICodeGenerator
             {
                 // Пробуем найти схему в разных content types (приоритет: application/json)
                 var contentTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
-                IOpenApiSchema? responseSchema = null;
-                
-                // Сначала ищем application/json
-                foreach (var contentType in contentTypes)
-                {
-                    if (openApiResponse.Value.Content.TryGetValue(contentType, out var mediaType) && 
-                        mediaType?.Schema != null)
-                    {
-                        responseSchema = mediaType.Schema;
-                        break;
-                    }
-                }
-                
-                // Если не нашли по приоритету, берем первый доступный
-                if (responseSchema == null)
-                {
-                    var firstContent = openApiResponse.Value.Content.FirstOrDefault();
-                    if (firstContent.Key != null && firstContent.Value?.Schema != null)
-                    {
-                        responseSchema = firstContent.Value.Schema;
-                    }
-                }
+                var responseSchema = FindSchemaInContent(openApiResponse.Value.Content, contentTypes);
                 
                 if (responseSchema != null)
                 {
                     try
                     {
-                        // Сначала проверяем, является ли схема ссылкой напрямую
-                        string? schemaName = null;
-                        if (responseSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                        var typeInfo = MapSchemaToTypeInfo(responseSchema, document, schemaResolver, operation.OperationId, operation.Path, "response");
+                        if (typeInfo != null)
                         {
-                            var reference = refHolder.Reference;
-                            if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                            {
-                                schemaName = reference.Id;
-                            }
-                        }
-                        
-                        // Если не нашли через прямую проверку, используем GetSchemaName
-                        if (string.IsNullOrEmpty(schemaName))
-                        {
-                            schemaName = schemaResolver.GetSchemaName(responseSchema, string.Empty);
-                        }
-                        
-                        // Если имя найдено, используем его напрямую
-                        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
-                        {
-                            var typeName = _namingConverter.ToPascalCase(schemaName);
-                            var directTypeInfo = TypeInfo.Simple(typeName);
-                            return TypeInfo.Task(directTypeInfo);
-                        }
-                        
-                        // Если имя не найдено через ссылку, пытаемся найти через маппинг
-                        var mappedTypeInfo = _csharpTypeMapper.MapTypeInfo(responseSchema, schemaResolver);
-                        
-                        // Проверяем, что это не просто "object"
-                        if (!mappedTypeInfo.IsVoid && 
-                            !mappedTypeInfo.IsHttpResponseMessage && 
-                            mappedTypeInfo.FullTypeName != "object")
-                        {
-                            return TypeInfo.Task(mappedTypeInfo);
-                        }
-                        
-                        // Если все еще "object", пытаемся найти имя схемы в документе
-                        if (mappedTypeInfo.FullTypeName == "object" && document.Components?.Schemas != null)
-                        {
-                            var resolvedResponseSchema = schemaResolver.ResolveSchema(responseSchema);
-                            foreach (var schemaEntry in document.Components.Schemas)
-                            {
-                                var componentSchema = schemaResolver.ResolveSchema(schemaEntry.Value);
-                                // Сравниваем схемы по содержимому (упрощенная проверка)
-                                if (ReferenceEquals(componentSchema, resolvedResponseSchema) || 
-                                    (componentSchema.Properties != null && resolvedResponseSchema.Properties != null &&
-                                     componentSchema.Properties.Count == resolvedResponseSchema.Properties.Count))
-                                {
-                                    var foundTypeName = _namingConverter.ToPascalCase(schemaEntry.Key);
-                                    var foundTypeInfo = TypeInfo.Simple(foundTypeName);
-                                    return TypeInfo.Task(foundTypeInfo);
-                                }
-                            }
+                            return TypeInfo.Task(typeInfo);
                         }
                     }
                     catch (Exception ex)
@@ -1191,92 +1507,24 @@ public class CSharpCodeGenerator : ICodeGenerator
         {
             // Пробуем найти схему в разных content types (приоритет: application/json)
             var contentTypes = new[] { "application/json", "application/xml", "text/json", "text/xml", "application/octet-stream" };
-            IOpenApiSchema? requestBodySchema = null;
-            
-            // Сначала ищем application/json
-            foreach (var contentType in contentTypes)
-            {
-                if (originalOperation.RequestBody.Content.TryGetValue(contentType, out var mediaType) && 
-                    mediaType?.Schema != null)
-                {
-                    requestBodySchema = mediaType.Schema;
-                    break;
-                }
-            }
-            
-            // Если не нашли по приоритету, берем первый доступный
-            if (requestBodySchema == null)
-            {
-                var firstContent = originalOperation.RequestBody.Content.FirstOrDefault();
-                if (firstContent.Key != null && firstContent.Value?.Schema != null)
-                {
-                    requestBodySchema = firstContent.Value.Schema;
-                }
-            }
+            var requestBodySchema = FindSchemaInContent(originalOperation.RequestBody.Content, contentTypes);
             
             if (requestBodySchema != null)
             {
                 try
                 {
-                    // Сначала проверяем, является ли схема ссылкой напрямую
-                    string? schemaName = null;
-                    if (requestBodySchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                    var typeInfo = MapSchemaToTypeInfo(requestBodySchema, document, schemaResolver, operation.OperationId, operation.Path, "request body");
+                    if (typeInfo != null)
                     {
-                        var reference = refHolder.Reference;
-                        if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                        {
-                            schemaName = reference.Id;
-                        }
-                    }
-                    
-                    // Если не нашли через прямую проверку, используем GetSchemaName
-                    if (string.IsNullOrEmpty(schemaName))
-                    {
-                        schemaName = schemaResolver.GetSchemaName(requestBodySchema, string.Empty);
-                    }
-                    
-                    // Если имя найдено, используем его напрямую
-                    if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
-                    {
-                        var typeName = _namingConverter.ToPascalCase(schemaName);
-                        var directTypeInfo = TypeInfo.Simple(typeName);
-                        return directTypeInfo;
-                    }
-                    
-                    // Если имя не найдено через ссылку, пытаемся найти через маппинг
-                    var mappedTypeInfo = _csharpTypeMapper.MapTypeInfo(requestBodySchema, schemaResolver);
-                    
-                    // Проверяем, что это не просто "object"
-                    if (!mappedTypeInfo.IsVoid && 
-                        !mappedTypeInfo.IsHttpResponseMessage && 
-                        mappedTypeInfo.FullTypeName != "object")
-                    {
-                        return mappedTypeInfo;
-                    }
-                    
-                    // Если все еще "object", пытаемся найти имя схемы в документе
-                    if (mappedTypeInfo.FullTypeName == "object" && document.Components?.Schemas != null)
-                    {
-                        var resolvedRequestBodySchema = schemaResolver.ResolveSchema(requestBodySchema);
-                        foreach (var schemaEntry in document.Components.Schemas)
-                        {
-                            var componentSchema = schemaResolver.ResolveSchema(schemaEntry.Value);
-                            // Сравниваем схемы по содержимому (упрощенная проверка)
-                            if (ReferenceEquals(componentSchema, resolvedRequestBodySchema) || 
-                                (componentSchema.Properties != null && resolvedRequestBodySchema.Properties != null &&
-                                 componentSchema.Properties.Count == resolvedRequestBodySchema.Properties.Count))
-                            {
-                                var foundTypeName = _namingConverter.ToPascalCase(schemaEntry.Key);
-                                var foundTypeInfo = TypeInfo.Simple(foundTypeName);
-                                return foundTypeInfo;
-                            }
-                        }
+                        _logger.LogDebug("Mapped request body type '{TypeName}' for operation '{OperationId}' at path '{Path}'", 
+                            typeInfo.FullTypeName, operation.OperationId, operation.Path);
+                        return typeInfo;
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Failed to map request body type for operation '{OperationId}' at path '{Path}'. Using object.", 
-                        operation.OperationId, operation.Path);
+                    _logger.LogWarning(ex, "Failed to map request body type for operation '{OperationId}' at path '{Path}' (Method: {Method}). Using object. Error: {Error}", 
+                        operation.OperationId, operation.Path, operation.HttpMethod.Method, ex.Message);
                 }
             }
         }
@@ -1293,6 +1541,203 @@ public class CSharpCodeGenerator : ICodeGenerator
         // Создаем простой тип из строки (для обратной совместимости)
         var resultTypeInfo = TypeInfo.Simple(requestBodyType);
         return resultTypeInfo;
+    }
+
+    /// <summary>
+    /// Находит схему в содержимом по приоритету content types
+    /// </summary>
+    private IOpenApiSchema? FindSchemaInContent(IDictionary<string, IOpenApiMediaType> content, string[] preferredContentTypes)
+    {
+        // Сначала ищем по приоритету
+        foreach (var contentType in preferredContentTypes)
+        {
+            if (content.TryGetValue(contentType, out var mediaType) && mediaType?.Schema != null)
+            {
+                return mediaType.Schema;
+            }
+        }
+        
+        // Если не нашли по приоритету, берем первый доступный
+        var firstContent = content.FirstOrDefault();
+        if (firstContent.Key != null && firstContent.Value?.Schema != null)
+        {
+            return firstContent.Value.Schema;
+        }
+        
+        return null;
+    }
+
+    /// <summary>
+    /// Маппит схему OpenAPI в TypeInfo с использованием различных стратегий поиска
+    /// </summary>
+    private TypeInfo? MapSchemaToTypeInfo(
+        IOpenApiSchema schema, 
+        OpenApiDocument document, 
+        ISchemaResolver schemaResolver, 
+        string? operationId, 
+        string? path, 
+        string context)
+    {
+        // Проверяем кэш по ссылке на схему
+        string? cacheKey = null;
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+        {
+            var reference = refHolder.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+            {
+                cacheKey = reference.Id;
+                if (_schemaTypeInfoCache != null && _schemaTypeInfoCache.TryGetValue(cacheKey, out var cachedTypeInfo))
+                {
+                    return cachedTypeInfo;
+                }
+            }
+        }
+        
+        // Стратегия 1: Проверяем, является ли схема ссылкой напрямую
+        string? schemaName = null;
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder2)
+        {
+            var reference = refHolder2.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+            {
+                schemaName = reference.Id;
+            }
+        }
+        
+        // Стратегия 2: Если не нашли через прямую проверку, используем GetSchemaName
+        if (string.IsNullOrEmpty(schemaName))
+        {
+            schemaName = schemaResolver.GetSchemaName(schema, string.Empty);
+        }
+        
+        // Стратегия 3: Если имя найдено, используем его напрямую
+        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
+        {
+            var typeName = _namingConverter.ToPascalCase(schemaName);
+            var typeInfo = TypeInfo.Simple(typeName);
+            
+            // Сохраняем в кэш
+            if (cacheKey != null && _schemaTypeInfoCache != null)
+            {
+                _schemaTypeInfoCache[cacheKey] = typeInfo;
+            }
+            
+            return typeInfo;
+        }
+        
+        // Стратегия 4: Если имя не найдено через ссылку, пытаемся найти через маппинг
+        var mappedTypeInfo = _csharpTypeMapper.MapTypeInfo(schema, schemaResolver);
+        
+        // Проверяем, что это не просто "object"
+        if (!mappedTypeInfo.IsVoid && 
+            !mappedTypeInfo.IsHttpResponseMessage && 
+            mappedTypeInfo.FullTypeName != "object")
+        {
+            // Сохраняем в кэш
+            if (cacheKey != null && _schemaTypeInfoCache != null)
+            {
+                _schemaTypeInfoCache[cacheKey] = mappedTypeInfo;
+            }
+            
+            return mappedTypeInfo;
+        }
+        
+        // Стратегия 5: Если все еще "object", пытаемся найти имя схемы в документе
+        if (mappedTypeInfo.FullTypeName == "object" && document.Components?.Schemas != null)
+        {
+            var resolvedSchema = schemaResolver.ResolveSchema(schema);
+            foreach (var schemaEntry in document.Components.Schemas)
+            {
+                var componentSchema = schemaResolver.ResolveSchema(schemaEntry.Value);
+                // Сравниваем схемы по содержимому (упрощенная проверка)
+                if (ReferenceEquals(componentSchema, resolvedSchema) || 
+                    AreSchemasSimilar(componentSchema, resolvedSchema))
+                {
+                    var foundTypeName = _namingConverter.ToPascalCase(schemaEntry.Key);
+                    var foundTypeInfo = TypeInfo.Simple(foundTypeName);
+                    
+                    // Сохраняем в кэш
+                    if (cacheKey != null && _schemaTypeInfoCache != null)
+                    {
+                        _schemaTypeInfoCache[cacheKey] = foundTypeInfo;
+                    }
+                    
+                    return foundTypeInfo;
+                }
+            }
+        }
+        
+        return null;
+    }
+
+    /// <summary>
+    /// Проверяет, похожи ли две схемы по содержимому
+    /// </summary>
+    private bool AreSchemasSimilar(IOpenApiSchema schema1, IOpenApiSchema schema2)
+    {
+        if (schema1 == null || schema2 == null)
+            return false;
+        
+        // Проверяем типы
+        if (schema1.Type != schema2.Type)
+        {
+            return false;
+        }
+        
+        // Проверяем по количеству свойств
+        if (schema1.Properties != null && schema2.Properties != null)
+        {
+            if (schema1.Properties.Count != schema2.Properties.Count)
+            {
+                return false;
+            }
+            
+            // Проверяем, что все ключи совпадают
+            var keys1 = schema1.Properties.Keys.OrderBy(k => k).ToList();
+            var keys2 = schema2.Properties.Keys.OrderBy(k => k).ToList();
+            
+            if (!keys1.SequenceEqual(keys2))
+            {
+                return false;
+            }
+            
+            // Дополнительно проверяем типы свойств (упрощенная проверка)
+            foreach (var key in keys1)
+            {
+                var prop1 = schema1.Properties[key];
+                var prop2 = schema2.Properties[key];
+                
+                if (prop1?.Type != prop2?.Type)
+                {
+                    return false;
+                }
+            }
+        }
+        else if (schema1.Properties != null || schema2.Properties != null)
+        {
+            return false;
+        }
+        
+        // Проверяем формат
+        if (schema1.Format != schema2.Format)
+        {
+            return false;
+        }
+        
+        // Проверяем, являются ли обе схемы ссылками на один и тот же тип
+        if (schema1 is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder1 &&
+            schema2 is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder2)
+        {
+            var ref1 = refHolder1.Reference;
+            var ref2 = refHolder2.Reference;
+            
+            if (ref1 != null && ref2 != null && !string.IsNullOrEmpty(ref1.Id) && !string.IsNullOrEmpty(ref2.Id))
+            {
+                return ref1.Id == ref2.Id;
+            }
+        }
+        
+        return true;
     }
 
     /// <summary>
@@ -1332,6 +1777,87 @@ public class CSharpCodeGenerator : ICodeGenerator
         return $"{typeString}{nullableModifier} {parameterName}";
     }
 
+    /// <summary>
+    /// Валидирует операции на дублирующиеся operationId и другие проблемы
+    /// </summary>
+    private void ValidateOperations(IReadOnlyList<ApiOperation> operations, GenerationResult result)
+    {
+        var operationIds = new Dictionary<string, List<string>>();
+        var warnings = result.Warnings.ToList();
+        
+        foreach (var operation in operations)
+        {
+            var operationId = string.IsNullOrWhiteSpace(operation.OperationId) 
+                ? GenerateOperationId(operation.Path, operation.HttpMethod) 
+                : operation.OperationId;
+            
+            // Проверяем на пустой operationId
+            if (string.IsNullOrWhiteSpace(operationId))
+            {
+                var warning = $"Operation at path '{operation.Path}' with method '{operation.HttpMethod.Method}' has empty operationId";
+                warnings.Add(warning);
+                _logger.LogWarning(warning);
+                continue;
+            }
+            
+            // Проверяем на дублирующиеся operationId
+            var key = $"{operationId}";
+            if (!operationIds.ContainsKey(key))
+            {
+                operationIds[key] = new List<string>();
+            }
+            operationIds[key].Add($"{operation.HttpMethod.Method} {operation.Path}");
+        }
+        
+        // Находим дубликаты
+        foreach (var kvp in operationIds)
+        {
+            if (kvp.Value.Count > 1)
+            {
+                var warning = $"Duplicate operationId '{kvp.Key}' found at: {string.Join(", ", kvp.Value)}";
+                warnings.Add(warning);
+                _logger.LogWarning(warning);
+            }
+        }
+        
+        result.Warnings = warnings;
+    }
+
+    /// <summary>
+    /// Валидирует модели на пустые имена и другие проблемы
+    /// </summary>
+    private void ValidateModels(IReadOnlyList<ApiModel> models, GenerationResult result)
+    {
+        var modelNames = new HashSet<string>();
+        var warnings = result.Warnings.ToList();
+        
+        foreach (var model in models)
+        {
+            // Проверяем на пустое имя
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                var warning = "Found model with empty name, skipping";
+                warnings.Add(warning);
+                _logger.LogWarning(warning);
+                continue;
+            }
+            
+            // Проверяем на дублирующиеся имена (после конвертации в PascalCase)
+            var modelName = _namingConverter.ToPascalCase(model.Name);
+            if (modelNames.Contains(modelName))
+            {
+                var warning = $"Duplicate model name '{modelName}' found (original: '{model.Name}')";
+                warnings.Add(warning);
+                _logger.LogWarning(warning);
+            }
+            else
+            {
+                modelNames.Add(modelName);
+            }
+        }
+        
+        result.Warnings = warnings;
+    }
 
     private async Task EnsureTemplatesPreloadedAsync()
     {

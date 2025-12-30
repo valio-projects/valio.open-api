@@ -1,5 +1,6 @@
 @using ValIO.Generators.CSharp.Models
 @using ValIO.Generators.CSharp.Helpers
+@using System.Linq
 @model ClientTemplateData
 @functions {
     string FormatType(TypeInfo typeInfo)
@@ -25,27 +26,48 @@
 using System;
 using System.IO;
 using System.Net.Http;
-using System.Net.Http.Json;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 
 namespace @(namespaceName);
 
 /// <summary>
 /// HTTP клиент для @(clientName)
 /// </summary>
-public class @(className)
+public partial class @(className)
 {
     private readonly HttpClient _httpClient;
+    private readonly JsonSerializerOptions? _jsonSerializerOptions;
 
-    public @(className)(HttpClient httpClient)
+    public @(className)(HttpClient httpClient) : this(httpClient, null)
+    {
+    }
+
+    public @(className)(HttpClient httpClient, JsonSerializerOptions? jsonSerializerOptions)
     {
         _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _jsonSerializerOptions = jsonSerializerOptions;
     }
+
+    /// <summary>
+    /// Вызывается перед отправкой HTTP запроса. Позволяет кастомизировать запрос.
+    /// </summary>
+    /// <param name="request">HTTP запрос</param>
+    /// <param name="url">URL запроса</param>
+    /// <param name="cancellationToken">Токен отмены</param>
+    partial void PrepareRequestAsync(HttpRequestMessage request, string url, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Вызывается после получения HTTP ответа, но до десериализации. Позволяет кастомизировать обработку ответа.
+    /// </summary>
+    /// <param name="response">HTTP ответ</param>
+    /// <param name="cancellationToken">Токен отмены</param>
+    partial void ProcessResponseAsync(HttpResponseMessage response, CancellationToken cancellationToken);
 
 @foreach (var operation in operations)
 {
@@ -59,7 +81,7 @@ public class @(className)
     @:{
         @foreach (var param in operation.PathParameters)
         {
-            @if (param.IsRequired)
+            @if (param.IsRequired && !param.TypeInfo.IsNonNullableValueType())
             {
         @:if (@(param.VariableName) == null)
         @:    throw new ArgumentNullException(nameof(@(param.VariableName)));
@@ -68,7 +90,7 @@ public class @(className)
         
         @foreach (var param in operation.QueryParameters)
         {
-            @if (param.IsRequired)
+            @if (param.IsRequired && !param.TypeInfo.IsNonNullableValueType())
             {
         @:if (@(param.VariableName) == null)
         @:    throw new ArgumentNullException(nameof(@(param.VariableName)));
@@ -77,7 +99,7 @@ public class @(className)
         
         @if (operation.HasRequestBody && operation.RequestBodyParameter != null)
         {
-            @if (operation.RequestBodyContentType == "application/json")
+            @if (operation.RequestBodyContentType == "application/json" && operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNonNullableValueType())
             {
         @:if (@(operation.RequestBodyParameter) == null)
         @:    throw new ArgumentNullException(nameof(@(operation.RequestBodyParameter)));
@@ -89,7 +111,14 @@ public class @(className)
         @:var path = "@(operation.Path)";
             @foreach (var param in operation.PathParameters)
             {
-        @:path = path.Replace("{@(param.Name)}", Uri.EscapeDataString(@(param.VariableName).ToString() ?? string.Empty));
+                @if (param.TypeInfo.IsNonNullableValueType())
+                {
+        @:path = path.Replace("{@(param.Name)}", Uri.EscapeDataString(@(param.VariableName).ToString()));
+                }
+                else
+                {
+        @:path = path.Replace("{@(param.Name)}", Uri.EscapeDataString(@(param.VariableName)?.ToString() ?? string.Empty));
+                }
             }
         @:var url = path;
         }
@@ -101,25 +130,110 @@ public class @(className)
         @if (operation.HasQueryParameters)
         {
         @:var queryParams = new List<string>();
-            @foreach (var param in operation.QueryParameters)
+            @if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelClassName))
             {
+        @:if (query != null)
+        @:{
+                @foreach (var param in operation.QueryParameters)
+                {
+        @:    var @(param.VariableName) = query.@(param.PropertyName);
+        @:    if (@(param.VariableName) != null)
+        @:    {
+                        @if (param.TypeInfo.IsCollection)
+                        {
+                            var itemType = param.TypeInfo.GenericArguments.FirstOrDefault();
+                            var isItemNonNullableValueType = itemType?.IsNonNullableValueType() ?? false;
+        @:        foreach (var item in @(param.VariableName))
+        @:        {
+                            @if (isItemNonNullableValueType)
+                            {
+        @:            queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(item.ToString())}");
+                            }
+                            else
+                            {
+        @:            if (item != null)
+        @:            {
+        @:                queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(item.ToString() ?? string.Empty)}");
+        @:            }
+                            }
+        @:        }
+                        }
+                        else if (param.TypeInfo.IsDictionary)
+                        {
+                            var valueType = param.TypeInfo.GenericArguments.Count > 1 ? param.TypeInfo.GenericArguments[1] : null;
+                            var isValueNonNullableValueType = valueType?.IsNonNullableValueType() ?? false;
+        @:        foreach (var kvp in @(param.VariableName))
+        @:        {
+                            @if (isValueNonNullableValueType)
+                            {
+        @:            queryParams.Add($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value.ToString())}");
+                            }
+                            else
+                            {
+        @:            queryParams.Add($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value?.ToString() ?? string.Empty)}");
+                            }
+        @:        }
+                        }
+                        else if (!param.TypeInfo.IsPrimitive && param.TypeInfo.BaseType != "object")
+                        {
+        @:        // Complex object - serialize to JSON and add as query parameter
+        @:        var jsonValue = System.Text.Json.JsonSerializer.Serialize(@(param.VariableName));
+        @:        queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(jsonValue)}");
+                        }
+                        else
+                        {
+                            @if (param.TypeInfo.IsNonNullableValueType())
+                            {
+        @:        queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName).ToString())}");
+                            }
+                            else
+                            {
+        @:        queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName)?.ToString() ?? string.Empty)}");
+                            }
+                        }
+        @:    }
+                }
+        @:}
+            }
+            else
+            {
+                @foreach (var param in operation.QueryParameters)
+                {
         @:if (@(param.VariableName) != null)
         @:{
                     @if (param.TypeInfo.IsCollection)
                     {
+                        var itemType = param.TypeInfo.GenericArguments.FirstOrDefault();
+                        var isItemNonNullableValueType = itemType?.IsNonNullableValueType() ?? false;
         @:    foreach (var item in @(param.VariableName))
         @:    {
+                        @if (isItemNonNullableValueType)
+                        {
+        @:        queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(item.ToString())}");
+                        }
+                        else
+                        {
         @:        if (item != null)
         @:        {
         @:            queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(item.ToString() ?? string.Empty)}");
         @:        }
+                        }
         @:    }
                     }
                     else if (param.TypeInfo.IsDictionary)
                     {
+                        var valueType = param.TypeInfo.GenericArguments.Count > 1 ? param.TypeInfo.GenericArguments[1] : null;
+                        var isValueNonNullableValueType = valueType?.IsNonNullableValueType() ?? false;
         @:    foreach (var kvp in @(param.VariableName))
         @:    {
+                        @if (isValueNonNullableValueType)
+                        {
+        @:        queryParams.Add($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value.ToString())}");
+                        }
+                        else
+                        {
         @:        queryParams.Add($"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value?.ToString() ?? string.Empty)}");
+                        }
         @:    }
                     }
                     else if (!param.TypeInfo.IsPrimitive && param.TypeInfo.BaseType != "object")
@@ -130,9 +244,17 @@ public class @(className)
                     }
                     else
                     {
-        @:    queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName).ToString() ?? string.Empty)}");
+                        @if (param.TypeInfo.IsNonNullableValueType())
+                        {
+        @:    queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName).ToString())}");
+                        }
+                        else
+                        {
+        @:    queryParams.Add($"{Uri.EscapeDataString("@(param.Name)")}={Uri.EscapeDataString(@(param.VariableName)?.ToString() ?? string.Empty)}");
+                        }
                     }
         @:}
+                }
             }
         @:if (queryParams.Count > 0)
         @:{
@@ -142,14 +264,20 @@ public class @(className)
 
         @:var request = new HttpRequestMessage(HttpMethod.@(operation.HttpMethod), url);
 
+        @:// Вызываем partial method для кастомизации запроса перед отправкой
+        @:PrepareRequestAsync(request, url, cancellationToken);
+
         @if (operation.HasHeaderParameters)
         {
             @foreach (var param in operation.HeaderParameters)
             {
-                @if (param.IsRequired)
+                @if (param.IsRequired && !param.TypeInfo.IsNonNullableValueType())
                 {
         @:if (@(param.VariableName) == null)
         @:    throw new ArgumentNullException(nameof(@(param.VariableName)));
+                }
+                @if (param.TypeInfo.IsNonNullableValueType())
+                {
         @:request.Headers.Add("@(param.Name)", @(param.VariableName).ToString());
                 }
                 else
@@ -171,25 +299,47 @@ public class @(className)
         @:var formData = new Dictionary<string, string>();
                     @foreach (var prop in operation.FormDataProperties)
                     {
-                        @if (prop.IsRequired)
+                        @if (prop.IsRequired && !prop.TypeInfo.IsNonNullableValueType())
                         {
         @:if (@(prop.VariableName) == null)
         @:    throw new ArgumentNullException(nameof(@(prop.VariableName)));
                         }
+                        @if (prop.TypeInfo.IsCollection)
+                        {
+                            var itemType = prop.TypeInfo.GenericArguments.FirstOrDefault();
+                            var isItemNonNullableValueType = itemType?.IsNonNullableValueType() ?? false;
         @:if (@(prop.VariableName) != null)
         @:{
-                            @if (prop.TypeInfo.IsCollection)
-                            {
         @:    foreach (var item in @(prop.VariableName))
         @:    {
-        @:        formData.Add("@(prop.Name)", item?.ToString() ?? string.Empty);
-        @:    }
+                            @if (isItemNonNullableValueType)
+                            {
+        @:        formData.Add("@(prop.Name)", item.ToString());
                             }
                             else
                             {
-        @:    formData.Add("@(prop.Name)", @(prop.VariableName).ToString() ?? string.Empty);
+        @:        if (item != null)
+        @:        {
+        @:            formData.Add("@(prop.Name)", item.ToString() ?? string.Empty);
+        @:        }
                             }
+        @:    }
         @:}
+                        }
+                        else
+                        {
+                            @if (prop.TypeInfo.IsNonNullableValueType())
+                            {
+        @:formData.Add("@(prop.Name)", @(prop.VariableName).ToString());
+                            }
+                            else
+                            {
+        @:if (@(prop.VariableName) != null)
+        @:{
+        @:    formData.Add("@(prop.Name)", @(prop.VariableName).ToString() ?? string.Empty);
+        @:}
+                            }
+                        }
                     }
         @:request.Content = new FormUrlEncodedContent(formData);
                 }
@@ -198,17 +348,17 @@ public class @(className)
         @:var multipartContent = new MultipartFormDataContent();
                     @foreach (var prop in operation.FormDataProperties)
                     {
-                        @if (prop.IsRequired)
+                        @if (prop.IsRequired && !prop.TypeInfo.IsNonNullableValueType() && !prop.TypeInfo.IsFile)
                         {
         @:if (@(prop.VariableName) == null)
         @:    throw new ArgumentNullException(nameof(@(prop.VariableName)));
                         }
+                        @if (prop.TypeInfo.IsFile)
+                        {
+                            @if (prop.TypeInfo.IsCollection)
+                            {
         @:if (@(prop.VariableName) != null)
         @:{
-                            @if (prop.TypeInfo.IsFile)
-                            {
-                                @if (prop.TypeInfo.IsCollection)
-                                {
         @:    foreach (var file in @(prop.VariableName))
         @:    {
         @:        if (file != null)
@@ -217,35 +367,61 @@ public class @(className)
         @:            multipartContent.Add(streamContent, "@(prop.Name)", "file");
         @:        }
         @:    }
-                                }
-                                else
-                                {
+        @:}
+                            }
+                            else
+                            {
+        @:if (@(prop.VariableName) != null)
+        @:{
         @:    var streamContent = new StreamContent(@(prop.VariableName));
         @:    multipartContent.Add(streamContent, "@(prop.Name)", "file");
-                                }
+        @:}
                             }
-                            else if (prop.TypeInfo.IsCollection)
-                            {
+                        }
+                        else if (prop.TypeInfo.IsCollection)
+                        {
+                            var itemType = prop.TypeInfo.GenericArguments.FirstOrDefault();
+                            var isItemNonNullableValueType = itemType?.IsNonNullableValueType() ?? false;
+        @:if (@(prop.VariableName) != null)
+        @:{
         @:    foreach (var item in @(prop.VariableName))
         @:    {
+                            @if (isItemNonNullableValueType)
+                            {
+        @:        multipartContent.Add(new StringContent(item.ToString()), "@(prop.Name)");
+                            }
+                            else
+                            {
         @:        if (item != null)
         @:        {
         @:            multipartContent.Add(new StringContent(item.ToString() ?? string.Empty), "@(prop.Name)");
         @:        }
+                            }
         @:    }
+        @:}
+                        }
+                        else
+                        {
+                            @if (prop.TypeInfo.IsNonNullableValueType())
+                            {
+        @:multipartContent.Add(new StringContent(@(prop.VariableName).ToString()), "@(prop.Name)");
                             }
                             else
                             {
+        @:if (@(prop.VariableName) != null)
+        @:{
         @:    multipartContent.Add(new StringContent(@(prop.VariableName).ToString() ?? string.Empty), "@(prop.Name)");
-                            }
         @:}
+                            }
+                        }
                     }
         @:request.Content = multipartContent;
                 }
             }
             else if (operation.RequestBodyContentType == "application/json")
             {
-        @:request.Content = JsonContent.Create(@(operation.RequestBodyParameter));
+        @:var jsonContent = System.Text.Json.JsonSerializer.Serialize(@(operation.RequestBodyParameter), _jsonSerializerOptions);
+        @:request.Content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
             }
             else if (operation.RequestBodyContentType == "application/octet-stream" || operation.RequestBodyContentType == "application/pdf" || operation.RequestBodyContentType?.StartsWith("image/") == true || operation.RequestBodyContentType?.StartsWith("video/") == true || operation.RequestBodyContentType?.StartsWith("audio/") == true)
             {
@@ -272,19 +448,166 @@ public class @(className)
 
         @:var response = await _httpClient.SendAsync(request, cancellationToken);
         
+        @:// Вызываем partial method для кастомизации ответа после получения
+        @:ProcessResponseAsync(response, cancellationToken);
+        
+        @:// Обрабатываем ответы и выбрасываем исключения для ошибок
+        @:var statusCode = (int)response.StatusCode;
+        @if (operation.Responses != null && operation.Responses.Count > 0)
+        {
+            @foreach (var responseInfo in operation.Responses)
+            {
+                @if (!responseInfo.IsSuccess && !string.IsNullOrEmpty(responseInfo.ExceptionClassName))
+                {
+                    var statusCodeValue = int.TryParse(responseInfo.StatusCode, out var code) ? code : 0;
+                    @if (statusCodeValue > 0)
+                    {
+        @:if (statusCode == @(statusCodeValue))
+        @:{
+                        @if (responseInfo.ResponseTypeInfo != null)
+                        {
+                            var errorResponseType = responseInfo.ResponseTypeInfo.FullTypeName;
+        @:    // Десериализуем ответ ошибки (для ошибок не проверяем contentType - ошибки обычно маленькие)
+        @:    @(errorResponseType)? errorResponse = null;
+        @:    if (response.Content != null && response.Content.Headers.ContentLength > 0)
+        @:    {
+        @:        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        @:        if (!string.IsNullOrWhiteSpace(responseContent))
+        @:        {
+        @:            try
+        @:            {
+        @:                errorResponse = System.Text.Json.JsonSerializer.Deserialize<@(errorResponseType)>(responseContent, _jsonSerializerOptions);
+        @:            }
+        @:            catch (JsonException ex)
+        @:            {
+        @:                // Если не удалось десериализовать, передаем inner exception
+        @:                throw new @(responseInfo.ExceptionClassName)(response, default(@(errorResponseType)), ex, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+        @:            }
+        @:        }
+        @:    }
+        @:    throw new @(responseInfo.ExceptionClassName)(response, errorResponse ?? default(@(errorResponseType)), null, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+                        }
+                        else
+                        {
+        @:    throw new @(responseInfo.ExceptionClassName)(response, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+                        }
+        @:}
+                    }
+                    else if (responseInfo.StatusCode == "default")
+                    {
+        @:if (statusCode >= 400)
+        @:{
+                        @if (responseInfo.ResponseTypeInfo != null)
+                        {
+                            var errorResponseType = responseInfo.ResponseTypeInfo.FullTypeName;
+        @:    // Десериализуем ответ ошибки (для ошибок не проверяем contentType - ошибки обычно маленькие)
+        @:    @(errorResponseType)? errorResponse = null;
+        @:    if (response.Content != null && response.Content.Headers.ContentLength > 0)
+        @:    {
+        @:        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        @:        if (!string.IsNullOrWhiteSpace(responseContent))
+        @:        {
+        @:            try
+        @:            {
+        @:                errorResponse = System.Text.Json.JsonSerializer.Deserialize<@(errorResponseType)>(responseContent, _jsonSerializerOptions);
+        @:            }
+        @:            catch (JsonException ex)
+        @:            {
+        @:                // Если не удалось десериализовать, передаем inner exception
+        @:                throw new @(responseInfo.ExceptionClassName)(response, default(@(errorResponseType)), ex, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+        @:            }
+        @:        }
+        @:    }
+        @:    throw new @(responseInfo.ExceptionClassName)(response, errorResponse ?? default(@(errorResponseType)), null, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+                        }
+                        else
+                        {
+        @:    throw new @(responseInfo.ExceptionClassName)(response, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+                        }
+        @:}
+                    }
+                }
+            }
+        }
+        
         @if (operation.HasResponseType)
         {
             var responseType = GetResponseType(operation.ReturnTypeInfo);
             @if (!string.IsNullOrEmpty(responseType) && !operation.ReturnTypeInfo.IsVoid && !operation.ReturnTypeInfo.IsHttpResponseMessage)
             {
-        @:response.EnsureSuccessStatusCode();
-        @:
-        @:if (response.Content.Headers.ContentLength == 0)
+        @:// Обрабатываем успешный ответ (2xx)
+        @:if (statusCode < 200 || statusCode >= 300)
         @:{
-        @:    return default(@(responseType));
+        @:    // Если это не успешный ответ и нет специфичного исключения, выбрасываем общее
+        @:    response.EnsureSuccessStatusCode();
         @:}
         @:
-        @:return await response.Content.ReadFromJsonAsync<@(responseType)>(cancellationToken: cancellationToken) ?? throw new InvalidOperationException("Response deserialization returned null");
+        @:// Десериализуем успешный ответ
+        @:try
+        @:{
+        @:
+        @:    // Проверяем, есть ли содержимое в ответе
+        @:    if (response.Content == null || response.Content.Headers.ContentLength == 0)
+        @:    {
+        @:        return default(@(responseType));
+        @:    }
+        @:
+        @:    // Определяем content type для выбора способа чтения
+        @:    var contentType = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() ?? string.Empty;
+        @:
+        @:    // Для JSON ответов читаем как строку и десериализуем
+        @:    if (contentType.Contains("json") || string.IsNullOrEmpty(contentType))
+        @:    {
+        @:        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);
+        @:
+        @:        if (string.IsNullOrWhiteSpace(responseContent))
+        @:        {
+        @:            return default(@(responseType));
+        @:        }
+        @:
+        @:        // Явная десериализация через JsonSerializer
+        @:        try
+        @:        {
+        @:            var result = System.Text.Json.JsonSerializer.Deserialize<@(responseType)>(responseContent, _jsonSerializerOptions);
+        @:            return result ?? throw new ValioHttpRequestException($"Response deserialization returned null for type {@(responseType)}", response, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+        @:        }
+        @:        catch (JsonException ex)
+        @:        {
+        @:            var preview = responseContent.Length > 500 ? responseContent.Substring(0, 500) + "..." : responseContent;
+        @:            throw new ValioHttpRequestException($"Failed to deserialize response to type {@(responseType)}. Response preview: {preview}", response, ex, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+        @:        }
+        @:    }
+        @:    else
+        @:    {
+        @:        // Для не-JSON ответов читаем как поток (для бинарных данных, XML и т.д.)
+        @:        // В этом случае пользователь должен обработать ответ вручную через partial method
+        @:        using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        @:        using var memoryStream = new MemoryStream();
+        @:        await responseStream.CopyToAsync(memoryStream, cancellationToken);
+        @:        memoryStream.Position = 0;
+        @:        
+        @:        // Пытаемся десериализовать из потока
+        @:        try
+        @:        {
+        @:            var result = await System.Text.Json.JsonSerializer.DeserializeAsync<@(responseType)>(memoryStream, _jsonSerializerOptions, cancellationToken);
+        @:            return result ?? throw new ValioHttpRequestException($"Response deserialization returned null for type {@(responseType)}", response, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+        @:        }
+        @:        catch (JsonException ex)
+        @:        {
+        @:            throw new ValioHttpRequestException($"Failed to deserialize response stream to type {@(responseType)}. Content-Type: {contentType}", response, ex, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+        @:        }
+        @:    }
+        @:}
+        @:catch (ValioHttpRequestException)
+        @:{
+        @:    // Пробрасываем ValioHttpRequestException как есть
+        @:    throw;
+        @:}
+        @:catch (HttpRequestException ex)
+        @:{
+        @:    // Обертываем стандартные HttpRequestException в ValioHttpRequestException
+        @:    throw new ValioHttpRequestException($"HTTP request failed with status {response.StatusCode} ({response.ReasonPhrase}). Operation: {@(operation.MethodName)}", response, ex, "@(operation.MethodName)", "@(operation.HttpMethod)", "@(operation.Path)");
+        @:}
             }
             else
             {

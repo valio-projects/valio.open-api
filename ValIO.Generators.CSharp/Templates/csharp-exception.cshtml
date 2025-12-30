@@ -1,0 +1,70 @@
+@using ValIO.Generators.CSharp.Models
+@model ExceptionTemplateData
+@{
+    var namespaceName = Model.Namespace;
+    var className = Model.ClassName;
+    var statusCode = Model.StatusCode;
+    var statusCodeNumber = Model.StatusCodeNumber;
+    var description = Model.Description;
+    var hasResponseType = Model.ResponseTypeInfo != null;
+    var responseType = hasResponseType ? Model.ResponseTypeInfo!.FullTypeName : null;
+}
+using System;
+using System.Net;
+using System.Net.Http;
+
+namespace @(namespaceName);
+
+@if (hasResponseType)
+{
+<text>/// <summary>
+/// Исключение, возникающее при получении HTTP статус кода @(statusCode) (@(statusCodeNumber))
+@if (!string.IsNullOrEmpty(description))
+{
+    @:/// @Raw(description)
+}
+/// </summary>
+public class @(className) : ValioHttpRequestException
+{
+    /// <summary>
+    /// Десериализованный ответ от сервера
+    /// </summary>
+    public @(responseType) ResponseData { get; }
+
+    public @(className)(HttpResponseMessage response, @(responseType) responseData, string? operationName = null, string? httpMethod = null, string? requestPath = null) 
+        : base($"HTTP @(statusCodeNumber) @(statusCode): {{response?.ReasonPhrase ?? "Unknown"}}", response, operationName, httpMethod, requestPath)
+    {
+        ResponseData = responseData;
+    }
+
+    public @(className)(HttpResponseMessage response, @(responseType) responseData, Exception innerException, string? operationName = null, string? httpMethod = null, string? requestPath = null) 
+        : base($"HTTP @(statusCodeNumber) @(statusCode): {{response?.ReasonPhrase ?? "Unknown"}}", response, innerException, operationName, httpMethod, requestPath)
+    {
+        ResponseData = responseData;
+    }
+}
+</text>
+}
+else
+{
+<text>/// <summary>
+/// Исключение, возникающее при получении HTTP статус кода @(statusCode) (@(statusCodeNumber))
+@if (!string.IsNullOrEmpty(description))
+{
+    @:/// @Raw(description)
+}
+/// </summary>
+public class @(className) : ValioHttpRequestException
+{
+    public @(className)(HttpResponseMessage response, string? operationName = null, string? httpMethod = null, string? requestPath = null) 
+        : base($"HTTP @(statusCodeNumber) @(statusCode): {{response?.ReasonPhrase ?? "Unknown"}}", response, operationName, httpMethod, requestPath)
+    {
+    }
+
+    public @(className)(HttpResponseMessage response, Exception innerException, string? operationName = null, string? httpMethod = null, string? requestPath = null) 
+        : base($"HTTP @(statusCodeNumber) @(statusCode): {{response?.ReasonPhrase ?? "Unknown"}}", response, innerException, operationName, httpMethod, requestPath)
+    {
+    }
+}
+</text>
+}

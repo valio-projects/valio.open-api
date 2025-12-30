@@ -14,7 +14,8 @@
       "generateEqualityMembers": true,
       "useNullable": true,
       "generateValidationConstants": true,
-      "generateValidationAttributes": true
+      "generateValidationAttributes": true,
+      "queryParametersStyle": "ModelClass"
     }
   },
   "fileOrganization": {

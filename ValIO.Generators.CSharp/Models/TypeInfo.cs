@@ -61,6 +61,49 @@ public class TypeInfo
     public string FullTypeName { get; set; } = string.Empty;
 
     /// <summary>
+    /// Определяет, является ли тип value type (структура, примитив, enum)
+    /// </summary>
+    public bool IsValueType()
+    {
+        // Примитивные типы (кроме string) - это value types
+        if (IsPrimitive && BaseType != "string" && BaseType != "object")
+        {
+            return true;
+        }
+
+        // Известные value types
+        var valueTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "bool", "byte", "sbyte", "char", "decimal", "double", "float",
+            "int", "uint", "long", "ulong", "short", "ushort",
+            "Guid", "DateTime", "DateTimeOffset", "TimeSpan"
+        };
+
+        // Проверяем базовый тип
+        if (valueTypes.Contains(BaseType))
+        {
+            return true;
+        }
+
+        // Если это не коллекция, не словарь, не Task, не void, не HttpResponseMessage,
+        // и не string, не object, то это может быть пользовательская структура или enum
+        // Но для безопасности, если это не примитив и не известный тип, считаем reference type
+        // Исключение: если BaseType начинается с заглавной буквы и не является коллекцией/словарем,
+        // это может быть пользовательская структура или enum, но мы не можем точно определить
+        // Поэтому для пользовательских типов (не примитивов) считаем reference type
+        
+        return false;
+    }
+
+    /// <summary>
+    /// Определяет, является ли тип non-nullable value type (не может быть null)
+    /// </summary>
+    public bool IsNonNullableValueType()
+    {
+        return IsValueType() && !IsNullable;
+    }
+
+    /// <summary>
     /// Создает простой тип (не generic, не nullable)
     /// </summary>
     public static TypeInfo Simple(string baseType, bool isPrimitive = false, bool isFile = false)
