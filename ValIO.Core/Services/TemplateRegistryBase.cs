@@ -65,6 +65,7 @@ public abstract class TemplateRegistryBase : ITemplateRegistry
         {
             // Используем ключ шаблона для кэширования в RazorLight
             var templateKey = templateName;
+            
             var result = await _razorEngine.CompileRenderStringAsync(templateKey, templateContent, model);
             return result;
         }

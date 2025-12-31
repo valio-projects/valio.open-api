@@ -112,13 +112,13 @@
     var keyParams = new List<string>();
     keyParams.AddRange(pathParams.Select(FormatParameter));
     keyParams.AddRange(queryParams.Select(FormatParameter));
-    var keyParamsStr = string.Join(",\n  ", keyParams);
+    var keyParamsStr = keyParams.Count > 0 ? "  " + string.Join(",\n  ", keyParams) : "";
     
     // Precompute hook parameters
     var hookParams = new List<string>();
     hookParams.AddRange(pathParams.Select(FormatParameter));
     hookParams.AddRange(queryParams.Select(FormatParameter));
-    var hookParamsStr = string.Join(",\n  ", hookParams);
+    var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) : "";
     var returnType = GetResponseType(operationTemplate.ReturnTypeInfo);
     var axiosOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
     
@@ -171,7 +171,7 @@
     {
         queryFnParams.Add("axiosOptions?.axiosInstance");
     }
-    var queryFnArgsStr = string.Join(",\n      ", queryFnParams);
+    var queryFnArgsStr = queryFnParams.Count > 0 ? "      " + string.Join(",\n      ", queryFnParams) : "";
     
     var queryReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
     var destructuringOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions";
@@ -416,16 +416,10 @@ else
 @Raw($"  return {BuildQueryKey(pathParams, queryParams, operationTemplate.Path)};\n")
 @Raw("};\n")
 @Raw("\n")
-@Raw($"export const {hookName} = <\n")
-@Raw($"  TData = Awaited<ReturnType<typeof {clientMethodName}>>,\n")
-@Raw($"  TError = Error,\n")
-@Raw($">(\n")
-@Raw($"{hookParamsStr}\n")
-@Raw("  options?: {\n")
-@Raw($"    query?: UseQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData>;\n")
-@Raw($"{axiosOption}\n")
-@Raw($"  }},\n")
-@Raw("): UseQueryResult<TData, TError> => {\n")
+@{
+    var hookSignature = $"export const {hookName} = <\n  TData = Awaited<ReturnType<typeof {clientMethodName}>>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: UseQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData>;\n{axiosOption}\n  }},\n): UseQueryResult<TData, TError> => {{\n";
+}
+@Raw(hookSignature)
 @Raw($"  const signal = options?.query?.signal;\n")
 @Raw(destructuringLine)
 @Raw("\n")
@@ -466,16 +460,10 @@ else
 @Raw("};\n")
 @Raw("\n")
 @Raw("// Query Options Helper\n")
-@Raw($"export const {queryOptionsFunctionName} = <\n")
-@Raw($"  TData = Awaited<ReturnType<typeof {clientMethodName}>>,\n")
-@Raw($"  TError = Error,\n")
-@Raw($">(\n")
-@Raw($"{hookParamsStr}\n")
-@Raw("  options?: {\n")
-@Raw($"    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData>>;\n")
-@Raw($"{axiosOption}\n")
-@Raw($"  }},\n")
-@Raw(") => {\n")
+@{
+    var queryOptionsSignature = $"export const {queryOptionsFunctionName} = <\n  TData = Awaited<ReturnType<typeof {clientMethodName}>>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData>>;\n{axiosOption}\n  }}}},\n) => {{\n";
+}
+@Raw(queryOptionsSignature)
 @Raw(destructuringLine2)
 @Raw($"  const queryKey = queryOptions?.queryKey ?? {Model.QueryKeyFunctionName}({keyArgsStr});\n")
 @Raw(queryFnLine)
@@ -498,16 +486,10 @@ else
 @Raw($"  return ['infinite', {BuildQueryKey(pathParams, queryParams, operationTemplate.Path)}];\n")
 @Raw("};\n")
 @Raw("\n")
-@Raw($"export const {infiniteQueryOptionsFunctionName} = <\n")
-@Raw($"  TData = InfiniteData<Awaited<ReturnType<typeof {clientMethodName}>>, unknown>,\n")
-@Raw($"  TError = Error,\n")
-@Raw($">(\n")
-@Raw($"{hookParamsStr}\n")
-@Raw("  options?: {\n")
-@Raw($"    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData, Awaited<ReturnType<typeof {clientMethodName}>>, QueryKey, unknown>>;\n")
-@Raw($"{axiosOption}\n")
-@Raw($"  }},\n")
-@Raw(") => {\n")
+@{
+    var infiniteQueryOptionsSignature = $"export const {infiniteQueryOptionsFunctionName} = <\n  TData = InfiniteData<Awaited<ReturnType<typeof {clientMethodName}>>, unknown>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData, Awaited<ReturnType<typeof {clientMethodName}>>, QueryKey, unknown>>;\n{axiosOption}\n  }}}},\n) => {{\n";
+}
+@Raw(infiniteQueryOptionsSignature)
 @Raw(destructuringLine3)
 @Raw($"  const queryKey = queryOptions?.queryKey ?? {infiniteQueryKeyFunctionName}({keyArgsStr});\n")
 @Raw(infiniteQueryFnLine)
@@ -522,49 +504,29 @@ else
 @Raw(infiniteReturnEnd)
 @Raw("};\n")
 @Raw("\n")
-@Raw($"export const {infiniteHookName} = <\n")
-@Raw($"  TData = InfiniteData<Awaited<ReturnType<typeof {clientMethodName}>>, unknown>,\n")
-@Raw($"  TError = Error,\n")
-@Raw($">(\n")
-@Raw($"{hookParamsStr}\n")
-@Raw("  options?: {\n")
-@Raw($"    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData, Awaited<ReturnType<typeof {clientMethodName}>>, QueryKey, unknown>>;\n")
-@Raw($"{axiosOption}\n")
-@Raw($"  }},\n")
-@Raw("): UseInfiniteQueryResult<TData, TError> => {\n")
+@{
+    var infiniteHookSignature = $"export const {infiniteHookName} = <\n  TData = InfiniteData<Awaited<ReturnType<typeof {clientMethodName}>>, unknown>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData, Awaited<ReturnType<typeof {clientMethodName}>>, QueryKey, unknown>>;\n{axiosOption}\n  }}}},\n): UseInfiniteQueryResult<TData, TError> => {{\n";
+}
+@Raw(infiniteHookSignature)
 @Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}({keyArgsStr}, options);\n")
 @Raw($"  const query = useInfiniteQuery(queryOptions);\n")
 @Raw(infiniteReturnLine)
 @Raw("};\n")
 @Raw("\n")
 @Raw("// Prefetch Support\n")
-@Raw($"export const {prefetchFunctionName} = async <\n")
-@Raw($"  TData = Awaited<ReturnType<typeof {clientMethodName}>>,\n")
-@Raw($"  TError = Error,\n")
-@Raw($">(\n")
-@Raw($"  queryClient: QueryClient,\n")
-@Raw($"{hookParamsStr}\n")
-@Raw("  options?: {\n")
-@Raw($"    query?: Partial<UseQueryOptions<{returnType}, TError, TData>>;\n")
-@Raw($"{axiosOption}\n")
-@Raw($"  }},\n")
-@Raw("): Promise<QueryClient> => {\n")
+@{
+    var prefetchSignature = $"export const {prefetchFunctionName} = async <\n  TData = Awaited<ReturnType<typeof {clientMethodName}>>,\n  TError = Error,\n>(\n  queryClient: QueryClient,\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseQueryOptions<{returnType}, TError, TData>>;\n{axiosOption}\n  }}}},\n): Promise<QueryClient> => {{\n";
+}
+@Raw(prefetchSignature)
 @Raw($"  const queryOptions = {queryOptionsFunctionName}({keyArgsStr}, options);\n")
 @Raw($"  await queryClient.prefetchQuery(queryOptions);\n")
 @Raw($"  return queryClient;\n")
 @Raw("};\n")
 @Raw("\n")
-@Raw($"export const {prefetchInfiniteFunctionName} = async <\n")
-@Raw($"  TData = InfiniteData<Awaited<ReturnType<typeof {clientMethodName}>>, unknown>,\n")
-@Raw($"  TError = Error,\n")
-@Raw($">(\n")
-@Raw($"  queryClient: QueryClient,\n")
-@Raw($"{hookParamsStr}\n")
-@Raw("  options?: {\n")
-@Raw($"    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData, Awaited<ReturnType<typeof {clientMethodName}>>, QueryKey, unknown>>;\n")
-@Raw($"{axiosOption}\n")
-@Raw($"  }},\n")
-@Raw("): Promise<QueryClient> => {\n")
+@{
+    var prefetchInfiniteSignature = $"export const {prefetchInfiniteFunctionName} = async <\n  TData = InfiniteData<Awaited<ReturnType<typeof {clientMethodName}>>, unknown>,\n  TError = Error,\n>(\n  queryClient: QueryClient,\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData, Awaited<ReturnType<typeof {clientMethodName}>>, QueryKey, unknown>>;\n{axiosOption}\n  }}}},\n): Promise<QueryClient> => {{\n";
+}
+@Raw(prefetchInfiniteSignature)
 @Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}({keyArgsStr}, options);\n")
 @Raw($"  await queryClient.prefetchInfiniteQuery(queryOptions);\n")
 @Raw($"  return queryClient;\n")

@@ -343,10 +343,6 @@ else
 @Raw("};\n")
 @Raw("\n")
 }
-@Raw($"export const {hookName} = <\n")
-@Raw($"  TData = {GetResponseType(operationTemplate.ReturnTypeInfo)},\n")
-@Raw("  TError = Error,\n")
-@Raw("  TVariables = {\n")
 @{
     var mutationVars = new List<string>();
     mutationVars.AddRange(pathParams.Select(FormatParameter));
@@ -369,11 +365,8 @@ else
             mutationVars.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
-}
-@Raw($"{string.Join(";\n    ", mutationVars)}\n")
-@Raw("  }},\n")
-@Raw(">(\n")
-@{
+    var mutationVarsStr = mutationVars.Count > 0 ? "    " + string.Join(";\n    ", mutationVars) : "";
+    
     var hookParams = new List<string>();
     hookParams.AddRange(pathParams.Select(FormatParameter));
     hookParams.AddRange(queryParams.Select(FormatParameter));
@@ -395,20 +388,13 @@ else
             hookParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
+    var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) : "";
+    
+    var axiosOptionStr = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
+    var responseType = GetResponseType(operationTemplate.ReturnTypeInfo);
+    var mutationSignature = "export const " + hookName + " = <\n  TData = " + responseType + ",\n  TError = Error,\n  TVariables = {\n" + mutationVarsStr + "\n  },\n>(\n" + hookParamsStr + "\n  options?: {\n    mutation?: UseMutationOptions<TData, TError, TVariables>;\n    " + axiosOptionStr + "\n  },\n): UseMutationResult<TData, TError, TVariables> => {\n";
 }
-@Raw($"{string.Join(",\n  ", hookParams)}\n")
-@Raw("  options?: {\n")
-@Raw("    mutation?: UseMutationOptions<TData, TError, TVariables>;\n")
-@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-{
-@Raw("    axios?: AxiosRequestConfig;\n")
-}
-else
-{
-@Raw("    fetch?: RequestInit;\n")
-}
-@Raw("  },\n")
-@Raw("): UseMutationResult<TData, TError, TVariables> => {\n")
+@Raw(mutationSignature)
 @{
     var destructuringPart = options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions";
 }
@@ -416,12 +402,12 @@ else
 @Raw("\n")
 @Raw("  const mutationFn = async (variables: TVariables) => {\n")
 @Raw($"    return await {clientMethodName}(\n")
-@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-{
-@Raw("      axiosOptions?.axiosInstance,\n")
-}
 @{
     var fnArgs = new List<string>();
+    if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+    {
+        fnArgs.Add("axiosOptions?.axiosInstance");
+    }
     fnArgs.AddRange(pathParams.Select(p => $"variables.{p.VariableName}"));
     fnArgs.AddRange(queryParams.Select(p => $"variables.{p.VariableName}"));
     fnArgs.AddRange(headerParams.Select(p => $"variables.{p.VariableName}"));
@@ -436,8 +422,9 @@ else
             fnArgs.Add($"variables.{operationTemplate.RequestBodyParameter}");
         }
     }
+    var fnArgsStr = fnArgs.Count > 0 ? "      " + string.Join(",\n      ", fnArgs) : "";
 }
-@Raw($"{string.Join(",\n      ", fnArgs)}\n")
+@Raw($"{fnArgsStr}\n")
 @Raw("    );\n")
 @Raw("  };\n")
 @Raw("\n")
