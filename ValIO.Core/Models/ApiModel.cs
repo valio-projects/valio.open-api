@@ -25,5 +25,11 @@ public class ApiModel
     /// Включает свойства из allOf и из самой схемы
     /// </summary>
     public IReadOnlyDictionary<string, IOpenApiSchema>? PropertySchemas { get; set; }
+    
+    /// <summary>
+    /// Множество имен свойств, которые пришли из базовой схемы (allOf)
+    /// Используется для разделения свойств базовой схемы и собственных свойств
+    /// </summary>
+    public IReadOnlySet<string>? BaseClassProperties { get; set; }
 }
 

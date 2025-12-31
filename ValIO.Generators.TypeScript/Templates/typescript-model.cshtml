@@ -26,6 +26,11 @@
     var properties = Model.Properties;
     var useStrictNullChecks = Model.UseStrictNullChecks;
     var importedTypes = Model.ImportedTypes;
+    var baseClassName = Model.BaseClassName;
+    var baseClassProperties = Model.BaseClassProperties;
+    var ownProperties = Model.OwnProperties;
+    var useIntersectionType = !string.IsNullOrEmpty(baseClassName) && ownProperties.Count > 0;
+    var useTypeAlias = !string.IsNullOrEmpty(baseClassName) && ownProperties.Count == 0;
 }
 @if (importedTypes != null && importedTypes.Count > 0)
 {
@@ -41,7 +46,28 @@
 @Raw($" * {description}\n")
 @Raw(" */\n")
 }
-export interface @interfaceName {
+@if (useTypeAlias)
+{
+@Raw($"export type {interfaceName} = {baseClassName};\n")
+}
+else if (useIntersectionType)
+{
+@Raw($"export type {interfaceName} = {baseClassName} & {{\n")
+@foreach (var property in ownProperties)
+{
+    @if (!string.IsNullOrEmpty(property.Description))
+    {
+    @:  /**
+    @:   * @Raw(property.Description)
+    @:   */
+    }
+    @:  @property.Name@FormatOptional(property.IsOptional, property.TypeInfo): @Raw(FormatType(property.TypeInfo));
+}
+@Raw("};\n")
+}
+else
+{
+@Raw($"export interface {interfaceName} {{\n")
 @foreach (var property in properties)
 {
     @if (!string.IsNullOrEmpty(property.Description))
@@ -52,4 +78,5 @@ export interface @interfaceName {
     }
     @:  @property.Name@FormatOptional(property.IsOptional, property.TypeInfo): @Raw(FormatType(property.TypeInfo));
 }
+@Raw("}\n")
 }

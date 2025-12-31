@@ -784,8 +784,47 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             });
         }
 
-        // Собираем связанные типы для импортов
+        // Разделяем свойства на базовые (из allOf) и собственные
+        var baseClassProperties = new List<TypeScriptPropertyTemplateData>();
+        var ownProperties = new List<TypeScriptPropertyTemplateData>();
+        string? baseClassName = null;
+        
+        if (model.BaseClassName != null && model.BaseClassProperties != null)
+        {
+            baseClassName = model.BaseClassName;
+            var baseClassPropertyNames = model.BaseClassProperties;
+            
+            // Создаем словарь для быстрого поиска: имя свойства в camelCase -> является ли базовым
+            var baseClassPropertyNamesCamelCase = new HashSet<string>(
+                baseClassPropertyNames.Select(name => _namingConverter.ToCamelCase(name)),
+                StringComparer.OrdinalIgnoreCase);
+            
+            foreach (var prop in properties)
+            {
+                // Проверяем, является ли свойство базовым (из allOf)
+                // prop.Name уже в camelCase, baseClassPropertyNames в исходном формате из схемы
+                if (baseClassPropertyNamesCamelCase.Contains(prop.Name))
+                {
+                    baseClassProperties.Add(prop);
+                }
+                else
+                {
+                    ownProperties.Add(prop);
+                }
+            }
+        }
+        else
+        {
+            // Если нет базового класса, все свойства собственные
+            ownProperties = properties;
+        }
+
+        // Собираем связанные типы для импортов (включая базовый класс, если есть)
         var importedTypes = CollectModelUsedTypes(properties, interfaceName);
+        if (!string.IsNullOrEmpty(baseClassName) && !importedTypes.Contains(baseClassName))
+        {
+            importedTypes.Add(baseClassName);
+        }
 
         var templateData = new TypeScriptModelTemplateData
         {
@@ -793,7 +832,10 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             Description = DecodeHtmlEntities(model.Description),
             Properties = properties,
             UseStrictNullChecks = options.UseStrictNullChecks,
-            ImportedTypes = importedTypes
+            ImportedTypes = importedTypes,
+            BaseClassName = baseClassName,
+            BaseClassProperties = baseClassProperties,
+            OwnProperties = ownProperties
         };
 
         return _templateRegistry.Render("typescript-model.cshtml", templateData);

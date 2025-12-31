@@ -20,6 +20,21 @@ public class TypeScriptModelTemplateData
     /// Список имен типов, которые нужно импортировать (PascalCase)
     /// </summary>
     public IReadOnlyList<string> ImportedTypes { get; set; } = Array.Empty<string>();
+    
+    /// <summary>
+    /// Имя базового класса (для allOf - intersection type)
+    /// </summary>
+    public string? BaseClassName { get; set; }
+    
+    /// <summary>
+    /// Свойства, которые принадлежат базовому классу (из allOf)
+    /// </summary>
+    public IReadOnlyList<TypeScriptPropertyTemplateData> BaseClassProperties { get; set; } = Array.Empty<TypeScriptPropertyTemplateData>();
+    
+    /// <summary>
+    /// Собственные свойства модели (не из базового класса)
+    /// </summary>
+    public IReadOnlyList<TypeScriptPropertyTemplateData> OwnProperties { get; set; } = Array.Empty<TypeScriptPropertyTemplateData>();
 }
 
 /// <summary>

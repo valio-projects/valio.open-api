@@ -58,6 +58,7 @@ public class ModelExtractor : IModelExtractor
         {
             var allProperties = new Dictionary<string, ApiProperty>();
             var allPropertySchemas = new Dictionary<string, IOpenApiSchema>();
+            var baseClassProperties = new HashSet<string>();
             var allRequired = new HashSet<string>();
             string? baseClassName = null;
 
@@ -65,6 +66,7 @@ public class ModelExtractor : IModelExtractor
             {
                 // Проверяем, является ли под-схема ссылкой на другую модель (базовый класс)
                 string? referencedSchemaName = null;
+                bool isBaseClass = false;
                 if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
                 {
                     var reference = refHolder.Reference;
@@ -73,6 +75,7 @@ public class ModelExtractor : IModelExtractor
                         // Это базовый класс - сохраняем его имя
                         referencedSchemaName = reference.Id;
                         baseClassName = _namingConverter.ToPascalCase(reference.Id);
+                        isBaseClass = true;
                     }
                 }
                 
@@ -90,6 +93,12 @@ public class ModelExtractor : IModelExtractor
                         allProperties[propertyName] = apiProperty; // Перезаписываем, если уже есть
                         // Сохраняем оригинальную схему свойства (до разрешения)
                         allPropertySchemas[propertyName] = propertySchema;
+                        
+                        // Если это базовый класс, отмечаем свойство как базовое
+                        if (isBaseClass)
+                        {
+                            baseClassProperties.Add(propertyName);
+                        }
                     }
                 }
 
@@ -114,6 +123,7 @@ public class ModelExtractor : IModelExtractor
                     allProperties[propertyName] = apiProperty;
                     // Сохраняем оригинальную схему свойства
                     allPropertySchemas[propertyName] = propertySchema;
+                    // Свойства из самой схемы не являются базовыми
                 }
             }
 
@@ -130,6 +140,7 @@ public class ModelExtractor : IModelExtractor
             apiModel.RequiredProperties = allRequired.ToList();
             apiModel.BaseClassName = baseClassName;
             apiModel.PropertySchemas = allPropertySchemas;
+            apiModel.BaseClassProperties = baseClassProperties;
         }
         else
         {
