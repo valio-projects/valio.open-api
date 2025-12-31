@@ -1,3 +1,4 @@
+@using System
 @using System.Collections.Generic
 @using System.Linq
 @using ValIO.Generators.CSharp.Models
@@ -60,55 +61,17 @@
     var pathParams = operationTemplate.PathParameters;
     var queryParams = operationTemplate.QueryParameters;
     var headerParams = operationTemplate.HeaderParameters;
-}
-@if (Model.GenerateImports)
-{
-@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-{
-@:import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
-}
-@Raw("import { useQuery, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';\n")
-@if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
-{
-@foreach (var typeName in Model.ImportedTypes)
-{
-@Raw($"import type {{ {typeName} }} from '{Model.ModelsPath}/{char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)}.model';\n")
-}
-@:
-}
-@if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && options.DeserializeWithSchemas && !string.IsNullOrEmpty(Model.ResponseSchemaName))
-{
-@:import { z } from 'zod';
-@if (!string.IsNullOrEmpty(Model.ModelsPath))
-{
-@Raw($"import {{ {Model.ResponseSchemaName} }} from '{Model.ModelsPath}/{Model.ResponseSchemaFileName}.schema';\n")
-}
-else
-{
-@Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
-}
-}
-@:
-}
-
-@if (!string.IsNullOrEmpty(operationTemplate.Summary))
-{
-@Raw("/**\n")
-@Raw($" * {operationTemplate.Summary}\n")
-@Raw(" */\n")
-}
-@if (!string.IsNullOrEmpty(operationTemplate.Description))
-{
-@Raw("/**\n")
-@Raw($" * {operationTemplate.Description}\n")
-@Raw(" */\n")
-}
-@Raw($"export const {functionName} = async (\n")
-@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-{
-@:  axiosInstance: AxiosInstance = axios.create(),
-}
-@{
+    
+    // Helper variables for naming (PascalCase versions)
+    var functionNamePascal = char.ToUpperInvariant(functionName[0]) + functionName.Substring(1);
+    var queryOptionsFunctionName = $"get{functionNamePascal}QueryOptions";
+    var infiniteQueryKeyFunctionName = $"get{functionNamePascal}InfiniteQueryKey";
+    var infiniteQueryOptionsFunctionName = $"get{functionNamePascal}InfiniteQueryOptions";
+    var infiniteHookName = $"use{functionNamePascal}Infinite";
+    var prefetchFunctionName = $"prefetch{functionNamePascal}";
+    var prefetchInfiniteFunctionName = $"prefetch{functionNamePascal}Infinite";
+    
+    // Precompute parameters for function signature
     var allParams = new List<string>();
     allParams.AddRange(pathParams.Select(FormatParameter));
     allParams.AddRange(queryParams.Select(FormatParameter));
@@ -131,12 +94,150 @@ else
             allParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
+    
+    // Добавляем signal в конце (если поддерживается)
+    allParams.Add("signal?: AbortSignal");
+    
+    // Добавляем axiosInstance/customInstance в самом конце
+    if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+    {
+        allParams.Add("axiosInstance?: AxiosInstance");
+    }
+    
+    var allParamsStr = string.Join(",\n  ", allParams);
+    var promiseReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
+    var functionSignature = $"): Promise<{promiseReturnType}> => {{\n";
+    
+    // Precompute query key parameters
+    var keyParams = new List<string>();
+    keyParams.AddRange(pathParams.Select(FormatParameter));
+    keyParams.AddRange(queryParams.Select(FormatParameter));
+    var keyParamsStr = string.Join(",\n  ", keyParams);
+    
+    // Precompute hook parameters
+    var hookParams = new List<string>();
+    hookParams.AddRange(pathParams.Select(FormatParameter));
+    hookParams.AddRange(queryParams.Select(FormatParameter));
+    var hookParamsStr = string.Join(",\n  ", hookParams);
+    var returnType = GetResponseType(operationTemplate.ReturnTypeInfo);
+    var axiosOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
+    
+    // Precompute key arguments
+    var keyArgs = new List<string>();
+    keyArgs.AddRange(pathParams.Select(p => p.VariableName));
+    keyArgs.AddRange(queryParams.Select(p => p.VariableName));
+    var keyArgsStr = string.Join(", ", keyArgs);
+    
+    // Precompute function arguments
+    var fnArgs = new List<string>();
+    fnArgs.AddRange(pathParams.Select(p => p.VariableName));
+    fnArgs.AddRange(queryParams.Select(p => p.VariableName));
+    fnArgs.AddRange(headerParams.Select(p => p.VariableName));
+    if (operationTemplate.HasRequestBody)
+    {
+        if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
+        {
+            fnArgs.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
+        }
+        else
+        {
+            fnArgs.Add(operationTemplate.RequestBodyParameter);
+        }
+    }
+    var fnArgsStr = string.Join(",\n      ", fnArgs);
+    
+    // Precompute query function parameters
+    var queryFnSignalParam = "signal";
+    var queryFnParams = new List<string>();
+    queryFnParams.AddRange(pathParams.Select(p => p.VariableName));
+    queryFnParams.AddRange(queryParams.Select(p => p.VariableName));
+    queryFnParams.AddRange(headerParams.Select(p => p.VariableName));
+    if (operationTemplate.HasRequestBody)
+    {
+        if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
+        {
+            queryFnParams.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
+        }
+        else
+        {
+            queryFnParams.Add(operationTemplate.RequestBodyParameter);
+        }
+    }
+    queryFnParams.Add(queryFnSignalParam);
+    if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+    {
+        queryFnParams.Add("axiosOptions?.axiosInstance");
+    }
+    var queryFnArgsStr = string.Join(",\n      ", queryFnParams);
+    
+    var queryReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
+    var destructuringOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions";
+    var destructuringLine = $"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n";
+    var destructuringLine2 = $"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n";
+    var destructuringLine3 = $"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n";
+    var queryFnLine = $"  const queryFn: QueryFunction<Awaited<ReturnType<typeof {functionName}>>> = ({{ signal }}) => {{\n";
+    var closeQueryFn = "  };\n";
+    var returnStart = "  return {\n";
+    var returnLine = $"  }} as UseQueryOptions<{returnType}, TError, TData> & {{ queryKey: QueryKey }};\n";
+    var infiniteQueryFnLine = $"  const queryFn: QueryFunction<Awaited<ReturnType<typeof {functionName}>>, QueryKey, unknown> = ({{ signal, pageParam }}) =>\n";
+    var infiniteReturnStart = "  return {\n";
+    var infiniteReturnEnd = $"  }} as UseInfiniteQueryOptions<Awaited<ReturnType<typeof {functionName}>>, TError, TData, Awaited<ReturnType<typeof {functionName}>>, QueryKey, unknown>;\n";
+    var infiniteReturnLine = $"  return {{ ...query, queryKey: queryOptions.queryKey }};\n";
+    var infiniteQueryParamsStr = string.Join(",\n      ", pathParams.Select(p => p.VariableName).Concat(queryParams.Select(p => p.VariableName)).Concat(headerParams.Select(p => p.VariableName)).Concat(new[] { "signal" }).Concat(options.HttpClientLibrary == HttpClientLibrary.Axios ? new[] { "axiosOptions?.axiosInstance" } : Array.Empty<string>()));
+    
+    // Precompute path strings
+    var axiosPath = BuildPath(operationTemplate.Path, pathParams);
+    var fetchPath = BuildPath(operationTemplate.Path, pathParams);
 }
-@Raw($"{string.Join(",\n  ", allParams)}\n")
-@Raw($"): Promise<{GetResponseType(operationTemplate.ReturnTypeInfo)}> => {{\n")
+@if (Model.GenerateImports)
+{
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-    @:  const path = `@Raw(BuildPath(operationTemplate.Path, pathParams))`;
+@:import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+@:import { customInstance } from '../mutator/custom-instance';
+}
+@Raw("import { useQuery, UseQueryOptions, UseQueryResult, useInfiniteQuery, UseInfiniteQueryOptions, UseInfiniteQueryResult, QueryFunction, QueryClient, InfiniteData } from '@tanstack/react-query';\n")
+@if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
+{
+@foreach (var typeName in Model.ImportedTypes)
+{
+@Raw($"import type {{ {typeName} }} from '{Model.ModelsPath}/{char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)}.model';\n")
+}
+@:
+}
+@if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && options.DeserializeWithSchemas && !string.IsNullOrEmpty(Model.ResponseSchemaName))
+{
+@:import { z } from 'zod';
+@if (!string.IsNullOrEmpty(Model.ModelsPath))
+{
+@Raw($"import {{ {Model.ResponseSchemaName} }} from '{Model.ModelsPath}/{Model.ResponseSchemaFileName}.schema';\n")
+}
+else
+{
+@Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
+}
+@:
+}
+}
+
+@if (!string.IsNullOrEmpty(operationTemplate.Summary))
+{
+@Raw("/**\n")
+@Raw($" * {operationTemplate.Summary}\n")
+@Raw(" */\n")
+}
+@if (!string.IsNullOrEmpty(operationTemplate.Description))
+{
+@Raw("/**\n")
+@Raw($" * {operationTemplate.Description}\n")
+@Raw(" */\n")
+}
+@Raw($"export const {functionName} = async (\n")
+@Raw($"{allParamsStr}\n")
+@Raw(functionSignature)
+@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+{
+    @:  const path = `@axiosPath`;
     @:  const config: AxiosRequestConfig = {
     @:    method: '@operationTemplate.HttpMethod.ToLowerInvariant()',
     @:    url: path,
@@ -193,21 +294,29 @@ else
     @:    data: @operationTemplate.RequestBodyParameter,
         }
     }
+    @:    signal,
     @:  };
     @:
-    @Raw($"  const response = await axiosInstance.request<{GetResponseType(operationTemplate.ReturnTypeInfo)}>(config);\n")
+    @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+    {
+    @:  if (axiosInstance) {
+    @Raw($"    const response = await axiosInstance.request<{GetResponseType(operationTemplate.ReturnTypeInfo)}>(config);\n")
     @if (operationTemplate.ReturnTypeInfo.IsTask && operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0 && !operationTemplate.ReturnTypeInfo.GenericArguments[0].IsVoid)
     {
-    @:  return response.data;
+    @:    return response.data;
     }
     else
     {
-    @:  return;
+    @:    return;
+    }
+    @:  } else {
+    @Raw($"    return await customInstance<{GetResponseType(operationTemplate.ReturnTypeInfo)}>(config);\n")
+    @:  }
     }
 }
 else
 {
-    @:  const path = `@Raw(BuildPath(operationTemplate.Path, pathParams))`;
+    @:  const path = `@fetchPath`;
     @if (queryParams.Count > 0)
     {
     @:  const queryParamsStr = [
@@ -295,101 +404,49 @@ else
 @Raw("};\n")
 @Raw("\n")
 @Raw($"export const {Model.QueryKeyFunctionName} = (\n")
-@{
-    var keyParams = new List<string>();
-    keyParams.AddRange(pathParams.Select(FormatParameter));
-    keyParams.AddRange(queryParams.Select(FormatParameter));
-}
-@{
-    var keyParamsStr = string.Join(",\n  ", keyParams);
-}
 @Raw($"{keyParamsStr}\n")
-@Raw($") => {{\n")
+@Raw(") => {\n")
 @Raw($"  return {BuildQueryKey(pathParams, queryParams, operationTemplate.Path)};\n")
 @Raw("};\n")
-
-@{
-    var hookParams = new List<string>();
-    hookParams.AddRange(pathParams.Select(FormatParameter));
-    hookParams.AddRange(queryParams.Select(FormatParameter));
-    var hookParamsStr = string.Join(",\n  ", hookParams);
-    var returnType = GetResponseType(operationTemplate.ReturnTypeInfo);
-    var axiosOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
-}
+@Raw("\n")
 @Raw($"export const {hookName} = <\n")
 @Raw($"  TData = {returnType},\n")
 @Raw($"  TError = Error,\n")
 @Raw($">(\n")
 @Raw($"{hookParamsStr}\n")
-@Raw($"  options?: {{\n")
+@Raw("  options?: {\n")
 @Raw($"    query?: UseQueryOptions<{returnType}, TError, TData>;\n")
 @Raw($"{axiosOption}\n")
 @Raw($"  }},\n")
-@Raw($"): UseQueryResult<TData, TError> => {{\n")
-@{
-    var destructuringOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions";
-}
-@Raw($"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n")
+@Raw("): UseQueryResult<TData, TError> => {\n")
+@Raw($"  const signal = options?.query?.signal;\n")
+@Raw(destructuringLine)
 @Raw("\n")
-@{
-    var keyArgs = new List<string>();
-    keyArgs.AddRange(pathParams.Select(p => p.VariableName));
-    keyArgs.AddRange(queryParams.Select(p => p.VariableName));
-    var keyArgsStr = string.Join(", ", keyArgs);
-}
 @Raw($"  const queryKey = queryOptions?.queryKey ?? {Model.QueryKeyFunctionName}({keyArgsStr});\n")
 @Raw("\n")
-@{
-    var fnArgs = new List<string>();
-    fnArgs.AddRange(pathParams.Select(p => p.VariableName));
-    fnArgs.AddRange(queryParams.Select(p => p.VariableName));
-    fnArgs.AddRange(headerParams.Select(p => p.VariableName));
-    if (operationTemplate.HasRequestBody)
-    {
-        if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
-        {
-            fnArgs.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
-        }
-        else
-        {
-            fnArgs.Add(operationTemplate.RequestBodyParameter);
-        }
-    }
-    var fnArgsStr = string.Join(",\n      ", fnArgs);
-}
-@Raw("  const queryFn = async () => {\n")
+@Raw("  const queryFn: QueryFunction<Awaited<ReturnType<typeof @(functionName)>>> = ({ signal }) => {\n")
 @if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && options.DeserializeWithSchemas)
 {
-    @:    const response = await @(functionName)(
-    @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-    {
-    @:      axios.create(),
-    }
-    @Raw(fnArgsStr)
-    @:    );
-    @:    // Десериализация и валидация через Zod схему
-    @:    const schema = @(Model.ResponseSchemaName);
-    @:    return schema.parse(response);
+    @:    return @(functionName)(
+    @Raw(queryFnArgsStr)
+    @:    ).then(response => {
+    @:      // Десериализация и валидация через Zod схему
+    @:      const schema = @(Model.ResponseSchemaName);
+    @:      return schema.parse(response);
+    @:    });
 }
 else
 {
-    @:    return await @(functionName)(
-    @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-    {
-    @:      axios.create(),
-    }
-    @Raw(fnArgsStr)
+    @:    return @(functionName)(
+    @Raw(queryFnArgsStr)
     @:    );
 }
 @Raw("  };\n")
 @Raw("\n")
-@{
-    var queryReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
-}
 @Raw($"  const query = useQuery<{queryReturnType}, TError, TData>(\n")
-@Raw("    queryKey,\n")
-@Raw("    queryFn,\n")
 @Raw("    {\n")
+@Raw("      queryKey,\n")
+@Raw("      queryFn,\n")
 @Raw("      enabled: true,\n")
 @Raw("      ...queryOptions,\n")
 @Raw("    },\n")
@@ -399,4 +456,109 @@ else
 @Raw("    queryKey,\n")
 @Raw("    ...query,\n")
 @Raw("  };\n")
+@Raw("};\n")
+@Raw("\n")
+@Raw("// Query Options Helper\n")
+@Raw($"export const {queryOptionsFunctionName} = <\n")
+@Raw($"  TData = {returnType},\n")
+@Raw($"  TError = Error,\n")
+@Raw($">(\n")
+@Raw($"{hookParamsStr}\n")
+@Raw("  options?: {\n")
+@Raw($"    query?: Partial<UseQueryOptions<{returnType}, TError, TData>>;\n")
+@Raw($"{axiosOption}\n")
+@Raw($"  }},\n")
+@Raw(") => {\n")
+@Raw(destructuringLine2)
+@Raw($"  const queryKey = queryOptions?.queryKey ?? {Model.QueryKeyFunctionName}({keyArgsStr});\n")
+@Raw(queryFnLine)
+@Raw($"    return {functionName}(\n")
+@Raw($"      {queryFnArgsStr}\n")
+@Raw($"    );\n")
+@Raw(closeQueryFn)
+@Raw(returnStart)
+@Raw($"    queryKey,\n")
+@Raw($"    queryFn,\n")
+@Raw($"    enabled: true,\n")
+@Raw($"    ...queryOptions,\n")
+@Raw(returnLine)
+@Raw("};\n")
+@Raw("\n")
+@Raw("// Infinite Query Support\n")
+@Raw($"export const {infiniteQueryKeyFunctionName} = (\n")
+@Raw($"{keyParamsStr}\n")
+@Raw(") => {\n")
+@Raw($"  return ['infinite', {BuildQueryKey(pathParams, queryParams, operationTemplate.Path)}];\n")
+@Raw("};\n")
+@Raw("\n")
+@Raw($"export const {infiniteQueryOptionsFunctionName} = <\n")
+@Raw($"  TData = InfiniteData<Awaited<ReturnType<typeof {functionName}>>, unknown>,\n")
+@Raw($"  TError = Error,\n")
+@Raw($">(\n")
+@Raw($"{hookParamsStr}\n")
+@Raw("  options?: {\n")
+@Raw($"    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {functionName}>>, TError, TData, Awaited<ReturnType<typeof {functionName}>>, QueryKey, unknown>>;\n")
+@Raw($"{axiosOption}\n")
+@Raw($"  }},\n")
+@Raw(") => {\n")
+@Raw(destructuringLine3)
+@Raw($"  const queryKey = queryOptions?.queryKey ?? {infiniteQueryKeyFunctionName}({keyArgsStr});\n")
+@Raw(infiniteQueryFnLine)
+@Raw($"    {functionName}(\n")
+@Raw($"      {infiniteQueryParamsStr}\n")
+@Raw($"    );\n")
+@Raw(infiniteReturnStart)
+@Raw($"    queryKey,\n")
+@Raw($"    queryFn,\n")
+@Raw($"    enabled: true,\n")
+@Raw($"    ...queryOptions,\n")
+@Raw(infiniteReturnEnd)
+@Raw("};\n")
+@Raw("\n")
+@Raw($"export const {infiniteHookName} = <\n")
+@Raw($"  TData = InfiniteData<Awaited<ReturnType<typeof {functionName}>>, unknown>,\n")
+@Raw($"  TError = Error,\n")
+@Raw($">(\n")
+@Raw($"{hookParamsStr}\n")
+@Raw("  options?: {\n")
+@Raw($"    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {functionName}>>, TError, TData, Awaited<ReturnType<typeof {functionName}>>, QueryKey, unknown>>;\n")
+@Raw($"{axiosOption}\n")
+@Raw($"  }},\n")
+@Raw("): UseInfiniteQueryResult<TData, TError> => {\n")
+@Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}({keyArgsStr}, options);\n")
+@Raw($"  const query = useInfiniteQuery(queryOptions);\n")
+@Raw(infiniteReturnLine)
+@Raw("};\n")
+@Raw("\n")
+@Raw("// Prefetch Support\n")
+@Raw($"export const {prefetchFunctionName} = async <\n")
+@Raw($"  TData = Awaited<ReturnType<typeof {functionName}>>,\n")
+@Raw($"  TError = Error,\n")
+@Raw($">(\n")
+@Raw($"  queryClient: QueryClient,\n")
+@Raw($"{hookParamsStr}\n")
+@Raw("  options?: {\n")
+@Raw($"    query?: Partial<UseQueryOptions<{returnType}, TError, TData>>;\n")
+@Raw($"{axiosOption}\n")
+@Raw($"  }},\n")
+@Raw("): Promise<QueryClient> => {\n")
+@Raw($"  const queryOptions = {queryOptionsFunctionName}({keyArgsStr}, options);\n")
+@Raw($"  await queryClient.prefetchQuery(queryOptions);\n")
+@Raw($"  return queryClient;\n")
+@Raw("};\n")
+@Raw("\n")
+@Raw($"export const {prefetchInfiniteFunctionName} = async <\n")
+@Raw($"  TData = InfiniteData<Awaited<ReturnType<typeof {functionName}>>, unknown>,\n")
+@Raw($"  TError = Error,\n")
+@Raw($">(\n")
+@Raw($"  queryClient: QueryClient,\n")
+@Raw($"{hookParamsStr}\n")
+@Raw("  options?: {\n")
+@Raw($"    query?: Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof {functionName}>>, TError, TData, Awaited<ReturnType<typeof {functionName}>>, QueryKey, unknown>>;\n")
+@Raw($"{axiosOption}\n")
+@Raw($"  }},\n")
+@Raw("): Promise<QueryClient> => {\n")
+@Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}({keyArgsStr}, options);\n")
+@Raw($"  await queryClient.prefetchInfiniteQuery(queryOptions);\n")
+@Raw($"  return queryClient;\n")
 @Raw("};\n")
