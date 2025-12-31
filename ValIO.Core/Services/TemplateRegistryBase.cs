@@ -1,6 +1,9 @@
 using System.Reflection;
+using System.Text;
 using Microsoft.Extensions.Logging;
 using RazorLight;
+using RazorLight.Compilation;
+using RazorLight.Generation;
 using ValIO.Core.Interfaces;
 
 namespace ValIO.Core.Services;
@@ -64,6 +67,27 @@ public abstract class TemplateRegistryBase : ITemplateRegistry
             var templateKey = templateName;
             var result = await _razorEngine.CompileRenderStringAsync(templateKey, templateContent, model);
             return result;
+        }
+        catch (TemplateGenerationException ex)
+        {
+            var sb = new StringBuilder(8192);
+            foreach (var diagnostic in ex.Diagnostics)
+            {
+                sb.AppendLine($"{diagnostic.Id} | {diagnostic.Severity} | Span: {diagnostic.Span} | LineIndex: {diagnostic.Span.LineIndex}, AbsoluteIndex: {diagnostic.Span.AbsoluteIndex}, CharacterIndex: {diagnostic.Span.CharacterIndex}");
+            }
+            _logger.LogError(ex, "Failed to render template: {TemplateName} | Diagnostics: \n\r{Diagnostics}\n\r", templateName, sb.ToString());
+            throw new InvalidOperationException($"Failed to render template '{templateName}': {ex.Message}", ex);
+        }
+        catch (TemplateCompilationException ex)
+        {
+            var sbCompilationDiagnostics = new StringBuilder(8192);
+            foreach (var diagnostic in ex.CompilationDiagnostics)
+            {
+                sbCompilationDiagnostics.AppendLine($"LineSpan: {diagnostic.LineSpan} (StartLinePosition: {diagnostic.LineSpan?.StartLinePosition}, Span: [{diagnostic.LineSpan?.Span}]) | {diagnostic.ErrorMessage} | {diagnostic.FormattedMessage}");
+            }
+            
+            _logger.LogError(ex, "Failed to compile template: {TemplateName} | CompilationDiagnostics: \n\r{Diagnostics}\n\r | CompilationErrors: {CompilationErrors}", templateName, sbCompilationDiagnostics.ToString(), ex.CompilationErrors);
+            throw new InvalidOperationException($"Failed to render template '{templateName}': {ex.Message}", ex);
         }
         catch (Exception ex)
         {

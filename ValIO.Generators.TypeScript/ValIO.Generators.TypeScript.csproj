@@ -10,10 +10,12 @@
     <PackageReference Include="Microsoft.OpenApi" Version="3.1.1" />
   </ItemGroup>
 
+
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PreserveCompilationContext>true</PreserveCompilationContext>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,9 +23,6 @@
       <LogicalName>$(MSBuildProjectName).Templates.%(Filename)%(Extension)</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
-  
-  <PropertyGroup>
-    <PreserveCompilationContext>true</PreserveCompilationContext>
-  </PropertyGroup>
+
 
 </Project>

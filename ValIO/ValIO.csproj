@@ -31,6 +31,9 @@
       <Content Include="..\valio.config.json">
         <Link>valio.config.json</Link>
       </Content>
+      <Content Include="..\valio.config.typescript.example.json">
+        <Link>valio.config.typescript.example.json</Link>
+      </Content>
     </ItemGroup>
 
 </Project>
