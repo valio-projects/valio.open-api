@@ -61,6 +61,8 @@
     var queryParams = operationTemplate.QueryParameters;
     var headerParams = operationTemplate.HeaderParameters;
 }
+@if (Model.GenerateImports)
+{
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
 @:import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
@@ -86,18 +88,20 @@ else
 @Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
 }
 }
+@:
+}
 
 @if (!string.IsNullOrEmpty(operationTemplate.Summary))
 {
-@://**
-@: * @Raw(operationTemplate.Summary)
-@: */
+@Raw("/**\n")
+@Raw($" * {operationTemplate.Summary}\n")
+@Raw(" */\n")
 }
 @if (!string.IsNullOrEmpty(operationTemplate.Description))
 {
-@://**
-@: * @Raw(operationTemplate.Description)
-@: */
+@Raw("/**\n")
+@Raw($" * {operationTemplate.Description}\n")
+@Raw(" */\n")
 }
 @Raw($"export const {functionName} = async (\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)

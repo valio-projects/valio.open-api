@@ -15,6 +15,11 @@ public class TypeScriptModelTemplateData
     /// Использовать strict null checks
     /// </summary>
     public bool UseStrictNullChecks { get; set; } = true;
+    
+    /// <summary>
+    /// Список имен типов, которые нужно импортировать (PascalCase)
+    /// </summary>
+    public IReadOnlyList<string> ImportedTypes { get; set; } = Array.Empty<string>();
 }
 
 /// <summary>

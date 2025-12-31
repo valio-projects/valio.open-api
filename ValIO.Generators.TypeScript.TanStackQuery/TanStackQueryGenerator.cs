@@ -88,7 +88,8 @@ public class TanStackQueryGenerator
             ResponseSchemaName = responseSchemaName,
             ResponseSchemaFileName = responseSchemaFileName,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
-            ModelsPath = modelsPath
+            ModelsPath = modelsPath,
+            GenerateImports = false
         };
 
         return _templateRegistry.Render("tanstack-query-hook.cshtml", templateData);
@@ -164,7 +165,8 @@ public class TanStackQueryGenerator
             ResponseSchemaName = responseSchemaName,
             ResponseSchemaFileName = responseSchemaFileName,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
-            ModelsPath = modelsPath
+            ModelsPath = modelsPath,
+            GenerateImports = false
         };
 
         return _templateRegistry.Render("tanstack-mutation-hook.cshtml", templateData);

@@ -1,21 +1,5 @@
 @using ValIO.Generators.TypeScript.Models
 @model TypeScriptEnumTemplateData
-@functions {
-    string FormatEnumValue(object? value, EnumFormat format)
-    {
-        if (value == null)
-            return format == EnumFormat.Enum ? "0" : "\"\"";
-        
-        if (format == EnumFormat.Enum)
-        {
-            return value.ToString() ?? "0";
-        }
-        else
-        {
-            return $"\"{value}\"";
-        }
-    }
-}
 @{
     var enumName = Model.EnumName;
     var description = Model.Description;
@@ -39,7 +23,7 @@
     @:   * @Raw(value.Description)
     @:   */
     }
-    @:  @value.Name = @FormatEnumValue(value.Value, enumFormat),
+    @:  @value.Name = @Raw(value.ValueString),
 }
 @:}
 }
@@ -49,6 +33,6 @@ else
 @for (int i = 0; i < values.Count; i++)
 {
     var value = values[i];
-    @:@FormatEnumValue(value.Value, enumFormat)@(i < values.Count - 1 ? " | " : ";")
+    @:@Raw(value.ValueString)@(i < values.Count - 1 ? " | " : ";")
 }
 }

@@ -46,4 +46,9 @@ public class TanStackQueryHookTemplateData
     /// Путь к папке с моделями для импортов
     /// </summary>
     public string? ModelsPath { get; set; }
+    
+    /// <summary>
+    /// Нужно ли генерировать импорты в шаблоне (по умолчанию true для обратной совместимости)
+    /// </summary>
+    public bool GenerateImports { get; set; } = true;
 }

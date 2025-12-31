@@ -4,11 +4,19 @@
 @functions {
     string FormatType(TypeInfo typeInfo)
     {
-        return typeInfo.FullTypeName;
+        var typeName = typeInfo.FullTypeName;
+        // Убираем "?" из типа, если он там есть - мы добавим его к имени свойства
+        if (typeName.EndsWith("?"))
+        {
+            typeName = typeName.Substring(0, typeName.Length - 1).Trim();
+        }
+        return typeName;
     }
     
-    string FormatOptional(bool isOptional)
+    string FormatOptional(bool isOptional, TypeInfo typeInfo)
     {
+        // Если свойство опциональное, добавляем "?" к имени свойства
+        // Это правильный синтаксис TypeScript: "propertyName?: type" вместо "propertyName: type?"
         return isOptional ? "?" : "";
     }
 }
@@ -17,12 +25,21 @@
     var description = Model.Description;
     var properties = Model.Properties;
     var useStrictNullChecks = Model.UseStrictNullChecks;
+    var importedTypes = Model.ImportedTypes;
+}
+@if (importedTypes != null && importedTypes.Count > 0)
+{
+@foreach (var typeName in importedTypes)
+{
+@Raw($"import type {{ {typeName} }} from './{char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)}.model';\n")
+}
+@:
 }
 @if (!string.IsNullOrEmpty(description))
 {
-@://**
-@: * @Raw(description)
-@: */
+@Raw("/**\n")
+@Raw($" * {description}\n")
+@Raw(" */\n")
 }
 export interface @interfaceName {
 @foreach (var property in properties)
@@ -33,6 +50,6 @@ export interface @interfaceName {
     @:   * @Raw(property.Description)
     @:   */
     }
-    @:  @property.Name@FormatOptional(property.IsOptional): @FormatType(property.TypeInfo);
+    @:  @property.Name@FormatOptional(property.IsOptional, property.TypeInfo): @Raw(FormatType(property.TypeInfo));
 }
 }

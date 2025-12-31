@@ -47,6 +47,8 @@
     var queryParams = operationTemplate.QueryParameters;
     var headerParams = operationTemplate.HeaderParameters;
 }
+@if (Model.GenerateImports)
+{
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
 @Raw("import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';\n")
@@ -85,6 +87,8 @@ else
 @Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
 }
 }
+}
+@:
 }
 
 @if (!string.IsNullOrEmpty(operationTemplate.Summary))

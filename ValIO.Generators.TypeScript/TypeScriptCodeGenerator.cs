@@ -8,6 +8,7 @@ using ValIO.Generators.TypeScript.Models;
 using ValIO.Generators.CSharp.Models;
 using System.Linq;
 using System.Reflection;
+using System.Text;
 using TypeInfo = ValIO.Generators.CSharp.Models.TypeInfo;
 
 namespace ValIO.Generators.TypeScript;
@@ -776,15 +777,252 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             });
         }
 
+        // Собираем связанные типы для импортов
+        var importedTypes = CollectModelUsedTypes(properties, interfaceName);
+
         var templateData = new TypeScriptModelTemplateData
         {
             InterfaceName = interfaceName,
             Description = DecodeHtmlEntities(model.Description),
             Properties = properties,
-            UseStrictNullChecks = options.UseStrictNullChecks
+            UseStrictNullChecks = options.UseStrictNullChecks,
+            ImportedTypes = importedTypes
         };
 
         return _templateRegistry.Render("typescript-model.cshtml", templateData);
+    }
+    
+    /// <summary>
+    /// Собирает все используемые типы из свойств модели для импортов
+    /// </summary>
+    private List<string> CollectModelUsedTypes(IReadOnlyList<TypeScriptPropertyTemplateData> properties, string currentModelName)
+    {
+        var usedTypes = new HashSet<string>();
+
+        foreach (var property in properties)
+        {
+            CollectModelTypesFromTypeInfo(property.TypeInfo, usedTypes, currentModelName);
+        }
+
+        return usedTypes.OrderBy(t => t).ToList();
+    }
+
+    /// <summary>
+    /// Рекурсивно собирает типы из TypeInfo для моделей
+    /// </summary>
+    private void CollectModelTypesFromTypeInfo(TypeInfo typeInfo, HashSet<string> usedTypes, string currentModelName)
+    {
+        if (typeInfo == null)
+            return;
+        
+        var baseType = typeInfo.BaseType;
+        
+        // Пропускаем примитивные типы и встроенные типы
+        if (typeInfo.IsPrimitive || 
+            typeInfo.IsVoid ||
+            typeInfo.IsFile ||
+            string.IsNullOrEmpty(baseType))
+        {
+            // Но все равно проверяем generic аргументы
+            foreach (var genericArg in typeInfo.GenericArguments)
+            {
+                CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
+            }
+            return;
+        }
+        
+        // Пропускаем встроенные типы TypeScript (включая Record, Array и т.д.)
+        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "string", "number", "boolean", "any", "void", "null", "undefined",
+            "Date", "Blob", "File", "FormData", "Record", "Array", "object"
+        };
+        
+        var fullTypeName = typeInfo.FullTypeName;
+        
+        // Проверяем, является ли это системным типом TypeScript
+        // Record<string, any> или Record<string, T> - это системный тип
+        // BaseType может быть "Record<string, any>" (когда создается через TypeInfo.Simple)
+        // или просто "Record" (когда создается через TypeInfo.Dictionary)
+        var isBuiltInType = builtInTypes.Contains(baseType) || 
+                           baseType.StartsWith("Record<", StringComparison.OrdinalIgnoreCase) ||
+                           (!string.IsNullOrEmpty(fullTypeName) && fullTypeName.StartsWith("Record<", StringComparison.OrdinalIgnoreCase)) ||
+                           (baseType.Contains("[]") && builtInTypes.Contains(baseType.Replace("[]", "").Trim()));
+        
+        if (isBuiltInType)
+        {
+            // Для Dictionary (Record<K, V>) извлекаем типы из generic аргументов
+            if (typeInfo.IsDictionary)
+            {
+                // Для Dictionary GenericArguments[0] - это key, GenericArguments[1] - это value
+                // Key всегда string для Record, пропускаем его
+                if (typeInfo.GenericArguments.Count > 1)
+                {
+                    CollectModelTypesFromTypeInfo(typeInfo.GenericArguments[1], usedTypes, currentModelName);
+                }
+            }
+            // Для Collection (Array<T>) извлекаем типы из generic аргументов
+            else if (typeInfo.IsCollection)
+            {
+                foreach (var genericArg in typeInfo.GenericArguments)
+                {
+                    CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
+                }
+            }
+            // Также проверяем FullTypeName для извлечения типов из Record<string, T>
+            // Но только если это не Record<string, any> (any - это примитив)
+            else if (!string.IsNullOrEmpty(fullTypeName) && 
+                     fullTypeName.Contains("<") && 
+                     fullTypeName.StartsWith("Record<", StringComparison.OrdinalIgnoreCase) &&
+                     !fullTypeName.Contains("Record<string, any>"))
+            {
+                ExtractTypesFromGenericString(fullTypeName, usedTypes, currentModelName);
+            }
+            return;
+        }
+        
+        // Пропускаем текущую модель (чтобы избежать циклических импортов)
+        if (string.Equals(baseType, currentModelName, StringComparison.OrdinalIgnoreCase))
+        {
+            // Но проверяем generic аргументы
+            foreach (var genericArg in typeInfo.GenericArguments)
+            {
+                CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
+            }
+            return;
+        }
+
+        // Если это не примитив и не текущая модель, добавляем в список
+        // Проверяем, что тип начинается с заглавной буквы (это пользовательский тип)
+        if (!string.IsNullOrEmpty(baseType) && char.IsUpper(baseType[0]))
+        {
+            usedTypes.Add(baseType);
+        }
+
+        // Рекурсивно обрабатываем generic аргументы (для Dictionary, Collection и т.д.)
+        foreach (var genericArg in typeInfo.GenericArguments)
+        {
+            CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
+        }
+        
+        // Также обрабатываем FullTypeName для извлечения типов из строкового представления
+        // Например, для "PagingResult<ItemType>" нужно извлечь "PagingResult" и "ItemType"
+        if (!string.IsNullOrEmpty(typeInfo.FullTypeName) && 
+            typeInfo.FullTypeName.Contains("<") && 
+            !typeInfo.IsDictionary && 
+            !typeInfo.IsCollection)
+        {
+            // Извлекаем типы из generic синтаксиса
+            ExtractTypesFromGenericString(typeInfo.FullTypeName, usedTypes, currentModelName);
+        }
+    }
+    
+    /// <summary>
+    /// Извлекает типы из строкового представления generic типа (например, "PagingResult<ItemType>")
+    /// </summary>
+    private void ExtractTypesFromGenericString(string typeString, HashSet<string> usedTypes, string currentModelName)
+    {
+        // Убираем nullable маркеры
+        typeString = typeString.Replace("?", "").Trim();
+        
+        // Находим позицию <
+        var genericStart = typeString.IndexOf('<');
+        if (genericStart < 0)
+            return;
+        
+        // Извлекаем базовое имя типа
+        var baseTypeName = typeString.Substring(0, genericStart).Trim();
+        
+        // Пропускаем системные типы
+        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Record", "Array", "Promise", "Task"
+        };
+        
+        if (builtInTypes.Contains(baseTypeName))
+        {
+            // Для системных типов извлекаем только generic аргументы
+            var genericPart = typeString.Substring(genericStart + 1);
+            genericPart = genericPart.TrimEnd('>');
+            
+            // Разделяем по запятым, учитывая вложенные generic
+            var types = SplitGenericArguments(genericPart);
+            foreach (var type in types)
+            {
+                var cleanType = type.Trim().Split('<')[0].Split('[')[0].Trim();
+                if (!string.IsNullOrEmpty(cleanType) && 
+                    char.IsUpper(cleanType[0]) && 
+                    !string.Equals(cleanType, currentModelName, StringComparison.OrdinalIgnoreCase))
+                {
+                    usedTypes.Add(cleanType);
+                }
+            }
+            return;
+        }
+        
+        // Для пользовательских типов добавляем базовый тип
+        if (!string.IsNullOrEmpty(baseTypeName) && 
+            char.IsUpper(baseTypeName[0]) && 
+            !string.Equals(baseTypeName, currentModelName, StringComparison.OrdinalIgnoreCase))
+        {
+            usedTypes.Add(baseTypeName);
+        }
+        
+        // Извлекаем generic аргументы
+        var genericArgs = typeString.Substring(genericStart + 1);
+        genericArgs = genericArgs.TrimEnd('>');
+        var argTypes = SplitGenericArguments(genericArgs);
+        foreach (var argType in argTypes)
+        {
+            var cleanType = argType.Trim().Split('<')[0].Split('[')[0].Trim();
+            if (!string.IsNullOrEmpty(cleanType) && 
+                char.IsUpper(cleanType[0]) && 
+                !string.Equals(cleanType, currentModelName, StringComparison.OrdinalIgnoreCase) &&
+                !builtInTypes.Contains(cleanType))
+            {
+                usedTypes.Add(cleanType);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Разделяет generic аргументы, учитывая вложенные generic
+    /// </summary>
+    private List<string> SplitGenericArguments(string genericArgs)
+    {
+        var result = new List<string>();
+        var current = new StringBuilder();
+        var depth = 0;
+        
+        foreach (var ch in genericArgs)
+        {
+            if (ch == '<')
+            {
+                depth++;
+                current.Append(ch);
+            }
+            else if (ch == '>')
+            {
+                depth--;
+                current.Append(ch);
+            }
+            else if (ch == ',' && depth == 0)
+            {
+                result.Add(current.ToString());
+                current.Clear();
+            }
+            else
+            {
+                current.Append(ch);
+            }
+        }
+        
+        if (current.Length > 0)
+        {
+            result.Add(current.ToString());
+        }
+        
+        return result;
     }
 
     private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
@@ -1575,7 +1813,108 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         // Собираем все используемые типы из всех операций
         var importedTypes = CollectUsedTypes(allOperationTemplates);
 
-        // Генерируем хуки с информацией о типах
+        // Собираем все уникальные схемы для валидации
+        var requestSchemas = new HashSet<(string Name, string FileName)>();
+        var responseSchemas = new HashSet<(string Name, string FileName)>();
+        
+        if (options.ModelFormat == ModelFormat.ValidationSchemas && 
+            options.ValidationLibrary == ValidationLibrary.Zod)
+        {
+            foreach (var operationTemplate in allOperationTemplates)
+            {
+                // Собираем request схемы
+                if (options.SerializeWithSchemas && 
+                    operationTemplate.HasRequestBody && 
+                    operationTemplate.RequestBodyTypeInfo != null)
+                {
+                    var requestTypeName = operationTemplate.RequestBodyTypeInfo.FullTypeName;
+                    var cleanTypeName = requestTypeName.Split('<')[0].Split('[')[0].Trim();
+                    var schemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
+                    var schemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
+                    requestSchemas.Add((schemaName, schemaFileName));
+                }
+                
+                // Собираем response схемы
+                if (options.DeserializeWithSchemas)
+                {
+                    var responseTypeName = operationTemplate.ReturnTypeInfo.IsTask && 
+                        operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0
+                        ? operationTemplate.ReturnTypeInfo.GenericArguments[0].FullTypeName
+                        : operationTemplate.ReturnTypeInfo.FullTypeName;
+                    
+                    if (!string.IsNullOrEmpty(responseTypeName) && responseTypeName != "void")
+                    {
+                        var cleanTypeName = responseTypeName.Split('<')[0].Split('[')[0].Trim();
+                        var schemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
+                        var schemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
+                        responseSchemas.Add((schemaName, schemaFileName));
+                    }
+                }
+            }
+        }
+
+        // Генерируем импорты один раз в начале файла
+        var imports = new List<string>();
+        
+        // Импорт axios (если используется)
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            imports.Add("import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';");
+        }
+        
+        // Импорт TanStack Query
+        var hasQuery = operations.Any(o => o.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase));
+        var hasMutation = operations.Any(o => !o.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase));
+        
+        if (hasQuery && hasMutation)
+        {
+            imports.Add("import { useQuery, UseQueryOptions, UseQueryResult, useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';");
+        }
+        else if (hasQuery)
+        {
+            imports.Add("import { useQuery, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';");
+        }
+        else if (hasMutation)
+        {
+            imports.Add("import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';");
+        }
+        
+        // Импорт типов моделей
+        if (importedTypes.Count > 0 && modelsImportPath != null)
+        {
+            foreach (var typeName in importedTypes)
+            {
+                var fileName = char.ToLowerInvariant(typeName[0]) + typeName.Substring(1);
+                imports.Add($"import type {{ {typeName} }} from '{modelsImportPath}/{fileName}.model';");
+            }
+        }
+        
+        // Импорт Zod и схем
+        if (options.ModelFormat == ModelFormat.ValidationSchemas && 
+            options.ValidationLibrary == ValidationLibrary.Zod && 
+            (requestSchemas.Count > 0 || responseSchemas.Count > 0))
+        {
+            imports.Add("import { z } from 'zod';");
+            
+            // Объединяем request и response схемы, чтобы избежать дублирования
+            var allSchemas = new HashSet<(string Name, string FileName)>();
+            allSchemas.UnionWith(requestSchemas);
+            allSchemas.UnionWith(responseSchemas);
+            
+            foreach (var (schemaName, schemaFileName) in allSchemas)
+            {
+                if (modelsImportPath != null)
+                {
+                    imports.Add($"import {{ {schemaName} }} from '{modelsImportPath}/{schemaFileName}.schema';");
+                }
+                else
+                {
+                    imports.Add($"import {{ {schemaName} }} from '../models/{schemaFileName}.schema';");
+                }
+            }
+        }
+
+        // Генерируем хуки без импортов
         for (int i = 0; i < operations.Count; i++)
         {
             var operation = operations[i];
@@ -1595,7 +1934,16 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
         }
 
-        return string.Join("\n\n", hooks);
+        // Объединяем импорты и хуки
+        var importsCode = string.Join("\n", imports);
+        var hooksCode = string.Join("\n\n", hooks);
+        
+        if (!string.IsNullOrEmpty(importsCode))
+        {
+            return importsCode + "\n\n" + hooksCode;
+        }
+        
+        return hooksCode;
     }
 
     private async Task EnsureTemplatesPreloadedAsync()
