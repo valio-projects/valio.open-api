@@ -54,7 +54,8 @@ class Program
         services.AddSingleton<ITemplateRegistry>(sp =>
         {
             var factory = sp.GetRequiredService<TemplateRegistryFactory>();
-            return factory.CreateRegistry(typeof(CSharpCodeGenerator).Assembly);
+            //return factory.CreateRegistry(typeof(CSharpCodeGenerator).Assembly);
+            return factory.CreateRegistry(typeof(TypeScriptCodeGenerator).Assembly);
         });
         
         // Note: Extractors создаются внутри генераторов, так как они требуют SchemaResolver,
@@ -72,7 +73,8 @@ class Program
         services.AddSingleton<ITypeMapper, TypeScriptTypeMapper>();
 
         // Code Generators
-        services.AddSingleton<ICodeGenerator, CSharpCodeGenerator>();
+        //services.AddSingleton<ICodeGenerator, CSharpCodeGenerator>();
+        services.AddSingleton<ICodeGenerator, TypeScriptCodeGenerator>();
         services.AddSingleton<ICodeGenerator>(sp =>
         {
             var typeMapper = sp.GetServices<ITypeMapper>().OfType<TypeScriptTypeMapper>().First();

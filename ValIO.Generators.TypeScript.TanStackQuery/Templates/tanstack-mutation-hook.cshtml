@@ -1,3 +1,5 @@
+@using System.Collections.Generic
+@using System.Linq
 @using ValIO.Generators.CSharp.Models
 @using ValIO.Generators.TypeScript.Models
 @using ValIO.Generators.TypeScript.TanStackQuery.Models
@@ -47,60 +49,60 @@
 }
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@:import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+@Raw("import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';\n")
 }
-@:import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';
+@Raw("import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';\n")
 @if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
 {
 @foreach (var typeName in Model.ImportedTypes)
 {
-@:import type { @typeName } from '@Model.ModelsPath/@(char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)).model';
+@Raw($"import type {{ {typeName} }} from '{Model.ModelsPath}/{char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)}.model';\n")
 }
-@:
+@Raw("\n")
 }
 @if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && (options.SerializeWithSchemas || options.DeserializeWithSchemas))
 {
-@:import { z } from 'zod';
+@Raw("import { z } from 'zod';\n")
 @if (!string.IsNullOrEmpty(Model.RequestSchemaName))
 {
 @if (!string.IsNullOrEmpty(Model.ModelsPath))
 {
-@:import { @Model.RequestSchemaName } from '@Model.ModelsPath/@Model.RequestSchemaFileName.schema';
+@Raw($"import {{ {Model.RequestSchemaName} }} from '{Model.ModelsPath}/{Model.RequestSchemaFileName}.schema';\n")
 }
 else
 {
-@:import { @Model.RequestSchemaName } from '../models/@Model.RequestSchemaFileName.schema';
+@Raw($"import {{ {Model.RequestSchemaName} }} from '../models/{Model.RequestSchemaFileName}.schema';\n")
 }
 }
 @if (!string.IsNullOrEmpty(Model.ResponseSchemaName))
 {
 @if (!string.IsNullOrEmpty(Model.ModelsPath))
 {
-@:import { @Model.ResponseSchemaName } from '@Model.ModelsPath/@Model.ResponseSchemaFileName.schema';
+@Raw($"import {{ {Model.ResponseSchemaName} }} from '{Model.ModelsPath}/{Model.ResponseSchemaFileName}.schema';\n")
 }
 else
 {
-@:import { @Model.ResponseSchemaName } from '../models/@Model.ResponseSchemaFileName.schema';
+@Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
 }
 }
 }
 
 @if (!string.IsNullOrEmpty(operationTemplate.Summary))
 {
-@://**
-@: * @Raw(operationTemplate.Summary)
-@: */
+@Raw("/**\n")
+@Raw($" * {operationTemplate.Summary}\n")
+@Raw(" */\n")
 }
 @if (!string.IsNullOrEmpty(operationTemplate.Description))
 {
-@://**
-@: * @Raw(operationTemplate.Description)
-@: */
+@Raw("/**\n")
+@Raw($" * {operationTemplate.Description}\n")
+@Raw(" */\n")
 }
-@:export const @(functionName) = async (
+@Raw($"export const {functionName} = async (\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@:  axiosInstance: AxiosInstance = axios.create(),
+@Raw("  axiosInstance: AxiosInstance = axios.create(),\n")
 }
 @{
     var allParams = new List<string>();
@@ -126,216 +128,216 @@ else
         }
     }
 }
-@:@string.Join(",\n  ", allParams)
-@:): Promise<@GetResponseType(operationTemplate.ReturnTypeInfo)> => {
+@Raw($"{string.Join(",\n  ", allParams)}\n")
+@Raw($"): Promise<{GetResponseType(operationTemplate.ReturnTypeInfo)}> => {{\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-    @:  const path = `@Raw(BuildPath(operationTemplate.Path, pathParams))`;
-    @:  const config: AxiosRequestConfig = {
-    @:    method: '@operationTemplate.HttpMethod.ToLowerInvariant()',
-    @:    url: path,
+    @Raw($"  const path = `{BuildPath(operationTemplate.Path, pathParams)}`;\n")
+    @Raw("  const config: AxiosRequestConfig = {\n")
+    @Raw($"    method: '{operationTemplate.HttpMethod.ToLowerInvariant()}',\n")
+    @Raw("    url: path,\n")
     @if (queryParams.Count > 0)
     {
-    @:    params: {
+    @Raw("    params: {\n")
     @foreach (var queryParam in queryParams)
     {
-    @:      @queryParam.Name: @queryParam.VariableName,
+    @Raw($"      {queryParam.Name}: {queryParam.VariableName},\n")
     }
-    @:    },
+    @Raw("    },\n")
     }
-    @:    headers: {
+    @Raw("    headers: {\n")
     @foreach (var headerParam in headerParams)
     {
-    @:      ...(@headerParam.VariableName !== undefined ? { '@headerParam.Name': @headerParam.VariableName } : {}),
+    @Raw($"      ...({headerParam.VariableName} !== undefined ? {{ '{headerParam.Name}': {headerParam.VariableName} }} : {{}}),\n")
     }
     @if (operationTemplate.HasRequestBody)
     {
         @if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
         {
-    @:      'Content-Type': 'multipart/form-data',
+    @Raw("      'Content-Type': 'multipart/form-data',\n")
         }
         else
         {
-    @:      'Content-Type': '@(operationTemplate.RequestBodyContentType ?? "application/json")',
+    @Raw($"      'Content-Type': '{operationTemplate.RequestBodyContentType ?? "application/json"}',\n")
         }
     }
-    @:    },
+    @Raw("    },\n")
     @if (operationTemplate.HasRequestBody)
     {
         @if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
         {
-    @:    data: (() => {
-    @:      const formData = new FormData();
+    @Raw("    data: (() => {\n")
+    @Raw("      const formData = new FormData();\n")
     @foreach (var formProp in operationTemplate.FormDataProperties)
     {
         @if (formProp.IsRequired)
         {
-    @:      formData.append('@formProp.Name', @formProp.VariableName);
+    @Raw($"      formData.append('{formProp.Name}', {formProp.VariableName});\n")
         }
         else
         {
-    @:      if (@formProp.VariableName !== undefined) {
-    @:        formData.append('@formProp.Name', @formProp.VariableName);
-    @:      }
+    @Raw($"      if ({formProp.VariableName} !== undefined) {{\n")
+    @Raw($"        formData.append('{formProp.Name}', {formProp.VariableName});\n")
+    @Raw("      }\n")
         }
     }
-    @:      return formData;
-    @:    })(),
+    @Raw("      return formData;\n")
+    @Raw("    })(),\n")
         }
         else
         {
     @if (!string.IsNullOrEmpty(Model.RequestSchemaName))
     {
-    @:    data: (() => {
-    @:      // Сериализация и валидация через Zod схему
-    @:      const schema = @Model.RequestSchemaName;
-    @:      return schema.parse(@operationTemplate.RequestBodyParameter);
-    @:    })(),
+    @Raw("    data: (() => {\n")
+    @Raw("      // Сериализация и валидация через Zod схему\n")
+    @Raw($"      const schema = {Model.RequestSchemaName};\n")
+    @Raw($"      return schema.parse({operationTemplate.RequestBodyParameter});\n")
+    @Raw("    })(),\n")
     }
     else
     {
-    @:    data: @operationTemplate.RequestBodyParameter,
+    @Raw($"    data: {operationTemplate.RequestBodyParameter},\n")
     }
         }
     }
-    @:  };
-    @:
-    @:  const response = await axiosInstance.request<@GetResponseType(operationTemplate.ReturnTypeInfo)>(config);
+    @Raw("  };\n")
+    @Raw("\n")
+    @Raw($"  const response = await axiosInstance.request<{GetResponseType(operationTemplate.ReturnTypeInfo)}>(config);\n")
     @if (operationTemplate.ReturnTypeInfo.IsTask && operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0 && !operationTemplate.ReturnTypeInfo.GenericArguments[0].IsVoid)
     {
     @if (!string.IsNullOrEmpty(Model.ResponseSchemaName))
     {
-    @:  // Десериализация и валидация через Zod схему
-    @:  const schema = @Model.ResponseSchemaName;
-    @:  return schema.parse(response.data);
+    @Raw("  // Десериализация и валидация через Zod схему\n")
+    @Raw($"  const schema = {Model.ResponseSchemaName};\n")
+    @Raw("  return schema.parse(response.data);\n")
     }
     else
     {
-    @:  return response.data;
+    @Raw("  return response.data;\n")
     }
     }
     else
     {
-    @:  return;
+    @Raw("  return;\n")
     }
 }
 else
 {
-    @:  const path = `@Raw(BuildPath(operationTemplate.Path, pathParams))`;
+    @Raw($"  const path = `{BuildPath(operationTemplate.Path, pathParams)}`;\n")
     @if (queryParams.Count > 0)
     {
-    @:  const queryParamsStr = [
+    @Raw("  const queryParamsStr = [\n")
     @foreach (var queryParam in queryParams)
     {
         @if (queryParam.IsRequired)
         {
-    @:    `@queryParam.Name=${@queryParam.VariableName}`,
+    @Raw($"    `{queryParam.Name}=${{{queryParam.VariableName}}}`,\n")
         }
         else
         {
-    @:    @queryParam.VariableName !== undefined ? `@queryParam.Name=${@queryParam.VariableName}` : null,
+    @Raw($"    {queryParam.VariableName} !== undefined ? `{queryParam.Name}=${{{queryParam.VariableName}}}` : null,\n")
         }
     }
-    @:  ].filter(Boolean).join('&');
-    @:  const url = queryParamsStr ? `${path}?${queryParamsStr}` : path;
+    @Raw("  ].filter(Boolean).join('&');\n")
+    @Raw("  const url = queryParamsStr ? `${path}?${queryParamsStr}` : path;\n")
     }
     else
     {
-    @:  const url = path;
+    @Raw("  const url = path;\n")
     }
-    @:  const headers: Record<string, string> = {};
+    @Raw("  const headers: Record<string, string> = {};\n")
     @foreach (var headerParam in headerParams)
     {
-    @:  if (@headerParam.VariableName !== undefined) {
-    @:    headers['@headerParam.Name'] = @headerParam.VariableName;
-    @:  }
+    @Raw($"  if ({headerParam.VariableName} !== undefined) {{\n")
+    @Raw($"    headers['{headerParam.Name}'] = {headerParam.VariableName};\n")
+    @Raw("  }\n")
     }
     @if (operationTemplate.HasRequestBody)
     {
         @if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
         {
-    @:  const formData = new FormData();
+    @Raw("  const formData = new FormData();\n")
     @foreach (var formProp in operationTemplate.FormDataProperties)
     {
         @if (formProp.IsRequired)
         {
-    @:  formData.append('@formProp.Name', @formProp.VariableName);
+    @Raw($"  formData.append('{formProp.Name}', {formProp.VariableName});\n")
         }
         else
         {
-    @:  if (@formProp.VariableName !== undefined) {
-    @:    formData.append('@formProp.Name', @formProp.VariableName);
-    @:  }
+    @Raw($"  if ({formProp.VariableName} !== undefined) {{\n")
+    @Raw($"    formData.append('{formProp.Name}', {formProp.VariableName});\n")
+    @Raw("  }\n")
         }
     }
-    @:  const response = await fetch(url, {
-    @:    method: '@operationTemplate.HttpMethod',
-    @:    headers,
-    @:    body: formData
-    @:  });
+    @Raw("  const response = await fetch(url, {\n")
+    @Raw($"    method: '{operationTemplate.HttpMethod}',\n")
+    @Raw("    headers,\n")
+    @Raw("    body: formData\n")
+    @Raw("  });\n")
         }
         else
         {
-    @:  headers['Content-Type'] = '@(operationTemplate.RequestBodyContentType ?? "application/json")';
+    @Raw($"  headers['Content-Type'] = '{operationTemplate.RequestBodyContentType ?? "application/json"}';\n")
     @if (!string.IsNullOrEmpty(Model.RequestSchemaName))
     {
-    @:  // Сериализация и валидация через Zod схему
-    @:  const schema = @Model.RequestSchemaName;
-    @:  const validatedData = schema.parse(@operationTemplate.RequestBodyParameter);
-    @:  const response = await fetch(url, {
-    @:    method: '@operationTemplate.HttpMethod',
-    @:    headers,
-    @:    body: JSON.stringify(validatedData)
-    @:  });
+    @Raw("  // Сериализация и валидация через Zod схему\n")
+    @Raw($"  const schema = {Model.RequestSchemaName};\n")
+    @Raw($"  const validatedData = schema.parse({operationTemplate.RequestBodyParameter});\n")
+    @Raw("  const response = await fetch(url, {\n")
+    @Raw($"    method: '{operationTemplate.HttpMethod}',\n")
+    @Raw("    headers,\n")
+    @Raw("    body: JSON.stringify(validatedData)\n")
+    @Raw("  });\n")
     }
     else
     {
-    @:  const response = await fetch(url, {
-    @:    method: '@operationTemplate.HttpMethod',
-    @:    headers,
-    @:    body: JSON.stringify(@operationTemplate.RequestBodyParameter)
-    @:  });
+    @Raw("  const response = await fetch(url, {\n")
+    @Raw($"    method: '{operationTemplate.HttpMethod}',\n")
+    @Raw("    headers,\n")
+    @Raw($"    body: JSON.stringify({operationTemplate.RequestBodyParameter})\n")
+    @Raw("  });\n")
     }
         }
     }
     else
     {
-    @:  const response = await fetch(url, {
-    @:    method: '@operationTemplate.HttpMethod',
-    @:    headers
-    @:  });
+    @Raw("  const response = await fetch(url, {\n")
+    @Raw($"    method: '{operationTemplate.HttpMethod}',\n")
+    @Raw("    headers\n")
+    @Raw("  });\n")
     }
     @if (operationTemplate.ReturnTypeInfo.IsTask && operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0 && !operationTemplate.ReturnTypeInfo.GenericArguments[0].IsVoid)
     {
-    @:  if (!response.ok) {
-    @:    throw new Error(`HTTP error! status: ${response.status}`);
-    @:  }
-    @:  const data = await response.json() as @GetResponseType(operationTemplate.ReturnTypeInfo);
+    @Raw("  if (!response.ok) {\n")
+    @Raw("    throw new Error(`HTTP error! status: ${response.status}`);\n")
+    @Raw("  }\n")
+    @Raw($"  const data = await response.json() as {GetResponseType(operationTemplate.ReturnTypeInfo)};\n")
     @if (!string.IsNullOrEmpty(Model.ResponseSchemaName))
     {
-    @:  // Десериализация и валидация через Zod схему
-    @:  const schema = @Model.ResponseSchemaName;
-    @:  return schema.parse(data);
+    @Raw("  // Десериализация и валидация через Zod схему\n")
+    @Raw($"  const schema = {Model.ResponseSchemaName};\n")
+    @Raw("  return schema.parse(data);\n")
     }
     else
     {
-    @:  return data;
+    @Raw("  return data;\n")
     }
     }
     else
     {
-    @:  if (!response.ok) {
-    @:    throw new Error(`HTTP error! status: ${response.status}`);
-    @:  }
-    @:  return;
+    @Raw("  if (!response.ok) {\n")
+    @Raw("    throw new Error(`HTTP error! status: ${response.status}`);\n")
+    @Raw("  }\n")
+    @Raw("  return;\n")
     }
 }
-@:};
-
-@:export const @hookName = <
-@:  TData = @GetResponseType(operationTemplate.ReturnTypeInfo),
-@:  TError = Error,
-@:  TVariables = {
+@Raw("};\n")
+@Raw("\n")
+@Raw($"export const {hookName} = <\n")
+@Raw($"  TData = {GetResponseType(operationTemplate.ReturnTypeInfo)},\n")
+@Raw("  TError = Error,\n")
+@Raw("  TVariables = {\n")
 @{
     var mutationVars = new List<string>();
     mutationVars.AddRange(pathParams.Select(FormatParameter));
@@ -359,9 +361,9 @@ else
         }
     }
 }
-@:@string.Join(";\n    ", mutationVars)
-@:  },
-@:>(
+@Raw($"{string.Join(";\n    ", mutationVars)}\n")
+@Raw("  }},\n")
+@Raw(">(\n")
 @{
     var hookParams = new List<string>();
     hookParams.AddRange(pathParams.Select(FormatParameter));
@@ -385,26 +387,29 @@ else
         }
     }
 }
-@:@string.Join(",\n  ", hookParams)
-@:  options?: {
-@:    mutation?: UseMutationOptions<TData, TError, TVariables>;
+@Raw($"{string.Join(",\n  ", hookParams)}\n")
+@Raw("  options?: {\n")
+@Raw("    mutation?: UseMutationOptions<TData, TError, TVariables>;\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@:    axios?: AxiosRequestConfig;
+@Raw("    axios?: AxiosRequestConfig;\n")
 }
 else
 {
-@:    fetch?: RequestInit;
+@Raw("    fetch?: RequestInit;\n")
 }
-@:  },
-@:): UseMutationResult<TData, TError, TVariables> => {
-@:  const { mutation: mutationOptions@(options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions") } = options ?? {};
-@:
-@:  const mutationFn = async (variables: TVariables) => {
-@:    return await @(functionName)(
+@Raw("  },\n")
+@Raw("): UseMutationResult<TData, TError, TVariables> => {\n")
+@{
+    var destructuringPart = options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions";
+}
+@Raw($"  const {{ mutation: mutationOptions{destructuringPart} }} = options ?? {{}};\n")
+@Raw("\n")
+@Raw("  const mutationFn = async (variables: TVariables) => {\n")
+@Raw($"    return await {functionName}(\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@:      axios.create(),
+@Raw("      axios.create(),\n")
 }
 @{
     var fnArgs = new List<string>();
@@ -423,16 +428,16 @@ else
         }
     }
 }
-@:@string.Join(",\n      ", fnArgs)
-@:    );
-@:  };
-@:
-@:  const mutation = useMutation<TData, TError, TVariables>(
-@:    mutationFn,
-@:    {
-@:      ...mutationOptions,
-@:    },
-@:  );
-@:
-@:  return mutation;
-@:};
+@Raw($"{string.Join(",\n      ", fnArgs)}\n")
+@Raw("    );\n")
+@Raw("  };\n")
+@Raw("\n")
+@Raw("  const mutation = useMutation<TData, TError, TVariables>(\n")
+@Raw("    mutationFn,\n")
+@Raw("    {\n")
+@Raw("      ...mutationOptions,\n")
+@Raw("    },\n")
+@Raw("  );\n")
+@Raw("\n")
+@Raw("  return mutation;\n")
+@Raw("};\n")

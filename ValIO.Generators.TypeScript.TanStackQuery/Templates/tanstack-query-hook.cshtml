@@ -1,3 +1,5 @@
+@using System.Collections.Generic
+@using System.Linq
 @using ValIO.Generators.CSharp.Models
 @using ValIO.Generators.TypeScript.Models
 @using ValIO.Generators.TypeScript.TanStackQuery.Models
@@ -63,12 +65,12 @@
 {
 @:import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 }
-@:import { useQuery, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';
+@Raw("import { useQuery, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';\n")
 @if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
 {
 @foreach (var typeName in Model.ImportedTypes)
 {
-@:import type { @typeName } from '@Model.ModelsPath/@(char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)).model';
+@Raw($"import type {{ {typeName} }} from '{Model.ModelsPath}/{char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)}.model';\n")
 }
 @:
 }
@@ -77,11 +79,11 @@
 @:import { z } from 'zod';
 @if (!string.IsNullOrEmpty(Model.ModelsPath))
 {
-@:import { @Model.ResponseSchemaName } from '@Model.ModelsPath/@Model.ResponseSchemaFileName.schema';
+@Raw($"import {{ {Model.ResponseSchemaName} }} from '{Model.ModelsPath}/{Model.ResponseSchemaFileName}.schema';\n")
 }
 else
 {
-@:import { @Model.ResponseSchemaName } from '../models/@Model.ResponseSchemaFileName.schema';
+@Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
 }
 }
 
@@ -97,7 +99,7 @@ else
 @: * @Raw(operationTemplate.Description)
 @: */
 }
-@:export const @(functionName) = async (
+@Raw($"export const {functionName} = async (\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
 @:  axiosInstance: AxiosInstance = axios.create(),
@@ -126,8 +128,8 @@ else
         }
     }
 }
-@:@string.Join(",\n  ", allParams)
-@:): Promise<@GetResponseType(operationTemplate.ReturnTypeInfo)> => {
+@Raw($"{string.Join(",\n  ", allParams)}\n")
+@Raw($"): Promise<{GetResponseType(operationTemplate.ReturnTypeInfo)}> => {{\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
     @:  const path = `@Raw(BuildPath(operationTemplate.Path, pathParams))`;
@@ -146,7 +148,7 @@ else
     @:    headers: {
     @foreach (var headerParam in headerParams)
     {
-    @:      ...(@headerParam.VariableName !== undefined ? { '@headerParam.Name': @headerParam.VariableName } : {}),
+    @Raw($"      ...({headerParam.VariableName} !== undefined ? {{ '{headerParam.Name}': {headerParam.VariableName} }} : {{}}),\n")
     }
     @if (operationTemplate.HasRequestBody)
     {
@@ -156,7 +158,7 @@ else
         }
         else
         {
-    @:      'Content-Type': '@(operationTemplate.RequestBodyContentType ?? "application/json")',
+    @Raw($"      'Content-Type': '{operationTemplate.RequestBodyContentType ?? "application/json"}',\n")
         }
     }
     @:    },
@@ -189,7 +191,7 @@ else
     }
     @:  };
     @:
-    @:  const response = await axiosInstance.request<@GetResponseType(operationTemplate.ReturnTypeInfo)>(config);
+    @Raw($"  const response = await axiosInstance.request<{GetResponseType(operationTemplate.ReturnTypeInfo)}>(config);\n")
     @if (operationTemplate.ReturnTypeInfo.IsTask && operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0 && !operationTemplate.ReturnTypeInfo.GenericArguments[0].IsVoid)
     {
     @:  return response.data;
@@ -209,11 +211,11 @@ else
     {
         @if (queryParam.IsRequired)
         {
-    @:    `@queryParam.Name=${@queryParam.VariableName}`,
+    @Raw($"    `{queryParam.Name}=${{{queryParam.VariableName}}}`,\n")
         }
         else
         {
-    @:    @queryParam.VariableName !== undefined ? `@queryParam.Name=${@queryParam.VariableName}` : null,
+    @Raw($"    {queryParam.VariableName} !== undefined ? `{queryParam.Name}=${{{queryParam.VariableName}}}` : null,\n")
         }
     }
     @:  ].filter(Boolean).join('&');
@@ -256,7 +258,7 @@ else
         }
         else
         {
-    @:  headers['Content-Type'] = '@(operationTemplate.RequestBodyContentType ?? "application/json")';
+    @Raw($"  headers['Content-Type'] = '{operationTemplate.RequestBodyContentType ?? "application/json"}';\n")
     @:  const response = await fetch(url, {
     @:    method: '@operationTemplate.HttpMethod',
     @:    headers,
@@ -274,65 +276,84 @@ else
     @if (operationTemplate.ReturnTypeInfo.IsTask && operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0 && !operationTemplate.ReturnTypeInfo.GenericArguments[0].IsVoid)
     {
     @:  if (!response.ok) {
-    @:    throw new Error(`HTTP error! status: ${response.status}`);
+    @Raw($"    throw new Error(`HTTP error! status: ${{response.status}}`);\n")
     @:  }
-    @:  return await response.json() as @GetResponseType(operationTemplate.ReturnTypeInfo);
+    @Raw($"  return await response.json() as {GetResponseType(operationTemplate.ReturnTypeInfo)};\n")
     }
     else
     {
-    @:  if (!response.ok) {
-    @:    throw new Error(`HTTP error! status: ${response.status}`);
-    @:  }
+    @Raw("  if (!response.ok) {\n")
+    @Raw("    throw new Error(`HTTP error! status: ${response.status}`);\n")
+    @Raw("  }\n")
     @:  return;
     }
 }
-@:};
-
-@:export const @Model.QueryKeyFunctionName = (
+@Raw("};\n")
+@Raw("\n")
+@Raw($"export const {Model.QueryKeyFunctionName} = (\n")
 @{
     var keyParams = new List<string>();
     keyParams.AddRange(pathParams.Select(FormatParameter));
     keyParams.AddRange(queryParams.Select(FormatParameter));
 }
-@:@string.Join(",\n  ", keyParams)
-@:) => {
-@:  return @Raw(BuildQueryKey(pathParams, queryParams, operationTemplate.Path));
-@:};
+@{
+    var keyParamsStr = string.Join(",\n  ", keyParams);
+}
+@Raw($"{keyParamsStr}\n")
+@Raw($") => {{\n")
+@Raw($"  return {BuildQueryKey(pathParams, queryParams, operationTemplate.Path)};\n")
+@Raw("};\n")
 
-@:export const @hookName = <
-@:  TData = @GetResponseType(operationTemplate.ReturnTypeInfo),
-@:  TError = Error,
-@:>(
 @{
     var hookParams = new List<string>();
     hookParams.AddRange(pathParams.Select(FormatParameter));
     hookParams.AddRange(queryParams.Select(FormatParameter));
+    var hookParamsStr = string.Join(",\n  ", hookParams);
+    var returnType = GetResponseType(operationTemplate.ReturnTypeInfo);
+    var axiosOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
 }
-@:@string.Join(",\n  ", hookParams)
-@:  options?: {
-@:    query?: UseQueryOptions<@GetResponseType(operationTemplate.ReturnTypeInfo), TError, TData>;
-@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-{
-@:    axios?: AxiosRequestConfig;
+@Raw($"export const {hookName} = <\n")
+@Raw($"  TData = {returnType},\n")
+@Raw($"  TError = Error,\n")
+@Raw($">(\n")
+@Raw($"{hookParamsStr}\n")
+@Raw($"  options?: {{\n")
+@Raw($"    query?: UseQueryOptions<{returnType}, TError, TData>;\n")
+@Raw($"{axiosOption}\n")
+@Raw($"  }},\n")
+@Raw($"): UseQueryResult<TData, TError> => {{\n")
+@{
+    var destructuringOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions";
 }
-else
-{
-@:    fetch?: RequestInit;
-}
-@:  },
-@:): UseQueryResult<TData, TError> => {
-@:  const { query: queryOptions@(options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions") } = options ?? {};
-@:
-@:  const queryKey = queryOptions?.queryKey ?? @Model.QueryKeyFunctionName(
+@Raw($"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n")
+@Raw("\n")
 @{
     var keyArgs = new List<string>();
     keyArgs.AddRange(pathParams.Select(p => p.VariableName));
     keyArgs.AddRange(queryParams.Select(p => p.VariableName));
+    var keyArgsStr = string.Join(", ", keyArgs);
 }
-@:@string.Join(", ", keyArgs)
-@:  );
-@:
-@:  const queryFn = async () => {
+@Raw($"  const queryKey = queryOptions?.queryKey ?? {Model.QueryKeyFunctionName}({keyArgsStr});\n")
+@Raw("\n")
+@{
+    var fnArgs = new List<string>();
+    fnArgs.AddRange(pathParams.Select(p => p.VariableName));
+    fnArgs.AddRange(queryParams.Select(p => p.VariableName));
+    fnArgs.AddRange(headerParams.Select(p => p.VariableName));
+    if (operationTemplate.HasRequestBody)
+    {
+        if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
+        {
+            fnArgs.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
+        }
+        else
+        {
+            fnArgs.Add(operationTemplate.RequestBodyParameter);
+        }
+    }
+    var fnArgsStr = string.Join(",\n      ", fnArgs);
+}
+@Raw("  const queryFn = async () => {\n")
 @if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && options.DeserializeWithSchemas)
 {
     @:    const response = await @(functionName)(
@@ -340,27 +361,10 @@ else
     {
     @:      axios.create(),
     }
-    @{
-        var fnArgs = new List<string>();
-        fnArgs.AddRange(pathParams.Select(p => p.VariableName));
-        fnArgs.AddRange(queryParams.Select(p => p.VariableName));
-        fnArgs.AddRange(headerParams.Select(p => p.VariableName));
-        if (operationTemplate.HasRequestBody)
-        {
-            if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
-            {
-                fnArgs.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
-            }
-            else
-            {
-                fnArgs.Add(operationTemplate.RequestBodyParameter);
-            }
-        }
-    }
-    @:@string.Join(",\n      ", fnArgs)
+    @Raw(fnArgsStr)
     @:    );
     @:    // Десериализация и валидация через Zod схему
-    @:    const schema = @Model.ResponseSchemaName;
+    @:    const schema = @(Model.ResponseSchemaName);
     @:    return schema.parse(response);
 }
 else
@@ -370,39 +374,25 @@ else
     {
     @:      axios.create(),
     }
-    @{
-        var fnArgs = new List<string>();
-        fnArgs.AddRange(pathParams.Select(p => p.VariableName));
-        fnArgs.AddRange(queryParams.Select(p => p.VariableName));
-        fnArgs.AddRange(headerParams.Select(p => p.VariableName));
-        if (operationTemplate.HasRequestBody)
-        {
-            if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
-            {
-                fnArgs.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
-            }
-            else
-            {
-                fnArgs.Add(operationTemplate.RequestBodyParameter);
-            }
-        }
-    }
-    @:@string.Join(",\n      ", fnArgs)
+    @Raw(fnArgsStr)
     @:    );
 }
-@:  };
-@:
-@:  const query = useQuery<@GetResponseType(operationTemplate.ReturnTypeInfo), TError, TData>(
-@:    queryKey,
-@:    queryFn,
-@:    {
-@:      enabled: true,
-@:      ...queryOptions,
-@:    },
-@:  );
-@:
-@:  return {
-@:    queryKey,
-@:    ...query,
-@:  };
-@:};
+@Raw("  };\n")
+@Raw("\n")
+@{
+    var queryReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
+}
+@Raw($"  const query = useQuery<{queryReturnType}, TError, TData>(\n")
+@Raw("    queryKey,\n")
+@Raw("    queryFn,\n")
+@Raw("    {\n")
+@Raw("      enabled: true,\n")
+@Raw("      ...queryOptions,\n")
+@Raw("    },\n")
+@Raw("  );\n")
+@Raw("\n")
+@Raw("  return {\n")
+@Raw("    queryKey,\n")
+@Raw("    ...query,\n")
+@Raw("  };\n")
+@Raw("};\n")
