@@ -41,7 +41,7 @@
     var importedTypes = Model.ImportedTypes;
     var modelsPath = Model.ModelsPath;
 }
-import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @if (importedTypes != null && importedTypes.Count > 0 && modelsPath != null)
 {
 @foreach (var typeName in importedTypes)
@@ -97,7 +97,7 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
     
 @:export async function @(operation.MethodName)(
 @:@Raw(paramsStr)
-@:  axiosInstance?: AxiosInstance
+@:  axiosInstance: AxiosInstance
 @:): Promise<@GetResponseType(operation.ReturnTypeInfo)> {
 @:  const path = `@Raw(BuildPath(operation.Path, operation.PathParameters))`;
 @:  const config: AxiosRequestConfig = {

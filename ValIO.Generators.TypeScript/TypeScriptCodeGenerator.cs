@@ -1375,10 +1375,24 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         var pathParameters = new List<TypeScriptParameterTemplateData>();
         var queryParameters = new List<TypeScriptParameterTemplateData>();
         var headerParameters = new List<TypeScriptParameterTemplateData>();
+        var seenVariableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var duplicateParams = new List<string>();
 
         foreach (var parameter in operation.Parameters)
         {
             var paramName = _namingConverter.ToCamelCase(parameter.Name);
+            
+            // Проверяем на дубликаты по VariableName
+            if (seenVariableNames.Contains(paramName))
+            {
+                duplicateParams.Add(paramName);
+                _logger?.LogWarning(
+                    "Duplicate parameter variable name '{VariableName}' found in operation '{OperationId}' at path '{Path}'. " +
+                    "Parameter will be deduplicated.",
+                    paramName, operation.OperationId ?? "unknown", operation.Path ?? "unknown");
+                continue;
+            }
+            seenVariableNames.Add(paramName);
             
             TypeInfo paramTypeInfo;
             var originalOperation = FindOriginalOperation(document, operation);
@@ -1932,21 +1946,36 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             imports.Add($"import {{ {methodNamesStr} }} from '{clientImportPath}';");
         }
         
+        // Импорт Axios, если используется
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            imports.Add("import { AxiosRequestConfig } from 'axios';");
+        }
+        
         // Импорт TanStack Query
         var hasQuery = operations.Any(o => o.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase));
         var hasMutation = operations.Any(o => !o.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase));
         
-        if (hasQuery && hasMutation)
+        // Собираем все необходимые типы для TanStack Query
+        var tanStackImports = new List<string>();
+        
+        if (hasQuery)
         {
-            imports.Add("import { useQuery, UseQueryOptions, UseQueryResult, useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';");
+            tanStackImports.AddRange(new[] { "useQuery", "UseQueryOptions", "UseQueryResult", "QueryFunction", "QueryKey", "QueryClient", "useInfiniteQuery", "UseInfiniteQueryOptions", "UseInfiniteQueryResult", "InfiniteData" });
         }
-        else if (hasQuery)
+        
+        if (hasMutation)
         {
-            imports.Add("import { useQuery, UseQueryOptions, UseQueryResult } from '@tanstack/react-query';");
+            tanStackImports.AddRange(new[] { "useMutation", "UseMutationOptions", "UseMutationResult" });
         }
-        else if (hasMutation)
+        
+        // Удаляем дубликаты и сортируем для консистентности
+        var uniqueImports = tanStackImports.Distinct().OrderBy(x => x).ToList();
+        
+        if (uniqueImports.Count > 0)
         {
-            imports.Add("import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';");
+            var importsStr = string.Join(", ", uniqueImports);
+            imports.Add($"import {{ {importsStr} }} from '@tanstack/react-query';");
         }
         
         // Импорт типов моделей

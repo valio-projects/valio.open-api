@@ -54,7 +54,7 @@
 {
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@Raw("import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';\n")
+@Raw("import { AxiosInstance, AxiosRequestConfig } from 'axios';\n")
 }
 @Raw("import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';\n")
 @if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
@@ -112,7 +112,7 @@ else
 @Raw($"export const {functionName} = async (\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@Raw("  axiosInstance: AxiosInstance = axios.create(),\n")
+@Raw("  axiosInstance: AxiosInstance,\n")
 }
     var allParams = new List<string>();
     allParams.AddRange(pathParams.Select(FormatParameter));
@@ -388,7 +388,7 @@ else
             hookParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
-    var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) : "";
+    var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) + "," : "";
     
     var axiosOptionStr = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
     var responseType = GetResponseType(operationTemplate.ReturnTypeInfo);

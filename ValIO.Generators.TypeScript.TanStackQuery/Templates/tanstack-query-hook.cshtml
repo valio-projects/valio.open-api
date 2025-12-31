@@ -101,7 +101,7 @@
     // Добавляем axiosInstance/customInstance в самом конце
     if (options.HttpClientLibrary == HttpClientLibrary.Axios)
     {
-        allParams.Add("axiosInstance?: AxiosInstance");
+        allParams.Add("axiosInstance: AxiosInstance");
     }
     
     var allParamsStr = string.Join(",\n  ", allParams);
@@ -118,7 +118,7 @@
     var hookParams = new List<string>();
     hookParams.AddRange(pathParams.Select(FormatParameter));
     hookParams.AddRange(queryParams.Select(FormatParameter));
-    var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) : "";
+    var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) + "," : "";
     var returnType = GetResponseType(operationTemplate.ReturnTypeInfo);
     var axiosOption = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
     
@@ -196,7 +196,7 @@
 {
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@:import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
+@:import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @:import { customInstance } from '../mutator/custom-instance';
 }
 @Raw("import { useQuery, UseQueryOptions, UseQueryResult, useInfiniteQuery, UseInfiniteQueryOptions, UseInfiniteQueryResult, QueryFunction, QueryClient, InfiniteData } from '@tanstack/react-query';\n")
@@ -422,9 +422,7 @@ else
 @Raw(hookSignature)
 @Raw($"  const signal = options?.query?.signal;\n")
 @Raw(destructuringLine)
-@Raw("\n")
 @Raw($"  const queryKey = queryOptions?.queryKey ?? {Model.QueryKeyFunctionName}({keyArgsStr});\n")
-@Raw("\n")
 @Raw("  const queryFn: QueryFunction<Awaited<ReturnType<typeof @(clientMethodName)>>> = ({ signal }) => {\n")
 @if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && options.DeserializeWithSchemas)
 {
@@ -443,7 +441,6 @@ else
     @:    );
 }
 @Raw("  };\n")
-@Raw("\n")
 @Raw($"  const query = useQuery<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData>(\n")
 @Raw("    {\n")
 @Raw("      queryKey,\n")
@@ -452,7 +449,6 @@ else
 @Raw("      ...queryOptions,\n")
 @Raw("    },\n")
 @Raw("  );\n")
-@Raw("\n")
 @Raw("  return {\n")
 @Raw("    queryKey,\n")
 @Raw("    ...query,\n")

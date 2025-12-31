@@ -1,6 +1,6 @@
 {
   "language": "TypeScript",
-  "outputPath": "C:\\Workspace\\ValIO\\out\\typescript",
+  "outputPath": "C:\\Workspace\\Talent\\microservices.chessboard.integrations.bitrix24\\front-end\\src\\swagger\\chessboard\\catalog",
   "namespace": "Generated",
   "generateEnums": true,
   "generateModels": true,
@@ -22,7 +22,7 @@
     "separateModels": true,
     "separateClients": true,
     "modelsPath": "models",
-    "clientsPath": "api"
+    "clientsPath": "endpoints"
   },
   "namingConvention": {
     "models": "PascalCase",
