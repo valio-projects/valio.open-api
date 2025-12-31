@@ -88,8 +88,12 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
         }
     }
     @:export async function @(operation.MethodName)(
-    @:  axiosInstance?: AxiosInstance,
     @:@Raw(string.Join(",\n  ", allParams))
+    @if (allParams.Count > 0)
+    {
+    @:,
+    }
+    @:  axiosInstance?: AxiosInstance
     @:): Promise<@GetResponseType(operation.ReturnTypeInfo)> {
     @:  const path = `@Raw(BuildPath(operation.Path, operation.PathParameters))`;
     @:  const config: AxiosRequestConfig = {
