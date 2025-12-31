@@ -751,10 +751,17 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             TypeInfo typeInfo = TypeInfo.Simple("any");
             try
             {
-                if (model.OriginalSchema?.Properties != null &&
-                    model.OriginalSchema.Properties.TryGetValue(p.Name, out var propertySchema))
+                // Используем PropertySchemas, который включает свойства из allOf
+                if (model.PropertySchemas != null &&
+                    model.PropertySchemas.TryGetValue(p.Name, out var propertySchema))
                 {
                     typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchema, p.IsRequired, schemaResolver);
+                }
+                // Fallback на OriginalSchema.Properties для обратной совместимости
+                else if (model.OriginalSchema?.Properties != null &&
+                    model.OriginalSchema.Properties.TryGetValue(p.Name, out var propertySchemaFromOriginal))
+                {
+                    typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchemaFromOriginal, p.IsRequired, schemaResolver);
                 }
                 else
                 {

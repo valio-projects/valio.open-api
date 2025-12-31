@@ -19,5 +19,11 @@ public class ApiModel
     public string? BaseClassName { get; set; }
     
     public IOpenApiSchema? OriginalSchema { get; set; }
+    
+    /// <summary>
+    /// Словарь оригинальных схем свойств (имя свойства -> схема свойства)
+    /// Включает свойства из allOf и из самой схемы
+    /// </summary>
+    public IReadOnlyDictionary<string, IOpenApiSchema>? PropertySchemas { get; set; }
 }
 

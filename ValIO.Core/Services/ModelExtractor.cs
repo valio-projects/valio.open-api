@@ -57,24 +57,27 @@ public class ModelExtractor : IModelExtractor
         if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
         {
             var allProperties = new Dictionary<string, ApiProperty>();
+            var allPropertySchemas = new Dictionary<string, IOpenApiSchema>();
             var allRequired = new HashSet<string>();
             string? baseClassName = null;
 
             foreach (var subSchema in resolvedSchema.AllOf)
             {
-                var resolvedSubSchema = _schemaResolver.ResolveSchema(subSchema);
-                
                 // Проверяем, является ли под-схема ссылкой на другую модель (базовый класс)
-                if (resolvedSubSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                string? referencedSchemaName = null;
+                if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
                 {
                     var reference = refHolder.Reference;
                     if (reference != null && !string.IsNullOrEmpty(reference.Id))
                     {
                         // Это базовый класс - сохраняем его имя
+                        referencedSchemaName = reference.Id;
                         baseClassName = _namingConverter.ToPascalCase(reference.Id);
-                        continue; // Свойства базового класса не добавляем сюда
                     }
                 }
+                
+                // Разрешаем схему для извлечения свойств
+                var resolvedSubSchema = _schemaResolver.ResolveSchema(subSchema);
 
                 // Объединяем свойства из этой схемы
                 if (resolvedSubSchema.Properties != null)
@@ -85,6 +88,8 @@ public class ModelExtractor : IModelExtractor
                         var propertySchema = propertyEntry.Value;
                         var apiProperty = ExtractProperty(propertyName, propertySchema, resolvedSubSchema);
                         allProperties[propertyName] = apiProperty; // Перезаписываем, если уже есть
+                        // Сохраняем оригинальную схему свойства (до разрешения)
+                        allPropertySchemas[propertyName] = propertySchema;
                     }
                 }
 
@@ -107,6 +112,8 @@ public class ModelExtractor : IModelExtractor
                     var propertySchema = propertyEntry.Value;
                     var apiProperty = ExtractProperty(propertyName, propertySchema, resolvedSchema);
                     allProperties[propertyName] = apiProperty;
+                    // Сохраняем оригинальную схему свойства
+                    allPropertySchemas[propertyName] = propertySchema;
                 }
             }
 
@@ -122,10 +129,12 @@ public class ModelExtractor : IModelExtractor
             apiModel.Properties = allProperties.Values.ToList();
             apiModel.RequiredProperties = allRequired.ToList();
             apiModel.BaseClassName = baseClassName;
+            apiModel.PropertySchemas = allPropertySchemas;
         }
         else
         {
             // Обычная схема без allOf
+            var propertySchemas = new Dictionary<string, IOpenApiSchema>();
             if (resolvedSchema.Properties != null)
             {
                 var properties = new List<ApiProperty>();
@@ -136,12 +145,15 @@ public class ModelExtractor : IModelExtractor
 
                     var apiProperty = ExtractProperty(propertyName, propertySchema, resolvedSchema);
                     properties.Add(apiProperty);
+                    // Сохраняем оригинальную схему свойства
+                    propertySchemas[propertyName] = propertySchema;
                 }
 
                 apiModel.Properties = properties;
             }
 
             apiModel.RequiredProperties = resolvedSchema.Required?.ToList() ?? new List<string>();
+            apiModel.PropertySchemas = propertySchemas;
         }
 
         return apiModel;
