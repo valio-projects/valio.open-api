@@ -51,4 +51,14 @@ public class TanStackQueryHookTemplateData
     /// Нужно ли генерировать импорты в шаблоне (по умолчанию true для обратной совместимости)
     /// </summary>
     public bool GenerateImports { get; set; } = true;
+    
+    /// <summary>
+    /// Имя метода из базового клиента (axios/fetch), который нужно импортировать и использовать
+    /// </summary>
+    public string? ClientMethodName { get; set; }
+    
+    /// <summary>
+    /// Путь для импорта базового клиента (например, "./buildings.axios" или "./buildings.fetch")
+    /// </summary>
+    public string? ClientImportPath { get; set; }
 }

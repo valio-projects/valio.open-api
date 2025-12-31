@@ -43,6 +43,9 @@
     var operationTemplate = Model.OperationTemplate;
     var options = Model.Options;
     
+    // Имя метода клиента (используем импортированный метод, если указан, иначе используем functionName для обратной совместимости)
+    var clientMethodName = !string.IsNullOrEmpty(Model.ClientMethodName) ? Model.ClientMethodName : functionName;
+    
     var pathParams = operationTemplate.PathParameters;
     var queryParams = operationTemplate.QueryParameters;
     var headerParams = operationTemplate.HeaderParameters;
@@ -103,12 +106,14 @@ else
 @Raw($" * {operationTemplate.Description}\n")
 @Raw(" */\n")
 }
+@* Определяем функцию клиента только если ClientMethodName не указан (обратная совместимость) *@
+@if (string.IsNullOrEmpty(Model.ClientMethodName))
+{
 @Raw($"export const {functionName} = async (\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
 @Raw("  axiosInstance: AxiosInstance = axios.create(),\n")
 }
-@{
     var allParams = new List<string>();
     allParams.AddRange(pathParams.Select(FormatParameter));
     allParams.AddRange(queryParams.Select(FormatParameter));
@@ -131,7 +136,6 @@ else
             allParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
-}
 @Raw($"{string.Join(",\n  ", allParams)}\n")
 @Raw($"): Promise<{GetResponseType(operationTemplate.ReturnTypeInfo)}> => {{\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
@@ -338,6 +342,7 @@ else
 }
 @Raw("};\n")
 @Raw("\n")
+}
 @Raw($"export const {hookName} = <\n")
 @Raw($"  TData = {GetResponseType(operationTemplate.ReturnTypeInfo)},\n")
 @Raw("  TError = Error,\n")
@@ -410,10 +415,10 @@ else
 @Raw($"  const {{ mutation: mutationOptions{destructuringPart} }} = options ?? {{}};\n")
 @Raw("\n")
 @Raw("  const mutationFn = async (variables: TVariables) => {\n")
-@Raw($"    return await {functionName}(\n")
+@Raw($"    return await {clientMethodName}(\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@Raw("      axios.create(),\n")
+@Raw("      axiosOptions?.axiosInstance,\n")
 }
 @{
     var fnArgs = new List<string>();

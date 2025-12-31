@@ -40,7 +40,9 @@ public class TanStackQueryGenerator
         TypeScriptGenerationOptions options,
         ISchemaResolver schemaResolver,
         IReadOnlyList<string>? importedTypes = null,
-        string? modelsPath = null)
+        string? modelsPath = null,
+        string? clientMethodName = null,
+        string? clientImportPath = null)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
@@ -89,7 +91,9 @@ public class TanStackQueryGenerator
             ResponseSchemaFileName = responseSchemaFileName,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
             ModelsPath = modelsPath,
-            GenerateImports = false
+            GenerateImports = false,
+            ClientMethodName = clientMethodName,
+            ClientImportPath = clientImportPath
         };
 
         return _templateRegistry.Render("tanstack-query-hook.cshtml", templateData);
@@ -104,7 +108,9 @@ public class TanStackQueryGenerator
         TypeScriptGenerationOptions options,
         ISchemaResolver schemaResolver,
         IReadOnlyList<string>? importedTypes = null,
-        string? modelsPath = null)
+        string? modelsPath = null,
+        string? clientMethodName = null,
+        string? clientImportPath = null)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
@@ -166,7 +172,9 @@ public class TanStackQueryGenerator
             ResponseSchemaFileName = responseSchemaFileName,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
             ModelsPath = modelsPath,
-            GenerateImports = false
+            GenerateImports = false,
+            ClientMethodName = clientMethodName,
+            ClientImportPath = clientImportPath
         };
 
         return _templateRegistry.Render("tanstack-mutation-hook.cshtml", templateData);

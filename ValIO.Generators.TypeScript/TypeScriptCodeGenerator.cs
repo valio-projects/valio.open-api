@@ -287,22 +287,20 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 try
                 {
-                    // Если UseTanStackQuery = true, генерируем TanStack Query хуки
+                    // Всегда генерируем базовые клиенты (axios или fetch) в отдельные файлы
+                    var clientFiles = GenerateClients(operations, document, config, schemaResolver, typescriptOptions);
+                    foreach (var file in clientFiles)
+                    {
+                        generatedFiles[file.Key] = file.Value;
+                    }
+                    
+                    // Если UseTanStackQuery = true, дополнительно генерируем TanStack Query хуки
                     if (typescriptOptions.UseTanStackQuery)
                     {
                         var queryFiles = await GenerateTanStackQueryHooksAsync(operations, document, config, schemaResolver, typescriptOptions);
                         foreach (var file in queryFiles)
                         {
                             generatedFiles[file.Key] = file.Value;
-                        }
-                    }
-                    else
-                    {
-                        // Генерируем обычные клиенты (fetch или axios)
-                        var clientFiles = GenerateClients(operations, document, config, schemaResolver, typescriptOptions);
-                foreach (var file in clientFiles)
-                {
-                    generatedFiles[file.Key] = file.Value;
                         }
                     }
                 }
@@ -1083,7 +1081,10 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         foreach (var group in groupedOperations)
         {
             var clientCode = GenerateClientCode(group.Value, group.Key, document, config, schemaResolver, options);
-            var fileName = $"{_namingConverter.ToCamelCase(group.Key)}.api.ts";
+            
+            // Определяем расширение файла в зависимости от HTTP клиента
+            var fileExtension = options.HttpClientLibrary == HttpClientLibrary.Axios ? ".axios.ts" : ".fetch.ts";
+            var fileName = $"{_namingConverter.ToCamelCase(group.Key)}{fileExtension}";
             
             string filePath;
             if (config.FileOrganization.SeparateClients)
@@ -1851,6 +1852,12 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 modelsImportPath = $"./{modelsPath}";
             }
         }
+        
+        // Вычисляем путь к базовым клиентам для импортов
+        // Базовые клиенты находятся в той же папке, что и queries файлы
+        var clientFileExtension = options.HttpClientLibrary == HttpClientLibrary.Axios ? ".axios" : ".fetch";
+        var clientFileName = $"{_namingConverter.ToCamelCase(groupName)}{clientFileExtension}";
+        var clientImportPath = $"./{clientFileName}";
 
         // Сначала создаем все operation templates для сбора типов
         foreach (var operation in operations)
@@ -1905,10 +1912,24 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         // Генерируем импорты один раз в начале файла
         var imports = new List<string>();
         
-        // Импорт axios (если используется)
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        // Импорт базовых методов из клиентских файлов
+        var methodNames = new List<string>();
+        foreach (var operation in operations)
         {
-            imports.Add("import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';");
+            var operationId = string.IsNullOrWhiteSpace(operation.OperationId)
+                ? GenerateOperationId(operation.Path, operation.HttpMethod)
+                : operation.OperationId;
+            var methodName = _namingConverter.ToCamelCase(operationId);
+            if (!string.IsNullOrWhiteSpace(methodName) && !methodNames.Contains(methodName))
+            {
+                methodNames.Add(methodName);
+            }
+        }
+        
+        if (methodNames.Count > 0)
+        {
+            var methodNamesStr = string.Join(", ", methodNames);
+            imports.Add($"import {{ {methodNamesStr} }} from '{clientImportPath}';");
         }
         
         // Импорт TanStack Query
@@ -1969,16 +1990,21 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             var operation = operations[i];
             var operationTemplate = allOperationTemplates[i];
             
+            var operationId = string.IsNullOrWhiteSpace(operation.OperationId)
+                ? GenerateOperationId(operation.Path, operation.HttpMethod)
+                : operation.OperationId;
+            var clientMethodName = _namingConverter.ToCamelCase(operationId);
+            
             var isGet = operation.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase);
             
             if (isGet)
             {
-                var hookCode = queryGenerator.GenerateQueryHook(operation, operationTemplate, options, schemaResolver, importedTypes, modelsImportPath);
+                var hookCode = queryGenerator.GenerateQueryHook(operation, operationTemplate, options, schemaResolver, importedTypes, modelsImportPath, clientMethodName, clientImportPath);
                 hooks.Add(hookCode);
             }
             else
             {
-                var hookCode = queryGenerator.GenerateMutationHook(operation, operationTemplate, options, schemaResolver, importedTypes, modelsImportPath);
+                var hookCode = queryGenerator.GenerateMutationHook(operation, operationTemplate, options, schemaResolver, importedTypes, modelsImportPath, clientMethodName, clientImportPath);
                 hooks.Add(hookCode);
             }
         }

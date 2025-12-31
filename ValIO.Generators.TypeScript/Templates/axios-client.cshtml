@@ -88,7 +88,7 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
         }
     }
     @:export async function @(operation.MethodName)(
-    @:  axiosInstance: AxiosInstance = axios.create(),
+    @:  axiosInstance?: AxiosInstance,
     @:@string.Join(",\n  ", allParams)
     @:): Promise<@GetResponseType(operation.ReturnTypeInfo)> {
     @:  const path = `@Raw(BuildPath(operation.Path, operation.PathParameters))`;
@@ -150,7 +150,8 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
     }
     @:  };
     @:
-    @:  const response = await axiosInstance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
+    @:  const instance = axiosInstance ?? axios.create();
+    @:  const response = await instance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
     @if (operation.ReturnTypeInfo.IsTask && operation.ReturnTypeInfo.GenericArguments.Count > 0 && !operation.ReturnTypeInfo.GenericArguments[0].IsVoid)
     {
     @:  return response.data;
