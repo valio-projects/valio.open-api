@@ -53,18 +53,18 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 
 @foreach (var operation in operations)
 {
-    @if (!string.IsNullOrEmpty(operation.Summary))
-    {
-    @:/**
-    @: * @Raw(operation.Summary)
-    @: */
-    }
-    @if (!string.IsNullOrEmpty(operation.Description))
-    {
-    @:/**
-    @: * @Raw(operation.Description)
-    @: */
-    }
+@if (!string.IsNullOrEmpty(operation.Summary))
+{
+@:/**
+@: * @Raw(operation.Summary)
+@: */
+}
+@if (!string.IsNullOrEmpty(operation.Description))
+{
+@:/**
+@: * @Raw(operation.Description)
+@: */
+}
     var allParams = new List<string>();
     allParams.AddRange(operation.PathParameters.Select(FormatParameter));
     allParams.AddRange(operation.QueryParameters.Select(FormatParameter));
@@ -87,83 +87,86 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
             allParams.Add($"{operation.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
-    @:export async function @(operation.MethodName)(
-    @:@Raw(string.Join(",\n  ", allParams))
-    @if (allParams.Count > 0)
+    
+    var paramsStr = "";
+    if (allParams.Count > 0)
     {
-    @:,
+        allParams[allParams.Count - 1] = allParams[allParams.Count - 1] + ",";
+        paramsStr = "  " + string.Join(",\n  ", allParams);
     }
-    @:  axiosInstance?: AxiosInstance
-    @:): Promise<@GetResponseType(operation.ReturnTypeInfo)> {
-    @:  const path = `@Raw(BuildPath(operation.Path, operation.PathParameters))`;
-    @:  const config: AxiosRequestConfig = {
-    @:    method: '@operation.HttpMethod.ToLowerInvariant()',
-    @:    url: path,
-    @if (operation.QueryParameters.Count > 0)
+    
+@:export async function @(operation.MethodName)(
+@:@Raw(paramsStr)
+@:  axiosInstance?: AxiosInstance
+@:): Promise<@GetResponseType(operation.ReturnTypeInfo)> {
+@:  const path = `@Raw(BuildPath(operation.Path, operation.PathParameters))`;
+@:  const config: AxiosRequestConfig = {
+@:    method: '@operation.HttpMethod.ToLowerInvariant()',
+@:    url: path,
+@if (operation.QueryParameters.Count > 0)
+{
+@:    params: {
+@foreach (var queryParam in operation.QueryParameters)
+{
+@:      @queryParam.Name: @(queryParam.VariableName),
+}
+@:    },
+}
+@:    headers: {
+@foreach (var headerParam in operation.HeaderParameters)
+{
+@:      ...(@(headerParam.VariableName) !== undefined ? { '@headerParam.Name': @(headerParam.VariableName) } : {}),
+}
+@if (operation.HasRequestBody)
+{
+    @if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
     {
-    @:    params: {
-    @foreach (var queryParam in operation.QueryParameters)
+@:      'Content-Type': 'multipart/form-data',
+    }
+    else
     {
-    @:      @queryParam.Name: @(queryParam.VariableName),
+@:      'Content-Type': '@(operation.RequestBodyContentType ?? "application/json")',
     }
-    @:    },
-    }
-    @:    headers: {
-    @foreach (var headerParam in operation.HeaderParameters)
+}
+@:    },
+@if (operation.HasRequestBody)
+{
+    @if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
     {
-    @:      ...(@(headerParam.VariableName) !== undefined ? { '@headerParam.Name': @(headerParam.VariableName) } : {}),
-    }
-    @if (operation.HasRequestBody)
+@:    data: (() => {
+@:      const formData = new FormData();
+@foreach (var formProp in operation.FormDataProperties)
+{
+    @if (formProp.IsRequired)
     {
-        @if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
-        {
-    @:      'Content-Type': 'multipart/form-data',
-        }
-        else
-        {
-    @:      'Content-Type': '@(operation.RequestBodyContentType ?? "application/json")',
-        }
+@:      formData.append('@formProp.Name', @(formProp.VariableName));
     }
-    @:    },
-    @if (operation.HasRequestBody)
+    else
     {
-        @if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
-        {
-    @:    data: (() => {
-    @:      const formData = new FormData();
-    @foreach (var formProp in operation.FormDataProperties)
+@:      if (@(formProp.VariableName) !== undefined) {
+@:        formData.append('@formProp.Name', @(formProp.VariableName));
+@:      }
+    }
+}
+@:      return formData;
+@:    })(),
+    }
+    else
     {
-        @if (formProp.IsRequired)
-        {
-    @:      formData.append('@formProp.Name', @(formProp.VariableName));
-        }
-        else
-        {
-    @:      if (@(formProp.VariableName) !== undefined) {
-    @:        formData.append('@formProp.Name', @(formProp.VariableName));
-    @:      }
-        }
+@:    data: @(operation.RequestBodyParameter),
     }
-    @:      return formData;
-    @:    })(),
-        }
-        else
-        {
-    @:    data: @(operation.RequestBodyParameter),
-        }
-    }
-    @:  };
-    @:
-    @:  const instance = axiosInstance ?? axios.create();
-    @:  const response = await instance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
-    var responseTypeInfo = operation.ReturnTypeInfo.IsTask && operation.ReturnTypeInfo.GenericArguments.Count > 0
-        ? operation.ReturnTypeInfo.GenericArguments[0]
-        : operation.ReturnTypeInfo;
-    var shouldReturnData = !responseTypeInfo.IsVoid;
-    @if (shouldReturnData)
-    {
-    @:  return response.data;
-    }
-    @:}
-    @:
+}
+@:  };
+@:
+@:  const response = await axiosInstance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
+var responseTypeInfo = operation.ReturnTypeInfo.IsTask && operation.ReturnTypeInfo.GenericArguments.Count > 0
+    ? operation.ReturnTypeInfo.GenericArguments[0]
+    : operation.ReturnTypeInfo;
+var shouldReturnData = !responseTypeInfo.IsVoid;
+@if (shouldReturnData)
+{
+@:  return response.data;
+}
+@:}
+@:
 }
