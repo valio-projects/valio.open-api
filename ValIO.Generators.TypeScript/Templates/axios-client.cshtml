@@ -55,13 +55,13 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
 {
     @if (!string.IsNullOrEmpty(operation.Summary))
     {
-    @://**
+    @:/**
     @: * @Raw(operation.Summary)
     @: */
     }
     @if (!string.IsNullOrEmpty(operation.Description))
     {
-    @://**
+    @:/**
     @: * @Raw(operation.Description)
     @: */
     }
@@ -89,7 +89,7 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
     }
     @:export async function @(operation.MethodName)(
     @:  axiosInstance?: AxiosInstance,
-    @:@string.Join(",\n  ", allParams)
+    @:@Raw(string.Join(",\n  ", allParams))
     @:): Promise<@GetResponseType(operation.ReturnTypeInfo)> {
     @:  const path = `@Raw(BuildPath(operation.Path, operation.PathParameters))`;
     @:  const config: AxiosRequestConfig = {
@@ -152,13 +152,13 @@ import axios, { AxiosInstance, AxiosRequestConfig } from 'axios';
     @:
     @:  const instance = axiosInstance ?? axios.create();
     @:  const response = await instance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
-    @if (operation.ReturnTypeInfo.IsTask && operation.ReturnTypeInfo.GenericArguments.Count > 0 && !operation.ReturnTypeInfo.GenericArguments[0].IsVoid)
+    var responseTypeInfo = operation.ReturnTypeInfo.IsTask && operation.ReturnTypeInfo.GenericArguments.Count > 0
+        ? operation.ReturnTypeInfo.GenericArguments[0]
+        : operation.ReturnTypeInfo;
+    var shouldReturnData = !responseTypeInfo.IsVoid;
+    @if (shouldReturnData)
     {
     @:  return response.data;
-    }
-    else
-    {
-    @:  return;
     }
     @:}
     @:
