@@ -216,6 +216,22 @@ public class TypeScriptTypeMapper : ITypeMapper
         if (schema == null)
             return TypeInfo.Simple("any", isPrimitive: true);
 
+        // Проверяем на ссылку ДО разрешения, чтобы сохранить имя схемы
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
+        {
+            var reference = referenceHolder.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+            {
+                var typeName = _namingConverter.ToPascalCase(reference.Id);
+                var typeInfo = TypeInfo.Simple(typeName);
+                // Разрешаем схему только для проверки nullable
+                var resolvedSchemaForNullable = schemaResolver.ResolveSchema(schema);
+                var isNullableValue = !isRequired || IsSchemaNullable(resolvedSchemaForNullable);
+                return isNullableValue ? TypeInfo.Nullable(typeInfo) : typeInfo;
+            }
+        }
+
+        // Если это не ссылка, разрешаем схему и маппим как обычно
         var resolvedSchema = schemaResolver.ResolveSchema(schema);
         var isNullable = !isRequired || IsSchemaNullable(resolvedSchema);
         return MapTypeInfoInternal(resolvedSchema, schemaResolver, isNullable);

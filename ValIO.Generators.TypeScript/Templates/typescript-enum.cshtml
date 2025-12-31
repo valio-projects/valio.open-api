@@ -8,9 +8,9 @@
 }
 @if (!string.IsNullOrEmpty(description))
 {
-@://**
-@: * @Raw(description)
-@: */
+@Raw("/**\n")
+@Raw($" * {description}\n")
+@Raw(" */\n")
 }
 @if (enumFormat == EnumFormat.Enum)
 {
