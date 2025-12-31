@@ -1,6 +1,6 @@
 {
   "language": "TypeScript",
-  "outputPath": "./generated",
+  "outputPath": "C:\\Workspace\\ValIO\\out\\typescript",
   "namespace": "Generated",
   "generateEnums": true,
   "generateModels": true,
