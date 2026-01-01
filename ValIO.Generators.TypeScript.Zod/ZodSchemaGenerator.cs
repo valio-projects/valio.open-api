@@ -59,7 +59,8 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                     propertySchema, 
                     property, 
                     schemaResolver,
-                    processedSchemas);
+                    processedSchemas,
+                    model.Name);
                 
                 properties.Add(new ZodPropertySchemaTemplateData
                 {
@@ -80,7 +81,8 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                     propertySchemaFromOriginal, 
                     property, 
                     schemaResolver,
-                    processedSchemas);
+                    processedSchemas,
+                    model.Name);
                 
                 properties.Add(new ZodPropertySchemaTemplateData
                 {

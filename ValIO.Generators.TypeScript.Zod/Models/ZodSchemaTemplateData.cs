@@ -37,7 +37,12 @@ public class ZodSchemaTemplateData
     /// </summary>
     public string SchemaNameToFileName(string schemaName)
     {
-        var typeName = schemaName.Replace("Schema", "");
+        // Удаляем суффикс "Schema" только с конца строки, чтобы не удалять "Schema" из середины имени
+        // Например, "LayoutSchemaGroupModelSchema" должно стать "LayoutSchemaGroupModel", а не "LayoutGroupModel"
+        var typeName = schemaName.EndsWith("Schema", StringComparison.OrdinalIgnoreCase) 
+            ? schemaName.Substring(0, schemaName.Length - 6) 
+            : schemaName;
+            
         if (string.IsNullOrEmpty(typeName))
             return schemaName.ToLowerInvariant();
         

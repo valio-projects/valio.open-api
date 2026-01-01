@@ -23,7 +23,7 @@ public class ZodTypeMapper
     /// </summary>
     public string MapToZodSchema(IOpenApiSchema schema, ApiProperty property, ISchemaResolver schemaResolver)
     {
-        var result = MapToZodSchemaWithDependencies(schema, property, schemaResolver, new HashSet<string>());
+        var result = MapToZodSchemaWithDependencies(schema, property, schemaResolver, new HashSet<string>(), null);
         return result.ZodSchema;
     }
 
@@ -34,7 +34,8 @@ public class ZodTypeMapper
         IOpenApiSchema schema, 
         ApiProperty property, 
         ISchemaResolver schemaResolver,
-        HashSet<string> processedSchemas)
+        HashSet<string> processedSchemas,
+        string? currentSchemaName = null)
     {
         var result = new ZodSchemaMappingResult();
         
@@ -66,17 +67,31 @@ public class ZodTypeMapper
         {
             var typeName = _namingConverter.ToPascalCase(referencedSchemaName);
             var schemaName = $"{typeName}Schema";
-            result.ZodSchema = schemaName;
             
-            // Проверяем, является ли это enum (через resolved schema)
-            var resolvedSchema = schemaResolver.ResolveSchema(schema);
-            if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
+            // Проверяем на циклическую ссылку - если схема ссылается сама на себя, используем z.lazy()
+            var isCircular = !string.IsNullOrEmpty(currentSchemaName) && 
+                            currentSchemaName.Equals(referencedSchemaName, StringComparison.OrdinalIgnoreCase);
+            
+            if (isCircular)
             {
-                result.EnumDependencies.Add(schemaName);
+                // Используем z.lazy() для циклических ссылок
+                result.ZodSchema = $"z.lazy(() => {schemaName})";
+                // Не добавляем в зависимости, так как это та же схема
             }
             else
             {
-                result.SchemaDependencies.Add(schemaName);
+                result.ZodSchema = schemaName;
+                
+                // Проверяем, является ли это enum (через resolved schema)
+                var resolvedSchema = schemaResolver.ResolveSchema(schema);
+                if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
+                {
+                    result.EnumDependencies.Add(schemaName);
+                }
+                else
+                {
+                    result.SchemaDependencies.Add(schemaName);
+                }
             }
             
             return result;
@@ -89,7 +104,7 @@ public class ZodTypeMapper
         {
             if (resolvedSchema2.Items != null)
             {
-                var itemResult = MapToZodSchemaWithDependencies(resolvedSchema2.Items, property, schemaResolver, processedSchemas);
+                var itemResult = MapToZodSchemaWithDependencies(resolvedSchema2.Items, property, schemaResolver, processedSchemas, currentSchemaName);
                 result.ZodSchema = $"z.array({itemResult.ZodSchema})";
                 result.SchemaDependencies.UnionWith(itemResult.SchemaDependencies);
                 result.EnumDependencies.UnionWith(itemResult.EnumDependencies);
@@ -127,16 +142,30 @@ public class ZodTypeMapper
             {
                 var typeName = _namingConverter.ToPascalCase(objectSchemaName);
                 var schemaName = $"{typeName}Schema";
-                result.ZodSchema = schemaName;
                 
-                // Проверяем, является ли это enum
-                if (resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0)
+                // Проверяем на циклическую ссылку
+                var isCircular = !string.IsNullOrEmpty(currentSchemaName) && 
+                                currentSchemaName.Equals(objectSchemaName, StringComparison.OrdinalIgnoreCase);
+                
+                if (isCircular)
                 {
-                    result.EnumDependencies.Add(schemaName);
+                    // Используем z.lazy() для циклических ссылок
+                    result.ZodSchema = $"z.lazy(() => {schemaName})";
+                    // Не добавляем в зависимости, так как это та же схема
                 }
                 else
                 {
-                    result.SchemaDependencies.Add(schemaName);
+                    result.ZodSchema = schemaName;
+                    
+                    // Проверяем, является ли это enum
+                    if (resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0)
+                    {
+                        result.EnumDependencies.Add(schemaName);
+                    }
+                    else
+                    {
+                        result.SchemaDependencies.Add(schemaName);
+                    }
                 }
                 
                 return result;
@@ -148,7 +177,7 @@ public class ZodTypeMapper
                 var props = new List<string>();
                 foreach (var prop in resolvedSchema2.Properties)
                 {
-                    var propResult = MapToZodSchemaWithDependencies(prop.Value, new ApiProperty { Name = prop.Key }, schemaResolver, processedSchemas);
+                    var propResult = MapToZodSchemaWithDependencies(prop.Value, new ApiProperty { Name = prop.Key }, schemaResolver, processedSchemas, currentSchemaName);
                     props.Add($"{_namingConverter.ToCamelCase(prop.Key)}: {propResult.ZodSchema}");
                     
                     // Собираем зависимости
@@ -160,7 +189,7 @@ public class ZodTypeMapper
             }
             else if (resolvedSchema2.AdditionalProperties != null)
             {
-                var valueResult = MapToZodSchemaWithDependencies(resolvedSchema2.AdditionalProperties, property, schemaResolver, processedSchemas);
+                var valueResult = MapToZodSchemaWithDependencies(resolvedSchema2.AdditionalProperties, property, schemaResolver, processedSchemas, currentSchemaName);
                 result.ZodSchema = $"z.record(z.string(), {valueResult.ZodSchema})";
                 result.SchemaDependencies.UnionWith(valueResult.SchemaDependencies);
                 result.EnumDependencies.UnionWith(valueResult.EnumDependencies);
