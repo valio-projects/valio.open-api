@@ -206,10 +206,10 @@
     var closeQueryFn = "  };\n";
     var returnStart = "  return {\n";
     var returnLine = $"  }} as UseQueryOptions<{awaitedReturnTypeName}, TError, TData> & {{ queryKey: QueryKey }};\n";
-    var infiniteQueryFnLine = $"  const queryFn: QueryFunction<{awaitedReturnTypeName}, QueryKey, unknown> = ({{ signal, pageParam }}) =>\n";
+    var infiniteQueryFnLine = $"  const queryFn: QueryFunction<{awaitedReturnTypeName}, QueryKey, unknown> = ({{ signal }}) =>\n";
     var infiniteReturnStart = "  return {\n";
-    var infiniteReturnEnd = $"  }} as UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, {awaitedReturnTypeName}, QueryKey, unknown>;\n";
-    var infiniteReturnLine = $"  return {{ ...query, queryKey: queryOptions.queryKey }};\n";
+    var infiniteReturnEnd = $"  }} as UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>;\n";
+    var infiniteReturnLine = $"  return query;\n";
     var infiniteQueryParams = new List<string>();
     infiniteQueryParams.AddRange(pathParams.Select(p => p.VariableName));
     infiniteQueryParams.AddRange(queryParams.Select(p => p.VariableName));
@@ -488,7 +488,7 @@ else
 @Raw("};\n")
 @Raw("\n")
 @{
-    var infiniteQueryOptionsSignature = $"export const {infiniteQueryOptionsFunctionName} = <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, {awaitedReturnTypeName}, QueryKey, unknown>>;\n{axiosOption}\n  }},\n) => {{\n";
+    var infiniteQueryOptionsSignature = $"export const {infiniteQueryOptionsFunctionName} = <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>>;\n{axiosOption}\n  }},\n) => {{\n";
 }
 @Raw(infiniteQueryOptionsSignature)
 @Raw(destructuringLine3)
@@ -506,7 +506,7 @@ else
 @Raw("};\n")
 @Raw("\n")
 @{
-    var infiniteHookSignature = $"export const {infiniteHookName} = <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, {awaitedReturnTypeName}, QueryKey, unknown>>;\n{axiosOption}\n  }},\n): UseInfiniteQueryResult<TData, TError> => {{\n";
+    var infiniteHookSignature = $"export const {infiniteHookName} = <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>>;\n{axiosOption}\n  }},\n): UseInfiniteQueryResult<TData, TError> => {{\n";
 }
 @Raw(infiniteHookSignature)
 @if (string.IsNullOrEmpty(keyArgsStr))
@@ -539,7 +539,7 @@ else
 @Raw("};\n")
 @Raw("\n")
 @{
-    var prefetchInfiniteSignature = $"export const {prefetchInfiniteFunctionName} = async <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n  queryClient: QueryClient,\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, {awaitedReturnTypeName}, QueryKey, unknown>>;\n{axiosOption}\n  }},\n): Promise<QueryClient> => {{\n";
+    var prefetchInfiniteSignature = $"export const {prefetchInfiniteFunctionName} = async <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n  queryClient: QueryClient,\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>>;\n{axiosOption}\n  }},\n): Promise<QueryClient> => {{\n";
 }
 @Raw(prefetchInfiniteSignature)
 @if (string.IsNullOrEmpty(keyArgsStr))
