@@ -25,8 +25,6 @@
     {
         var optional = param.IsRequired ? "" : "?";
         var typeName = FormatType(param.TypeInfo);
-        // Убираем ? из типа, если он там есть (для nullable типов), так как optional уже добавлен к имени параметра
-        typeName = typeName.TrimEnd('?');
         return $"{param.VariableName}{optional}: {typeName}";
     }
     
@@ -87,14 +85,13 @@
             foreach (var formProp in operationTemplate.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
-                var formPropTypeName = FormatType(formProp.TypeInfo).TrimEnd('?');
-                allParams.Add($"{formProp.VariableName}{optional}: {formPropTypeName}");
+                allParams.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
             }
         }
         else
         {
             var optional = operationTemplate.RequestBodyTypeInfo != null && !operationTemplate.RequestBodyTypeInfo.IsNullable ? "" : "?";
-            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo).TrimEnd('?') : "any";
+            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo) : "any";
             allParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }

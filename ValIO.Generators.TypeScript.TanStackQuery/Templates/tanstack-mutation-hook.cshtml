@@ -24,8 +24,6 @@
     {
         var optional = param.IsRequired ? "" : "?";
         var typeName = FormatType(param.TypeInfo);
-        // Убираем ? из типа, если он там есть (для nullable типов), так как optional уже добавлен к имени параметра
-        typeName = typeName.TrimEnd('?');
         return $"{param.VariableName}{optional}: {typeName}";
     }
     
@@ -326,14 +324,13 @@ else
             foreach (var formProp in operationTemplate.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
-                var formPropTypeName = FormatType(formProp.TypeInfo).TrimEnd('?');
-                mutationVars.Add($"{formProp.VariableName}{optional}: {formPropTypeName}");
+                mutationVars.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
             }
         }
         else
         {
             var optional = operationTemplate.RequestBodyTypeInfo != null && !operationTemplate.RequestBodyTypeInfo.IsNullable ? "" : "?";
-            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo).TrimEnd('?') : "any";
+            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo) : "any";
             // В orval для request body используется "data", но мы используем RequestBodyParameter
             mutationVars.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }

@@ -227,7 +227,12 @@ public class TypeScriptTypeMapper : ITypeMapper
                 // Разрешаем схему только для проверки nullable
                 var resolvedSchemaForNullable = schemaResolver.ResolveSchema(schema);
                 var isNullableValue = !isRequired || IsSchemaNullable(resolvedSchemaForNullable);
-                return isNullableValue ? TypeInfo.Nullable(typeInfo) : typeInfo;
+                // Для TypeScript не добавляем ? к типу, только устанавливаем IsNullable
+                if (isNullableValue)
+                {
+                    typeInfo.IsNullable = true;
+                }
+                return typeInfo;
             }
         }
 
@@ -250,7 +255,9 @@ public class TypeScriptTypeMapper : ITypeMapper
             {
                 var typeName = _namingConverter.ToPascalCase(reference.Id);
                 var typeInfo = TypeInfo.Simple(typeName);
-                return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
+                // Для TypeScript не добавляем ? к типу, только устанавливаем IsNullable
+                typeInfo.IsNullable = isNullable;
+                return typeInfo;
             }
         }
 
@@ -260,7 +267,8 @@ public class TypeScriptTypeMapper : ITypeMapper
         {
             var typeName = _namingConverter.ToPascalCase(schemaName);
             var typeInfo = TypeInfo.Simple(typeName);
-            return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
+            typeInfo.IsNullable = isNullable;
+            return typeInfo;
         }
 
         // Обрабатываем allOf (intersection type в TypeScript)
@@ -276,7 +284,8 @@ public class TypeScriptTypeMapper : ITypeMapper
             // Используем первый тип как базовый
             if (types.Count > 0)
             {
-                return isNullable ? TypeInfo.Nullable(types[0]) : types[0];
+                types[0].IsNullable = isNullable;
+                return types[0];
             }
         }
 
@@ -293,7 +302,8 @@ public class TypeScriptTypeMapper : ITypeMapper
             // Для TypeScript union - используем первый тип как базовый
             if (types.Count > 0)
             {
-                return isNullable ? TypeInfo.Nullable(types[0]) : types[0];
+                types[0].IsNullable = isNullable;
+                return types[0];
             }
         }
 
@@ -308,11 +318,13 @@ public class TypeScriptTypeMapper : ITypeMapper
                 var arrayType = TypeInfo.Collection("Array", itemTypeInfo);
                 // Переопределяем FullTypeName для TypeScript формата
                 arrayType.FullTypeName = $"{itemTypeInfo.FullTypeName}[]";
-                return isNullable ? TypeInfo.Nullable(arrayType) : arrayType;
+                arrayType.IsNullable = isNullable;
+                return arrayType;
             }
             var anyArrayType = TypeInfo.Collection("Array", TypeInfo.Simple("any", isPrimitive: true));
             anyArrayType.FullTypeName = "any[]";
-            return isNullable ? TypeInfo.Nullable(anyArrayType) : anyArrayType;
+            anyArrayType.IsNullable = isNullable;
+            return anyArrayType;
         }
 
         // Обрабатываем объекты
@@ -327,12 +339,14 @@ public class TypeScriptTypeMapper : ITypeMapper
                 {
                     var typeName = _namingConverter.ToPascalCase(objectSchemaName);
                     var objectTypeInfo = TypeInfo.Simple(typeName);
-                    return isNullable ? TypeInfo.Nullable(objectTypeInfo) : objectTypeInfo;
+                    objectTypeInfo.IsNullable = isNullable;
+                    return objectTypeInfo;
                 }
                 
                 // Если имя не найдено, используем Record<string, any>
                 var recordType = TypeInfo.Simple("Record<string, any>");
-                return isNullable ? TypeInfo.Nullable(recordType) : recordType;
+                recordType.IsNullable = isNullable;
+                return recordType;
             }
 
             if (schema.AdditionalProperties != null)
@@ -350,7 +364,8 @@ public class TypeScriptTypeMapper : ITypeMapper
             }
 
             var defaultObjectType = TypeInfo.Simple("Record<string, any>");
-            return isNullable ? TypeInfo.Nullable(defaultObjectType) : defaultObjectType;
+            defaultObjectType.IsNullable = isNullable;
+            return defaultObjectType;
         }
 
         // Обрабатываем примитивные типы
@@ -375,20 +390,16 @@ public class TypeScriptTypeMapper : ITypeMapper
             };
 
             var typeInfo = TypeInfo.Simple(baseTypeName, isPrimitive, isFile);
-            
-            // Для TypeScript nullable типы обрабатываются через union с null или через optional properties
-            // Но для TypeInfo мы все равно помечаем как nullable
-            if (isNullable && baseTypeName != "any")
-            {
-                return TypeInfo.Nullable(typeInfo);
-            }
-            
+            // Для TypeScript nullable типы обрабатываются через optional properties (параметр с ?)
+            // Не добавляем ? к типу, только устанавливаем IsNullable
+            typeInfo.IsNullable = isNullable;
             return typeInfo;
         }
 
         // Если тип не определен, возвращаем any
         var defaultTypeInfo = TypeInfo.Simple("any", isPrimitive: true);
-        return isNullable ? TypeInfo.Nullable(defaultTypeInfo) : defaultTypeInfo;
+        defaultTypeInfo.IsNullable = isNullable;
+        return defaultTypeInfo;
     }
 }
 
