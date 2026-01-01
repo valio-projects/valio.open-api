@@ -1,9 +1,10 @@
 using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.OpenApi;
 using ValIO.Configuration.Interfaces;
-using ValIO.Core.Factories;
 using ValIO.Core.Models;
+using ValIO.Factories;
 using ValIO.Parsers.Interfaces;
 
 namespace ValIO.CLI;
@@ -111,9 +112,21 @@ public class GenerateCommand : Command
 
                 // Парсинг OpenAPI документа
                 logger.LogInformation("Parsing OpenAPI schema from: {Schema}", schema);
-                var document = Uri.TryCreate(schema, UriKind.Absolute, out _)
-                    ? await parser.ParseFromUrlAsync(schema)
-                    : await parser.ParseFromFileAsync(schema);
+                
+                OpenApiDocument document;
+                // Проверяем, является ли путь URL (http/https) или локальным файлом
+                if (Uri.TryCreate(schema, UriKind.Absolute, out var uri) && 
+                    (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || 
+                     uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
+                     uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
+                {
+                    document = await parser.ParseFromUrlAsync(schema);
+                }
+                else
+                {
+                    // Локальный файл
+                    document = await parser.ParseFromFileAsync(schema);
+                }
 
                 logger.LogInformation("OpenAPI document parsed successfully");
 

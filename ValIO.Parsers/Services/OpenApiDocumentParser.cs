@@ -43,6 +43,22 @@ public class OpenApiDocumentParser : IOpenApiDocumentParser
         if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
             throw new ArgumentException($"Invalid URL: {url}", nameof(url));
 
+        // Проверяем, является ли это локальным файлом (file:// схема)
+        if (uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase))
+        {
+            // Извлекаем путь к файлу из file:// URI
+            var filePath = uri.LocalPath;
+            
+            // На Windows может быть дополнительный слеш в начале пути
+            if (filePath.StartsWith("/") && filePath.Length > 3 && filePath[2] == ':')
+            {
+                filePath = filePath.Substring(1);
+            }
+            
+            _logger.LogInformation("Detected file:// scheme, parsing as local file: {FilePath}", filePath);
+            return await ParseFromFileAsync(filePath);
+        }
+
         _logger.LogInformation("Downloading OpenAPI document from: {Url}", url);
 
         var httpClient = _httpClientFactory.CreateClient();
