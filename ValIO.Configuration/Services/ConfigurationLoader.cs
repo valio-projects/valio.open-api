@@ -390,6 +390,16 @@ public class ConfigurationLoader : IConfigurationLoader
             options.UseStrictNullChecks = config.UseStrictNullChecks.Value;
         }
 
+        // Парсинг Axios опций
+        if (config.Axios != null)
+        {
+            options.Axios = new ValIO.Generators.TypeScript.Models.AxiosOptions
+            {
+                CustomInstancePath = config.Axios.CustomInstancePath,
+                CustomInstanceName = config.Axios.CustomInstanceName
+            };
+        }
+
         return options;
     }
 }

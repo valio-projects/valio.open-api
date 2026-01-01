@@ -40,8 +40,14 @@
     var operations = Model.Operations;
     var importedTypes = Model.ImportedTypes;
     var modelsPath = Model.ModelsPath;
+    var axiosOptions = Model.AxiosOptions;
+    var hasCustomInstance = axiosOptions != null && !string.IsNullOrEmpty(axiosOptions.CustomInstancePath) && !string.IsNullOrEmpty(axiosOptions.CustomInstanceName);
 }
 import { AxiosInstance, AxiosRequestConfig } from 'axios';
+@if (hasCustomInstance)
+{
+@:import { @axiosOptions.CustomInstanceName } from '@axiosOptions.CustomInstancePath';
+}
 @if (importedTypes != null && importedTypes.Count > 0 && modelsPath != null)
 {
 @foreach (var typeName in importedTypes)
@@ -88,16 +94,28 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
         }
     }
     
+    // Добавляем axiosInstance сразу после параметров API метода: optional если есть custom instance, обязательный если нет
+    if (hasCustomInstance)
+    {
+        allParams.Add("axiosInstance?: AxiosInstance");
+    }
+    else
+    {
+        allParams.Add("axiosInstance: AxiosInstance");
+    }
+    
+    // Добавляем optional signal и timeout после axiosInstance
+    allParams.Add("signal?: AbortSignal");
+    allParams.Add("timeout?: number");
+    
     var paramsStr = "";
     if (allParams.Count > 0)
     {
-        allParams[allParams.Count - 1] = allParams[allParams.Count - 1] + ",";
         paramsStr = "  " + string.Join(",\n  ", allParams);
     }
     
 @:export async function @(operation.MethodName)(
 @:@Raw(paramsStr)
-@:  axiosInstance: AxiosInstance
 @:): Promise<@GetResponseType(operation.ReturnTypeInfo)> {
 @:  const path = `@Raw(BuildPath(operation.Path, operation.PathParameters))`;
 @:  const config: AxiosRequestConfig = {
@@ -156,9 +174,23 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @:    data: @(operation.RequestBodyParameter),
     }
 }
+@if (hasCustomInstance)
+{
+@:    ...(signal !== undefined ? { signal } : {}),
+@:    ...(timeout !== undefined ? { timeout } : {}),
+@:  };
+@:
+@:  const instance = axiosInstance ?? @axiosOptions.CustomInstanceName;
+@:  const response = await instance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
+}
+else
+{
+@:    ...(signal !== undefined ? { signal } : {}),
+@:    ...(timeout !== undefined ? { timeout } : {}),
 @:  };
 @:
 @:  const response = await axiosInstance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
+}
 var responseTypeInfo = operation.ReturnTypeInfo.IsTask && operation.ReturnTypeInfo.GenericArguments.Count > 0
     ? operation.ReturnTypeInfo.GenericArguments[0]
     : operation.ReturnTypeInfo;

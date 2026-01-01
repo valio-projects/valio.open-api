@@ -1196,7 +1196,8 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             Operations = operationTemplates,
             HttpClientLibrary = options.HttpClientLibrary,
             ImportedTypes = importedTypes,
-            ModelsPath = modelsImportPath
+            ModelsPath = modelsImportPath,
+            AxiosOptions = options.Axios
         };
 
         // Выбираем шаблон в зависимости от HTTP клиента
@@ -1944,12 +1945,13 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         {
             var methodNamesStr = string.Join(", ", methodNames);
             imports.Add($"import {{ {methodNamesStr} }} from '{clientImportPath}';");
-        }
-        
-        // Импорт Axios, если используется
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-        {
-            imports.Add("import { AxiosRequestConfig } from 'axios';");
+            
+            // Экспортируем ReturnType и AwaitedReturnType для каждого метода
+            foreach (var methodName in methodNames)
+            {
+                imports.Add($"export type {char.ToUpperInvariant(methodName[0]) + methodName.Substring(1)}ReturnType = ReturnType<typeof {methodName}>;");
+                imports.Add($"export type {char.ToUpperInvariant(methodName[0]) + methodName.Substring(1)}AwaitedReturnType = Awaited<ReturnType<typeof {methodName}>>;");
+            }
         }
         
         // Импорт TanStack Query

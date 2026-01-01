@@ -14,7 +14,11 @@
       "serializeWithSchemas": true,
       "deserializeWithSchemas": true,
       "enumFormat": "Enum",
-      "useStrictNullChecks": true
+      "useStrictNullChecks": true,
+      "Axios": {
+        "CustomInstancePath": "src//shared//api//valioAxios.ts",
+        "CustomInstanceName": "ValioAxiosClient"
+      }
     }
   },
   "fileOrganization": {

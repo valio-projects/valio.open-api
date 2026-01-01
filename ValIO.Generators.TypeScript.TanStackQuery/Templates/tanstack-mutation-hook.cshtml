@@ -46,6 +46,10 @@
     // Имя метода клиента (используем импортированный метод, если указан, иначе используем functionName для обратной совместимости)
     var clientMethodName = !string.IsNullOrEmpty(Model.ClientMethodName) ? Model.ClientMethodName : functionName;
     
+    // Имена типов для ReturnType и AwaitedReturnType
+    var returnTypeName = char.ToUpperInvariant(clientMethodName[0]) + clientMethodName.Substring(1) + "ReturnType";
+    var awaitedReturnTypeName = char.ToUpperInvariant(clientMethodName[0]) + clientMethodName.Substring(1) + "AwaitedReturnType";
+    
     var pathParams = operationTemplate.PathParameters;
     var queryParams = operationTemplate.QueryParameters;
     var headerParams = operationTemplate.HeaderParameters;
@@ -54,7 +58,11 @@
 {
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
-@Raw("import { AxiosInstance, AxiosRequestConfig } from 'axios';\n")
+@:import { AxiosInstance } from 'axios';
+@if (options.Axios != null && !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && !string.IsNullOrEmpty(options.Axios.CustomInstanceName))
+{
+@:import { @options.Axios.CustomInstanceName } from '@options.Axios.CustomInstancePath';
+}
 }
 @Raw("import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';\n")
 @if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
@@ -390,13 +398,32 @@ else
     }
     var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) + "," : "";
     
-    var axiosOptionStr = options.HttpClientLibrary == HttpClientLibrary.Axios ? "    axios?: AxiosRequestConfig;" : "    fetch?: RequestInit;";
+    // Формируем опции для axios или fetch
+    var axiosOptions = new List<string>();
+    if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+    {
+        axiosOptions.Add("    signal?: AbortSignal;");
+        axiosOptions.Add("    timeout?: number;");
+        if (options.Axios != null && !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && !string.IsNullOrEmpty(options.Axios.CustomInstanceName))
+        {
+            axiosOptions.Add("    axiosInstance?: AxiosInstance;");
+        }
+    }
+    else
+    {
+        axiosOptions.Add("    signal?: AbortSignal;");
+        axiosOptions.Add("    timeout?: number;");
+        axiosOptions.Add("    fetch?: RequestInit;");
+    }
+    var axiosOptionStr = string.Join("\n", axiosOptions);
     var responseType = GetResponseType(operationTemplate.ReturnTypeInfo);
-    var mutationSignature = "export const " + hookName + " = <\n  TData = " + responseType + ",\n  TError = Error,\n  TVariables = {\n" + mutationVarsStr + "\n  },\n>(\n" + hookParamsStr + "\n  options?: {\n    mutation?: UseMutationOptions<TData, TError, TVariables>;\n    " + axiosOptionStr + "\n  },\n): UseMutationResult<TData, TError, TVariables> => {\n";
+    var mutationSignature = "export const " + hookName + " = <\n  TData = " + awaitedReturnTypeName + ",\n  TError = Error,\n  TVariables = {\n" + mutationVarsStr + "\n  },\n>(\n" + hookParamsStr + "\n  options?: {\n    mutation?: UseMutationOptions<TData, TError, TVariables>;\n" + axiosOptionStr + "\n  },\n): UseMutationResult<TData, TError, TVariables> => {\n";
 }
 @Raw(mutationSignature)
 @{
-    var destructuringPart = options.HttpClientLibrary == HttpClientLibrary.Axios ? ", axios: axiosOptions" : ", fetch: fetchOptions";
+    var destructuringPart = options.HttpClientLibrary == HttpClientLibrary.Axios 
+        ? ", signal, timeout, axiosInstance" 
+        : ", signal, timeout, fetch: fetchOptions";
 }
 @Raw($"  const {{ mutation: mutationOptions{destructuringPart} }} = options ?? {{}};\n")
 @Raw("\n")
@@ -404,10 +431,6 @@ else
 @Raw($"    return await {clientMethodName}(\n")
 @{
     var fnArgs = new List<string>();
-    if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-    {
-        fnArgs.Add("axiosOptions?.axiosInstance");
-    }
     fnArgs.AddRange(pathParams.Select(p => $"variables.{p.VariableName}"));
     fnArgs.AddRange(queryParams.Select(p => $"variables.{p.VariableName}"));
     fnArgs.AddRange(headerParams.Select(p => $"variables.{p.VariableName}"));
@@ -422,6 +445,13 @@ else
             fnArgs.Add($"variables.{operationTemplate.RequestBodyParameter}");
         }
     }
+    // Порядок: сначала axiosInstance (если axios), затем signal, затем timeout
+    if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+    {
+        fnArgs.Add("axiosInstance");
+    }
+    fnArgs.Add("signal");
+    fnArgs.Add("timeout");
     var fnArgsStr = fnArgs.Count > 0 ? "      " + string.Join(",\n      ", fnArgs) : "";
 }
 @Raw($"{fnArgsStr}\n")

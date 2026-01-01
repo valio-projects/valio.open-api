@@ -133,6 +133,27 @@ public class ConfigTypeScriptOptions
     /// Использовать strict null checks
     /// </summary>
     public bool? UseStrictNullChecks { get; set; }
+    
+    /// <summary>
+    /// Настройки для Axios HTTP клиента
+    /// </summary>
+    public ConfigAxiosOptions? Axios { get; set; }
+}
+
+/// <summary>
+/// Настройки для Axios HTTP клиента
+/// </summary>
+public class ConfigAxiosOptions
+{
+    /// <summary>
+    /// Путь до файла с custom axios instance (например, '../mutator/custom-instance')
+    /// </summary>
+    public string? CustomInstancePath { get; set; }
+    
+    /// <summary>
+    /// Название константы с custom axios instance (например, 'customInstance')
+    /// </summary>
+    public string? CustomInstanceName { get; set; }
 }
 
 /// <summary>

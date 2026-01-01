@@ -25,6 +25,11 @@ public class TypeScriptClientTemplateData
     /// Путь к папке с моделями для импортов
     /// </summary>
     public string? ModelsPath { get; set; }
+    
+    /// <summary>
+    /// Настройки для Axios HTTP клиента
+    /// </summary>
+    public AxiosOptions? AxiosOptions { get; set; }
 }
 
 /// <summary>
