@@ -125,7 +125,6 @@
     var axiosOptions = new List<string>();
     if (options.HttpClientLibrary == HttpClientLibrary.Axios)
     {
-        axiosOptions.Add("    signal?: AbortSignal;");
         axiosOptions.Add("    timeout?: number;");
         if (options.Axios != null && !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && !string.IsNullOrEmpty(options.Axios.CustomInstanceName))
         {
@@ -134,7 +133,6 @@
     }
     else
     {
-        axiosOptions.Add("    signal?: AbortSignal;");
         axiosOptions.Add("    timeout?: number;");
         axiosOptions.Add("    fetch?: RequestInit;");
     }
@@ -172,7 +170,6 @@
     var fnArgsStr = string.Join(",\n      ", fnArgs);
     
     // Precompute query function parameters
-    var queryFnSignalParam = "signal";
     var queryFnParams = new List<string>();
     queryFnParams.AddRange(pathParams.Select(p => p.VariableName));
     queryFnParams.AddRange(queryParams.Select(p => p.VariableName));
@@ -193,14 +190,13 @@
     {
         queryFnParams.Add("axiosInstance");
     }
-    queryFnParams.Add("signal");
     queryFnParams.Add("timeout");
     var queryFnArgsStr = queryFnParams.Count > 0 ? "      " + string.Join(",\n      ", queryFnParams) : "";
     
     var queryReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
     var destructuringOption = options.HttpClientLibrary == HttpClientLibrary.Axios 
-        ? ", signal, timeout, axiosInstance" 
-        : ", signal, timeout, fetch: fetchOptions";
+        ? ", timeout, axiosInstance" 
+        : ", timeout, fetch: fetchOptions";
     var destructuringLine = $"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n";
     var destructuringLine2 = $"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n";
     var destructuringLine3 = $"  const {{ query: queryOptions{destructuringOption} }} = options ?? {{}};\n";
@@ -229,8 +225,7 @@
     var axiosPath = BuildPath(operationTemplate.Path, pathParams);
     var fetchPath = BuildPath(operationTemplate.Path, pathParams);
 }
-@if (Model.GenerateImports)
-{
+
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
 @:import { AxiosInstance } from 'axios';
@@ -238,7 +233,7 @@
 {
 @:import { @options.Axios.CustomInstanceName } from '@options.Axios.CustomInstancePath';
 }
-}
+
 @Raw("import { useQuery, UseQueryOptions, UseQueryResult, useInfiniteQuery, UseInfiniteQueryOptions, UseInfiniteQueryResult, QueryFunction, QueryClient, InfiniteData } from '@tanstack/react-query';\n")
 @if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
 {

@@ -91,7 +91,6 @@ public class TanStackQueryGenerator
             ResponseSchemaFileName = responseSchemaFileName,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
             ModelsPath = modelsPath,
-            GenerateImports = false,
             ClientMethodName = clientMethodName,
             ClientImportPath = clientImportPath
         };
@@ -172,7 +171,6 @@ public class TanStackQueryGenerator
             ResponseSchemaFileName = responseSchemaFileName,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
             ModelsPath = modelsPath,
-            GenerateImports = false,
             ClientMethodName = clientMethodName,
             ClientImportPath = clientImportPath
         };

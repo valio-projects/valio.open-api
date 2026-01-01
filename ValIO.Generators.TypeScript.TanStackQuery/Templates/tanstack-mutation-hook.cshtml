@@ -54,8 +54,7 @@
     var queryParams = operationTemplate.QueryParameters;
     var headerParams = operationTemplate.HeaderParameters;
 }
-@if (Model.GenerateImports)
-{
+
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)
 {
 @:import { AxiosInstance } from 'axios';
@@ -63,7 +62,7 @@
 {
 @:import { @options.Axios.CustomInstanceName } from '@options.Axios.CustomInstancePath';
 }
-}
+
 @Raw("import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';\n")
 @if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
 {
