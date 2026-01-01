@@ -426,17 +426,80 @@ else
     }
     var mutationFnVarPropsStr = string.Join(", ", mutationFnVarProps);
     
-    // Формируем аргументы для вызова клиентского метода - это те же имена, что и в деструктуризации
-    // (они будут ссылаться на деструктурированные переменные)
-    var clientMethodArgs = new List<string>(mutationFnVarProps);
+    // Формируем аргументы для вызова клиентского метода - разделяем на required и optional для правильного порядка
+    var requiredClientMethodArgs = new List<string>();
+    var optionalClientMethodArgs = new List<string>();
     
-    // Добавляем axiosInstance если используется custom instance
-    // В клиентском методе axiosInstance идет после параметров, но перед signal/timeout
-    if (hasCustomAxiosInstance)
+    // Path parameters всегда required
+    requiredClientMethodArgs.AddRange(pathParams.Select(p => p.VariableName));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in queryParams)
     {
-        clientMethodArgs.Add("requestOptions");
+        if (param.IsRequired)
+        {
+            requiredClientMethodArgs.Add(param.VariableName);
+        }
+        else
+        {
+            optionalClientMethodArgs.Add(param.VariableName);
+        }
     }
     
+    // Header parameters могут быть required или optional
+    foreach (var param in headerParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredClientMethodArgs.Add(param.VariableName);
+        }
+        else
+        {
+            optionalClientMethodArgs.Add(param.VariableName);
+        }
+    }
+    
+    // Request body
+    if (operationTemplate.HasRequestBody)
+    {
+        if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
+        {
+            foreach (var formProp in operationTemplate.FormDataProperties)
+            {
+                if (formProp.IsRequired)
+                {
+                    requiredClientMethodArgs.Add(formProp.VariableName);
+                }
+                else
+                {
+                    optionalClientMethodArgs.Add(formProp.VariableName);
+                }
+            }
+        }
+        else
+        {
+            // RequestBody может быть required или optional в зависимости от IsNullable
+            if (operationTemplate.RequestBodyTypeInfo == null || operationTemplate.RequestBodyTypeInfo.IsNullable)
+            {
+                optionalClientMethodArgs.Add(operationTemplate.RequestBodyParameter);
+            }
+            else
+            {
+                requiredClientMethodArgs.Add(operationTemplate.RequestBodyParameter);
+            }
+        }
+    }
+    
+    // axiosInstance, signal, timeout - все optional
+    if (hasCustomAxiosInstance)
+    {
+        optionalClientMethodArgs.Add("requestOptions");
+    }
+    
+    // Объединяем: сначала required, потом optional
+    var clientMethodArgs = new List<string>();
+    clientMethodArgs.AddRange(requiredClientMethodArgs);
+    clientMethodArgs.AddRange(optionalClientMethodArgs);
     var clientMethodArgsStr = string.Join(", ", clientMethodArgs);
 }
 @Raw($"export const {mutationOptionsFunctionName} = <\n  TError = Error,\n  TContext = unknown,\n>(options?: {{\n  mutation?: UseMutationOptions<\n    {awaitedReturnTypeName},\n    TError,\n    {{\n{mutationVarsStr}\n    }},\n    TContext\n  >;\n{axiosOptionStr}\n}}): UseMutationOptions<\n  {awaitedReturnTypeName},\n  TError,\n  {{\n{mutationVarsStr}\n  }},\n  TContext\n> => {{\n")
