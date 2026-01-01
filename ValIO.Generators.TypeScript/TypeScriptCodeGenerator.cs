@@ -719,7 +719,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 continue;
             }
             
-            var modelCode = GenerateModelCode(model, config, document, schemaResolver, options);
+            var modelCode = GenerateModelCode(model, models, config, document, schemaResolver, options);
             var fileName = $"{_namingConverter.ToCamelCase(model.Name)}.model.ts";
             
             string filePath;
@@ -739,7 +739,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         return files;
     }
 
-    private string GenerateModelCode(ApiModel model, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    private string GenerateModelCode(ApiModel model, IReadOnlyList<ApiModel> allModels, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
     {
         var interfaceName = _namingConverter.ToPascalCase(model.Name);
 
@@ -819,6 +819,74 @@ public class TypeScriptCodeGenerator : ICodeGenerator
 
         // Собираем связанные типы для импортов (включая базовый класс, если есть)
         var importedTypes = CollectModelUsedTypes(properties, interfaceName);
+        
+        // Собираем все типы из базового класса, чтобы исключить их из импортов
+        var baseClassTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(baseClassName))
+        {
+            // Добавляем сам базовый класс
+            baseClassTypes.Add(baseClassName);
+            
+            // Находим модель базового класса и собираем все её типы
+            var baseModel = allModels.FirstOrDefault(m => string.Equals(m.Name, baseClassName, StringComparison.OrdinalIgnoreCase));
+            if (baseModel != null)
+            {
+                // Собираем типы из свойств базового класса
+                var baseModelProperties = new List<TypeScriptPropertyTemplateData>();
+                foreach (var p in baseModel.Properties)
+                {
+                    TypeInfo typeInfo = TypeInfo.Simple("any");
+                    try
+                    {
+                        if (baseModel.PropertySchemas != null &&
+                            baseModel.PropertySchemas.TryGetValue(p.Name, out var propertySchema))
+                        {
+                            typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchema, p.IsRequired, schemaResolver);
+                        }
+                        else if (baseModel.OriginalSchema?.Properties != null &&
+                            baseModel.OriginalSchema.Properties.TryGetValue(p.Name, out var propertySchemaFromOriginal))
+                        {
+                            typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchemaFromOriginal, p.IsRequired, schemaResolver);
+                        }
+                        else
+                        {
+                            typeInfo = TypeInfo.Simple(p.Type);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to map type for property '{PropertyName}' in base model '{ModelName}'", p.Name, baseModel.Name);
+                        typeInfo = TypeInfo.Simple("any");
+                    }
+                    
+                    baseModelProperties.Add(new TypeScriptPropertyTemplateData
+                    {
+                        Name = _namingConverter.ToCamelCase(p.Name),
+                        TypeInfo = typeInfo,
+                        Type = typeInfo.FullTypeName,
+                        IsOptional = !p.IsRequired,
+                        Description = DecodeHtmlEntities(p.Description)
+                    });
+                }
+                
+                // Собираем типы из свойств базового класса
+                var baseClassUsedTypes = CollectModelUsedTypes(baseModelProperties, baseClassName);
+                foreach (var type in baseClassUsedTypes)
+                {
+                    baseClassTypes.Add(type);
+                }
+                
+                // Рекурсивно собираем типы из базового класса базового класса (если есть)
+                if (!string.IsNullOrEmpty(baseModel.BaseClassName))
+                {
+                    baseClassTypes.Add(baseModel.BaseClassName);
+                }
+            }
+        }
+        
+        // Исключаем типы, которые уже включены в базовый класс
+        importedTypes = importedTypes.Where(t => !baseClassTypes.Contains(t)).ToList();
+        
         if (!string.IsNullOrEmpty(baseClassName) && !importedTypes.Contains(baseClassName))
         {
             importedTypes.Add(baseClassName);

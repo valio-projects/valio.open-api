@@ -71,11 +71,40 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @: * @Raw(operation.Description)
 @: */
 }
-    var allParams = new List<string>();
-    allParams.AddRange(operation.PathParameters.Select(FormatParameter));
-    allParams.AddRange(operation.QueryParameters.Select(FormatParameter));
-    allParams.AddRange(operation.HeaderParameters.Select(FormatParameter));
+    // Разделяем параметры на required и optional для правильного порядка в TypeScript
+    var requiredParams = new List<string>();
+    var optionalParams = new List<string>();
     
+    // Path parameters всегда required
+    requiredParams.AddRange(operation.PathParameters.Select(FormatParameter));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in operation.QueryParameters)
+    {
+        if (param.IsRequired)
+        {
+            requiredParams.Add(FormatParameter(param));
+        }
+        else
+        {
+            optionalParams.Add(FormatParameter(param));
+        }
+    }
+    
+    // Header parameters могут быть required или optional
+    foreach (var param in operation.HeaderParameters)
+    {
+        if (param.IsRequired)
+        {
+            requiredParams.Add(FormatParameter(param));
+        }
+        else
+        {
+            optionalParams.Add(FormatParameter(param));
+        }
+    }
+    
+    // Request body
     if (operation.HasRequestBody)
     {
         if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
@@ -83,30 +112,49 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
             foreach (var formProp in operation.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
-                allParams.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
+                var paramStr = $"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}";
+                if (formProp.IsRequired)
+                {
+                    requiredParams.Add(paramStr);
+                }
+                else
+                {
+                    optionalParams.Add(paramStr);
+                }
             }
         }
         else
         {
             var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
             var typeStr = operation.RequestBodyTypeInfo != null ? FormatType(operation.RequestBodyTypeInfo) : "any";
-            allParams.Add($"{operation.RequestBodyParameter}{optional}: {typeStr}");
+            var paramStr = $"{operation.RequestBodyParameter}{optional}: {typeStr}";
+            if (operation.RequestBodyTypeInfo == null || operation.RequestBodyTypeInfo.IsNullable)
+            {
+                optionalParams.Add(paramStr);
+            }
+            else
+            {
+                requiredParams.Add(paramStr);
+            }
         }
     }
     
-    // Добавляем axiosInstance сразу после параметров API метода: optional если есть custom instance, обязательный если нет
+    // axiosInstance, signal, timeout
     if (hasCustomInstance)
     {
-        allParams.Add("axiosInstance?: AxiosInstance");
+        optionalParams.Add("axiosInstance?: AxiosInstance");
     }
     else
     {
-        allParams.Add("axiosInstance: AxiosInstance");
+        requiredParams.Add("axiosInstance: AxiosInstance");
     }
+    optionalParams.Add("signal?: AbortSignal");
+    optionalParams.Add("timeout?: number");
     
-    // Добавляем optional signal и timeout после axiosInstance
-    allParams.Add("signal?: AbortSignal");
-    allParams.Add("timeout?: number");
+    // Объединяем: сначала required, потом optional
+    var allParams = new List<string>();
+    allParams.AddRange(requiredParams);
+    allParams.AddRange(optionalParams);
     
     var paramsStr = "";
     if (allParams.Count > 0)

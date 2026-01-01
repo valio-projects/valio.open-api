@@ -76,11 +76,40 @@
 {
 @Raw("  axiosInstance: AxiosInstance,\n")
 }
-    var allParams = new List<string>();
-    allParams.AddRange(pathParams.Select(FormatParameter));
-    allParams.AddRange(queryParams.Select(FormatParameter));
-    allParams.AddRange(headerParams.Select(FormatParameter));
+    // Разделяем параметры на required и optional для правильного порядка
+    var requiredParams = new List<string>();
+    var optionalParams = new List<string>();
     
+    // Path parameters всегда required
+    requiredParams.AddRange(pathParams.Select(FormatParameter));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in queryParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredParams.Add(FormatParameter(param));
+        }
+        else
+        {
+            optionalParams.Add(FormatParameter(param));
+        }
+    }
+    
+    // Header parameters могут быть required или optional
+    foreach (var param in headerParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredParams.Add(FormatParameter(param));
+        }
+        else
+        {
+            optionalParams.Add(FormatParameter(param));
+        }
+    }
+    
+    // Request body
     if (operationTemplate.HasRequestBody)
     {
         if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
@@ -88,16 +117,37 @@
             foreach (var formProp in operationTemplate.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
-                allParams.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
+                var paramStr = $"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}";
+                if (formProp.IsRequired)
+                {
+                    requiredParams.Add(paramStr);
+                }
+                else
+                {
+                    optionalParams.Add(paramStr);
+                }
             }
         }
         else
         {
             var optional = operationTemplate.RequestBodyTypeInfo != null && !operationTemplate.RequestBodyTypeInfo.IsNullable ? "" : "?";
             var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo) : "any";
-            allParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
+            var paramStr = $"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}";
+            if (operationTemplate.RequestBodyTypeInfo == null || operationTemplate.RequestBodyTypeInfo.IsNullable)
+            {
+                optionalParams.Add(paramStr);
+            }
+            else
+            {
+                requiredParams.Add(paramStr);
+            }
         }
     }
+    
+    // Объединяем: сначала required, потом optional
+    var allParams = new List<string>();
+    allParams.AddRange(requiredParams);
+    allParams.AddRange(optionalParams);
 @Raw($"{string.Join(",\n  ", allParams)}\n")
 @Raw($"): Promise<{GetResponseType(operationTemplate.ReturnTypeInfo)}> => {{\n")
 @if (options.HttpClientLibrary == HttpClientLibrary.Axios)

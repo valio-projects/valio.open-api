@@ -109,16 +109,56 @@
     var promiseReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
     var functionSignature = $"): Promise<{promiseReturnType}> => {{\n";
     
-    // Precompute query key parameters
+    // Precompute query key parameters - разделяем на required и optional для правильного порядка
+    var requiredKeyParams = new List<string>();
+    var optionalKeyParams = new List<string>();
+    
+    // Path parameters всегда required
+    requiredKeyParams.AddRange(pathParams.Select(FormatParameter));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in queryParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredKeyParams.Add(FormatParameter(param));
+        }
+        else
+        {
+            optionalKeyParams.Add(FormatParameter(param));
+        }
+    }
+    
+    // Объединяем: сначала required, потом optional
     var keyParams = new List<string>();
-    keyParams.AddRange(pathParams.Select(FormatParameter));
-    keyParams.AddRange(queryParams.Select(FormatParameter));
+    keyParams.AddRange(requiredKeyParams);
+    keyParams.AddRange(optionalKeyParams);
     var keyParamsStr = keyParams.Count > 0 ? "  " + string.Join(",\n  ", keyParams) : "";
     
-    // Precompute hook parameters
+    // Precompute hook parameters - разделяем на required и optional для правильного порядка
+    var requiredHookParams = new List<string>();
+    var optionalHookParams = new List<string>();
+    
+    // Path parameters всегда required
+    requiredHookParams.AddRange(pathParams.Select(FormatParameter));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in queryParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredHookParams.Add(FormatParameter(param));
+        }
+        else
+        {
+            optionalHookParams.Add(FormatParameter(param));
+        }
+    }
+    
+    // Объединяем: сначала required, потом optional
     var hookParams = new List<string>();
-    hookParams.AddRange(pathParams.Select(FormatParameter));
-    hookParams.AddRange(queryParams.Select(FormatParameter));
+    hookParams.AddRange(requiredHookParams);
+    hookParams.AddRange(optionalHookParams);
     var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) + "," : "";
     var returnType = GetResponseType(operationTemplate.ReturnTypeInfo);
     
@@ -146,10 +186,30 @@
     var returnTypeName = char.ToUpperInvariant(clientMethodName[0]) + clientMethodName.Substring(1) + "ReturnType";
     var awaitedReturnTypeName = char.ToUpperInvariant(clientMethodName[0]) + clientMethodName.Substring(1) + "AwaitedReturnType";
     
-    // Precompute key arguments
+    // Precompute key arguments - используем тот же порядок, что и в keyParams (required сначала, optional потом)
+    var requiredKeyArgs = new List<string>();
+    var optionalKeyArgs = new List<string>();
+    
+    // Path parameters всегда required
+    requiredKeyArgs.AddRange(pathParams.Select(p => p.VariableName));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in queryParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredKeyArgs.Add(param.VariableName);
+        }
+        else
+        {
+            optionalKeyArgs.Add(param.VariableName);
+        }
+    }
+    
+    // Объединяем: сначала required, потом optional
     var keyArgs = new List<string>();
-    keyArgs.AddRange(pathParams.Select(p => p.VariableName));
-    keyArgs.AddRange(queryParams.Select(p => p.VariableName));
+    keyArgs.AddRange(requiredKeyArgs);
+    keyArgs.AddRange(optionalKeyArgs);
     var keyArgsStr = string.Join(", ", keyArgs);
     
     // Precompute function arguments
@@ -170,29 +230,82 @@
     }
     var fnArgsStr = string.Join(",\n      ", fnArgs);
     
-    // Precompute query function parameters
-    var queryFnParams = new List<string>();
-    queryFnParams.AddRange(pathParams.Select(p => p.VariableName));
-    queryFnParams.AddRange(queryParams.Select(p => p.VariableName));
-    queryFnParams.AddRange(headerParams.Select(p => p.VariableName));
+    // Precompute query function parameters - разделяем на required и optional для правильного порядка
+    var requiredQueryFnParams = new List<string>();
+    var optionalQueryFnParams = new List<string>();
+    
+    // Path parameters всегда required
+    requiredQueryFnParams.AddRange(pathParams.Select(p => p.VariableName));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in queryParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredQueryFnParams.Add(param.VariableName);
+        }
+        else
+        {
+            optionalQueryFnParams.Add(param.VariableName);
+        }
+    }
+    
+    // Header parameters могут быть required или optional
+    foreach (var param in headerParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredQueryFnParams.Add(param.VariableName);
+        }
+        else
+        {
+            optionalQueryFnParams.Add(param.VariableName);
+        }
+    }
+    
+    // Request body
     if (operationTemplate.HasRequestBody)
     {
         if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
         {
-            queryFnParams.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
+            foreach (var formProp in operationTemplate.FormDataProperties)
+            {
+                if (formProp.IsRequired)
+                {
+                    requiredQueryFnParams.Add(formProp.VariableName);
+                }
+                else
+                {
+                    optionalQueryFnParams.Add(formProp.VariableName);
+                }
+            }
         }
         else
         {
-            queryFnParams.Add(operationTemplate.RequestBodyParameter);
+            // RequestBody может быть required или optional в зависимости от IsNullable
+            if (operationTemplate.RequestBodyTypeInfo == null || operationTemplate.RequestBodyTypeInfo.IsNullable)
+            {
+                optionalQueryFnParams.Add(operationTemplate.RequestBodyParameter);
+            }
+            else
+            {
+                requiredQueryFnParams.Add(operationTemplate.RequestBodyParameter);
+            }
         }
     }
-    // Порядок: сначала axiosInstance (если axios), затем signal, затем timeout
+    
+    // axiosInstance, signal, timeout - все optional
     if (options.HttpClientLibrary == HttpClientLibrary.Axios)
     {
-        queryFnParams.Add("axiosInstance");
+        optionalQueryFnParams.Add("axiosInstance");
     }
-    queryFnParams.Add("signal");
-    queryFnParams.Add("timeout");
+    optionalQueryFnParams.Add("signal");
+    optionalQueryFnParams.Add("timeout");
+    
+    // Объединяем: сначала required, потом optional
+    var queryFnParams = new List<string>();
+    queryFnParams.AddRange(requiredQueryFnParams);
+    queryFnParams.AddRange(optionalQueryFnParams);
     var queryFnArgsStr = queryFnParams.Count > 0 ? "      " + string.Join(",\n      ", queryFnParams) : "";
     
     var queryReturnType = GetResponseType(operationTemplate.ReturnTypeInfo);
@@ -210,17 +323,52 @@
     var infiniteReturnStart = "  return {\n";
     var infiniteReturnEnd = $"  }} as UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>;\n";
     var infiniteReturnLine = $"  return query;\n";
-    var infiniteQueryParams = new List<string>();
-    infiniteQueryParams.AddRange(pathParams.Select(p => p.VariableName));
-    infiniteQueryParams.AddRange(queryParams.Select(p => p.VariableName));
-    infiniteQueryParams.AddRange(headerParams.Select(p => p.VariableName));
-    // Порядок: сначала axiosInstance (если axios), затем signal, затем timeout
+    
+    // Precompute infinite query function parameters - разделяем на required и optional для правильного порядка
+    var requiredInfiniteQueryParams = new List<string>();
+    var optionalInfiniteQueryParams = new List<string>();
+    
+    // Path parameters всегда required
+    requiredInfiniteQueryParams.AddRange(pathParams.Select(p => p.VariableName));
+    
+    // Query parameters могут быть required или optional
+    foreach (var param in queryParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredInfiniteQueryParams.Add(param.VariableName);
+        }
+        else
+        {
+            optionalInfiniteQueryParams.Add(param.VariableName);
+        }
+    }
+    
+    // Header parameters могут быть required или optional
+    foreach (var param in headerParams)
+    {
+        if (param.IsRequired)
+        {
+            requiredInfiniteQueryParams.Add(param.VariableName);
+        }
+        else
+        {
+            optionalInfiniteQueryParams.Add(param.VariableName);
+        }
+    }
+    
+    // axiosInstance, signal, timeout - все optional
     if (options.HttpClientLibrary == HttpClientLibrary.Axios)
     {
-        infiniteQueryParams.Add("axiosInstance");
+        optionalInfiniteQueryParams.Add("axiosInstance");
     }
-    infiniteQueryParams.Add("signal");
-    infiniteQueryParams.Add("timeout");
+    optionalInfiniteQueryParams.Add("signal");
+    optionalInfiniteQueryParams.Add("timeout");
+    
+    // Объединяем: сначала required, потом optional
+    var infiniteQueryParams = new List<string>();
+    infiniteQueryParams.AddRange(requiredInfiniteQueryParams);
+    infiniteQueryParams.AddRange(optionalInfiniteQueryParams);
     var infiniteQueryParamsStr = string.Join(",\n      ", infiniteQueryParams);
     
     // Precompute path strings
