@@ -25,6 +25,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
     private readonly ITemplateRegistry _templateRegistry;
     private readonly TemplateRegistryFactory? _templateRegistryFactory;
     private readonly ILogger<TypeScriptCodeGenerator> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private bool _templatesPreloaded;
     
     // Кэш для поиска операций (path + method -> operation)
@@ -39,6 +40,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         IFileWriter fileWriter,
         ITemplateRegistry templateRegistry,
         ILogger<TypeScriptCodeGenerator> logger,
+        ILoggerFactory loggerFactory,
         TemplateRegistryFactory? templateRegistryFactory = null)
     {
         _typeMapper = typeMapper;
@@ -48,6 +50,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         _templateRegistry = templateRegistry ?? throw new ArgumentNullException(nameof(templateRegistry));
         _templateRegistryFactory = templateRegistryFactory;
         _logger = logger;
+        _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _templatesPreloaded = false;
     }
 
@@ -1828,12 +1831,15 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             zodTemplateRegistry = _templateRegistry;
         }
         
+        // Создаем правильный logger для ZodSchemaGenerator через ILoggerFactory
+        var zodLogger = _loggerFactory.CreateLogger(zodSchemaGeneratorType);
+        
         var zodSchemaGenerator = Activator.CreateInstance(zodSchemaGeneratorType,
             _namingConverter,
             _typescriptTypeMapper,
             zodTypeMapper,
             zodTemplateRegistry,
-            _logger) as dynamic;
+            zodLogger) as dynamic;
         
         if (zodSchemaGenerator == null)
         {

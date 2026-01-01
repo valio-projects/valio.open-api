@@ -34,13 +34,15 @@ public class TypeScriptCodeGeneratorIntegrationTests
             new Core.Services.TemplateCache(),
             Microsoft.Extensions.Logging.Abstractions.NullLogger<Core.Services.EmbeddedResourceTemplateRegistry>.Instance);
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<TypeScriptCodeGenerator>.Instance;
+        var loggerFactory = Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
         
         _generator = new TypeScriptCodeGenerator(
             typeMapper,
             namingConverter,
             fileWriter,
             templateRegistry,
-            logger);
+            logger,
+            loggerFactory);
     }
 
     [Test]

@@ -61,6 +61,7 @@ public class CodeGeneratorFactory
         var typeMapper = _typeMapperFactory.CreateMapper(GenerationLanguage.TypeScript);
         var templateRegistry = templateRegistryFactory.CreateRegistry(typeof(TypeScriptCodeGenerator).Assembly);
         var logger = _serviceProvider.GetRequiredService<ILogger<TypeScriptCodeGenerator>>();
+        var loggerFactory = _serviceProvider.GetRequiredService<ILoggerFactory>();
 
         return new TypeScriptCodeGenerator(
             typeMapper,
@@ -68,6 +69,7 @@ public class CodeGeneratorFactory
             fileWriter,
             templateRegistry,
             logger,
+            loggerFactory,
             templateRegistryFactory);
     }
 }
