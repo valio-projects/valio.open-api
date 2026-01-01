@@ -231,7 +231,8 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
             SchemaName = schemaName,
             TypeName = typeName,
             Description = DecodeHtmlEntities(apiEnum.Description),
-            EnumValues = enumValues
+            EnumValues = enumValues,
+            UnderlyingType = apiEnum.UnderlyingType
         };
 
         return _templateRegistry.Render("zod-enum.cshtml", templateData);

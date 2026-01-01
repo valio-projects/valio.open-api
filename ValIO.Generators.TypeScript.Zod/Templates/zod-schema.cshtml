@@ -7,12 +7,6 @@
     var properties = Model.Properties;
     var description = Model.Description;
 }
-@if (!string.IsNullOrEmpty(description))
-{
-@:/**
-@: * @Raw(description)
-@: */
-}
 import { z } from 'zod';
 @if (Model.SchemaDependencies != null && Model.SchemaDependencies.Count > 0)
 {
@@ -64,6 +58,12 @@ import { z } from 'zod';
 }
 @:};
 
+@if (!string.IsNullOrEmpty(description))
+{
+@:/**
+@: * @Raw(description)
+@: */
+}
 @:export const @schemaName: z.ZodType<@typeName> = z.object({
 @foreach (var property in properties)
 {
@@ -79,6 +79,12 @@ import { z } from 'zod';
 }
 else
 {
+@if (!string.IsNullOrEmpty(description))
+{
+@:/**
+@: * @Raw(description)
+@: */
+}
 @:export const @schemaName = z.object({
 @foreach (var property in properties)
 {

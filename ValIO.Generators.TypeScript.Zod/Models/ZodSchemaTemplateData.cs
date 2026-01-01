@@ -154,4 +154,9 @@ public class ZodEnumSchemaTemplateData
     public string TypeName { get; set; } = string.Empty;
     public string? Description { get; set; }
     public IReadOnlyList<string> EnumValues { get; set; } = Array.Empty<string>();
+    
+    /// <summary>
+    /// Базовый тип enum (string, number, int и т.д.)
+    /// </summary>
+    public string UnderlyingType { get; set; } = "string";
 }
