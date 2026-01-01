@@ -169,6 +169,22 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
             .OrderBy(x => x)
             .ToList();
         
+        // Для рекурсивных схем собираем зависимости TypeScript типов из SchemaDependencies
+        var typeDependencies = new List<string>();
+        if (hasCircularReference)
+        {
+            foreach (var schemaDep in schemaDependenciesFiltered)
+            {
+                // Преобразуем имя схемы в имя типа (убираем "Schema" с конца)
+                var depTypeName = schemaDep.EndsWith("Schema", StringComparison.OrdinalIgnoreCase)
+                    ? schemaDep.Substring(0, schemaDep.Length - 6)
+                    : schemaDep;
+                typeDependencies.Add(depTypeName);
+            }
+            // Сортируем и убираем дубликаты
+            typeDependencies = typeDependencies.Distinct().OrderBy(x => x).ToList();
+        }
+        
         var templateData = new ZodSchemaTemplateData
         {
             SchemaName = schemaName,
@@ -178,6 +194,7 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
             SchemaDependencies = schemaDependenciesFiltered,
             EnumDependencies = enumDependenciesFiltered,
             HasCircularReference = hasCircularReference,
+            TypeDependencies = typeDependencies,
             NamingConverter = _namingConverter
         };
 

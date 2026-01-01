@@ -38,6 +38,11 @@ public class ZodSchemaTemplateData
     public bool HasCircularReference { get; set; }
     
     /// <summary>
+    /// Список зависимостей - TypeScript типов, которые нужно импортировать из .model.ts файлов (только для рекурсивных схем)
+    /// </summary>
+    public IReadOnlyList<string> TypeDependencies { get; set; } = Array.Empty<string>();
+    
+    /// <summary>
     /// Функция для преобразования имени схемы в имя файла (camelCase)
     /// </summary>
     public string SchemaNameToFileName(string schemaName)
@@ -50,6 +55,30 @@ public class ZodSchemaTemplateData
             
         if (string.IsNullOrEmpty(typeName))
             return schemaName.ToLowerInvariant();
+        
+        // Используем NamingConverter, если он доступен
+        if (NamingConverter != null)
+        {
+            return NamingConverter.ToCamelCase(typeName);
+        }
+        
+        // Fallback: правильное преобразование в camelCase
+        var words = SplitIntoWords(typeName);
+        if (words.Count == 0)
+            return typeName.ToLowerInvariant();
+        
+        var firstWord = words[0].ToLowerInvariant();
+        var rest = words.Skip(1).Select(w => char.ToUpperInvariant(w[0]) + w.Substring(1).ToLowerInvariant());
+        return firstWord + string.Join("", rest);
+    }
+    
+    /// <summary>
+    /// Функция для преобразования имени типа в имя файла (camelCase)
+    /// </summary>
+    public string TypeNameToFileName(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName))
+            return typeName.ToLowerInvariant();
         
         // Используем NamingConverter, если он доступен
         if (NamingConverter != null)

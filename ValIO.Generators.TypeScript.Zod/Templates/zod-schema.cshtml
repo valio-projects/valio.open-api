@@ -33,6 +33,16 @@ import { z } from 'zod';
 
 @if (Model.HasCircularReference)
 {
+@:// Импортируем TypeScript типы из .model.ts файлов для описания интерфейса
+@if (Model.TypeDependencies != null && Model.TypeDependencies.Count > 0)
+{
+@foreach (var typeDep in Model.TypeDependencies)
+{
+    var typeFileName = Model.TypeNameToFileName(typeDep);
+@:import type { @typeDep } from './@(typeFileName).model';
+}
+}
+@:
 @:// TypeScript интерфейс для строгой типизации рекурсивной схемы
 @:type @(typeName) = {
 @foreach (var property in properties)
