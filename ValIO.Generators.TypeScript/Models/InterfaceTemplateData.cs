@@ -1,3 +1,4 @@
+using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Models;
 
 namespace ValIO.Generators.TypeScript.Models;
@@ -35,6 +36,11 @@ public class TypeScriptModelTemplateData
     /// Собственные свойства модели (не из базового класса)
     /// </summary>
     public IReadOnlyList<TypeScriptPropertyTemplateData> OwnProperties { get; set; } = Array.Empty<TypeScriptPropertyTemplateData>();
+    
+    /// <summary>
+    /// Библиотека валидации (если используется)
+    /// </summary>
+    public ValidationLibrary? ValidationLibrary { get; set; }
 }
 
 /// <summary>
@@ -71,6 +77,11 @@ public class TypeScriptEnumTemplateData
     public string? Description { get; set; }
     public EnumFormat EnumFormat { get; set; } = EnumFormat.Enum;
     public IReadOnlyList<TypeScriptEnumValueTemplateData> Values { get; set; } = Array.Empty<TypeScriptEnumValueTemplateData>();
+    
+    /// <summary>
+    /// Библиотека валидации (если используется)
+    /// </summary>
+    public ValidationLibrary? ValidationLibrary { get; set; }
 }
 
 /// <summary>

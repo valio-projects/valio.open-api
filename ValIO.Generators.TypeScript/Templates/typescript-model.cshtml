@@ -1,5 +1,6 @@
 @using ValIO.Generators.CSharp.Models
 @using ValIO.Generators.TypeScript.Models
+@using ValIO.Core.Models
 @model TypeScriptModelTemplateData
 @functions {
     string FormatType(TypeInfo typeInfo)
@@ -31,7 +32,26 @@
     var ownProperties = Model.OwnProperties;
     var useIntersectionType = !string.IsNullOrEmpty(baseClassName) && ownProperties.Count > 0;
     var useTypeAlias = !string.IsNullOrEmpty(baseClassName) && ownProperties.Count == 0;
+    var useZodInfer = Model.ValidationLibrary == ValidationLibrary.Zod;
+    var schemaName = $"{interfaceName}Schema";
+    var schemaFileName = char.ToLowerInvariant(interfaceName[0]) + interfaceName.Substring(1);
 }
+@if (useZodInfer)
+{
+    // Если используется Zod, импортируем схему и экспортируем тип через z.infer
+@Raw($"import {{ {schemaName} }} from './{schemaFileName}.schema';\n")
+@Raw("import { z } from 'zod';\n")
+@if (!string.IsNullOrEmpty(description))
+{
+@Raw("/**\n")
+@Raw($" * {description}\n")
+@Raw(" */\n")
+}
+@Raw($"export type {interfaceName} = z.infer<typeof {schemaName}>;\n")
+}
+else
+{
+    // Стандартная генерация интерфейсов
 @if (importedTypes != null && importedTypes.Count > 0)
 {
 @foreach (var typeName in importedTypes)
@@ -79,4 +99,5 @@ else
     @:  @property.Name@FormatOptional(property.IsOptional, property.TypeInfo): @Raw(FormatType(property.TypeInfo));
 }
 @Raw("}\n")
+}
 }

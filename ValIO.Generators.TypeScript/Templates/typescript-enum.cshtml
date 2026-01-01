@@ -1,11 +1,31 @@
 @using ValIO.Generators.TypeScript.Models
+@using ValIO.Core.Models
 @model TypeScriptEnumTemplateData
 @{
     var enumName = Model.EnumName;
     var description = Model.Description;
     var enumFormat = Model.EnumFormat;
     var values = Model.Values;
+    var useZodInfer = Model.ValidationLibrary == ValidationLibrary.Zod;
+    var schemaName = $"{enumName}Schema";
+    var schemaFileName = char.ToLowerInvariant(enumName[0]) + enumName.Substring(1);
 }
+@if (useZodInfer)
+{
+    // Если используется Zod, импортируем схему и экспортируем тип через z.infer
+@Raw($"import {{ {schemaName} }} from './{schemaFileName}.schema';\n")
+@Raw("import { z } from 'zod';\n")
+@if (!string.IsNullOrEmpty(description))
+{
+@Raw("/**\n")
+@Raw($" * {description}\n")
+@Raw(" */\n")
+}
+@Raw($"export type {enumName} = z.infer<typeof {schemaName}>;\n")
+}
+else
+{
+    // Стандартная генерация enum'ов
 @if (!string.IsNullOrEmpty(description))
 {
 @Raw("/**\n")
@@ -34,5 +54,6 @@ else
 {
     var value = values[i];
     @:@Raw(value.ValueString)@(i < values.Count - 1 ? " | " : ";")
+}
 }
 }

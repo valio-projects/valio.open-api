@@ -247,13 +247,15 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                     generatedFiles[file.Key] = file.Value;
                     }
                     
-                    // Если ModelFormat = ValidationSchemas, генерируем также Zod схемы
-                    if (typescriptOptions.ModelFormat == ModelFormat.ValidationSchemas && 
-                        typescriptOptions.ValidationLibrary == ValidationLibrary.Zod)
+                    // Генерируем Zod схемы, если ValidationLibrary = Zod (независимо от ModelFormat)
+                    _logger.LogDebug("Checking if Zod schemas should be generated. ValidationLibrary: {ValidationLibrary}", typescriptOptions.ValidationLibrary);
+                    if (typescriptOptions.ValidationLibrary == ValidationLibrary.Zod)
                     {
+                        _logger.LogInformation("Generating Zod schemas for {ModelCount} models and {EnumCount} enums", models.Count, enums.Count);
                         try
                         {
                             var zodSchemaFiles = await GenerateZodSchemasAsync(models, enums, config, document, schemaResolver, typescriptOptions);
+                            _logger.LogInformation("Generated {Count} Zod schema files", zodSchemaFiles.Count);
                             foreach (var file in zodSchemaFiles)
                             {
                                 generatedFiles[file.Key] = file.Value;
@@ -267,8 +269,13 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                                 errorMsg += $" (Inner: {ex.InnerException.Message})";
                             }
                             generationWarnings.Add(errorMsg);
-                            _logger.LogWarning(ex, "Failed to generate Zod schemas");
+                            generationErrors.Add(errorMsg);
+                            _logger.LogError(ex, "Failed to generate Zod schemas. Stack trace: {StackTrace}", ex.StackTrace);
                         }
+                    }
+                    else
+                    {
+                        _logger.LogDebug("Skipping Zod schema generation. ValidationLibrary is {ValidationLibrary}, expected Zod", typescriptOptions.ValidationLibrary);
                     }
                 }
                 catch (Exception ex)
@@ -675,7 +682,8 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             EnumName = enumName,
             Description = DecodeHtmlEntities(apiEnum.Description),
             EnumFormat = options.EnumFormat,
-            Values = enumValues
+            Values = enumValues,
+            ValidationLibrary = options.ValidationLibrary
         };
 
         return _templateRegistry.Render("typescript-enum.cshtml", templateData);
@@ -901,7 +909,8 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             ImportedTypes = importedTypes,
             BaseClassName = baseClassName,
             BaseClassProperties = baseClassProperties,
-            OwnProperties = ownProperties
+            OwnProperties = ownProperties,
+            ValidationLibrary = options.ValidationLibrary
         };
 
         return _templateRegistry.Render("typescript-model.cshtml", templateData);
@@ -1743,16 +1752,65 @@ public class TypeScriptCodeGenerator : ICodeGenerator
     {
         var files = new Dictionary<string, string>();
         
+        _logger.LogDebug("Starting Zod schema generation. Models: {ModelCount}, Enums: {EnumCount}", models.Count, enums.Count);
+        
         // Создаем Zod генератор
         // Используем полное имя типа, чтобы избежать циклической зависимости
-        var zodAssembly = Assembly.Load("ValIO.Generators.TypeScript.Zod");
+        Assembly? zodAssembly = null;
+        try
+        {
+            // Пытаемся загрузить сборку разными способами
+            try
+            {
+                // Сначала пытаемся загрузить из текущего домена приложения
+                zodAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(a => a.GetName().Name == "ValIO.Generators.TypeScript.Zod");
+                
+                if (zodAssembly == null)
+                {
+                    // Если не найдено, пытаемся загрузить по имени
+                    zodAssembly = Assembly.Load("ValIO.Generators.TypeScript.Zod");
+                }
+            }
+            catch
+            {
+                // Если не получилось, пытаемся загрузить из того же каталога, что и текущая сборка
+                var currentAssembly = Assembly.GetExecutingAssembly();
+                var currentAssemblyPath = Path.GetDirectoryName(currentAssembly.Location);
+                if (!string.IsNullOrEmpty(currentAssemblyPath))
+                {
+                    var zodAssemblyPath = Path.Combine(currentAssemblyPath, "ValIO.Generators.TypeScript.Zod.dll");
+                    if (File.Exists(zodAssemblyPath))
+                    {
+                        zodAssembly = Assembly.LoadFrom(zodAssemblyPath);
+                    }
+                }
+            }
+            
+            if (zodAssembly == null)
+            {
+                throw new FileNotFoundException("ValIO.Generators.TypeScript.Zod assembly not found");
+            }
+            
+            _logger.LogDebug("Successfully loaded ValIO.Generators.TypeScript.Zod assembly from location: {Location}", zodAssembly.Location);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load ValIO.Generators.TypeScript.Zod assembly. Error: {Error}", ex.Message);
+            throw new InvalidOperationException("Failed to load ValIO.Generators.TypeScript.Zod assembly. Make sure the assembly is referenced and available in the output directory.", ex);
+        }
+        
         var zodTypeMapperType = zodAssembly.GetType("ValIO.Generators.TypeScript.Zod.ZodTypeMapper");
         var zodSchemaGeneratorType = zodAssembly.GetType("ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator");
         
         if (zodTypeMapperType == null || zodSchemaGeneratorType == null)
         {
+            _logger.LogError("Zod types not found. ZodTypeMapper: {ZodTypeMapper}, ZodSchemaGenerator: {ZodSchemaGenerator}", 
+                zodTypeMapperType != null, zodSchemaGeneratorType != null);
             throw new InvalidOperationException("Zod types not found. Make sure ValIO.Generators.TypeScript.Zod assembly is loaded.");
         }
+        
+        _logger.LogDebug("Found Zod types. Creating instances...");
         
         var zodTypeMapper = Activator.CreateInstance(zodTypeMapperType, _namingConverter);
         
@@ -1783,55 +1841,80 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         }
 
         // Генерируем Zod схемы для моделей
+        _logger.LogDebug("Generating Zod schemas for {Count} models", models.Count);
         foreach (var model in models)
         {
             if (string.IsNullOrWhiteSpace(model.Name))
             {
+                _logger.LogWarning("Skipping model with empty name");
                 continue;
             }
             
-            var schemaCode = (string)zodSchemaGenerator.GenerateSchema(model, schemaResolver);
-            var fileName = $"{_namingConverter.ToCamelCase(model.Name)}.schema.ts";
-            
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
+            try
             {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+                _logger.LogDebug("Generating Zod schema for model: {ModelName}", model.Name);
+                var schemaCode = (string)zodSchemaGenerator.GenerateSchema(model, schemaResolver);
+                var fileName = $"{_namingConverter.ToCamelCase(model.Name)}.schema.ts";
+                
+                string filePath;
+                if (config.FileOrganization.SeparateModels)
+                {
+                    var modelsPath = config.FileOrganization.ModelsPath ?? "models";
+                    filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
+                }
+                else
+                {
+                    filePath = Path.Combine(config.OutputPath, fileName);
+                }
 
-            files[filePath] = schemaCode;
+                files[filePath] = schemaCode;
+                _logger.LogDebug("Generated Zod schema file: {FilePath}", filePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate Zod schema for model: {ModelName}", model.Name);
+                throw;
+            }
         }
 
         // Генерируем Zod схемы для enum'ов
+        _logger.LogDebug("Generating Zod schemas for {Count} enums", enums.Count);
         foreach (var apiEnum in enums)
         {
             if (string.IsNullOrWhiteSpace(apiEnum.Name))
             {
+                _logger.LogWarning("Skipping enum with empty name");
                 continue;
             }
             
-            var schemaCode = (string)zodSchemaGenerator.GenerateEnumSchema(apiEnum);
-            var fileName = $"{_namingConverter.ToCamelCase(apiEnum.Name)}.schema.ts";
-            
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
+            try
             {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+                _logger.LogDebug("Generating Zod schema for enum: {EnumName}", apiEnum.Name);
+                var schemaCode = (string)zodSchemaGenerator.GenerateEnumSchema(apiEnum);
+                var fileName = $"{_namingConverter.ToCamelCase(apiEnum.Name)}.schema.ts";
+                
+                string filePath;
+                if (config.FileOrganization.SeparateModels)
+                {
+                    var modelsPath = config.FileOrganization.ModelsPath ?? "models";
+                    filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
+                }
+                else
+                {
+                    filePath = Path.Combine(config.OutputPath, fileName);
+                }
 
-            files[filePath] = schemaCode;
+                files[filePath] = schemaCode;
+                _logger.LogDebug("Generated Zod schema file: {FilePath}", filePath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", apiEnum.Name);
+                throw;
+            }
         }
 
+        _logger.LogInformation("Successfully generated {Count} Zod schema files", files.Count);
         return files;
     }
 
