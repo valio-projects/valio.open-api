@@ -1,3 +1,5 @@
+using ValIO.Core.Interfaces;
+
 namespace ValIO.Generators.TypeScript.Zod.Models;
 
 /// <summary>
@@ -26,6 +28,11 @@ public class ZodSchemaTemplateData
     public string? ModelsPath { get; set; }
     
     /// <summary>
+    /// Конвертер имен для преобразования имен схем в имена файлов
+    /// </summary>
+    public INamingConverter? NamingConverter { get; set; }
+    
+    /// <summary>
     /// Функция для преобразования имени схемы в имя файла (camelCase)
     /// </summary>
     public string SchemaNameToFileName(string schemaName)
@@ -34,23 +41,52 @@ public class ZodSchemaTemplateData
         if (string.IsNullOrEmpty(typeName))
             return schemaName.ToLowerInvariant();
         
-        var result = new System.Text.StringBuilder();
-        for (int i = 0; i < typeName.Length; i++)
+        // Используем NamingConverter, если он доступен
+        if (NamingConverter != null)
         {
-            if (i == 0)
-            {
-                result.Append(char.ToLowerInvariant(typeName[i]));
-            }
-            else if (char.IsUpper(typeName[i]))
-            {
-                result.Append(char.ToLowerInvariant(typeName[i]));
-            }
-            else
-            {
-                result.Append(typeName[i]);
-            }
+            return NamingConverter.ToCamelCase(typeName);
         }
-        return result.ToString();
+        
+        // Fallback: правильное преобразование в camelCase
+        var words = SplitIntoWords(typeName);
+        if (words.Count == 0)
+            return typeName.ToLowerInvariant();
+        
+        var firstWord = words[0].ToLowerInvariant();
+        var rest = words.Skip(1).Select(w => char.ToUpperInvariant(w[0]) + w.Substring(1).ToLowerInvariant());
+        return firstWord + string.Join("", rest);
+    }
+    
+    private static List<string> SplitIntoWords(string input)
+    {
+        var words = new List<string>();
+        var currentWord = new System.Text.StringBuilder();
+
+        foreach (var c in input)
+        {
+            if (char.IsUpper(c) && currentWord.Length > 0)
+            {
+                words.Add(currentWord.ToString());
+                currentWord.Clear();
+            }
+            else if (c == '_' || c == '-' || c == ' ' || c == '.')
+            {
+                if (currentWord.Length > 0)
+                {
+                    words.Add(currentWord.ToString());
+                    currentWord.Clear();
+                }
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(c))
+                currentWord.Append(c);
+        }
+
+        if (currentWord.Length > 0)
+            words.Add(currentWord.ToString());
+
+        return words.Count > 0 ? words : new List<string> { input };
     }
 }
 

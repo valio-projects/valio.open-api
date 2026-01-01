@@ -103,7 +103,8 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
             Description = DecodeHtmlEntities(model.Description),
             Properties = properties,
             SchemaDependencies = allSchemaDependencies.OrderBy(x => x).ToList(),
-            EnumDependencies = allEnumDependencies.OrderBy(x => x).ToList()
+            EnumDependencies = allEnumDependencies.OrderBy(x => x).ToList(),
+            NamingConverter = _namingConverter
         };
 
         return _templateRegistry.Render("zod-schema.cshtml", templateData);
