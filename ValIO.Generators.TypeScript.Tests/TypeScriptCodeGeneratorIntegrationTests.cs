@@ -36,13 +36,37 @@ public class TypeScriptCodeGeneratorIntegrationTests
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<TypeScriptCodeGenerator>.Instance;
         var loggerFactory = Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
         
+        // Создаем минимальный ServiceProvider для SchemaGeneratorFactory
+        var serviceCollection = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
+        serviceCollection.AddSingleton<INamingConverter>(namingConverter);
+        serviceCollection.AddSingleton<ValIO.Generators.TypeScript.Zod.ZodTypeMapper>();
+        serviceCollection.AddSingleton<ValIO.Core.Interfaces.ISchemaGenerator>(sp =>
+        {
+            var zodTypeMapper = new ValIO.Generators.TypeScript.Zod.ZodTypeMapper(namingConverter);
+            var zodTemplateRegistry = new Core.Services.EmbeddedResourceTemplateRegistry(
+                typeof(ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator).Assembly,
+                "ValIO.Generators.TypeScript.Zod.Templates",
+                new Core.Services.TemplateCache(),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<Core.Services.EmbeddedResourceTemplateRegistry>.Instance);
+            var zodLogger = loggerFactory.CreateLogger<ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator>();
+            return new ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator(
+                namingConverter,
+                typeMapper,
+                zodTypeMapper,
+                zodTemplateRegistry,
+                zodLogger);
+        });
+        var serviceProvider = serviceCollection.BuildServiceProvider();
+        var schemaGeneratorFactory = new ValIO.Core.Factories.SchemaGeneratorFactory(serviceProvider);
+        
         _generator = new TypeScriptCodeGenerator(
             typeMapper,
             namingConverter,
             fileWriter,
             templateRegistry,
             logger,
-            loggerFactory);
+            loggerFactory,
+            schemaGeneratorFactory);
     }
 
     [Test]

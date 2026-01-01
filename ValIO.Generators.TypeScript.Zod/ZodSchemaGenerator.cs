@@ -13,7 +13,7 @@ namespace ValIO.Generators.TypeScript.Zod;
 /// <summary>
 /// Генератор Zod схем для валидации TypeScript моделей
 /// </summary>
-public class ZodSchemaGenerator
+public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
 {
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptTypeMapper _typeMapper;
@@ -111,6 +111,11 @@ public class ZodSchemaGenerator
 
         return _templateRegistry.Render("zod-enum.cshtml", templateData);
     }
+
+    /// <summary>
+    /// Поддерживаемая библиотека валидации
+    /// </summary>
+    public ValIO.Core.Models.ValidationLibrary ValidationLibrary => ValIO.Core.Models.ValidationLibrary.Zod;
 
     private static string? DecodeHtmlEntities(string? text)
     {

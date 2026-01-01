@@ -26,6 +26,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
     private readonly TemplateRegistryFactory? _templateRegistryFactory;
     private readonly ILogger<TypeScriptCodeGenerator> _logger;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly ValIO.Core.Factories.SchemaGeneratorFactory _schemaGeneratorFactory;
     private bool _templatesPreloaded;
     
     // Кэш для поиска операций (path + method -> operation)
@@ -41,6 +42,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         ITemplateRegistry templateRegistry,
         ILogger<TypeScriptCodeGenerator> logger,
         ILoggerFactory loggerFactory,
+        ValIO.Core.Factories.SchemaGeneratorFactory schemaGeneratorFactory,
         TemplateRegistryFactory? templateRegistryFactory = null)
     {
         _typeMapper = typeMapper;
@@ -51,6 +53,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         _templateRegistryFactory = templateRegistryFactory;
         _logger = logger;
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _schemaGeneratorFactory = schemaGeneratorFactory ?? throw new ArgumentNullException(nameof(schemaGeneratorFactory));
         _templatesPreloaded = false;
     }
 
@@ -1755,99 +1758,22 @@ public class TypeScriptCodeGenerator : ICodeGenerator
     {
         var files = new Dictionary<string, string>();
         
-        _logger.LogDebug("Starting Zod schema generation. Models: {ModelCount}, Enums: {EnumCount}", models.Count, enums.Count);
+        _logger.LogDebug("Starting schema generation. Models: {ModelCount}, Enums: {EnumCount}", models.Count, enums.Count);
         
-        // Создаем Zod генератор
-        // Используем полное имя типа, чтобы избежать циклической зависимости
-        Assembly? zodAssembly = null;
-        try
+        // Получаем генератор схем через фабрику
+        var schemaGenerator = _schemaGeneratorFactory.GetSchemaGenerator(options.ValidationLibrary);
+        
+        if (schemaGenerator == null)
         {
-            // Пытаемся загрузить сборку разными способами
-            try
-            {
-                // Сначала пытаемся загрузить из текущего домена приложения
-                zodAssembly = AppDomain.CurrentDomain.GetAssemblies()
-                    .FirstOrDefault(a => a.GetName().Name == "ValIO.Generators.TypeScript.Zod");
-                
-                if (zodAssembly == null)
-                {
-                    // Если не найдено, пытаемся загрузить по имени
-                    zodAssembly = Assembly.Load("ValIO.Generators.TypeScript.Zod");
-                }
-            }
-            catch
-            {
-                // Если не получилось, пытаемся загрузить из того же каталога, что и текущая сборка
-                var currentAssembly = Assembly.GetExecutingAssembly();
-                var currentAssemblyPath = Path.GetDirectoryName(currentAssembly.Location);
-                if (!string.IsNullOrEmpty(currentAssemblyPath))
-                {
-                    var zodAssemblyPath = Path.Combine(currentAssemblyPath, "ValIO.Generators.TypeScript.Zod.dll");
-                    if (File.Exists(zodAssemblyPath))
-                    {
-                        zodAssembly = Assembly.LoadFrom(zodAssemblyPath);
-                    }
-                }
-            }
-            
-            if (zodAssembly == null)
-            {
-                throw new FileNotFoundException("ValIO.Generators.TypeScript.Zod assembly not found");
-            }
-            
-            _logger.LogDebug("Successfully loaded ValIO.Generators.TypeScript.Zod assembly from location: {Location}", zodAssembly.Location);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to load ValIO.Generators.TypeScript.Zod assembly. Error: {Error}", ex.Message);
-            throw new InvalidOperationException("Failed to load ValIO.Generators.TypeScript.Zod assembly. Make sure the assembly is referenced and available in the output directory.", ex);
+            _logger.LogWarning("Schema generator not found for ValidationLibrary: {ValidationLibrary}", options.ValidationLibrary);
+            return files;
         }
         
-        var zodTypeMapperType = zodAssembly.GetType("ValIO.Generators.TypeScript.Zod.ZodTypeMapper");
-        var zodSchemaGeneratorType = zodAssembly.GetType("ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator");
-        
-        if (zodTypeMapperType == null || zodSchemaGeneratorType == null)
-        {
-            _logger.LogError("Zod types not found. ZodTypeMapper: {ZodTypeMapper}, ZodSchemaGenerator: {ZodSchemaGenerator}", 
-                zodTypeMapperType != null, zodSchemaGeneratorType != null);
-            throw new InvalidOperationException("Zod types not found. Make sure ValIO.Generators.TypeScript.Zod assembly is loaded.");
-        }
-        
-        _logger.LogDebug("Found Zod types. Creating instances...");
-        
-        var zodTypeMapper = Activator.CreateInstance(zodTypeMapperType, _namingConverter);
-        
-        // Создаем отдельный ITemplateRegistry для Zod шаблонов
-        ITemplateRegistry zodTemplateRegistry;
-        if (_templateRegistryFactory != null)
-        {
-            zodTemplateRegistry = _templateRegistryFactory.CreateRegistry(zodAssembly);
-            // Предзагружаем шаблоны Zod
-            await zodTemplateRegistry.PreloadTemplatesAsync();
-        }
-        else
-        {
-            // Fallback: используем тот же реестр (может не работать, если шаблоны в другой сборке)
-            zodTemplateRegistry = _templateRegistry;
-        }
-        
-        // Создаем правильный logger для ZodSchemaGenerator через ILoggerFactory
-        var zodLogger = _loggerFactory.CreateLogger(zodSchemaGeneratorType);
-        
-        var zodSchemaGenerator = Activator.CreateInstance(zodSchemaGeneratorType,
-            _namingConverter,
-            _typescriptTypeMapper,
-            zodTypeMapper,
-            zodTemplateRegistry,
-            zodLogger) as dynamic;
-        
-        if (zodSchemaGenerator == null)
-        {
-            throw new InvalidOperationException("Failed to create ZodSchemaGenerator instance.");
-        }
+        _logger.LogDebug("Using schema generator: {GeneratorType} for {ValidationLibrary}", 
+            schemaGenerator.GetType().Name, options.ValidationLibrary);
 
-        // Генерируем Zod схемы для моделей
-        _logger.LogDebug("Generating Zod schemas for {Count} models", models.Count);
+        // Генерируем схемы для моделей
+        _logger.LogDebug("Generating schemas for {Count} models", models.Count);
         foreach (var model in models)
         {
             if (string.IsNullOrWhiteSpace(model.Name))
@@ -1858,8 +1784,8 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             
             try
             {
-                _logger.LogDebug("Generating Zod schema for model: {ModelName}", model.Name);
-                var schemaCode = (string)zodSchemaGenerator.GenerateSchema(model, schemaResolver);
+                _logger.LogDebug("Generating schema for model: {ModelName}", model.Name);
+                var schemaCode = schemaGenerator.GenerateSchema(model, schemaResolver);
                 var fileName = $"{_namingConverter.ToCamelCase(model.Name)}.schema.ts";
                 
                 string filePath;
@@ -1874,17 +1800,17 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 }
 
                 files[filePath] = schemaCode;
-                _logger.LogDebug("Generated Zod schema file: {FilePath}", filePath);
+                _logger.LogDebug("Generated schema file: {FilePath}", filePath);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to generate Zod schema for model: {ModelName}", model.Name);
+                _logger.LogError(ex, "Failed to generate schema for model: {ModelName}", model.Name);
                 throw;
             }
         }
 
-        // Генерируем Zod схемы для enum'ов
-        _logger.LogDebug("Generating Zod schemas for {Count} enums", enums.Count);
+        // Генерируем схемы для enum'ов
+        _logger.LogDebug("Generating schemas for {Count} enums", enums.Count);
         foreach (var apiEnum in enums)
         {
             if (string.IsNullOrWhiteSpace(apiEnum.Name))
@@ -1895,8 +1821,8 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             
             try
             {
-                _logger.LogDebug("Generating Zod schema for enum: {EnumName}", apiEnum.Name);
-                var schemaCode = (string)zodSchemaGenerator.GenerateEnumSchema(apiEnum);
+                _logger.LogDebug("Generating schema for enum: {EnumName}", apiEnum.Name);
+                var schemaCode = schemaGenerator.GenerateEnumSchema(apiEnum);
                 var fileName = $"{_namingConverter.ToCamelCase(apiEnum.Name)}.schema.ts";
                 
                 string filePath;
@@ -1911,16 +1837,16 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 }
 
                 files[filePath] = schemaCode;
-                _logger.LogDebug("Generated Zod schema file: {FilePath}", filePath);
+                _logger.LogDebug("Generated schema file: {FilePath}", filePath);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", apiEnum.Name);
+                _logger.LogError(ex, "Failed to generate schema for enum: {EnumName}", apiEnum.Name);
                 throw;
             }
         }
 
-        _logger.LogInformation("Successfully generated {Count} Zod schema files", files.Count);
+        _logger.LogInformation("Successfully generated {Count} schema files", files.Count);
         return files;
     }
 
