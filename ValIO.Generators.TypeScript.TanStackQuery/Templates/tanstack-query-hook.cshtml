@@ -24,7 +24,10 @@
     string FormatParameter(TypeScriptParameterTemplateData param)
     {
         var optional = param.IsRequired ? "" : "?";
-        return $"{param.VariableName}{optional}: {FormatType(param.TypeInfo)}";
+        var typeName = FormatType(param.TypeInfo);
+        // Убираем ? из типа, если он там есть (для nullable типов), так как optional уже добавлен к имени параметра
+        typeName = typeName.TrimEnd('?');
+        return $"{param.VariableName}{optional}: {typeName}";
     }
     
     string BuildPath(string path, IReadOnlyList<TypeScriptParameterTemplateData> pathParams)
@@ -84,13 +87,14 @@
             foreach (var formProp in operationTemplate.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
-                allParams.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
+                var formPropTypeName = FormatType(formProp.TypeInfo).TrimEnd('?');
+                allParams.Add($"{formProp.VariableName}{optional}: {formPropTypeName}");
             }
         }
         else
         {
             var optional = operationTemplate.RequestBodyTypeInfo != null && !operationTemplate.RequestBodyTypeInfo.IsNullable ? "" : "?";
-            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo) : "any";
+            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo).TrimEnd('?') : "any";
             allParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
@@ -190,6 +194,7 @@
     {
         queryFnParams.Add("axiosInstance");
     }
+    queryFnParams.Add("signal");
     queryFnParams.Add("timeout");
     var queryFnArgsStr = queryFnParams.Count > 0 ? "      " + string.Join(",\n      ", queryFnParams) : "";
     
@@ -224,38 +229,6 @@
     // Precompute path strings
     var axiosPath = BuildPath(operationTemplate.Path, pathParams);
     var fetchPath = BuildPath(operationTemplate.Path, pathParams);
-}
-
-@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-{
-@:import { AxiosInstance } from 'axios';
-@if (options.Axios != null && !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && !string.IsNullOrEmpty(options.Axios.CustomInstanceName))
-{
-@:import { @options.Axios.CustomInstanceName } from '@options.Axios.CustomInstancePath';
-}
-
-@Raw("import { useQuery, UseQueryOptions, UseQueryResult, useInfiniteQuery, UseInfiniteQueryOptions, UseInfiniteQueryResult, QueryFunction, QueryClient, InfiniteData } from '@tanstack/react-query';\n")
-@if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
-{
-@foreach (var typeName in Model.ImportedTypes)
-{
-@Raw($"import type {{ {typeName} }} from '{Model.ModelsPath}/{char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)}.model';\n")
-}
-@:
-}
-@if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && options.DeserializeWithSchemas && !string.IsNullOrEmpty(Model.ResponseSchemaName))
-{
-@:import { z } from 'zod';
-@if (!string.IsNullOrEmpty(Model.ModelsPath))
-{
-@Raw($"import {{ {Model.ResponseSchemaName} }} from '{Model.ModelsPath}/{Model.ResponseSchemaFileName}.schema';\n")
-}
-else
-{
-@Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
-}
-@:
-}
 }
 
 @if (!string.IsNullOrEmpty(operationTemplate.Summary))
@@ -487,10 +460,7 @@ else
 @Raw("      ...queryOptions,\n")
 @Raw("    },\n")
 @Raw("  );\n")
-@Raw("  return {\n")
-@Raw("    queryKey,\n")
-@Raw("    ...query,\n")
-@Raw("  };\n")
+@Raw("  return query;\n")
 @Raw("};\n")
 @Raw("\n")
 @Raw("// Query Options Helper\n")
@@ -542,7 +512,14 @@ else
     var infiniteHookSignature = $"export const {infiniteHookName} = <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, {awaitedReturnTypeName}, QueryKey, unknown>>;\n{axiosOption}\n  }},\n): UseInfiniteQueryResult<TData, TError> => {{\n";
 }
 @Raw(infiniteHookSignature)
+@if (string.IsNullOrEmpty(keyArgsStr))
+{
+@Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}(options);\n")
+}
+else
+{
 @Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}({keyArgsStr}, options);\n")
+}
 @Raw($"  const query = useInfiniteQuery(queryOptions);\n")
 @Raw(infiniteReturnLine)
 @Raw("};\n")
@@ -552,7 +529,14 @@ else
     var prefetchSignature = $"export const {prefetchFunctionName} = async <\n  TData = {awaitedReturnTypeName},\n  TError = Error,\n>(\n  queryClient: QueryClient,\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseQueryOptions<{awaitedReturnTypeName}, TError, TData>>;\n{axiosOption}\n  }},\n): Promise<QueryClient> => {{\n";
 }
 @Raw(prefetchSignature)
+@if (string.IsNullOrEmpty(keyArgsStr))
+{
+@Raw($"  const queryOptions = {queryOptionsFunctionName}(options);\n")
+}
+else
+{
 @Raw($"  const queryOptions = {queryOptionsFunctionName}({keyArgsStr}, options);\n")
+}
 @Raw($"  await queryClient.prefetchQuery(queryOptions);\n")
 @Raw($"  return queryClient;\n")
 @Raw("};\n")
@@ -561,7 +545,14 @@ else
     var prefetchInfiniteSignature = $"export const {prefetchInfiniteFunctionName} = async <\n  TData = InfiniteData<{awaitedReturnTypeName}, unknown>,\n  TError = Error,\n>(\n  queryClient: QueryClient,\n{hookParamsStr}\n  options?: {{\n    query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, {awaitedReturnTypeName}, QueryKey, unknown>>;\n{axiosOption}\n  }},\n): Promise<QueryClient> => {{\n";
 }
 @Raw(prefetchInfiniteSignature)
+@if (string.IsNullOrEmpty(keyArgsStr))
+{
+@Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}(options);\n")
+}
+else
+{
 @Raw($"  const queryOptions = {infiniteQueryOptionsFunctionName}({keyArgsStr}, options);\n")
+}
 @Raw($"  await queryClient.prefetchInfiniteQuery(queryOptions);\n")
 @Raw($"  return queryClient;\n")
 @Raw("};\n")

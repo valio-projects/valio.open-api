@@ -23,7 +23,10 @@
     string FormatParameter(TypeScriptParameterTemplateData param)
     {
         var optional = param.IsRequired ? "" : "?";
-        return $"{param.VariableName}{optional}: {FormatType(param.TypeInfo)}";
+        var typeName = FormatType(param.TypeInfo);
+        // Убираем ? из типа, если он там есть (для nullable типов), так как optional уже добавлен к имени параметра
+        typeName = typeName.TrimEnd('?');
+        return $"{param.VariableName}{optional}: {typeName}";
     }
     
     string BuildPath(string path, IReadOnlyList<TypeScriptParameterTemplateData> pathParams)
@@ -53,52 +56,6 @@
     var pathParams = operationTemplate.PathParameters;
     var queryParams = operationTemplate.QueryParameters;
     var headerParams = operationTemplate.HeaderParameters;
-}
-
-@if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-{
-@:import { AxiosInstance } from 'axios';
-@if (options.Axios != null && !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && !string.IsNullOrEmpty(options.Axios.CustomInstanceName))
-{
-@:import { @options.Axios.CustomInstanceName } from '@options.Axios.CustomInstancePath';
-}
-
-@Raw("import { useMutation, UseMutationOptions, UseMutationResult } from '@tanstack/react-query';\n")
-@if (Model.ImportedTypes != null && Model.ImportedTypes.Count > 0 && Model.ModelsPath != null)
-{
-@foreach (var typeName in Model.ImportedTypes)
-{
-@Raw($"import type {{ {typeName} }} from '{Model.ModelsPath}/{char.ToLowerInvariant(typeName[0]) + typeName.Substring(1)}.model';\n")
-}
-@Raw("\n")
-}
-@if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && (options.SerializeWithSchemas || options.DeserializeWithSchemas))
-{
-@Raw("import { z } from 'zod';\n")
-@if (!string.IsNullOrEmpty(Model.RequestSchemaName))
-{
-@if (!string.IsNullOrEmpty(Model.ModelsPath))
-{
-@Raw($"import {{ {Model.RequestSchemaName} }} from '{Model.ModelsPath}/{Model.RequestSchemaFileName}.schema';\n")
-}
-else
-{
-@Raw($"import {{ {Model.RequestSchemaName} }} from '../models/{Model.RequestSchemaFileName}.schema';\n")
-}
-}
-@if (!string.IsNullOrEmpty(Model.ResponseSchemaName))
-{
-@if (!string.IsNullOrEmpty(Model.ModelsPath))
-{
-@Raw($"import {{ {Model.ResponseSchemaName} }} from '{Model.ModelsPath}/{Model.ResponseSchemaFileName}.schema';\n")
-}
-else
-{
-@Raw($"import {{ {Model.ResponseSchemaName} }} from '../models/{Model.ResponseSchemaFileName}.schema';\n")
-}
-}
-}
-@:
 }
 
 @if (!string.IsNullOrEmpty(operationTemplate.Summary))
@@ -351,6 +308,13 @@ else
 @Raw("\n")
 }
 @{
+    // Проверяем, используется ли custom axios instance (определяем в начале блока, чтобы была доступна везде)
+    var hasCustomAxiosInstance = options.HttpClientLibrary == HttpClientLibrary.Axios && 
+        options.Axios != null && 
+        !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && 
+        !string.IsNullOrEmpty(options.Axios.CustomInstanceName);
+    
+    // Формируем TVariables - объект с полями параметров
     var mutationVars = new List<string>();
     mutationVars.AddRange(pathParams.Select(FormatParameter));
     mutationVars.AddRange(queryParams.Select(FormatParameter));
@@ -362,107 +326,120 @@ else
             foreach (var formProp in operationTemplate.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
-                mutationVars.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
+                var formPropTypeName = FormatType(formProp.TypeInfo).TrimEnd('?');
+                mutationVars.Add($"{formProp.VariableName}{optional}: {formPropTypeName}");
             }
         }
         else
         {
             var optional = operationTemplate.RequestBodyTypeInfo != null && !operationTemplate.RequestBodyTypeInfo.IsNullable ? "" : "?";
-            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo) : "any";
+            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo).TrimEnd('?') : "any";
+            // В orval для request body используется "data", но мы используем RequestBodyParameter
             mutationVars.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
         }
     }
     var mutationVarsStr = mutationVars.Count > 0 ? "    " + string.Join(";\n    ", mutationVars) : "";
     
-    var hookParams = new List<string>();
-    hookParams.AddRange(pathParams.Select(FormatParameter));
-    hookParams.AddRange(queryParams.Select(FormatParameter));
-    hookParams.AddRange(headerParams.Select(FormatParameter));
-    if (operationTemplate.HasRequestBody)
-    {
-        if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
-        {
-            foreach (var formProp in operationTemplate.FormDataProperties)
-            {
-                var optional = formProp.IsRequired ? "" : "?";
-                hookParams.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
-            }
-        }
-        else
-        {
-            var optional = operationTemplate.RequestBodyTypeInfo != null && !operationTemplate.RequestBodyTypeInfo.IsNullable ? "" : "?";
-            var typeStr = operationTemplate.RequestBodyTypeInfo != null ? FormatType(operationTemplate.RequestBodyTypeInfo) : "any";
-            hookParams.Add($"{operationTemplate.RequestBodyParameter}{optional}: {typeStr}");
-        }
-    }
-    var hookParamsStr = hookParams.Count > 0 ? "  " + string.Join(",\n  ", hookParams) + "," : "";
-    
     // Формируем опции для axios или fetch
     var axiosOptions = new List<string>();
     if (options.HttpClientLibrary == HttpClientLibrary.Axios)
     {
-        axiosOptions.Add("    signal?: AbortSignal;");
         axiosOptions.Add("    timeout?: number;");
-        if (options.Axios != null && !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && !string.IsNullOrEmpty(options.Axios.CustomInstanceName))
+        if (hasCustomAxiosInstance)
         {
             axiosOptions.Add("    axiosInstance?: AxiosInstance;");
         }
     }
     else
     {
-        axiosOptions.Add("    signal?: AbortSignal;");
         axiosOptions.Add("    timeout?: number;");
         axiosOptions.Add("    fetch?: RequestInit;");
     }
     var axiosOptionStr = string.Join("\n", axiosOptions);
+    
+    var functionNamePascal = char.ToUpperInvariant(clientMethodName[0]) + clientMethodName.Substring(1);
+    var mutationOptionsFunctionName = $"get{functionNamePascal}MutationOptions";
     var responseType = GetResponseType(operationTemplate.ReturnTypeInfo);
-    var mutationSignature = "export const " + hookName + " = <\n  TData = " + awaitedReturnTypeName + ",\n  TError = Error,\n  TVariables = {\n" + mutationVarsStr + "\n  },\n>(\n" + hookParamsStr + "\n  options?: {\n    mutation?: UseMutationOptions<TData, TError, TVariables>;\n" + axiosOptionStr + "\n  },\n): UseMutationResult<TData, TError, TVariables> => {\n";
-}
-@Raw(mutationSignature)
-@{
-    var destructuringPart = options.HttpClientLibrary == HttpClientLibrary.Axios 
-        ? ", signal, timeout, axiosInstance" 
-        : ", signal, timeout, fetch: fetchOptions";
-}
-@Raw($"  const {{ mutation: mutationOptions{destructuringPart} }} = options ?? {{}};\n")
-@Raw("\n")
-@Raw("  const mutationFn = async (variables: TVariables) => {\n")
-@Raw($"    return await {clientMethodName}(\n")
-@{
-    var fnArgs = new List<string>();
-    fnArgs.AddRange(pathParams.Select(p => $"variables.{p.VariableName}"));
-    fnArgs.AddRange(queryParams.Select(p => $"variables.{p.VariableName}"));
-    fnArgs.AddRange(headerParams.Select(p => $"variables.{p.VariableName}"));
+    
+    // Формируем деструктуризацию variables для mutationFn - это список имен полей для деструктуризации
+    var mutationFnVarProps = new List<string>();
+    mutationFnVarProps.AddRange(pathParams.Select(p => p.VariableName));
+    mutationFnVarProps.AddRange(queryParams.Select(p => p.VariableName));
+    mutationFnVarProps.AddRange(headerParams.Select(p => p.VariableName));
     if (operationTemplate.HasRequestBody)
     {
         if (operationTemplate.IsFormData && operationTemplate.FormDataProperties != null && operationTemplate.FormDataProperties.Count > 0)
         {
-            fnArgs.AddRange(operationTemplate.FormDataProperties.Select(p => $"variables.{p.VariableName}"));
+            mutationFnVarProps.AddRange(operationTemplate.FormDataProperties.Select(p => p.VariableName));
         }
         else
         {
-            fnArgs.Add($"variables.{operationTemplate.RequestBodyParameter}");
+            mutationFnVarProps.Add(operationTemplate.RequestBodyParameter);
         }
     }
-    // Порядок: сначала axiosInstance (если axios), затем signal, затем timeout
-    if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+    var mutationFnVarPropsStr = string.Join(", ", mutationFnVarProps);
+    
+    // Формируем аргументы для вызова клиентского метода - это те же имена, что и в деструктуризации
+    // (они будут ссылаться на деструктурированные переменные)
+    var clientMethodArgs = new List<string>(mutationFnVarProps);
+    
+    // Добавляем axiosInstance если используется custom instance
+    // В клиентском методе axiosInstance идет после параметров, но перед signal/timeout
+    if (hasCustomAxiosInstance)
     {
-        fnArgs.Add("axiosInstance");
+        clientMethodArgs.Add("requestOptions");
     }
-    fnArgs.Add("signal");
-    fnArgs.Add("timeout");
-    var fnArgsStr = fnArgs.Count > 0 ? "      " + string.Join(",\n      ", fnArgs) : "";
+    
+    var clientMethodArgsStr = string.Join(", ", clientMethodArgs);
 }
-@Raw($"{fnArgsStr}\n")
-@Raw("    );\n")
+@Raw($"export const {mutationOptionsFunctionName} = <\n  TError = Error,\n  TContext = unknown,\n>(options?: {{\n  mutation?: UseMutationOptions<\n    {awaitedReturnTypeName},\n    TError,\n    {{\n{mutationVarsStr}\n    }},\n    TContext\n  >;\n{axiosOptionStr}\n}}): UseMutationOptions<\n  {awaitedReturnTypeName},\n  TError,\n  {{\n{mutationVarsStr}\n  }},\n  TContext\n> => {{\n")
+@Raw($"  const mutationKey = [\"{clientMethodName}\"];\n")
+@{
+    var hasCustomAxiosInstanceForTemplate = options.HttpClientLibrary == HttpClientLibrary.Axios && 
+        options.Axios != null && 
+        !string.IsNullOrEmpty(options.Axios.CustomInstancePath) && 
+        !string.IsNullOrEmpty(options.Axios.CustomInstanceName);
+}
+@Raw("  const { mutation: mutationOptions")
+@if (hasCustomAxiosInstanceForTemplate)
+{
+@Raw(", axiosInstance: requestOptions")
+}
+@Raw(" } = options\n")
+@Raw("    ? options.mutation &&\n")
+@Raw("      \"mutationKey\" in options.mutation &&\n")
+@Raw("      options.mutation.mutationKey\n")
+@Raw("      ? options\n")
+@Raw("      : { ...options, mutation: { ...options.mutation, mutationKey } }\n")
+@Raw("    : { mutation: { mutationKey }")
+@if (hasCustomAxiosInstanceForTemplate)
+{
+@Raw(", axiosInstance: undefined")
+}
+@Raw(" };\n")
+@Raw("\n")
+@Raw("  const mutationFn: MutationFunction<\n")
+@Raw($"    {awaitedReturnTypeName},\n")
+@Raw("    {\n")
+@Raw($"{mutationVarsStr}\n")
+@Raw("    }\n")
+@Raw("  > = (props) => {\n")
+@Raw($"    const {{ {mutationFnVarPropsStr} }} = props ?? {{}};\n")
+@Raw("\n")
+@Raw($"    return {clientMethodName}({clientMethodArgsStr});\n")
 @Raw("  };\n")
 @Raw("\n")
-@Raw("  const mutation = useMutation<TData, TError, TVariables>(\n")
-@Raw("    mutationFn,\n")
-@Raw("    {\n")
-@Raw("      ...mutationOptions,\n")
-@Raw("    },\n")
-@Raw("  );\n")
+@Raw("  return { mutationFn, ...mutationOptions };\n")
+@Raw("};\n")
 @Raw("\n")
-@Raw("  return mutation;\n")
+@if (!string.IsNullOrEmpty(operationTemplate.Summary))
+{
+@Raw("/**\n")
+@Raw($" * {operationTemplate.Summary}\n")
+@Raw(" */\n")
+}
+@Raw($"export const {hookName} = <\n  TError = Error,\n  TContext = unknown,\n>(\n  options?: {{\n    mutation?: UseMutationOptions<\n      {awaitedReturnTypeName},\n      TError,\n      {{\n{mutationVarsStr}\n      }},\n      TContext\n    >;\n{axiosOptionStr}\n  }},\n  queryClient?: QueryClient,\n): UseMutationResult<\n  {awaitedReturnTypeName},\n  TError,\n  {{\n{mutationVarsStr}\n  }},\n  TContext\n> => {{\n")
+@Raw($"  const mutationOptions = {mutationOptionsFunctionName}(options);\n")
+@Raw("\n")
+@Raw("  return useMutation(mutationOptions, queryClient);\n")
 @Raw("};\n")

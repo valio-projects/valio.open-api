@@ -1,6 +1,6 @@
 {
   "language": "TypeScript",
-  "outputPath": "C:\\Workspace\\Talent\\microservices.chessboard.integrations.bitrix24\\front-end\\src\\swagger\\chessboard\\catalog",
+  "outputPath": "C:\\Workspace\\Talent\\microservices.chessboard.integrations.bitrix24\\front-end\\src\\swagger\\chessboard\\catalog-valio",
   "namespace": "Generated",
   "generateEnums": true,
   "generateModels": true,

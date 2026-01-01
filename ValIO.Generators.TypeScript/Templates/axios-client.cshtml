@@ -126,7 +126,7 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @:    params: {
 @foreach (var queryParam in operation.QueryParameters)
 {
-@:      @queryParam.Name: @(queryParam.VariableName),
+@:      '@queryParam.Name': @(queryParam.VariableName),
 }
 @:    },
 }

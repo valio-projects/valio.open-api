@@ -1968,7 +1968,18 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         
         if (hasMutation)
         {
-            tanStackImports.AddRange(new[] { "useMutation", "UseMutationOptions", "UseMutationResult" });
+            tanStackImports.AddRange(new[] { "useMutation", "UseMutationOptions", "UseMutationResult", "MutationFunction" });
+            // QueryClient уже добавлен выше, если есть queries, но нам он нужен и для mutations
+            if (!hasQuery)
+            {
+                tanStackImports.Add("QueryClient");
+            }
+        }
+        
+        // Импорт AxiosInstance если используется Axios
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios && (hasQuery || hasMutation))
+        {
+            imports.Insert(0, "import { AxiosInstance } from 'axios';");
         }
         
         // Удаляем дубликаты и сортируем для консистентности
