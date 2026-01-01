@@ -96,14 +96,24 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
             }
         }
 
+        // Убираем циклические зависимости (схема не должна импортировать саму себя)
+        var schemaDependenciesFiltered = allSchemaDependencies
+            .Where(dep => !dep.Equals(schemaName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x)
+            .ToList();
+        var enumDependenciesFiltered = allEnumDependencies
+            .Where(dep => !dep.Equals(schemaName, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x)
+            .ToList();
+        
         var templateData = new ZodSchemaTemplateData
         {
             SchemaName = schemaName,
             TypeName = typeName,
             Description = DecodeHtmlEntities(model.Description),
             Properties = properties,
-            SchemaDependencies = allSchemaDependencies.OrderBy(x => x).ToList(),
-            EnumDependencies = allEnumDependencies.OrderBy(x => x).ToList(),
+            SchemaDependencies = schemaDependenciesFiltered,
+            EnumDependencies = enumDependenciesFiltered,
             NamingConverter = _namingConverter
         };
 

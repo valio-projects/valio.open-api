@@ -105,10 +105,46 @@ public class ZodTypeMapper
         // Обрабатываем объекты
         if (resolvedSchema2.Type.HasValue && resolvedSchema2.Type.Value.HasFlag(JsonSchemaType.Object))
         {
+            // Проверяем, есть ли у объекта ссылка на схему (проверяем оригинальную схему ДО разрешения)
+            // Это важно для вложенных объектов, которые должны быть отдельными схемами
+            string? objectSchemaName = null;
+            if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> objectRefHolder)
+            {
+                var objectRef = objectRefHolder.Reference;
+                if (objectRef != null && !string.IsNullOrEmpty(objectRef.Id))
+                {
+                    objectSchemaName = objectRef.Id;
+                }
+            }
+            
+            if (string.IsNullOrEmpty(objectSchemaName))
+            {
+                objectSchemaName = schemaResolver.GetSchemaName(schema, string.Empty);
+            }
+            
+            // Если у объекта есть имя схемы и это не просто "object", создаем ссылку на схему
+            if (!string.IsNullOrEmpty(objectSchemaName) && objectSchemaName != "object")
+            {
+                var typeName = _namingConverter.ToPascalCase(objectSchemaName);
+                var schemaName = $"{typeName}Schema";
+                result.ZodSchema = schemaName;
+                
+                // Проверяем, является ли это enum
+                if (resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0)
+                {
+                    result.EnumDependencies.Add(schemaName);
+                }
+                else
+                {
+                    result.SchemaDependencies.Add(schemaName);
+                }
+                
+                return result;
+            }
+            
+            // Если нет ссылки на схему, создаем inline схему
             if (resolvedSchema2.Properties != null && resolvedSchema2.Properties.Count > 0)
             {
-                // Для вложенных объектов создаем inline схему, но только если нет ссылки
-                // Если есть ссылка, она уже обработана выше
                 var props = new List<string>();
                 foreach (var prop in resolvedSchema2.Properties)
                 {

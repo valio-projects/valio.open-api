@@ -1754,7 +1754,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         result.Warnings = warnings;
     }
 
-    private async Task<Dictionary<string, string>> GenerateZodSchemasAsync(IReadOnlyList<ApiModel> models, IReadOnlyList<ApiEnum> enums, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    private  async Task<Dictionary<string, string>> GenerateZodSchemasAsync(IReadOnlyList<ApiModel> models, IReadOnlyList<ApiEnum> enums, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
     {
         var files = new Dictionary<string, string>();
         
@@ -1772,7 +1772,11 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         _logger.LogDebug("Using schema generator: {GeneratorType} for {ValidationLibrary}", 
             schemaGenerator.GetType().Name, options.ValidationLibrary);
 
-        // Генерируем схемы для моделей
+        // Создаем словарь для быстрого поиска моделей и enums по имени
+        var modelsByName = models.ToDictionary(m => _namingConverter.ToPascalCase(m.Name), StringComparer.OrdinalIgnoreCase);
+        var enumsByName = enums.ToDictionary(e => _namingConverter.ToPascalCase(e.Name), StringComparer.OrdinalIgnoreCase);
+        
+        // Генерируем схемы для моделей и собираем зависимости
         _logger.LogDebug("Generating schemas for {Count} models", models.Count);
         foreach (var model in models)
         {
@@ -1843,6 +1847,77 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 _logger.LogError(ex, "Failed to generate schema for enum: {EnumName}", apiEnum.Name);
                 throw;
+            }
+        }
+
+        // Генерируем недостающие схемы для зависимостей, которые не являются основными моделями
+        // Это нужно для вложенных схем, которые не были извлечены как отдельные модели
+        // Проверяем, что все зависимости имеют соответствующие файлы
+        // Если зависимость ссылается на схему, которая существует в document.Components.Schemas,
+        // но не была сгенерирована, нужно её сгенерировать
+        if (document.Components?.Schemas != null)
+        {
+            var modelsPathForMissing = config.FileOrganization.SeparateModels ? (config.FileOrganization.ModelsPath ?? "models") : null;
+            
+            foreach (var schemaEntry in document.Components.Schemas)
+            {
+                var schemaName = schemaEntry.Key;
+                var sanitizedName = _namingConverter.SanitizeIdentifier(schemaName);
+                var pascalName = _namingConverter.ToPascalCase(sanitizedName);
+                var camelName = _namingConverter.ToCamelCase(sanitizedName);
+                var fileName = $"{camelName}.schema.ts";
+                
+                string filePath;
+                if (config.FileOrganization.SeparateModels && modelsPathForMissing != null)
+                {
+                    filePath = Path.Combine(config.OutputPath, modelsPathForMissing, fileName);
+                }
+                else
+                {
+                    filePath = Path.Combine(config.OutputPath, fileName);
+                }
+                
+                // Если файл еще не создан, проверяем, нужно ли его создать
+                if (!files.ContainsKey(filePath))
+                {
+                    // Проверяем, является ли это моделью или enum'ом
+                    if (modelsByName.ContainsKey(pascalName))
+                    {
+                        // Модель уже обработана
+                        continue;
+                    }
+                    
+                    if (enumsByName.ContainsKey(pascalName))
+                    {
+                        // Enum уже обработан
+                        continue;
+                    }
+                    
+                    // Это может быть вложенная схема, которая не была извлечена как отдельная модель
+                    // Пытаемся создать модель из схемы
+                    try
+                    {
+                        var modelExtractor = new ValIO.Core.Services.ModelExtractor(schemaResolver, _namingConverter);
+                        var extractedModel = modelExtractor.ExtractModel(schemaEntry.Value, schemaName);
+                        
+                        // Проверяем, не является ли это enum'ом
+                        var resolvedSchema = schemaResolver.ResolveSchema(schemaEntry.Value);
+                        if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
+                        {
+                            // Это enum, пропускаем (enums уже обработаны)
+                            continue;
+                        }
+                        
+                        // Генерируем схему для этой модели
+                        _logger.LogDebug("Generating missing schema for: {SchemaName}", schemaName);
+                        var schemaCode = schemaGenerator.GenerateSchema(extractedModel, schemaResolver);
+                        files[filePath] = schemaCode;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to generate missing schema for: {SchemaName}", schemaName);
+                    }
+                }
             }
         }
 
