@@ -95,6 +95,26 @@ public class TypeScriptOperationTemplateData
     /// Свойства form-data
     /// </summary>
     public IReadOnlyList<TypeScriptFormDataPropertyTemplateData>? FormDataProperties { get; set; }
+    
+    /// <summary>
+    /// Имя схемы для валидации request body (например, "CreateUserSchema")
+    /// </summary>
+    public string? RequestSchemaName { get; set; }
+    
+    /// <summary>
+    /// Имя файла схемы для request body (для импорта, например, "createUser")
+    /// </summary>
+    public string? RequestSchemaFileName { get; set; }
+    
+    /// <summary>
+    /// Имя схемы для валидации response (например, "UserSchema")
+    /// </summary>
+    public string? ResponseSchemaName { get; set; }
+    
+    /// <summary>
+    /// Имя файла схемы для response (для импорта, например, "user")
+    /// </summary>
+    public string? ResponseSchemaFileName { get; set; }
 }
 
 /// <summary>

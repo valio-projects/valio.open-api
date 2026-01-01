@@ -580,22 +580,9 @@ else
 @Raw(destructuringLine)
 @Raw($"  const queryKey = queryOptions?.queryKey ?? {Model.QueryKeyFunctionName}({keyArgsStr});\n")
 @Raw($"  const queryFn: QueryFunction<{awaitedReturnTypeName}> = ({{ signal }}) => {{\n")
-@if (options.ModelFormat == ModelFormat.ValidationSchemas && options.ValidationLibrary == ValidationLibrary.Zod && options.DeserializeWithSchemas)
-{
-@Raw($"    return {clientMethodName}(\n")
-    @Raw(queryFnArgsStr)
-@Raw("    ).then(response => {\n")
-@Raw("      // Десериализация и валидация через Zod схему\n")
-@Raw($"      const schema = {Model.ResponseSchemaName};\n")
-@Raw("      return schema.parse(response);\n")
-@Raw("    });\n")
-}
-else
-{
 @Raw($"    return {clientMethodName}(\n")
     @Raw(queryFnArgsStr)
 @Raw("    );\n")
-}
 @Raw("  };\n")
 @Raw($"  const query = useQuery<{awaitedReturnTypeName}, TError, TData>(\n")
 @Raw("    {\n")

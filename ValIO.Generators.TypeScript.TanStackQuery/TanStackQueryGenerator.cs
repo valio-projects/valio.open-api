@@ -55,28 +55,11 @@ public class TanStackQueryGenerator
         var hookName = GenerateHookName(operationId, isMutation: false);
         var functionName = _namingConverter.ToCamelCase(operationId);
 
-        // Определяем имена схем для валидации response
-        string? responseSchemaName = null;
-        string? responseSchemaFileName = null;
-        if (options.ModelFormat == ModelFormat.ValidationSchemas && 
-            options.ValidationLibrary == ValidationLibrary.Zod && 
-            options.DeserializeWithSchemas)
-        {
-            var responseTypeName = operationTemplate.ReturnTypeInfo.IsTask && 
-                operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0
-                ? operationTemplate.ReturnTypeInfo.GenericArguments[0].FullTypeName
-                : operationTemplate.ReturnTypeInfo.FullTypeName;
-            
-            // Извлекаем имя типа без массивов и дженериков
-            var cleanTypeName = responseTypeName.Split('<')[0].Split('[')[0].Trim();
-            responseSchemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
-            responseSchemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
-        }
-
         // Вычисляем имя функции для query key
         var queryKeyFunctionName = $"get{_namingConverter.ToPascalCase(functionName)}QueryKey";
 
         // Создаем данные для шаблона
+        // Схемы валидации больше не используются здесь - валидация происходит в axios клиенте
         var templateData = new TanStackQueryHookTemplateData
         {
             HookName = hookName,
@@ -87,8 +70,8 @@ public class TanStackQueryGenerator
             IsQuery = true,
             IsMutation = false,
             Options = options,
-            ResponseSchemaName = responseSchemaName,
-            ResponseSchemaFileName = responseSchemaFileName,
+            ResponseSchemaName = null,
+            ResponseSchemaFileName = null,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
             ModelsPath = modelsPath,
             ClientMethodName = clientMethodName,
@@ -122,40 +105,8 @@ public class TanStackQueryGenerator
         var hookName = GenerateHookName(operationId, isMutation: true);
         var functionName = _namingConverter.ToCamelCase(operationId);
 
-        // Определяем имена схем для валидации request body
-        string? requestSchemaName = null;
-        string? requestSchemaFileName = null;
-        if (options.ModelFormat == ModelFormat.ValidationSchemas && 
-            options.ValidationLibrary == ValidationLibrary.Zod && 
-            options.SerializeWithSchemas &&
-            operationTemplate.HasRequestBody &&
-            operationTemplate.RequestBodyTypeInfo != null)
-        {
-            var requestTypeName = operationTemplate.RequestBodyTypeInfo.FullTypeName;
-            // Извлекаем имя типа без массивов и дженериков
-            var cleanTypeName = requestTypeName.Split('<')[0].Split('[')[0].Trim();
-            requestSchemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
-            requestSchemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
-        }
-
-        // Определяем имена схем для валидации response
-        string? responseSchemaName = null;
-        string? responseSchemaFileName = null;
-        if (options.ModelFormat == ModelFormat.ValidationSchemas && 
-            options.ValidationLibrary == ValidationLibrary.Zod && 
-            options.DeserializeWithSchemas)
-        {
-            var responseTypeName = operationTemplate.ReturnTypeInfo.IsTask && 
-                operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0
-                ? operationTemplate.ReturnTypeInfo.GenericArguments[0].FullTypeName
-                : operationTemplate.ReturnTypeInfo.FullTypeName;
-            
-            // Извлекаем имя типа без массивов и дженериков
-            var cleanTypeName = responseTypeName.Split('<')[0].Split('[')[0].Trim();
-            responseSchemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
-            responseSchemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
-        }
-
+        // Создаем данные для шаблона
+        // Схемы валидации больше не используются здесь - валидация происходит в axios клиенте
         var templateData = new TanStackQueryHookTemplateData
         {
             HookName = hookName,
@@ -165,10 +116,10 @@ public class TanStackQueryGenerator
             IsQuery = false,
             IsMutation = true,
             Options = options,
-            RequestSchemaName = requestSchemaName,
-            RequestSchemaFileName = requestSchemaFileName,
-            ResponseSchemaName = responseSchemaName,
-            ResponseSchemaFileName = responseSchemaFileName,
+            RequestSchemaName = null,
+            RequestSchemaFileName = null,
+            ResponseSchemaName = null,
+            ResponseSchemaFileName = null,
             ImportedTypes = importedTypes ?? Array.Empty<string>(),
             ModelsPath = modelsPath,
             ClientMethodName = clientMethodName,

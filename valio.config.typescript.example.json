@@ -7,7 +7,7 @@
   "generateClients": true,
   "options": {
     "typescript": {
-      "modelFormat": "Interfaces",
+      "modelFormat": "ValidationSchemas",
       "validationLibrary": "Zod",
       "httpClientLibrary": "Axios",
       "useTanStackQuery": true,

@@ -1586,6 +1586,68 @@ public class TypeScriptCodeGenerator : ICodeGenerator
 
         var returnTypeInfo = DetermineReturnTypeInfo(operation, document, schemaResolver);
 
+        // Определяем схемы для валидации request body (если включено SerializeWithSchemas)
+        string? requestSchemaName = null;
+        string? requestSchemaFileName = null;
+        if (options.ModelFormat == ModelFormat.ValidationSchemas &&
+            options.ValidationLibrary == ValidationLibrary.Zod &&
+            options.SerializeWithSchemas &&
+            operation.RequestBody != null &&
+            requestBodyTypeInfo != null)
+        {
+            // Не создаем схему для Blob/File типов
+            var requestBaseType = requestBodyTypeInfo.BaseType;
+            if (!string.Equals(requestBaseType, "Blob", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(requestBaseType, "File", StringComparison.OrdinalIgnoreCase) &&
+                !requestBodyTypeInfo.IsFile)
+            {
+                var requestTypeName = requestBodyTypeInfo.FullTypeName;
+                // Извлекаем имя типа без массивов и дженериков
+                var cleanTypeName = requestTypeName.Split('<')[0].Split('[')[0].Trim();
+                // Проверяем еще раз на Blob/File после очистки
+                if (!string.Equals(cleanTypeName, "Blob", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(cleanTypeName, "File", StringComparison.OrdinalIgnoreCase))
+                {
+                    requestSchemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
+                    requestSchemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
+                }
+            }
+        }
+
+        // Определяем схемы для валидации response (если включено DeserializeWithSchemas)
+        string? responseSchemaName = null;
+        string? responseSchemaFileName = null;
+        if (options.ModelFormat == ModelFormat.ValidationSchemas &&
+            options.ValidationLibrary == ValidationLibrary.Zod &&
+            options.DeserializeWithSchemas)
+        {
+            var responseTypeInfo = returnTypeInfo.IsTask && returnTypeInfo.GenericArguments.Count > 0
+                ? returnTypeInfo.GenericArguments[0]
+                : returnTypeInfo;
+            
+            var responseTypeName = responseTypeInfo.FullTypeName;
+            
+            if (!string.IsNullOrEmpty(responseTypeName) && responseTypeName != "void")
+            {
+                // Не создаем схему для Blob/File типов
+                var responseBaseType = responseTypeInfo.BaseType;
+                if (!string.Equals(responseBaseType, "Blob", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(responseBaseType, "File", StringComparison.OrdinalIgnoreCase) &&
+                    !responseTypeInfo.IsFile)
+                {
+                    // Извлекаем имя типа без массивов и дженериков
+                    var cleanTypeName = responseTypeName.Split('<')[0].Split('[')[0].Trim();
+                    // Проверяем еще раз на Blob/File после очистки
+                    if (!string.Equals(cleanTypeName, "Blob", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(cleanTypeName, "File", StringComparison.OrdinalIgnoreCase))
+                    {
+                        responseSchemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
+                        responseSchemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
+                    }
+                }
+            }
+        }
+
         return new TypeScriptOperationTemplateData
         {
             MethodName = methodName,
@@ -1606,7 +1668,11 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             QueryParameters = queryParameters,
             HeaderParameters = headerParameters,
             IsFormData = isFormData,
-            FormDataProperties = formDataProperties.Count > 0 ? formDataProperties : null
+            FormDataProperties = formDataProperties.Count > 0 ? formDataProperties : null,
+            RequestSchemaName = requestSchemaName,
+            RequestSchemaFileName = requestSchemaFileName,
+            ResponseSchemaName = responseSchemaName,
+            ResponseSchemaFileName = responseSchemaFileName
         };
     }
 
@@ -2041,46 +2107,8 @@ public class TypeScriptCodeGenerator : ICodeGenerator
 
         // Собираем все используемые типы из всех операций
         var importedTypes = CollectUsedTypes(allOperationTemplates);
-
-        // Собираем все уникальные схемы для валидации
-        var requestSchemas = new HashSet<(string Name, string FileName)>();
-        var responseSchemas = new HashSet<(string Name, string FileName)>();
         
-        if (options.ModelFormat == ModelFormat.ValidationSchemas && 
-            options.ValidationLibrary == ValidationLibrary.Zod)
-        {
-            foreach (var operationTemplate in allOperationTemplates)
-            {
-                // Собираем request схемы
-                if (options.SerializeWithSchemas && 
-                    operationTemplate.HasRequestBody && 
-                    operationTemplate.RequestBodyTypeInfo != null)
-                {
-                    var requestTypeName = operationTemplate.RequestBodyTypeInfo.FullTypeName;
-                    var cleanTypeName = requestTypeName.Split('<')[0].Split('[')[0].Trim();
-                    var schemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
-                    var schemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
-                    requestSchemas.Add((schemaName, schemaFileName));
-                }
-                
-                // Собираем response схемы
-                if (options.DeserializeWithSchemas)
-                {
-                    var responseTypeName = operationTemplate.ReturnTypeInfo.IsTask && 
-                        operationTemplate.ReturnTypeInfo.GenericArguments.Count > 0
-                        ? operationTemplate.ReturnTypeInfo.GenericArguments[0].FullTypeName
-                        : operationTemplate.ReturnTypeInfo.FullTypeName;
-                    
-                    if (!string.IsNullOrEmpty(responseTypeName) && responseTypeName != "void")
-                    {
-                        var cleanTypeName = responseTypeName.Split('<')[0].Split('[')[0].Trim();
-                        var schemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
-                        var schemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
-                        responseSchemas.Add((schemaName, schemaFileName));
-                    }
-                }
-            }
-        }
+        // Схемы валидации больше не импортируются здесь - они используются только в axios клиенте
 
         // Генерируем импорты один раз в начале файла
         var imports = new List<string>();
@@ -2161,30 +2189,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
         }
         
-        // Импорт Zod и схем
-        if (options.ModelFormat == ModelFormat.ValidationSchemas && 
-            options.ValidationLibrary == ValidationLibrary.Zod && 
-            (requestSchemas.Count > 0 || responseSchemas.Count > 0))
-        {
-            imports.Add("import { z } from 'zod';");
-            
-            // Объединяем request и response схемы, чтобы избежать дублирования
-            var allSchemas = new HashSet<(string Name, string FileName)>();
-            allSchemas.UnionWith(requestSchemas);
-            allSchemas.UnionWith(responseSchemas);
-            
-            foreach (var (schemaName, schemaFileName) in allSchemas)
-            {
-                if (modelsImportPath != null)
-                {
-                    imports.Add($"import {{ {schemaName} }} from '{modelsImportPath}/{schemaFileName}.schema';");
-                }
-                else
-                {
-                    imports.Add($"import {{ {schemaName} }} from '../models/{schemaFileName}.schema';");
-                }
-            }
-        }
+        // Схемы валидации больше не импортируются здесь - они используются только в axios клиенте
 
         // Генерируем хуки без импортов
         for (int i = 0; i < operations.Count; i++)

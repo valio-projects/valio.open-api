@@ -56,6 +56,29 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 }
 @:
 }
+@{
+    // Собираем уникальные схемы для импорта из всех операций
+    var schemaImports = new HashSet<(string SchemaName, string SchemaFileName)>();
+    foreach (var operation in operations)
+    {
+        if (!string.IsNullOrEmpty(operation.RequestSchemaName) && !string.IsNullOrEmpty(operation.RequestSchemaFileName) && modelsPath != null)
+        {
+            schemaImports.Add((operation.RequestSchemaName, operation.RequestSchemaFileName));
+        }
+        if (!string.IsNullOrEmpty(operation.ResponseSchemaName) && !string.IsNullOrEmpty(operation.ResponseSchemaFileName) && modelsPath != null)
+        {
+            schemaImports.Add((operation.ResponseSchemaName, operation.ResponseSchemaFileName));
+        }
+    }
+}
+@if (schemaImports.Count > 0 && modelsPath != null)
+{
+@foreach (var schemaImport in schemaImports.OrderBy(x => x.SchemaName))
+{
+@:import { @schemaImport.SchemaName } from '@modelsPath/@(schemaImport.SchemaFileName).schema';
+}
+@:
+}
 
 @foreach (var operation in operations)
 {
@@ -109,22 +132,41 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
     {
         if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
-            foreach (var formProp in operation.FormDataProperties)
+            // Для form-data используем обычный TypeScript тип из моделей
+            if (!string.IsNullOrEmpty(operation.RequestSchemaName) && operation.RequestBodyTypeInfo != null)
             {
-                var optional = formProp.IsRequired ? "" : "?";
-                var paramStr = $"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}";
-                if (formProp.IsRequired)
+                var optional = operation.RequestBodyTypeInfo.IsNullable ? "?" : "";
+                var typeStr = FormatType(operation.RequestBodyTypeInfo);
+                var paramStr = $"{operation.RequestBodyParameter}{optional}: {typeStr}";
+                if (operation.RequestBodyTypeInfo.IsNullable)
                 {
-                    requiredParams.Add(paramStr);
+                    optionalParams.Add(paramStr);
                 }
                 else
                 {
-                    optionalParams.Add(paramStr);
+                    requiredParams.Add(paramStr);
+                }
+            }
+            else
+            {
+                foreach (var formProp in operation.FormDataProperties)
+                {
+                    var optional = formProp.IsRequired ? "" : "?";
+                    var paramStr = $"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}";
+                    if (formProp.IsRequired)
+                    {
+                        requiredParams.Add(paramStr);
+                    }
+                    else
+                    {
+                        optionalParams.Add(paramStr);
+                    }
                 }
             }
         }
         else
         {
+            // Для JSON body используем обычный TypeScript тип из моделей
             var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
             var typeStr = operation.RequestBodyTypeInfo != null ? FormatType(operation.RequestBodyTypeInfo) : "any";
             var paramStr = $"{operation.RequestBodyParameter}{optional}: {typeStr}";
@@ -199,6 +241,23 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 {
     @if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
     {
+        @if (!string.IsNullOrEmpty(operation.RequestSchemaName))
+        {
+@:    data: (() => {
+@:      // Валидация и конвертация через Zod схему
+@:      const dto = @(operation.RequestSchemaName).parse(@operation.RequestBodyParameter);
+@:      const formData = new FormData();
+@foreach (var formProp in operation.FormDataProperties)
+{
+@:      if (dto.@formProp.VariableName !== undefined && dto.@formProp.VariableName !== null) {
+@:        formData.append('@formProp.Name', dto.@formProp.VariableName);
+@:      }
+}
+@:      return formData;
+@:    })(),
+        }
+        else
+        {
 @:    data: (() => {
 @:      const formData = new FormData();
 @foreach (var formProp in operation.FormDataProperties)
@@ -216,10 +275,21 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 }
 @:      return formData;
 @:    })(),
+        }
     }
     else
     {
+        @if (!string.IsNullOrEmpty(operation.RequestSchemaName))
+        {
+@:    data: (() => {
+@:      // Валидация и конвертация через Zod схему
+@:      return @(operation.RequestSchemaName).parse(@operation.RequestBodyParameter);
+@:    })(),
+        }
+        else
+        {
 @:    data: @(operation.RequestBodyParameter),
+        }
     }
 }
 @if (hasCustomInstance)
@@ -245,7 +315,15 @@ var responseTypeInfo = operation.ReturnTypeInfo.IsTask && operation.ReturnTypeIn
 var shouldReturnData = !responseTypeInfo.IsVoid;
 @if (shouldReturnData)
 {
+    @if (!string.IsNullOrEmpty(operation.ResponseSchemaName))
+    {
+@:  // Валидация и конвертация через Zod схему
+@:  return @(operation.ResponseSchemaName).parse(response.data);
+    }
+    else
+    {
 @:  return response.data;
+    }
 }
 @:}
 @:
