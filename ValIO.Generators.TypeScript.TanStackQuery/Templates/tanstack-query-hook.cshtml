@@ -477,7 +477,7 @@ else
 @Raw($"    queryFn,\n")
 @Raw($"    enabled: true,\n")
 @Raw($"    ...queryOptions,\n")
-@Raw($"  }} as UseQueryOptions<Awaited<ReturnType<typeof {clientMethodName}>>, TError, TData> & {{ queryKey: QueryKey }};\n")
+@Raw($"  }} as UseQueryOptions<{awaitedReturnTypeName}, TError, TData> & {{ queryKey: QueryKey }};\n")
 @Raw("};\n")
 @Raw("\n")
 @Raw("// Infinite Query Support\n")

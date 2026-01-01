@@ -1927,10 +1927,18 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         // Генерируем импорты один раз в начале файла
         var imports = new List<string>();
         
+        // Типы для экспорта после импортов
+        var typeExports = new List<string>();
+        
+        // Создаем словарь для связи methodName -> operationTemplate для получения типов ответа
+        var methodToTemplateMap = new Dictionary<string, TypeScriptOperationTemplateData>();
+        
         // Импорт базовых методов из клиентских файлов
         var methodNames = new List<string>();
-        foreach (var operation in operations)
+        for (int i = 0; i < operations.Count; i++)
         {
+            var operation = operations[i];
+            var operationTemplate = allOperationTemplates[i];
             var operationId = string.IsNullOrWhiteSpace(operation.OperationId)
                 ? GenerateOperationId(operation.Path, operation.HttpMethod)
                 : operation.OperationId;
@@ -1938,6 +1946,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             if (!string.IsNullOrWhiteSpace(methodName) && !methodNames.Contains(methodName))
             {
                 methodNames.Add(methodName);
+                methodToTemplateMap[methodName] = operationTemplate;
             }
         }
         
@@ -1945,13 +1954,6 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         {
             var methodNamesStr = string.Join(", ", methodNames);
             imports.Add($"import {{ {methodNamesStr} }} from '{clientImportPath}';");
-            
-            // Экспортируем ReturnType и AwaitedReturnType для каждого метода
-            foreach (var methodName in methodNames)
-            {
-                imports.Add($"export type {char.ToUpperInvariant(methodName[0]) + methodName.Substring(1)}ReturnType = ReturnType<typeof {methodName}>;");
-                imports.Add($"export type {char.ToUpperInvariant(methodName[0]) + methodName.Substring(1)}AwaitedReturnType = Awaited<ReturnType<typeof {methodName}>>;");
-            }
         }
         
         // Импорт TanStack Query
@@ -2051,13 +2053,38 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
         }
 
-        // Объединяем импорты и хуки
+        // Генерируем type exports после всех импортов
+        foreach (var methodName in methodNames)
+        {
+            if (methodToTemplateMap.TryGetValue(methodName, out var operationTemplate))
+            {
+                var returnTypeName = char.ToUpperInvariant(methodName[0]) + methodName.Substring(1) + "ReturnType";
+                var awaitedReturnTypeName = char.ToUpperInvariant(methodName[0]) + methodName.Substring(1) + "AwaitedReturnType";
+                
+                // Получаем тип ответа из operationTemplate.ReturnType (это уже развернутый тип без Promise)
+                var responseType = operationTemplate.ReturnType;
+                
+                // Генерируем ReturnType как Promise<ResponseType>
+                typeExports.Add($"export type {returnTypeName} = Promise<{responseType}>;");
+                
+                // Генерируем AwaitedReturnType как Awaited<ReturnType>
+                typeExports.Add($"export type {awaitedReturnTypeName} = Awaited<{returnTypeName}>;");
+            }
+        }
+        
+        // Объединяем импорты, type exports и хуки
         var importsCode = string.Join("\n", imports);
+        var typeExportsCode = typeExports.Count > 0 ? "\n" + string.Join("\n", typeExports) : "";
         var hooksCode = string.Join("\n\n", hooks);
         
         if (!string.IsNullOrEmpty(importsCode))
         {
-            return importsCode + "\n\n" + hooksCode;
+            return importsCode + typeExportsCode + "\n\n" + hooksCode;
+        }
+        
+        if (!string.IsNullOrEmpty(typeExportsCode))
+        {
+            return typeExportsCode.TrimStart() + "\n\n" + hooksCode;
         }
         
         return hooksCode;
