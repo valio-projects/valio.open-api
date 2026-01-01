@@ -45,13 +45,7 @@ import { z } from 'zod';
     }
     @if (!string.IsNullOrEmpty(property.TypeScriptType))
     {
-        var tsType = property.TypeScriptType;
-        // Для циклических ссылок используем TypeName напрямую
-        if (property.ZodSchema.Contains($"z.lazy(() => {schemaName}"))
-        {
-            tsType = typeName;
-        }
-    @:  @property.Name@(property.IsRequired ? "" : "?") : @Raw(tsType);
+    @:  @property.Name@(property.IsRequired ? "" : "?") : @Raw(property.TypeScriptType);
     }
     else
     {

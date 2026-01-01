@@ -65,9 +65,31 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                 
                 // Проверяем, есть ли циклическая ссылка на саму схему
                 // z.lazy(() => SchemaName) означает, что схема ссылается сама на себя
-                if (mappingResult.ZodSchema.Contains("z.lazy(() =>") && mappingResult.ZodSchema.Contains(schemaName))
+                var isCircularProperty = mappingResult.ZodSchema.Contains("z.lazy(() =>") && mappingResult.ZodSchema.Contains(schemaName);
+                if (isCircularProperty)
                 {
                     hasCircularReference = true;
+                }
+                
+                // Получаем TypeScript тип для свойства (для генерации интерфейсов)
+                string? typescriptType = null;
+                if (isCircularProperty)
+                {
+                    // Для циклических ссылок используем TypeName схемы
+                    // Проверяем, является ли это массивом
+                    if (mappingResult.ZodSchema.StartsWith("z.array("))
+                    {
+                        typescriptType = $"{typeName}[]";
+                    }
+                    else
+                    {
+                        typescriptType = typeName;
+                    }
+                }
+                else
+                {
+                    // Для остальных свойств используем TypeMapper
+                    typescriptType = _typeMapper.MapPropertyType(propertySchema, property.IsRequired, schemaResolver);
                 }
                 
                 properties.Add(new ZodPropertySchemaTemplateData
@@ -75,7 +97,8 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                     Name = _namingConverter.ToCamelCase(property.Name),
                     ZodSchema = mappingResult.ZodSchema,
                     IsRequired = property.IsRequired,
-                    Description = DecodeHtmlEntities(property.Description)
+                    Description = DecodeHtmlEntities(property.Description),
+                    TypeScriptType = typescriptType
                 });
                 
                 // Собираем зависимости
@@ -94,9 +117,31 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                 
                 // Проверяем, есть ли циклическая ссылка на саму схему
                 // z.lazy(() => SchemaName) означает, что схема ссылается сама на себя
-                if (mappingResult.ZodSchema.Contains("z.lazy(() =>") && mappingResult.ZodSchema.Contains(schemaName))
+                var isCircularProperty = mappingResult.ZodSchema.Contains("z.lazy(() =>") && mappingResult.ZodSchema.Contains(schemaName);
+                if (isCircularProperty)
                 {
                     hasCircularReference = true;
+                }
+                
+                // Получаем TypeScript тип для свойства (для генерации интерфейсов)
+                string? typescriptType = null;
+                if (isCircularProperty)
+                {
+                    // Для циклических ссылок используем TypeName схемы
+                    // Проверяем, является ли это массивом
+                    if (mappingResult.ZodSchema.StartsWith("z.array("))
+                    {
+                        typescriptType = $"{typeName}[]";
+                    }
+                    else
+                    {
+                        typescriptType = typeName;
+                    }
+                }
+                else
+                {
+                    // Для остальных свойств используем TypeMapper
+                    typescriptType = _typeMapper.MapPropertyType(propertySchemaFromOriginal, property.IsRequired, schemaResolver);
                 }
                 
                 properties.Add(new ZodPropertySchemaTemplateData
@@ -104,7 +149,8 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                     Name = _namingConverter.ToCamelCase(property.Name),
                     ZodSchema = mappingResult.ZodSchema,
                     IsRequired = property.IsRequired,
-                    Description = DecodeHtmlEntities(property.Description)
+                    Description = DecodeHtmlEntities(property.Description),
+                    TypeScriptType = typescriptType
                 });
                 
                 // Собираем зависимости
