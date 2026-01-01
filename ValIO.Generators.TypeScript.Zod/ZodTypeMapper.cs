@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Zod.Models;
 
 namespace ValIO.Generators.TypeScript.Zod;
 
@@ -18,74 +19,129 @@ public class ZodTypeMapper
     }
 
     /// <summary>
-    /// Маппит схему OpenAPI в Zod схему
+    /// Маппит схему OpenAPI в Zod схему (старый метод для обратной совместимости)
     /// </summary>
     public string MapToZodSchema(IOpenApiSchema schema, ApiProperty property, ISchemaResolver schemaResolver)
     {
+        var result = MapToZodSchemaWithDependencies(schema, property, schemaResolver, new HashSet<string>());
+        return result.ZodSchema;
+    }
+
+    /// <summary>
+    /// Маппит схему OpenAPI в Zod схему с зависимостями
+    /// </summary>
+    public ZodSchemaMappingResult MapToZodSchemaWithDependencies(
+        IOpenApiSchema schema, 
+        ApiProperty property, 
+        ISchemaResolver schemaResolver,
+        HashSet<string> processedSchemas)
+    {
+        var result = new ZodSchemaMappingResult();
+        
         if (schema == null)
-            return "z.any()";
+        {
+            result.ZodSchema = "z.any()";
+            return result;
+        }
 
         // Проверяем на ссылку на схему ДО разрешения
+        string? referencedSchemaName = null;
         if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
             var reference = referenceHolder.Reference;
             if (reference != null && !string.IsNullOrEmpty(reference.Id))
             {
-                var typeName = _namingConverter.ToPascalCase(reference.Id);
-                return $"{typeName}Schema";
+                referencedSchemaName = reference.Id;
             }
         }
 
         // Также проверяем через GetSchemaName
-        var schemaName = schemaResolver.GetSchemaName(schema, string.Empty);
-        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
+        if (string.IsNullOrEmpty(referencedSchemaName))
         {
-            var typeName = _namingConverter.ToPascalCase(schemaName);
-            return $"{typeName}Schema";
+            referencedSchemaName = schemaResolver.GetSchemaName(schema, string.Empty);
         }
 
-        var resolvedSchema = schemaResolver.ResolveSchema(schema);
+        // Если есть ссылка на схему, используем её как зависимость
+        if (!string.IsNullOrEmpty(referencedSchemaName) && referencedSchemaName != "object")
+        {
+            var typeName = _namingConverter.ToPascalCase(referencedSchemaName);
+            var schemaName = $"{typeName}Schema";
+            result.ZodSchema = schemaName;
+            
+            // Проверяем, является ли это enum (через resolved schema)
+            var resolvedSchema = schemaResolver.ResolveSchema(schema);
+            if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
+            {
+                result.EnumDependencies.Add(schemaName);
+            }
+            else
+            {
+                result.SchemaDependencies.Add(schemaName);
+            }
+            
+            return result;
+        }
+
+        var resolvedSchema2 = schemaResolver.ResolveSchema(schema);
 
         // Обрабатываем массивы
-        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Array))
+        if (resolvedSchema2.Type.HasValue && resolvedSchema2.Type.Value.HasFlag(JsonSchemaType.Array))
         {
-            if (resolvedSchema.Items != null)
+            if (resolvedSchema2.Items != null)
             {
-                var itemSchema = MapToZodSchema(resolvedSchema.Items, property, schemaResolver);
-                return $"z.array({itemSchema})";
+                var itemResult = MapToZodSchemaWithDependencies(resolvedSchema2.Items, property, schemaResolver, processedSchemas);
+                result.ZodSchema = $"z.array({itemResult.ZodSchema})";
+                result.SchemaDependencies.UnionWith(itemResult.SchemaDependencies);
+                result.EnumDependencies.UnionWith(itemResult.EnumDependencies);
+                result.NestedSchemas.AddRange(itemResult.NestedSchemas);
             }
-            return "z.array(z.any())";
+            else
+            {
+                result.ZodSchema = "z.array(z.any())";
+            }
+            return result;
         }
 
         // Обрабатываем объекты
-        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object))
+        if (resolvedSchema2.Type.HasValue && resolvedSchema2.Type.Value.HasFlag(JsonSchemaType.Object))
         {
-            if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
+            if (resolvedSchema2.Properties != null && resolvedSchema2.Properties.Count > 0)
             {
-                // Для вложенных объектов создаем inline схему
+                // Для вложенных объектов создаем inline схему, но только если нет ссылки
+                // Если есть ссылка, она уже обработана выше
                 var props = new List<string>();
-                foreach (var prop in resolvedSchema.Properties)
+                foreach (var prop in resolvedSchema2.Properties)
                 {
-                    var propSchema = MapToZodSchema(prop.Value, new ApiProperty { Name = prop.Key }, schemaResolver);
-                    props.Add($"{_namingConverter.ToCamelCase(prop.Key)}: {propSchema}");
+                    var propResult = MapToZodSchemaWithDependencies(prop.Value, new ApiProperty { Name = prop.Key }, schemaResolver, processedSchemas);
+                    props.Add($"{_namingConverter.ToCamelCase(prop.Key)}: {propResult.ZodSchema}");
+                    
+                    // Собираем зависимости
+                    result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
+                    result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+                    result.NestedSchemas.AddRange(propResult.NestedSchemas);
                 }
-                return $"z.object({{{string.Join(", ", props)}}})";
+                result.ZodSchema = $"z.object({{{string.Join(", ", props)}}})";
             }
-
-            if (resolvedSchema.AdditionalProperties != null)
+            else if (resolvedSchema2.AdditionalProperties != null)
             {
-                var valueSchema = MapToZodSchema(resolvedSchema.AdditionalProperties, property, schemaResolver);
-                return $"z.record(z.string(), {valueSchema})";
+                var valueResult = MapToZodSchemaWithDependencies(resolvedSchema2.AdditionalProperties, property, schemaResolver, processedSchemas);
+                result.ZodSchema = $"z.record(z.string(), {valueResult.ZodSchema})";
+                result.SchemaDependencies.UnionWith(valueResult.SchemaDependencies);
+                result.EnumDependencies.UnionWith(valueResult.EnumDependencies);
+                result.NestedSchemas.AddRange(valueResult.NestedSchemas);
             }
-
-            return "z.record(z.string(), z.any())";
+            else
+            {
+                result.ZodSchema = "z.record(z.string(), z.any())";
+            }
+            return result;
         }
 
         // Обрабатываем примитивные типы
-        if (resolvedSchema.Type.HasValue)
+        if (resolvedSchema2.Type.HasValue)
         {
-            var type = resolvedSchema.Type.Value;
-            var format = resolvedSchema.Format?.ToLowerInvariant();
+            var type = resolvedSchema2.Type.Value;
+            var format = resolvedSchema2.Format?.ToLowerInvariant();
             var baseType = type & ~JsonSchemaType.Null;
 
             var zodType = (baseType, format) switch
@@ -124,9 +180,16 @@ public class ZodTypeMapper
             {
                 zodType += $".regex(/{property.Pattern}/)";
             }
-            if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
+            
+            // Если есть enum значения, создаем отдельную enum схему
+            if (resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0)
             {
-                var enumValues = resolvedSchema.Enum.Select(e => 
+                // Генерируем имя для enum схемы на основе контекста
+                var enumSchemaName = GenerateEnumSchemaName(property, resolvedSchema2, schemaResolver);
+                var enumSchemaNamePascal = _namingConverter.ToPascalCase(enumSchemaName);
+                var enumSchemaNameFull = $"{enumSchemaNamePascal}Schema";
+                
+                var enumValues = resolvedSchema2.Enum.Select(e => 
                 {
                     object? value = e;
                     
@@ -160,13 +223,43 @@ public class ZodTypeMapper
                         return b ? "true" : "false";
                     
                     return value?.ToString() ?? "null";
+                }).ToList();
+                
+                zodType = $"{enumSchemaNameFull}";
+                result.EnumDependencies.Add(enumSchemaNameFull);
+                
+                // Сохраняем информацию о вложенной enum схеме
+                result.NestedSchemas.Add(new ZodNestedSchemaInfo
+                {
+                    SchemaName = enumSchemaNameFull,
+                    TypeName = enumSchemaNamePascal,
+                    Description = resolvedSchema2.Description,
+                    Schema = resolvedSchema2,
+                    Properties = new List<ZodPropertySchemaTemplateData>() // Enum не имеет свойств
                 });
-                zodType = $"z.enum([{string.Join(", ", enumValues)}])";
             }
 
-            return zodType;
+            result.ZodSchema = zodType;
+            return result;
         }
 
-        return "z.any()";
+        result.ZodSchema = "z.any()";
+        return result;
+    }
+
+    /// <summary>
+    /// Генерирует имя для enum схемы на основе контекста
+    /// </summary>
+    private string GenerateEnumSchemaName(ApiProperty property, IOpenApiSchema schema, ISchemaResolver schemaResolver)
+    {
+        // Пытаемся получить имя из схемы
+        var schemaName = schemaResolver.GetSchemaName(schema, string.Empty);
+        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
+        {
+            return schemaName;
+        }
+        
+        // Если имя не найдено, генерируем на основе имени свойства
+        return $"{property.Name}Enum";
     }
 }

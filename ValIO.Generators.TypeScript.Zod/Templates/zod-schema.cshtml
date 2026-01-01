@@ -9,11 +9,27 @@
 }
 @if (!string.IsNullOrEmpty(description))
 {
-@://**
+@:/**
 @: * @Raw(description)
 @: */
 }
 import { z } from 'zod';
+@if (Model.SchemaDependencies != null && Model.SchemaDependencies.Count > 0)
+{
+@foreach (var dep in Model.SchemaDependencies)
+{
+    var depFileName = Model.SchemaNameToFileName(dep);
+@:import { @dep } from './@(depFileName).schema';
+}
+}
+@if (Model.EnumDependencies != null && Model.EnumDependencies.Count > 0)
+{
+@foreach (var dep in Model.EnumDependencies)
+{
+    var depFileName = Model.SchemaNameToFileName(dep);
+@:import { @dep } from './@(depFileName).schema';
+}
+}
 
 export const @schemaName = z.object({
 @foreach (var property in properties)

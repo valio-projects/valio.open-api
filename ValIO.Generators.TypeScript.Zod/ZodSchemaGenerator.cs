@@ -46,22 +46,53 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
         var schemaName = $"{_namingConverter.ToPascalCase(model.Name)}Schema";
         var typeName = _namingConverter.ToPascalCase(model.Name);
         var properties = new List<ZodPropertySchemaTemplateData>();
+        var allSchemaDependencies = new HashSet<string>();
+        var allEnumDependencies = new HashSet<string>();
+        var processedSchemas = new HashSet<string> { model.Name };
 
         foreach (var property in model.Properties)
         {
-            if (model.OriginalSchema?.Properties != null &&
-                model.OriginalSchema.Properties.TryGetValue(property.Name, out var propertySchema))
+            if (model.PropertySchemas != null &&
+                model.PropertySchemas.TryGetValue(property.Name, out var propertySchema))
             {
-                var resolvedSchema = schemaResolver.ResolveSchema(propertySchema);
-                var zodSchema = _zodTypeMapper.MapToZodSchema(resolvedSchema, property, schemaResolver);
+                var mappingResult = _zodTypeMapper.MapToZodSchemaWithDependencies(
+                    propertySchema, 
+                    property, 
+                    schemaResolver,
+                    processedSchemas);
                 
                 properties.Add(new ZodPropertySchemaTemplateData
                 {
                     Name = _namingConverter.ToCamelCase(property.Name),
-                    ZodSchema = zodSchema,
+                    ZodSchema = mappingResult.ZodSchema,
                     IsRequired = property.IsRequired,
                     Description = DecodeHtmlEntities(property.Description)
                 });
+                
+                // Собираем зависимости
+                allSchemaDependencies.UnionWith(mappingResult.SchemaDependencies);
+                allEnumDependencies.UnionWith(mappingResult.EnumDependencies);
+            }
+            else if (model.OriginalSchema?.Properties != null &&
+                model.OriginalSchema.Properties.TryGetValue(property.Name, out var propertySchemaFromOriginal))
+            {
+                var mappingResult = _zodTypeMapper.MapToZodSchemaWithDependencies(
+                    propertySchemaFromOriginal, 
+                    property, 
+                    schemaResolver,
+                    processedSchemas);
+                
+                properties.Add(new ZodPropertySchemaTemplateData
+                {
+                    Name = _namingConverter.ToCamelCase(property.Name),
+                    ZodSchema = mappingResult.ZodSchema,
+                    IsRequired = property.IsRequired,
+                    Description = DecodeHtmlEntities(property.Description)
+                });
+                
+                // Собираем зависимости
+                allSchemaDependencies.UnionWith(mappingResult.SchemaDependencies);
+                allEnumDependencies.UnionWith(mappingResult.EnumDependencies);
             }
         }
 
@@ -70,7 +101,9 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
             SchemaName = schemaName,
             TypeName = typeName,
             Description = DecodeHtmlEntities(model.Description),
-            Properties = properties
+            Properties = properties,
+            SchemaDependencies = allSchemaDependencies.OrderBy(x => x).ToList(),
+            EnumDependencies = allEnumDependencies.OrderBy(x => x).ToList()
         };
 
         return _templateRegistry.Render("zod-schema.cshtml", templateData);
