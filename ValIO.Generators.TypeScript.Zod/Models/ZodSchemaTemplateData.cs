@@ -33,6 +33,11 @@ public class ZodSchemaTemplateData
     public INamingConverter? NamingConverter { get; set; }
     
     /// <summary>
+    /// Флаг, указывающий, что схема содержит циклическую ссылку на саму себя
+    /// </summary>
+    public bool HasCircularReference { get; set; }
+    
+    /// <summary>
     /// Функция для преобразования имени схемы в имя файла (camelCase)
     /// </summary>
     public string SchemaNameToFileName(string schemaName)
@@ -104,6 +109,11 @@ public class ZodPropertySchemaTemplateData
     public string ZodSchema { get; set; } = string.Empty;
     public bool IsRequired { get; set; }
     public string? Description { get; set; }
+    
+    /// <summary>
+    /// TypeScript тип свойства (для генерации интерфейсов)
+    /// </summary>
+    public string? TypeScriptType { get; set; }
 }
 
 /// <summary>

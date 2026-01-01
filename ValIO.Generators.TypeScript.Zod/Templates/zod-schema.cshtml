@@ -31,7 +31,36 @@ import { z } from 'zod';
 }
 }
 
-export const @schemaName = z.object({
+@if (Model.HasCircularReference)
+{
+@:// TypeScript интерфейс для строгой типизации рекурсивной схемы
+@:type @(typeName) = {
+@foreach (var property in properties)
+{
+    @if (!string.IsNullOrEmpty(property.Description))
+    {
+    @:  /**
+    @:   * @Raw(property.Description)
+    @:   */
+    }
+    @if (!string.IsNullOrEmpty(property.TypeScriptType))
+    {
+        var tsType = property.TypeScriptType;
+        // Для циклических ссылок используем TypeName напрямую
+        if (property.ZodSchema.Contains($"z.lazy(() => {schemaName}"))
+        {
+            tsType = typeName;
+        }
+    @:  @property.Name@(property.IsRequired ? "" : "?") : @Raw(tsType);
+    }
+    else
+    {
+    @:  @property.Name@(property.IsRequired ? "" : "?") : any;
+    }
+}
+@:};
+
+@:export const @schemaName: z.ZodType<@typeName> = z.object({
 @foreach (var property in properties)
 {
     @if (!string.IsNullOrEmpty(property.Description))
@@ -42,5 +71,21 @@ export const @schemaName = z.object({
     }
     @:  @property.Name: @Raw(property.ZodSchema)@(property.IsRequired ? "" : ".optional()"),
 }
-});
+@:});
+}
+else
+{
+@:export const @schemaName = z.object({
+@foreach (var property in properties)
+{
+    @if (!string.IsNullOrEmpty(property.Description))
+    {
+    @:  /**
+    @:   * @Raw(property.Description)
+    @:   */
+    }
+    @:  @property.Name: @Raw(property.ZodSchema)@(property.IsRequired ? "" : ".optional()"),
+}
+@:});
+}
 

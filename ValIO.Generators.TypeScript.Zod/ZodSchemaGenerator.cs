@@ -49,6 +49,7 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
         var allSchemaDependencies = new HashSet<string>();
         var allEnumDependencies = new HashSet<string>();
         var processedSchemas = new HashSet<string> { model.Name };
+        var hasCircularReference = false;
 
         foreach (var property in model.Properties)
         {
@@ -61,6 +62,13 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                     schemaResolver,
                     processedSchemas,
                     model.Name);
+                
+                // Проверяем, есть ли циклическая ссылка на саму схему
+                // z.lazy(() => SchemaName) означает, что схема ссылается сама на себя
+                if (mappingResult.ZodSchema.Contains("z.lazy(() =>") && mappingResult.ZodSchema.Contains(schemaName))
+                {
+                    hasCircularReference = true;
+                }
                 
                 properties.Add(new ZodPropertySchemaTemplateData
                 {
@@ -83,6 +91,13 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
                     schemaResolver,
                     processedSchemas,
                     model.Name);
+                
+                // Проверяем, есть ли циклическая ссылка на саму схему
+                // z.lazy(() => SchemaName) означает, что схема ссылается сама на себя
+                if (mappingResult.ZodSchema.Contains("z.lazy(() =>") && mappingResult.ZodSchema.Contains(schemaName))
+                {
+                    hasCircularReference = true;
+                }
                 
                 properties.Add(new ZodPropertySchemaTemplateData
                 {
@@ -116,6 +131,7 @@ public class ZodSchemaGenerator : ValIO.Core.Interfaces.ISchemaGenerator
             Properties = properties,
             SchemaDependencies = schemaDependenciesFiltered,
             EnumDependencies = enumDependenciesFiltered,
+            HasCircularReference = hasCircularReference,
             NamingConverter = _namingConverter
         };
 
