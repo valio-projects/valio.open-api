@@ -138,6 +138,11 @@ public class ConfigTypeScriptOptions
     /// Настройки для Axios HTTP клиента
     /// </summary>
     public ConfigAxiosOptions? Axios { get; set; }
+    
+    /// <summary>
+    /// Стиль передачи query параметров: "IndividualParameters" или "ModelClass"
+    /// </summary>
+    public string? QueryParametersStyle { get; set; }
 }
 
 /// <summary>

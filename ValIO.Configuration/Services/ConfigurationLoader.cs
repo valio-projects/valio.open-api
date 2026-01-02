@@ -400,6 +400,17 @@ public class ConfigurationLoader : IConfigurationLoader
             };
         }
 
+        // Парсинг QueryParametersStyle
+        if (!string.IsNullOrEmpty(config.QueryParametersStyle))
+        {
+            options.QueryParametersStyle = config.QueryParametersStyle.ToLowerInvariant() switch
+            {
+                "modelclass" or "model-class" => ValIO.Generators.CSharp.Models.QueryParametersStyle.ModelClass,
+                "individualparameters" or "individual-parameters" => ValIO.Generators.CSharp.Models.QueryParametersStyle.IndividualParameters,
+                _ => ValIO.Generators.CSharp.Models.QueryParametersStyle.IndividualParameters
+            };
+        }
+
         return options;
     }
 }

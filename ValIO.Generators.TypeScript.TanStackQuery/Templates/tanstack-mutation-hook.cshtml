@@ -322,7 +322,20 @@ else
     // Формируем TVariables - объект с полями параметров
     var mutationVars = new List<string>();
     mutationVars.AddRange(pathParams.Select(FormatParameter));
-    mutationVars.AddRange(queryParams.Select(FormatParameter));
+    
+    // Query parameters: либо как модель, либо как отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
+    {
+        var modelTypeName = operationTemplate.QueryParametersModelTypeName;
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        var optional = hasRequiredParam ? "" : "?";
+        mutationVars.Add($"params{optional}: {modelTypeName}");
+    }
+    else
+    {
+        mutationVars.AddRange(queryParams.Select(FormatParameter));
+    }
+    
     mutationVars.AddRange(headerParams.Select(FormatParameter));
     if (operationTemplate.HasRequestBody)
     {
@@ -368,7 +381,17 @@ else
     // Формируем деструктуризацию variables для mutationFn - это список имен полей для деструктуризации
     var mutationFnVarProps = new List<string>();
     mutationFnVarProps.AddRange(pathParams.Select(p => p.VariableName));
-    mutationFnVarProps.AddRange(queryParams.Select(p => p.VariableName));
+    
+    // Query parameters: если используется модель, передаем params, иначе отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
+    {
+        mutationFnVarProps.Add("params");
+    }
+    else
+    {
+        mutationFnVarProps.AddRange(queryParams.Select(p => p.VariableName));
+    }
+    
     mutationFnVarProps.AddRange(headerParams.Select(p => p.VariableName));
     if (operationTemplate.HasRequestBody)
     {
@@ -390,16 +413,31 @@ else
     // Path parameters всегда required
     requiredClientMethodArgs.AddRange(pathParams.Select(p => p.VariableName));
     
-    // Query parameters могут быть required или optional
-    foreach (var param in queryParams)
+    // Query parameters: если используется модель, передаем params, иначе отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
     {
-        if (param.IsRequired)
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        if (hasRequiredParam)
         {
-            requiredClientMethodArgs.Add(param.VariableName);
+            requiredClientMethodArgs.Add("params");
         }
         else
         {
-            optionalClientMethodArgs.Add(param.VariableName);
+            optionalClientMethodArgs.Add("params");
+        }
+    }
+    else
+    {
+        foreach (var param in queryParams)
+        {
+            if (param.IsRequired)
+            {
+                requiredClientMethodArgs.Add(param.VariableName);
+            }
+            else
+            {
+                optionalClientMethodArgs.Add(param.VariableName);
+            }
         }
     }
     

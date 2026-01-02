@@ -1,4 +1,5 @@
 using ValIO.Core.Models;
+using ValIO.Generators.CSharp.Models;
 
 namespace ValIO.Generators.TypeScript.Models;
 
@@ -46,6 +47,11 @@ public class TypeScriptGenerationOptions
     /// Использовать strict null checks
     /// </summary>
     public bool UseStrictNullChecks { get; set; } = true;
+    
+    /// <summary>
+    /// Стиль передачи query параметров
+    /// </summary>
+    public QueryParametersStyle QueryParametersStyle { get; set; } = QueryParametersStyle.IndividualParameters;
     
     /// <summary>
     /// Настройки для Axios HTTP клиента

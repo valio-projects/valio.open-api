@@ -75,7 +75,20 @@
     // Precompute parameters for function signature
     var allParams = new List<string>();
     allParams.AddRange(pathParams.Select(FormatParameter));
-    allParams.AddRange(queryParams.Select(FormatParameter));
+    
+    // Query parameters: либо как модель, либо как отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
+    {
+        var modelTypeName = operationTemplate.QueryParametersModelTypeName;
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        var optional = hasRequiredParam ? "" : "?";
+        allParams.Add($"params{optional}: {modelTypeName}");
+    }
+    else
+    {
+        allParams.AddRange(queryParams.Select(FormatParameter));
+    }
+    
     allParams.AddRange(headerParams.Select(FormatParameter));
     
     if (operationTemplate.HasRequestBody)
@@ -116,16 +129,26 @@
     // Path parameters всегда required
     requiredKeyParams.AddRange(pathParams.Select(FormatParameter));
     
-    // Query parameters могут быть required или optional
-    foreach (var param in queryParams)
+    // Query parameters: либо как модель, либо как отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
     {
-        if (param.IsRequired)
+        var modelTypeName = operationTemplate.QueryParametersModelTypeName;
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        var optional = hasRequiredParam ? "" : "?";
+        requiredKeyParams.Add($"params{optional}: {modelTypeName}");
+    }
+    else
+    {
+        foreach (var param in queryParams)
         {
-            requiredKeyParams.Add(FormatParameter(param));
-        }
-        else
-        {
-            optionalKeyParams.Add(FormatParameter(param));
+            if (param.IsRequired)
+            {
+                requiredKeyParams.Add(FormatParameter(param));
+            }
+            else
+            {
+                optionalKeyParams.Add(FormatParameter(param));
+            }
         }
     }
     
@@ -142,16 +165,26 @@
     // Path parameters всегда required
     requiredHookParams.AddRange(pathParams.Select(FormatParameter));
     
-    // Query parameters могут быть required или optional
-    foreach (var param in queryParams)
+    // Query parameters: либо как модель, либо как отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
     {
-        if (param.IsRequired)
+        var modelTypeName = operationTemplate.QueryParametersModelTypeName;
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        var optional = hasRequiredParam ? "" : "?";
+        requiredHookParams.Add($"params{optional}: {modelTypeName}");
+    }
+    else
+    {
+        foreach (var param in queryParams)
         {
-            requiredHookParams.Add(FormatParameter(param));
-        }
-        else
-        {
-            optionalHookParams.Add(FormatParameter(param));
+            if (param.IsRequired)
+            {
+                requiredHookParams.Add(FormatParameter(param));
+            }
+            else
+            {
+                optionalHookParams.Add(FormatParameter(param));
+            }
         }
     }
     
@@ -193,16 +226,31 @@
     // Path parameters всегда required
     requiredKeyArgs.AddRange(pathParams.Select(p => p.VariableName));
     
-    // Query parameters могут быть required или optional
-    foreach (var param in queryParams)
+    // Query parameters: если используется модель, передаем params, иначе отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
     {
-        if (param.IsRequired)
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        if (hasRequiredParam)
         {
-            requiredKeyArgs.Add(param.VariableName);
+            requiredKeyArgs.Add("params");
         }
         else
         {
-            optionalKeyArgs.Add(param.VariableName);
+            optionalKeyArgs.Add("params");
+        }
+    }
+    else
+    {
+        foreach (var param in queryParams)
+        {
+            if (param.IsRequired)
+            {
+                requiredKeyArgs.Add(param.VariableName);
+            }
+            else
+            {
+                optionalKeyArgs.Add(param.VariableName);
+            }
         }
     }
     
@@ -215,7 +263,17 @@
     // Precompute function arguments
     var fnArgs = new List<string>();
     fnArgs.AddRange(pathParams.Select(p => p.VariableName));
-    fnArgs.AddRange(queryParams.Select(p => p.VariableName));
+    
+    // Query parameters: если используется модель, передаем params, иначе отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
+    {
+        fnArgs.Add("params");
+    }
+    else
+    {
+        fnArgs.AddRange(queryParams.Select(p => p.VariableName));
+    }
+    
     fnArgs.AddRange(headerParams.Select(p => p.VariableName));
     if (operationTemplate.HasRequestBody)
     {
@@ -237,16 +295,31 @@
     // Path parameters всегда required
     requiredQueryFnParams.AddRange(pathParams.Select(p => p.VariableName));
     
-    // Query parameters могут быть required или optional
-    foreach (var param in queryParams)
+    // Query parameters: если используется модель, передаем params, иначе отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
     {
-        if (param.IsRequired)
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        if (hasRequiredParam)
         {
-            requiredQueryFnParams.Add(param.VariableName);
+            requiredQueryFnParams.Add("params");
         }
         else
         {
-            optionalQueryFnParams.Add(param.VariableName);
+            optionalQueryFnParams.Add("params");
+        }
+    }
+    else
+    {
+        foreach (var param in queryParams)
+        {
+            if (param.IsRequired)
+            {
+                requiredQueryFnParams.Add(param.VariableName);
+            }
+            else
+            {
+                optionalQueryFnParams.Add(param.VariableName);
+            }
         }
     }
     
@@ -331,16 +404,31 @@
     // Path parameters всегда required
     requiredInfiniteQueryParams.AddRange(pathParams.Select(p => p.VariableName));
     
-    // Query parameters могут быть required или optional
-    foreach (var param in queryParams)
+    // Query parameters: если используется модель, передаем params, иначе отдельные параметры
+    if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
     {
-        if (param.IsRequired)
+        var hasRequiredParam = queryParams.Any(p => p.IsRequired);
+        if (hasRequiredParam)
         {
-            requiredInfiniteQueryParams.Add(param.VariableName);
+            requiredInfiniteQueryParams.Add("params");
         }
         else
         {
-            optionalInfiniteQueryParams.Add(param.VariableName);
+            optionalInfiniteQueryParams.Add("params");
+        }
+    }
+    else
+    {
+        foreach (var param in queryParams)
+        {
+            if (param.IsRequired)
+            {
+                requiredInfiniteQueryParams.Add(param.VariableName);
+            }
+            else
+            {
+                optionalInfiniteQueryParams.Add(param.VariableName);
+            }
         }
     }
     
@@ -570,7 +658,18 @@ else
 @Raw($"export const {Model.QueryKeyFunctionName} = (\n")
 @Raw($"{keyParamsStr}\n")
 @Raw(") => {\n")
+    @if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
+    {
+        @* Когда используется модель, используем keyArgsStr который уже содержит params *@
+        var keyParts = new List<string> { $"'{operationTemplate.Path}'" };
+        keyParts.AddRange(keyArgs);
+        var keyPartsStr = string.Join(", ", keyParts);
+@Raw($"  return [{keyPartsStr}];\n")
+    }
+    else
+    {
 @Raw($"  return {BuildQueryKey(pathParams, queryParams, operationTemplate.Path)};\n")
+    }
 @Raw("};\n")
 @Raw("\n")
 @{
@@ -619,7 +718,18 @@ else
 @Raw($"export const {infiniteQueryKeyFunctionName} = (\n")
 @Raw($"{keyParamsStr}\n")
 @Raw(") => {\n")
+    @if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
+    {
+        @* Когда используется модель, используем keyArgsStr который уже содержит params *@
+        var infiniteKeyParts = new List<string> { $"'{operationTemplate.Path}'" };
+        infiniteKeyParts.AddRange(keyArgs);
+        var infiniteKeyPartsStr = string.Join(", ", infiniteKeyParts);
+@Raw($"  return ['infinite', [{infiniteKeyPartsStr}]];\n")
+    }
+    else
+    {
 @Raw($"  return ['infinite', {BuildQueryKey(pathParams, queryParams, operationTemplate.Path)}];\n")
+    }
 @Raw("};\n")
 @Raw("\n")
 @{

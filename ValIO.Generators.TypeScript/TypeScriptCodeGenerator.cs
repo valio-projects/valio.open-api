@@ -9,6 +9,7 @@ using ValIO.Generators.CSharp.Models;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.Json.Nodes;
 using TypeInfo = ValIO.Generators.CSharp.Models.TypeInfo;
 
 namespace ValIO.Generators.TypeScript;
@@ -921,6 +922,174 @@ public class TypeScriptCodeGenerator : ICodeGenerator
 
         return _templateRegistry.Render("typescript-model.cshtml", templateData);
     }
+
+    /// <summary>
+    /// Генерирует код модели для query параметров
+    /// </summary>
+    private string GenerateQueryParametersModelCode(string interfaceName, List<TypeScriptParameterTemplateData> parameters, GenerationConfiguration config, TypeScriptGenerationOptions options)
+    {
+        var properties = new List<TypeScriptPropertyTemplateData>();
+        foreach (var param in parameters)
+        {
+            properties.Add(new TypeScriptPropertyTemplateData
+            {
+                Name = param.VariableName, // Используем VariableName (camelCase)
+                TypeInfo = param.TypeInfo,
+                Type = param.TypeInfo.FullTypeName,
+                IsOptional = !param.IsRequired,
+                Description = param.Description
+            });
+        }
+
+        // Собираем используемые типы для импортов
+        var importedTypes = CollectModelUsedTypes(properties, interfaceName);
+
+        var templateData = new TypeScriptModelTemplateData
+        {
+            InterfaceName = interfaceName, // Используем переданное имя (уже в PascalCase)
+            Description = null, // Query parameters модели обычно не имеют описания
+            Properties = properties,
+            UseStrictNullChecks = options.UseStrictNullChecks,
+            ImportedTypes = importedTypes,
+            BaseClassName = null,
+            BaseClassProperties = null,
+            OwnProperties = properties,
+            ValidationLibrary = options.ValidationLibrary
+        };
+
+        return _templateRegistry.Render("typescript-model.cshtml", templateData);
+    }
+
+    /// <summary>
+    /// Создает ApiModel из query parameters операции для генерации Zod схем
+    /// Используем информацию из оригинальных OpenAPI схем параметров
+    /// </summary>
+    private ApiModel? CreateApiModelFromQueryParameters(string modelName, ApiOperation operation, OpenApiDocument document, ISchemaResolver schemaResolver)
+    {
+        var originalOperation = FindOriginalOperation(document, operation);
+        if (originalOperation == null || originalOperation.Parameters == null)
+            return null;
+
+        // Находим query parameters
+        var queryParams = originalOperation.Parameters
+            .Where(p => p.In == Microsoft.OpenApi.ParameterLocation.Query && p.Schema != null && !string.IsNullOrEmpty(p.Name))
+            .ToList();
+
+        if (queryParams.Count == 0)
+            return null;
+
+        // Создаем свойства модели из параметров
+        var properties = new List<ApiProperty>();
+        var requiredProperties = new List<string>();
+        var propertySchemas = new Dictionary<string, IOpenApiSchema>();
+
+        foreach (var param in queryParams)
+        {
+            if (param.Schema == null || string.IsNullOrEmpty(param.Name))
+                continue;
+
+            var resolvedSchema = schemaResolver.ResolveSchema(param.Schema);
+            var isNullable = !param.Required && IsSchemaNullable(resolvedSchema);
+
+            // Извлекаем ограничения из схемы
+            decimal? min = null;
+            decimal? max = null;
+            if (!string.IsNullOrEmpty(resolvedSchema.Minimum) && decimal.TryParse(resolvedSchema.Minimum, out var parsedMin))
+                min = parsedMin;
+            if (!string.IsNullOrEmpty(resolvedSchema.Maximum) && decimal.TryParse(resolvedSchema.Maximum, out var parsedMax))
+                max = parsedMax;
+
+            decimal? exclusiveMin = null;
+            decimal? exclusiveMax = null;
+            if (!string.IsNullOrEmpty(resolvedSchema.ExclusiveMinimum) && decimal.TryParse(resolvedSchema.ExclusiveMinimum, out var parsedExclusiveMin))
+                exclusiveMin = parsedExclusiveMin;
+            if (!string.IsNullOrEmpty(resolvedSchema.ExclusiveMaximum) && decimal.TryParse(resolvedSchema.ExclusiveMaximum, out var parsedExclusiveMax))
+                exclusiveMax = parsedExclusiveMax;
+
+            object? defaultValue = null;
+            if (resolvedSchema.Default != null)
+            {
+                // Извлекаем значение по умолчанию
+                defaultValue = ExtractDefaultValueFromJsonNode(resolvedSchema.Default);
+            }
+
+            var apiProperty = new ApiProperty
+            {
+                Name = param.Name,
+                Type = "object", // Будет определено TypeMapper'ом при генерации схемы
+                IsRequired = param.Required,
+                IsNullable = isNullable,
+                Description = resolvedSchema.Description ?? param.Description,
+                DefaultValue = defaultValue,
+                Min = min,
+                Max = max,
+                ExclusiveMin = exclusiveMin,
+                ExclusiveMax = exclusiveMax,
+                MinLength = resolvedSchema.MinLength,
+                MaxLength = resolvedSchema.MaxLength,
+                Pattern = resolvedSchema.Pattern
+            };
+
+            properties.Add(apiProperty);
+            propertySchemas[param.Name] = param.Schema;
+
+            if (param.Required)
+            {
+                requiredProperties.Add(param.Name);
+            }
+        }
+
+        // Создаем временную объектную схему для OriginalSchema
+        // Используем null, так как у нас нет реальной объектной схемы
+        // Это не критично для генерации Zod схем, так как схемы свойств доступны через PropertySchemas
+        var apiModel = new ApiModel
+        {
+            Name = modelName,
+            Description = $"Параметры запроса для операции '{operation.OperationId}'",
+            Properties = properties,
+            RequiredProperties = requiredProperties,
+            PropertySchemas = propertySchemas,
+            OriginalSchema = null
+        };
+
+        return apiModel;
+    }
+
+    /// <summary>
+    /// Проверяет, является ли схема nullable
+    /// </summary>
+    private static bool IsSchemaNullable(IOpenApiSchema schema)
+    {
+        // Проверяем, содержит ли тип Null
+        if (schema.Type.HasValue && schema.Type.Value.HasFlag(Microsoft.OpenApi.JsonSchemaType.Null))
+            return true;
+
+        // Проверяем расширения для обратной совместимости с OpenAPI 3.0
+        if (schema.Extensions != null && schema.Extensions.TryGetValue(Microsoft.OpenApi.OpenApiConstants.NullableExtension, out var nullableExtension))
+        {
+            if (nullableExtension is Microsoft.OpenApi.JsonNodeExtension { Node: { } jsonNode } && jsonNode.GetValueKind() == System.Text.Json.JsonValueKind.True)
+                return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Извлекает значение по умолчанию из JsonNode
+    /// </summary>
+    private static object? ExtractDefaultValueFromJsonNode(JsonNode? jsonNode)
+    {
+        if (jsonNode == null)
+            return null;
+
+        return jsonNode switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<object>(),
+            JsonObject jsonObject => jsonObject,
+            JsonArray jsonArray => jsonArray,
+            _ => jsonNode.ToString()
+        };
+    }
     
     /// <summary>
     /// Собирает все используемые типы из свойств модели для импортов
@@ -1161,6 +1330,97 @@ public class TypeScriptCodeGenerator : ICodeGenerator
 
         var groupedOperations = GroupOperations(operations, config);
 
+        // Собираем модели query parameters для генерации
+        var queryParametersModels = new Dictionary<string, (List<TypeScriptParameterTemplateData> Parameters, string FileName, ApiOperation Operation)>();
+        var useQueryParametersModel = options.QueryParametersStyle == QueryParametersStyle.ModelClass;
+        
+        foreach (var operation in operations)
+        {
+            var operationTemplate = CreateTypeScriptOperationTemplateData(operation, document, config, schemaResolver, options);
+            
+            if (useQueryParametersModel && operationTemplate.QueryParameters.Count > 0 && 
+                !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName) &&
+                !string.IsNullOrEmpty(operationTemplate.QueryParametersModelFileName))
+            {
+                if (!queryParametersModels.ContainsKey(operationTemplate.QueryParametersModelTypeName))
+                {
+                    queryParametersModels[operationTemplate.QueryParametersModelTypeName] = 
+                        (operationTemplate.QueryParameters.ToList(), operationTemplate.QueryParametersModelFileName, operation);
+                }
+            }
+        }
+
+        // Генерируем модели query parameters
+        foreach (var queryModel in queryParametersModels)
+        {
+            var modelCode = GenerateQueryParametersModelCode(queryModel.Key, queryModel.Value.Parameters, config, options);
+            var fileName = $"{queryModel.Value.FileName}.model.ts";
+            
+            string filePath;
+            if (config.FileOrganization.SeparateModels)
+            {
+                var modelsPath = config.FileOrganization.ModelsPath ?? "models";
+                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
+            }
+            else
+            {
+                filePath = Path.Combine(config.OutputPath, fileName);
+            }
+
+            files[filePath] = modelCode;
+        }
+
+        // Генерируем Zod схемы для query parameters моделей, если ValidationLibrary = Zod
+        if (options.ValidationLibrary == ValidationLibrary.Zod && queryParametersModels.Count > 0)
+        {
+            try
+            {
+                var schemaGenerator = _schemaGeneratorFactory.GetSchemaGenerator(options.ValidationLibrary);
+                if (schemaGenerator != null)
+                {
+                    foreach (var queryModel in queryParametersModels)
+                    {
+                        try
+                        {
+                            var apiModel = CreateApiModelFromQueryParameters(
+                                queryModel.Key, 
+                                queryModel.Value.Operation, 
+                                document, 
+                                schemaResolver);
+                            
+                            if (apiModel != null)
+                            {
+                                var schemaCode = schemaGenerator.GenerateSchema(apiModel, schemaResolver);
+                                var schemaFileName = $"{queryModel.Value.FileName}.schema.ts";
+                                
+                                string schemaFilePath;
+                                if (config.FileOrganization.SeparateModels)
+                                {
+                                    var modelsPath = config.FileOrganization.ModelsPath ?? "models";
+                                    schemaFilePath = Path.Combine(config.OutputPath, modelsPath, schemaFileName);
+                                }
+                                else
+                                {
+                                    schemaFilePath = Path.Combine(config.OutputPath, schemaFileName);
+                                }
+
+                                files[schemaFilePath] = schemaCode;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Failed to generate Zod schema for query parameters model: {ModelName}", queryModel.Key);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to generate Zod schemas for query parameters models");
+            }
+        }
+
+        // Генерируем клиенты
         foreach (var group in groupedOperations)
         {
             var clientCode = GenerateClientCode(group.Value, group.Key, document, config, schemaResolver, options);
@@ -1315,9 +1575,15 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 CollectTypesFromTypeInfo(param.TypeInfo, types);
             }
             
-            foreach (var param in operation.QueryParameters)
+            // Query parameters: если используется модель, НЕ добавляем её тип в importedTypes,
+            // так как она импортируется отдельно через queryParamsModelImports в шаблоне
+            // Если модель НЕ используется, собираем типы из отдельных параметров
+            if (!operation.UseQueryParametersModel)
             {
-                CollectTypesFromTypeInfo(param.TypeInfo, types);
+                foreach (var param in operation.QueryParameters)
+                {
+                    CollectTypesFromTypeInfo(param.TypeInfo, types);
+                }
             }
             
             foreach (var param in operation.HeaderParameters)
@@ -1648,6 +1914,17 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
         }
 
+        // Определяем, использовать ли модель для query parameters
+        var useQueryParametersModel = options.QueryParametersStyle == QueryParametersStyle.ModelClass && queryParameters.Count > 0;
+        string? queryParametersModelTypeName = null;
+        string? queryParametersModelFileName = null;
+        if (useQueryParametersModel)
+        {
+            var methodNamePascal = _namingConverter.ToPascalCase(methodName);
+            queryParametersModelTypeName = $"{methodNamePascal}Params";
+            queryParametersModelFileName = methodName; // camelCase для имени файла
+        }
+
         return new TypeScriptOperationTemplateData
         {
             MethodName = methodName,
@@ -1672,7 +1949,10 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             RequestSchemaName = requestSchemaName,
             RequestSchemaFileName = requestSchemaFileName,
             ResponseSchemaName = responseSchemaName,
-            ResponseSchemaFileName = responseSchemaFileName
+            ResponseSchemaFileName = responseSchemaFileName,
+            UseQueryParametersModel = useQueryParametersModel,
+            QueryParametersModelTypeName = queryParametersModelTypeName,
+            QueryParametersModelFileName = queryParametersModelFileName
         };
     }
 
@@ -2186,6 +2466,24 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 var fileName = char.ToLowerInvariant(typeName[0]) + typeName.Substring(1);
                 imports.Add($"import type {{ {typeName} }} from '{modelsImportPath}/{fileName}.model';");
+            }
+        }
+        
+        // Импорт типов query parameters моделей
+        var queryParamsModelImports = new HashSet<(string TypeName, string FileName)>();
+        foreach (var operationTemplate in allOperationTemplates)
+        {
+            if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName) && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelFileName) && modelsImportPath != null)
+            {
+                queryParamsModelImports.Add((operationTemplate.QueryParametersModelTypeName, operationTemplate.QueryParametersModelFileName));
+            }
+        }
+        
+        if (queryParamsModelImports.Count > 0 && modelsImportPath != null)
+        {
+            foreach (var modelImport in queryParamsModelImports.OrderBy(x => x.TypeName))
+            {
+                imports.Add($"import type {{ {modelImport.TypeName} }} from '{modelsImportPath}/{modelImport.FileName}.model';");
             }
         }
         

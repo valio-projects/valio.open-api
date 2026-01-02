@@ -1,12 +1,13 @@
 {
   "language": "TypeScript",
-  "outputPath": "C:\\Workspace\\Talent\\microservices.chessboard.integrations.bitrix24\\front-end\\src\\swagger\\chessboard\\catalog-valio",
+  "outputPath": "C:\\Workspace\\Talent\\talent.frontends.partners\\src\\swagger\\chessboard\\catalog",
   "namespace": "Generated",
   "generateEnums": true,
   "generateModels": true,
   "generateClients": true,
   "options": {
     "typescript": {
+      "queryParametersStyle": "ModelClass",
       "modelFormat": "ValidationSchemas",
       "validationLibrary": "Zod",
       "httpClientLibrary": "Axios",
@@ -16,7 +17,8 @@
       "enumFormat": "Enum",
       "useStrictNullChecks": true,
       "Axios": {
-        "CustomInstancePath": "src//shared//api//valioAxios.ts",
+        "CustomInstancePath": "#shared/api/valioAxios",
+        "CustomInstancePath2": "src//shared//api//valioAxios.ts",
         "CustomInstanceName": "ValioAxiosClient"
       }
     }

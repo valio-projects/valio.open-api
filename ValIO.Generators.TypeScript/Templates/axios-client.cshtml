@@ -59,6 +59,7 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @{
     // Собираем уникальные схемы для импорта из всех операций
     var schemaImports = new HashSet<(string SchemaName, string SchemaFileName)>();
+    var queryParamsModelImports = new HashSet<(string TypeName, string FileName)>();
     foreach (var operation in operations)
     {
         if (!string.IsNullOrEmpty(operation.RequestSchemaName) && !string.IsNullOrEmpty(operation.RequestSchemaFileName) && modelsPath != null)
@@ -69,6 +70,10 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
         {
             schemaImports.Add((operation.ResponseSchemaName, operation.ResponseSchemaFileName));
         }
+        if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName) && !string.IsNullOrEmpty(operation.QueryParametersModelFileName) && modelsPath != null)
+        {
+            queryParamsModelImports.Add((operation.QueryParametersModelTypeName, operation.QueryParametersModelFileName));
+        }
     }
 }
 @if (schemaImports.Count > 0 && modelsPath != null)
@@ -76,6 +81,14 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @foreach (var schemaImport in schemaImports.OrderBy(x => x.SchemaName))
 {
 @:import { @schemaImport.SchemaName } from '@modelsPath/@(schemaImport.SchemaFileName).schema';
+}
+@:
+}
+@if (queryParamsModelImports.Count > 0 && modelsPath != null)
+{
+@foreach (var modelImport in queryParamsModelImports.OrderBy(x => x.TypeName))
+{
+@:import type { @modelImport.TypeName } from '@modelsPath/@(modelImport.FileName).model';
 }
 @:
 }
@@ -101,16 +114,38 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
     // Path parameters всегда required
     requiredParams.AddRange(operation.PathParameters.Select(FormatParameter));
     
-    // Query parameters могут быть required или optional
-    foreach (var param in operation.QueryParameters)
+    // Query parameters: либо как модель, либо как отдельные параметры
+    if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
     {
-        if (param.IsRequired)
+        // Используем модель для query parameters
+        var modelTypeName = operation.QueryParametersModelTypeName;
+        // Определяем, должен ли параметр быть nullable
+        // Если хотя бы один query параметр required, то params должен быть required
+        var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+        var optional = hasRequiredParam ? "" : "?";
+        var paramStr = $"params{optional}: {modelTypeName}";
+        if (hasRequiredParam)
         {
-            requiredParams.Add(FormatParameter(param));
+            requiredParams.Add(paramStr);
         }
         else
         {
-            optionalParams.Add(FormatParameter(param));
+            optionalParams.Add(paramStr);
+        }
+    }
+    else
+    {
+        // Query parameters как отдельные параметры
+        foreach (var param in operation.QueryParameters)
+        {
+            if (param.IsRequired)
+            {
+                requiredParams.Add(FormatParameter(param));
+            }
+            else
+            {
+                optionalParams.Add(FormatParameter(param));
+            }
         }
     }
     
@@ -181,15 +216,8 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
         }
     }
     
-    // axiosInstance, signal, timeout
-    if (hasCustomInstance)
-    {
-        optionalParams.Add("axiosInstance?: AxiosInstance");
-    }
-    else
-    {
-        requiredParams.Add("axiosInstance: AxiosInstance");
-    }
+    // axiosInstance, signal, timeout - все optional
+    optionalParams.Add("axiosInstance?: AxiosInstance");
     optionalParams.Add("signal?: AbortSignal");
     optionalParams.Add("timeout?: number");
     
@@ -213,12 +241,19 @@ import { AxiosInstance, AxiosRequestConfig } from 'axios';
 @:    url: path,
 @if (operation.QueryParameters.Count > 0)
 {
+    @if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
+    {
+@:    params: params,
+    }
+    else
+    {
 @:    params: {
-@foreach (var queryParam in operation.QueryParameters)
-{
+        @foreach (var queryParam in operation.QueryParameters)
+        {
 @:      '@queryParam.Name': @(queryParam.VariableName),
-}
+        }
 @:    },
+    }
 }
 @:    headers: {
 @foreach (var headerParam in operation.HeaderParameters)
@@ -307,7 +342,8 @@ else
 @:    ...(timeout !== undefined ? { timeout } : {}),
 @:  };
 @:
-@:  const response = await axiosInstance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
+@:  const instance = axiosInstance ?? ValioAxiosClient;
+@:  const response = await instance.request<@GetResponseType(operation.ReturnTypeInfo)>(config);
 }
 var responseTypeInfo = operation.ReturnTypeInfo.IsTask && operation.ReturnTypeInfo.GenericArguments.Count > 0
     ? operation.ReturnTypeInfo.GenericArguments[0]

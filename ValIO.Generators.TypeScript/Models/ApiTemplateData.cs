@@ -115,6 +115,21 @@ public class TypeScriptOperationTemplateData
     /// Имя файла схемы для response (для импорта, например, "user")
     /// </summary>
     public string? ResponseSchemaFileName { get; set; }
+    
+    /// <summary>
+    /// Использовать модель для query параметров (вместо отдельных параметров)
+    /// </summary>
+    public bool UseQueryParametersModel { get; set; }
+    
+    /// <summary>
+    /// Имя типа модели для query параметров (например, "SearchChessboardProjectsListParams")
+    /// </summary>
+    public string? QueryParametersModelTypeName { get; set; }
+    
+    /// <summary>
+    /// Имя файла модели для query параметров (для импорта, например, "searchChessboardProjectsListParams")
+    /// </summary>
+    public string? QueryParametersModelFileName { get; set; }
 }
 
 /// <summary>

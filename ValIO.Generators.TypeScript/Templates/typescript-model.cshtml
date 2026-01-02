@@ -34,7 +34,10 @@
     var useTypeAlias = !string.IsNullOrEmpty(baseClassName) && ownProperties.Count == 0;
     var useZodInfer = Model.ValidationLibrary == ValidationLibrary.Zod;
     var schemaName = $"{interfaceName}Schema";
-    var schemaFileName = char.ToLowerInvariant(interfaceName[0]) + interfaceName.Substring(1);
+    // Для query parameters моделей (заканчиваются на "Params") убираем "Params" из имени файла
+    var schemaFileName = interfaceName.EndsWith("Params") 
+        ? char.ToLowerInvariant(interfaceName[0]) + interfaceName.Substring(1, interfaceName.Length - 7) // убираем "Params" (6 символов)
+        : char.ToLowerInvariant(interfaceName[0]) + interfaceName.Substring(1);
 }
 @if (useZodInfer)
 {
