@@ -16,7 +16,7 @@ import { z } from 'zod';
 
 @if (isStringEnum)
 {
-@:const @constArrayName = [
+@:export const @constArrayName = [
 @foreach (var enumValue in enumValues)
 {
     @:@Raw(enumValue)@(enumValue == enumValues.Last() ? "" : ",")
@@ -34,7 +34,7 @@ import { z } from 'zod';
 else
 {
 @:// Числовые enum'ы в Zod требуют использования z.union с z.literal
-@:const @constArrayName = [
+@:export const @constArrayName = [
 @foreach (var enumValue in enumValues)
 {
     @:@Raw(enumValue)@(enumValue == enumValues.Last() ? "" : ",")

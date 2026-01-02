@@ -248,7 +248,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 try
                 {
-                    var modelFiles = GenerateModels(models, config, document, schemaResolver, typescriptOptions);
+                    var modelFiles = GenerateModels(models, enums, config, document, schemaResolver, typescriptOptions);
                 foreach (var file in modelFiles)
                 {
                     generatedFiles[file.Key] = file.Value;
@@ -722,9 +722,14 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         }
     }
 
-    private Dictionary<string, string> GenerateModels(IReadOnlyList<ApiModel> models, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    private Dictionary<string, string> GenerateModels(IReadOnlyList<ApiModel> models, IReadOnlyList<ApiEnum> enums, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
     {
         var files = new Dictionary<string, string>();
+
+        // Создаем словарь enum'ов по имени для быстрой проверки
+        var enumsByName = enums.ToDictionary(
+            e => _namingConverter.ToPascalCase(e.Name), 
+            StringComparer.OrdinalIgnoreCase);
 
         foreach (var model in models)
         {
@@ -732,6 +737,26 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 _logger.LogWarning("Skipping model with empty name");
                 continue;
+            }
+            
+            // Пропускаем модели, которые являются enum'ами
+            // Проверяем по имени (если есть в списке enum'ов)
+            var modelNamePascal = _namingConverter.ToPascalCase(model.Name);
+            if (enumsByName.ContainsKey(modelNamePascal))
+            {
+                _logger.LogDebug("Skipping model '{ModelName}' - it is an enum", model.Name);
+                continue;
+            }
+            
+            // Также проверяем по OriginalSchema - если это enum схема, пропускаем
+            if (model.OriginalSchema != null)
+            {
+                var resolvedSchema = schemaResolver.ResolveSchema(model.OriginalSchema);
+                if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
+                {
+                    _logger.LogDebug("Skipping model '{ModelName}' - OriginalSchema contains enum values", model.Name);
+                    continue;
+                }
             }
             
             var modelCode = GenerateModelCode(model, models, config, document, schemaResolver, options);
