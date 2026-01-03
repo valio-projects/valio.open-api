@@ -1,9 +1,9 @@
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using ValIO.Core.Factories;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
+using ValIO.Core.Models.TemplateData;
 using ValIO.Generators.CSharp;
 using ValIO.Generators.TypeScript;
 
@@ -61,9 +61,9 @@ public class CodeGeneratorFactory
         // Получаем опциональные renderers через DI (могут быть не зарегистрированы)
         var queryWrapperRenderer = _serviceProvider.GetService<IQueryWrapperRenderer>();
         var zodModelRenderer = _serviceProvider.GetServices<IModelFormatRenderer>()
-            .FirstOrDefault(r => r.Format == ModelFormat.ValidationSchema && r.Language == GenerationLanguage.TypeScript);
+            .FirstOrDefault(r => r.Format == ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema && r.Language == GenerationLanguage.TypeScript);
         var zodEnumRenderer = _serviceProvider.GetServices<IEnumFormatRenderer>()
-            .FirstOrDefault(r => r.Format == EnumFormat.ValidationSchema && r.Language == GenerationLanguage.TypeScript);
+            .FirstOrDefault(r => r.Format == ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema && r.Language == GenerationLanguage.TypeScript);
 
         return new TypeScriptCodeGenerator(
             typeMapper,

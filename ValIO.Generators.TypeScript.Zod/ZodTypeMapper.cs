@@ -224,14 +224,16 @@ public class ZodTypeMapper
             };
 
             // Добавляем валидацию на основе ограничений из схемы
-            if (resolvedSchema2.Minimum.HasValue)
+            // Minimum и Maximum имеют тип string? в OpenAPI схеме
+            if (!string.IsNullOrEmpty(resolvedSchema2.Minimum))
             {
                 zodType += $".min({resolvedSchema2.Minimum})";
             }
-            if (resolvedSchema2.Maximum.HasValue)
+            if (!string.IsNullOrEmpty(resolvedSchema2.Maximum))
             {
                 zodType += $".max({resolvedSchema2.Maximum})";
             }
+            // MinLength и MaxLength имеют тип int? в OpenAPI схеме
             if (resolvedSchema2.MinLength.HasValue)
             {
                 zodType += $".min({resolvedSchema2.MinLength})";
