@@ -14,7 +14,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
     public ModelFormat Format => ModelFormat.Interface;
     public GenerationLanguage Language => GenerationLanguage.TypeScript;
 
-    public string Render(ModelTemplateData data)
+    public string Render(IModelTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -50,8 +50,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
             sb.AppendLine($"export type {data.Name} = {data.BaseClassName} & {{");
             foreach (var property in data.OwnProperties)
             {
-                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
-                GenerateProperty(sb, baseProperty, indentLevel: 1);
+                GenerateProperty(sb, property, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "};");
         }
@@ -61,8 +60,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
             sb.AppendLine($"export interface {data.Name} {{");
             foreach (var property in data.Properties)
             {
-                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
-                GenerateProperty(sb, baseProperty, indentLevel: 1);
+                GenerateProperty(sb, property, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "}");
         }
@@ -70,7 +68,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
         return sb.ToString();
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, int indentLevel)
+    private void GenerateProperty(StringBuilder sb, IPropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);

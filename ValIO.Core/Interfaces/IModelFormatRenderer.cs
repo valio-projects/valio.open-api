@@ -21,5 +21,5 @@ public interface IModelFormatRenderer
     /// <summary>
     /// Рендерит модель в указанном формате
     /// </summary>
-    string Render(ModelTemplateData data);
+    string Render(IModelTemplateData data);
 }

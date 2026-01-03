@@ -29,7 +29,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
     /// <summary>
     /// Рендерит Zod схему для модели
     /// </summary>
-    public string Render(ModelTemplateData data)
+    public string Render(IModelTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -94,9 +94,8 @@ public class ZodSchemaRenderer : IModelFormatRenderer
             
             sb.AppendLine("// TypeScript интерфейс для строгой типизации рекурсивной схемы");
             CodeFormatter.AppendLine(sb, 0, $"type {typeName} = {{");
-            foreach (var propertyBase in data.Properties)
+            foreach (var property in data.Properties)
             {
-                var property = propertyBase as PropertyTemplateData ?? (PropertyTemplateData)(object)propertyBase;
                 GeneratePropertyType(sb, property, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "};");
@@ -116,9 +115,8 @@ public class ZodSchemaRenderer : IModelFormatRenderer
             CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.object({{");
         }
         
-        foreach (var propertyBase in data.Properties)
+        foreach (var property in data.Properties)
         {
-            var property = propertyBase as PropertyTemplateData ?? (PropertyTemplateData)(object)propertyBase;
             GeneratePropertySchema(sb, property, indentLevel: 1);
         }
         
@@ -201,7 +199,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
 
     #region Private Helper Methods
 
-    private void GeneratePropertyType(StringBuilder sb, PropertyTemplateData property, int indentLevel)
+    private void GeneratePropertyType(StringBuilder sb, IPropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
@@ -212,7 +210,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
-    private void GeneratePropertySchema(StringBuilder sb, PropertyTemplateData property, int indentLevel)
+    private void GeneratePropertySchema(StringBuilder sb, IPropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);

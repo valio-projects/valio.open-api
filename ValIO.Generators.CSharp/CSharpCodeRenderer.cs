@@ -17,7 +17,7 @@ public class CSharpCodeRenderer : ICodeRenderer
     /// <summary>
     /// Рендерит модель (класс/record/struct)
     /// </summary>
-    public string RenderModel(ModelTemplateData data)
+    public string RenderModel(IModelTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -92,9 +92,8 @@ public class CSharpCodeRenderer : ICodeRenderer
             // Генерируем свойства для record
             foreach (var property in data.Properties)
             {
-                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
                 var propertyOptions = ExtractPropertyOptions(property);
-                GenerateProperty(sb, baseProperty, propertyOptions, generateValidationAttributes, generateValidationConstants, data.Name);
+                GenerateProperty(sb, property, propertyOptions, generateValidationAttributes, generateValidationConstants, data.Name);
             }
             
             sb.AppendLine("}");
@@ -121,9 +120,8 @@ public class CSharpCodeRenderer : ICodeRenderer
             // Генерируем свойства для class
             foreach (var property in data.Properties)
             {
-                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
                 var propertyOptions = ExtractPropertyOptions(property);
-                GenerateProperty(sb, baseProperty, propertyOptions, generateValidationAttributes, generateValidationConstants, data.Name);
+                GenerateProperty(sb, property, propertyOptions, generateValidationAttributes, generateValidationConstants, data.Name);
             }
             
             // Генерируем методы сравнения для class (если нужно)
@@ -221,7 +219,7 @@ public class CSharpCodeRenderer : ICodeRenderer
     /// <summary>
     /// Рендерит клиент (HTTP клиент)
     /// </summary>
-    public string RenderClient(ClientTemplateData data)
+    public string RenderClient(IClientTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -306,7 +304,7 @@ public class CSharpCodeRenderer : ICodeRenderer
     /// <summary>
     /// Рендерит операцию (метод HTTP клиента)
     /// </summary>
-    public string RenderOperation(OperationTemplateData data)
+    public string RenderOperation(IOperationTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -337,7 +335,7 @@ public class CSharpCodeRenderer : ICodeRenderer
     /// <summary>
     /// Извлекает CSharpPropertyTemplateDataOptions из property через приведение типов
     /// </summary>
-    private static CSharpPropertyTemplateDataOptions? ExtractPropertyOptions(object property)
+    private static CSharpPropertyTemplateDataOptions? ExtractPropertyOptions(IPropertyTemplateData property)
     {
         // Пытаемся привести к типизированному типу через object
         try
@@ -352,7 +350,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
     }
 
-    private void RenderOperation(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void RenderOperation(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         // Генерируем XML комментарий для метода
         CommentGenerator.GenerateXmlComment(sb, indentLevel, operation.Summary);
@@ -398,7 +396,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, indentLevel, "}");
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, CSharpPropertyTemplateDataOptions? propertyOptions, bool generateValidationAttributes, bool generateValidationConstants, string className)
+    private void GenerateProperty(StringBuilder sb, IPropertyTemplateData property, CSharpPropertyTemplateDataOptions? propertyOptions, bool generateValidationAttributes, bool generateValidationConstants, string className)
     {
         // Используем переданные Options или создаем по умолчанию
         propertyOptions ??= new CSharpPropertyTemplateDataOptions();
@@ -422,7 +420,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, 1, $"public {requiredModifier}{typeString}{nullableModifier} {property.Name} {{ get; {accessor}; }}");
     }
 
-    private void GenerateValidationConstants(StringBuilder sb, IReadOnlyList<PropertyTemplateData> propertiesBase)
+    private void GenerateValidationConstants(StringBuilder sb, IReadOnlyList<IPropertyTemplateData> propertiesBase)
     {
         foreach (var property in propertiesBase)
         {
@@ -483,7 +481,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateValidationAttributes(StringBuilder sb, PropertyTemplateData property, bool useConstants, string className)
+    private void GenerateValidationAttributes(StringBuilder sb, IPropertyTemplateData property, bool useConstants, string className)
     {
         if (property.IsRequired)
         {
@@ -574,7 +572,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateParameterValidation(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void GenerateParameterValidation(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         foreach (var param in operation.PathParameters)
         {
@@ -606,7 +604,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GeneratePathBuilding(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void GeneratePathBuilding(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         if (operation.PathParameters.Count > 0)
         {
@@ -630,7 +628,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateQueryParameters(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void GenerateQueryParameters(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         if (operation.QueryParameters.Count == 0)
             return;
@@ -726,7 +724,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateHeaderParameters(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void GenerateHeaderParameters(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         if (operation.HeaderParameters.Count == 0)
             return;
@@ -753,7 +751,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         CodeFormatter.AppendEmptyLine(sb);
     }
 
-    private void GenerateRequestBody(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void GenerateRequestBody(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         if (!operation.HasRequestBody)
             return;
@@ -850,7 +848,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         CodeFormatter.AppendEmptyLine(sb);
     }
 
-    private void GenerateResponseHandling(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void GenerateResponseHandling(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         CodeFormatter.AppendLine(sb, indentLevel, "// Обрабатываем ответы и выбрасываем исключения для ошибок");
         CodeFormatter.AppendLine(sb, indentLevel, "var statusCode = (int)response.StatusCode;");
@@ -979,7 +977,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
     }
 
-    private string BuildParameterString(OperationTemplateData operation)
+    private string BuildParameterString(IOperationTemplateData operation)
     {
         var parameters = new List<string>();
         

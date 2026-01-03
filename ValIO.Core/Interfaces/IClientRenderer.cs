@@ -1,5 +1,3 @@
-using ValIO.Core.Models.TemplateData;
-
 namespace ValIO.Core.Interfaces;
 
 /// <summary>
@@ -10,5 +8,5 @@ public interface IClientRenderer
     /// <summary>
     /// Рендерит клиент
     /// </summary>
-    string Render(ClientTemplateData data);
+    string Render(IClientTemplateData data);
 }

@@ -1,3 +1,4 @@
+using ValIO.Core.Interfaces;
 using ValIO.Core.Models.TemplateData.Options;
 
 namespace ValIO.Core.Models.TemplateData;
@@ -7,7 +8,7 @@ namespace ValIO.Core.Models.TemplateData;
 /// </summary>
 /// <typeparam name="TOptions">Тип опций модели (язык-специфичный)</typeparam>
 /// <typeparam name="TPropertyOptions">Тип опций свойств (язык-специфичный)</typeparam>
-public class ModelTemplateData<TOptions, TPropertyOptions>
+public class ModelTemplateData<TOptions, TPropertyOptions> : IModelTemplateData
     where TOptions : ModelTemplateDataOptions, new()
     where TPropertyOptions : PropertyTemplateDataOptions, new()
 {
@@ -25,6 +26,11 @@ public class ModelTemplateData<TOptions, TPropertyOptions>
     /// Свойства модели
     /// </summary>
     public IReadOnlyList<PropertyTemplateData<TPropertyOptions>> Properties { get; set; } = Array.Empty<PropertyTemplateData<TPropertyOptions>>();
+    
+    /// <summary>
+    /// Свойства модели для интерфейса IModelTemplateData
+    /// </summary>
+    IReadOnlyList<IPropertyTemplateData> IModelTemplateData.Properties => Properties.Cast<IPropertyTemplateData>().ToList();
     
     /// <summary>
     /// Язык генерации
@@ -52,9 +58,19 @@ public class ModelTemplateData<TOptions, TPropertyOptions>
     public IReadOnlyList<PropertyTemplateData<TPropertyOptions>> BaseClassProperties { get; set; } = Array.Empty<PropertyTemplateData<TPropertyOptions>>();
     
     /// <summary>
+    /// Свойства базового класса для интерфейса IModelTemplateData
+    /// </summary>
+    IReadOnlyList<IPropertyTemplateData> IModelTemplateData.BaseClassProperties => BaseClassProperties.Cast<IPropertyTemplateData>().ToList();
+    
+    /// <summary>
     /// Собственные свойства модели (не из базового класса)
     /// </summary>
     public IReadOnlyList<PropertyTemplateData<TPropertyOptions>> OwnProperties { get; set; } = Array.Empty<PropertyTemplateData<TPropertyOptions>>();
+    
+    /// <summary>
+    /// Собственные свойства для интерфейса IModelTemplateData
+    /// </summary>
+    IReadOnlyList<IPropertyTemplateData> IModelTemplateData.OwnProperties => OwnProperties.Cast<IPropertyTemplateData>().ToList();
     
     /// <summary>
     /// Namespace (для C#)
@@ -84,7 +100,7 @@ public class ModelTemplateData : ModelTemplateData<ModelTemplateDataOptions, Pro
 /// Универсальные данные для шаблона свойства
 /// </summary>
 /// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
-public class PropertyTemplateData<TOptions> where TOptions : PropertyTemplateDataOptions, new()
+public class PropertyTemplateData<TOptions> : IPropertyTemplateData where TOptions : PropertyTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя свойства

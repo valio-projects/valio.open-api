@@ -1,3 +1,4 @@
+using ValIO.Core.Interfaces;
 using ValIO.Core.Models.TemplateData.Options;
 
 namespace ValIO.Core.Models.TemplateData;
@@ -6,7 +7,7 @@ namespace ValIO.Core.Models.TemplateData;
 /// Универсальные данные для шаблона операции (метод HTTP клиента)
 /// </summary>
 /// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
-public class OperationTemplateData<TOptions> where TOptions : OperationTemplateDataOptions, new()
+public class OperationTemplateData<TOptions> : IOperationTemplateData where TOptions : OperationTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя метода

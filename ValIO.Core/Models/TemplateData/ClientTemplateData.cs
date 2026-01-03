@@ -1,3 +1,4 @@
+using ValIO.Core.Interfaces;
 using ValIO.Core.Models.TemplateData.Options;
 
 namespace ValIO.Core.Models.TemplateData;
@@ -7,7 +8,7 @@ namespace ValIO.Core.Models.TemplateData;
 /// </summary>
 /// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
 /// <typeparam name="TOperationOptions">Тип опций операций (язык-специфичный)</typeparam>
-public class ClientTemplateData<TOptions, TOperationOptions> 
+public class ClientTemplateData<TOptions, TOperationOptions> : IClientTemplateData
     where TOptions : ClientTemplateDataOptions, new()
     where TOperationOptions : OperationTemplateDataOptions, new()
 {
@@ -20,6 +21,11 @@ public class ClientTemplateData<TOptions, TOperationOptions>
     /// Операции клиента
     /// </summary>
     public IReadOnlyList<OperationTemplateData<TOperationOptions>> Operations { get; set; } = Array.Empty<OperationTemplateData<TOperationOptions>>();
+    
+    /// <summary>
+    /// Операции клиента для интерфейса IClientTemplateData
+    /// </summary>
+    IReadOnlyList<IOperationTemplateData> IClientTemplateData.Operations => Operations.Cast<IOperationTemplateData>().ToList();
     
     /// <summary>
     /// Язык генерации

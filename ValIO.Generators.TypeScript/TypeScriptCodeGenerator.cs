@@ -108,7 +108,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 try
                 {
                     var unifiedFiles = await GenerateModelsAndEnumsUnifiedAsync(
-                        modelTemplateDataList, 
+                        modelTemplateDataList.Cast<IModelTemplateData>().ToList(), 
                         enumTemplateDataList, 
                         document, 
                         schemaResolver, 
@@ -273,7 +273,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// Унифицированная генерация моделей и enum через один processor с несколькими renderers
     /// </summary>
     private async Task<Dictionary<string, string>> GenerateModelsAndEnumsUnifiedAsync(
-        IReadOnlyList<Core.Models.TemplateData.ModelTemplateData> modelTemplateDataList,
+        IReadOnlyList<IModelTemplateData> modelTemplateDataList,
         IReadOnlyList<Core.Models.TemplateData.EnumTemplateData> enumTemplateDataList,
         OpenApiDocument document,
         ISchemaResolver schemaResolver,
@@ -405,11 +405,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     }).ToList()
                 };
                 
-                // Приводим к базовому типу для renderer
-                var modelTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)typedModelData;
-                
-                // Генерируем TypeScript интерфейс
-                var modelCode = interfaceModelRenderer.Render(modelTemplateDataForRenderer);
+                // Передаем интерфейс IModelTemplateData в renderer (без каста)
+                var modelCode = interfaceModelRenderer.Render(typedModelData);
                 var modelFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.model.ts";
                 var modelFilePath = ResolveFilePath(modelFileName, config, FileCategory.Models);
                 
@@ -424,11 +421,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         var originalFormat = typedModelData.Format;
                         typedModelData.Format = ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema;
                         
-                        // Приводим к базовому типу для renderer
-                        var schemaTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)typedModelData;
-                        
-                        // Рендерим Zod схему через интерфейс
-                        var schemaCode = _zodModelRenderer.Render(schemaTemplateDataForRenderer);
+                        // Передаем интерфейс IModelTemplateData в renderer (без каста)
+                        var schemaCode = _zodModelRenderer.Render(typedModelData);
                         var schemaFileName = $"{NamingConverter.ToCamelCase(typedModelData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
                         
@@ -624,11 +618,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             Options = modelOptions
         };
         
-        // Приводим к базовому типу для renderer
-        var modelTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)templateData;
-
+        // Передаем интерфейс IModelTemplateData в renderer (без каста)
         var modelRenderer = new Renderers.InterfaceModelRenderer();
-        return modelRenderer.Render(modelTemplateDataForRenderer);
+        return modelRenderer.Render(templateData);
     }
 
     // Методы GenerateModelCode, CreateApiModelFromQueryParameters, CollectModelUsedTypes и связанные вспомогательные методы удалены
@@ -825,10 +817,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             Options = clientOptions
         };
         
-        // Приводим к базовому типу для renderer
-        var clientTemplateDataForRenderer = (Core.Models.TemplateData.ClientTemplateData)(object)templateData;
-
-        return _codeRenderer.RenderClient(clientTemplateDataForRenderer);
+        // Передаем интерфейс IClientTemplateData в renderer (без каста)
+        return _codeRenderer.RenderClient(templateData);
     }
 
     /// <summary>

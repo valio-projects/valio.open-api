@@ -397,10 +397,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 }).ToList()
             };
             
-            // Используем типизированную версию, но приводим к базовому типу для renderer
-            // Renderer будет работать с базовым типом, но мы используем типизированные Options
-            var modelTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)typedModelData;
-            
+            // Передаем интерфейс IModelTemplateData в renderer (без каста)
             // Выбираем renderer на основе формата
             IModelFormatRenderer? modelRenderer = typedModelData.Format switch
             {
@@ -409,7 +406,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 _ => new Renderers.ClassModelRenderer()
             };
             
-            var modelCode = modelRenderer.Render(modelTemplateDataForRenderer);
+            var modelCode = modelRenderer.Render(typedModelData);
             var fileName = $"{typedModelData.Name}.cs";
             var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
 

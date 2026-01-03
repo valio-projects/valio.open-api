@@ -16,7 +16,7 @@ public interface ICodeRenderer
     /// <summary>
     /// Рендерит модель (класс, интерфейс, тип, схема валидации)
     /// </summary>
-    string RenderModel(ModelTemplateData data);
+    string RenderModel(IModelTemplateData data);
     
     /// <summary>
     /// Рендерит enum (enum, union type, schema)
@@ -26,10 +26,10 @@ public interface ICodeRenderer
     /// <summary>
     /// Рендерит клиент (HTTP клиент)
     /// </summary>
-    string RenderClient(ClientTemplateData data);
+    string RenderClient(IClientTemplateData data);
     
     /// <summary>
     /// Рендерит операцию (метод HTTP клиента)
     /// </summary>
-    string RenderOperation(OperationTemplateData data);
+    string RenderOperation(IOperationTemplateData data);
 }

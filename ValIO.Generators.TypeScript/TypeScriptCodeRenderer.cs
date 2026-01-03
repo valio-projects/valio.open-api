@@ -17,7 +17,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
     /// <summary>
     /// Рендерит модель (interface/type)
     /// </summary>
-    public string RenderModel(ModelTemplateData data)
+    public string RenderModel(IModelTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -97,8 +97,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine($"export interface {data.Name} {{");
             foreach (var property in data.Properties)
             {
-                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
-                GenerateProperty(sb, baseProperty, indentLevel: 1);
+                GenerateProperty(sb, property, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "}");
         }
@@ -188,7 +187,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
     /// <summary>
     /// Рендерит клиент (HTTP клиент - Fetch или Axios)
     /// </summary>
-    public string RenderClient(ClientTemplateData data)
+    public string RenderClient(IClientTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -214,7 +213,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
     /// <summary>
     /// Рендерит операцию (метод HTTP клиента)
     /// </summary>
-    public string RenderOperation(OperationTemplateData data)
+    public string RenderOperation(IOperationTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -275,7 +274,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
     #region Private Helper Methods
 
-    private void RenderFetchClient(StringBuilder sb, ClientTemplateData data)
+    private void RenderFetchClient(StringBuilder sb, IClientTemplateData data)
     {
         // Генерируем импорты моделей
         if (data.Dependencies.Count > 0 && !string.IsNullOrEmpty(data.ModelsPath))
@@ -314,13 +313,12 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         // Генерируем операции
         foreach (var operationBase in data.Operations)
         {
-            var operation = operationBase as OperationTemplateData ?? (OperationTemplateData)(object)operationBase;
             sb.AppendLine();
-            RenderFetchOperation(sb, operation);
+            RenderFetchOperation(sb, operationBase);
         }
     }
 
-    private void RenderAxiosClient(StringBuilder sb, ClientTemplateData data)
+    private void RenderAxiosClient(StringBuilder sb, IClientTemplateData data)
     {
         // Генерируем импорты Axios
         sb.AppendLine("import { AxiosInstance, AxiosRequestConfig } from 'axios';");
@@ -409,13 +407,12 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         // Генерируем операции
         foreach (var operationBase in data.Operations)
         {
-            var operation = operationBase as OperationTemplateData ?? (OperationTemplateData)(object)operationBase;
             sb.AppendLine();
-            RenderAxiosOperation(sb, operation, hasCustomInstance, customInstanceName);
+            RenderAxiosOperation(sb, operationBase, hasCustomInstance, customInstanceName);
         }
     }
 
-    private void RenderFetchOperation(StringBuilder sb, OperationTemplateData operation)
+    private void RenderFetchOperation(StringBuilder sb, IOperationTemplateData operation)
     {
         // Генерируем JSDoc комментарий
         IReadOnlyList<(string Name, string? Description, string? Type)>? commentParams = !string.IsNullOrEmpty(operation.Description) 
@@ -483,7 +480,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, 0, "}");
     }
 
-    private void RenderAxiosOperation(StringBuilder sb, OperationTemplateData operation, bool hasCustomInstance = false, string? customInstanceName = null)
+    private void RenderAxiosOperation(StringBuilder sb, IOperationTemplateData operation, bool hasCustomInstance = false, string? customInstanceName = null)
     {
         // Генерируем JSDoc комментарий
         IReadOnlyList<(string Name, string? Description, string? Type)>? commentParams2 = !string.IsNullOrEmpty(operation.Description) 
@@ -684,7 +681,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, 0, "}");
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, int indentLevel)
+    private void GenerateProperty(StringBuilder sb, IPropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
@@ -695,7 +692,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
-    private void GenerateQueryParameters(StringBuilder sb, OperationTemplateData operation, int indentLevel)
+    private void GenerateQueryParameters(StringBuilder sb, IOperationTemplateData operation, int indentLevel)
     {
         if (operation.QueryParameters.Count == 0)
         {
@@ -730,7 +727,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateRequestBody(StringBuilder sb, OperationTemplateData operation, int indentLevel, bool isAxios)
+    private void GenerateRequestBody(StringBuilder sb, IOperationTemplateData operation, int indentLevel, bool isAxios)
     {
         if (!operation.HasRequestBody)
             return;
@@ -816,7 +813,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateResponseHandling(StringBuilder sb, OperationTemplateData operation, int indentLevel, bool isAxios)
+    private void GenerateResponseHandling(StringBuilder sb, IOperationTemplateData operation, int indentLevel, bool isAxios)
     {
         var responseTypeInfo = operation.ReturnTypeInfo;
         var shouldReturnData = responseTypeInfo.BaseType != "void";
@@ -857,7 +854,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
     }
 
-    private List<string> BuildParameterList(OperationTemplateData operation)
+    private List<string> BuildParameterList(IOperationTemplateData operation)
     {
         var parameters = new List<string>();
         

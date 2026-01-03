@@ -14,7 +14,7 @@ public class ClassModelRenderer : IModelFormatRenderer
     public ModelFormat Format => ModelFormat.Class;
     public GenerationLanguage Language => GenerationLanguage.CSharp;
 
-    public string Render(ModelTemplateData data)
+    public string Render(IModelTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -59,9 +59,7 @@ public class ClassModelRenderer : IModelFormatRenderer
         // Генерируем свойства
         foreach (var propertyBase in data.Properties)
         {
-            // Приводим типизированное свойство к базовому типу
-            var property = propertyBase as PropertyTemplateData ?? (PropertyTemplateData)(object)propertyBase;
-            GenerateProperty(sb, property, indentLevel: 1);
+            GenerateProperty(sb, propertyBase, indentLevel: 1);
         }
         
         sb.AppendLine("}");
@@ -69,7 +67,7 @@ public class ClassModelRenderer : IModelFormatRenderer
         return sb.ToString();
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, int indentLevel)
+    private void GenerateProperty(StringBuilder sb, IPropertyTemplateData property, int indentLevel)
     {
         // Генерируем XML комментарий
         CommentGenerator.GenerateXmlComment(sb, indentLevel, property.Description);
