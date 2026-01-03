@@ -19,16 +19,14 @@ public class TypeMapperFactory
     }
 
     /// <summary>
-    /// Создает маппер типов для указанного языка
+    /// Создает маппер типов для указанного языка из зарегистрированных в DI
     /// </summary>
     public ITypeMapper CreateMapper(GenerationLanguage language)
     {
-        var namingConverter = _serviceProvider.GetRequiredService<INamingConverter>();
-
         return language switch
         {
-            GenerationLanguage.CSharp => new CSharpTypeMapper(namingConverter),
-            GenerationLanguage.TypeScript => new TypeScriptTypeMapper(namingConverter),
+            GenerationLanguage.CSharp => _serviceProvider.GetRequiredService<CSharpTypeMapper>(),
+            GenerationLanguage.TypeScript => _serviceProvider.GetRequiredService<TypeScriptTypeMapper>(),
             _ => throw new NotSupportedException($"Type mapper for language {language} is not supported")
         };
     }
