@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.TypeScript.Renderers;
 
@@ -32,12 +33,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
         }
         
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         // Определяем формат модели
         var useTypeAlias = !string.IsNullOrEmpty(data.BaseClassName) && data.OwnProperties.Count == 0;
@@ -54,9 +50,9 @@ public class InterfaceModelRenderer : IModelFormatRenderer
             sb.AppendLine($"export type {data.Name} = {data.BaseClassName} & {{");
             foreach (var property in data.OwnProperties)
             {
-                GenerateProperty(sb, property, indent: "  ");
+                GenerateProperty(sb, property, indentLevel: 1);
             }
-            sb.AppendLine("};");
+            CodeFormatter.AppendLine(sb, 0, "};");
         }
         else
         {
@@ -64,28 +60,23 @@ public class InterfaceModelRenderer : IModelFormatRenderer
             sb.AppendLine($"export interface {data.Name} {{");
             foreach (var property in data.Properties)
             {
-                GenerateProperty(sb, property, indent: "  ");
+                GenerateProperty(sb, property, indentLevel: 1);
             }
-            sb.AppendLine("}");
+            CodeFormatter.AppendLine(sb, 0, "}");
         }
         
         return sb.ToString();
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, string indent)
+    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(property.Description))
-        {
-            sb.AppendLine($"{indent}/**");
-            sb.AppendLine($"{indent} * {EscapeJSDocComment(property.Description)}");
-            sb.AppendLine($"{indent} */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
         
         // Генерируем свойство
         var optional = property.IsOptional ? "?" : "";
         var typeString = FormatType(property.TypeInfo);
-        sb.AppendLine($"{indent}{property.Name}{optional}: {typeString};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
     private string FormatType(TypeInfo typeInfo)
@@ -93,17 +84,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
         return typeInfo.FullTypeName;
     }
 
-    private string EscapeJSDocComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("*/", "* /")
-            .Replace("\r\n", " ")
-            .Replace("\n", " ")
-            .Replace("\r", " ");
-    }
+    // Метод EscapeJSDocComment теперь в ValIO.Core.Utilities.CodeEscapeHelper
 
     private string GetModelFileName(string modelName)
     {

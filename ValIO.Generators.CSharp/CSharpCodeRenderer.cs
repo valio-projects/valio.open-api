@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.CSharp;
 
@@ -52,12 +53,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
         
         // Генерируем XML комментарий для класса
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/// <summary>");
-            sb.AppendLine($"/// {EscapeXmlComment(data.Description)}");
-            sb.AppendLine("/// </summary>");
-        }
+        CommentGenerator.GenerateXmlComment(sb, 0, data.Description);
         
         // Генерируем объявление класса
         var baseClassDeclaration = !string.IsNullOrEmpty(data.BaseClassName) ? $" : {data.BaseClassName}" : string.Empty;
@@ -173,12 +169,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
         
         // Генерируем XML комментарий для enum
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/// <summary>");
-            sb.AppendLine($"/// {EscapeXmlComment(data.Description)}");
-            sb.AppendLine("/// </summary>");
-        }
+        CommentGenerator.GenerateXmlComment(sb, 0, data.Description);
         
         // Генерируем объявление enum
         var underlyingType = data.UnderlyingType ?? "int";
@@ -191,12 +182,7 @@ public class CSharpCodeRenderer : ICodeRenderer
             var value = data.Values[i];
             
             // Генерируем XML комментарий для значения
-            if (!string.IsNullOrEmpty(value.Description))
-            {
-                sb.AppendLine("    /// <summary>");
-                sb.AppendLine($"    /// {EscapeXmlComment(value.Description)}");
-                sb.AppendLine("    /// </summary>");
-            }
+            CommentGenerator.GenerateXmlComment(sb, 1, value.Description);
             
             // Генерируем значение enum
             var comma = i < data.Values.Count - 1 ? "," : "";
@@ -282,8 +268,8 @@ public class CSharpCodeRenderer : ICodeRenderer
         // Генерируем операции
         foreach (var operation in data.Operations)
         {
-            sb.AppendLine();
-            RenderOperation(sb, operation, indent: "    ");
+            CodeFormatter.AppendEmptyLine(sb);
+            RenderOperation(sb, operation, indentLevel: 1);
         }
         
         sb.AppendLine("}");
@@ -300,7 +286,7 @@ public class CSharpCodeRenderer : ICodeRenderer
             throw new ArgumentNullException(nameof(data));
 
         var sb = new StringBuilder();
-        RenderOperation(sb, data, indent: "");
+        RenderOperation(sb, data, indentLevel: 0);
         return sb.ToString();
     }
 
@@ -322,66 +308,56 @@ public class CSharpCodeRenderer : ICodeRenderer
 
     #region Private Helper Methods
 
-    private void RenderOperation(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void RenderOperation(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         // Генерируем XML комментарий для метода
-        if (!string.IsNullOrEmpty(operation.Summary))
-        {
-            sb.AppendLine($"{indent}/// <summary>");
-            sb.AppendLine($"{indent}/// {EscapeXmlComment(operation.Summary)}");
-            sb.AppendLine($"{indent}/// </summary>");
-        }
+        CommentGenerator.GenerateXmlComment(sb, indentLevel, operation.Summary);
         
         // Генерируем сигнатуру метода
         var returnType = FormatType(operation.ReturnTypeInfo);
         var parameters = BuildParameterString(operation);
-        sb.AppendLine($"{indent}public async {returnType} {operation.MethodName}({parameters}, CancellationToken cancellationToken = default)");
-        sb.AppendLine($"{indent}{{");
+        CodeFormatter.AppendLine(sb, indentLevel, $"public async {returnType} {operation.MethodName}({parameters}, CancellationToken cancellationToken = default)");
+        CodeFormatter.AppendLine(sb, indentLevel, "{");
         
         // Генерируем валидацию параметров
-        GenerateParameterValidation(sb, operation, indent + "    ");
+        GenerateParameterValidation(sb, operation, indentLevel + 1);
         
         // Генерируем построение пути
-        GeneratePathBuilding(sb, operation, indent + "    ");
+        GeneratePathBuilding(sb, operation, indentLevel + 1);
         
         // Генерируем построение query параметров
-        GenerateQueryParameters(sb, operation, indent + "    ");
+        GenerateQueryParameters(sb, operation, indentLevel + 1);
         
         // Генерируем создание запроса
-        sb.AppendLine($"{indent}    var request = new HttpRequestMessage(HttpMethod.{operation.HttpMethod}, url);");
-        sb.AppendLine();
-        sb.AppendLine($"{indent}    // Вызываем partial method для кастомизации запроса перед отправкой");
-        sb.AppendLine($"{indent}    PrepareRequestAsync(request, url, cancellationToken);");
-        sb.AppendLine();
+        CodeFormatter.AppendLine(sb, indentLevel + 1, $"var request = new HttpRequestMessage(HttpMethod.{operation.HttpMethod}, url);");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, indentLevel + 1, "// Вызываем partial method для кастомизации запроса перед отправкой");
+        CodeFormatter.AppendLine(sb, indentLevel + 1, "PrepareRequestAsync(request, url, cancellationToken);");
+        CodeFormatter.AppendEmptyLine(sb);
         
         // Генерируем header параметры
-        GenerateHeaderParameters(sb, operation, indent + "    ");
+        GenerateHeaderParameters(sb, operation, indentLevel + 1);
         
         // Генерируем request body
-        GenerateRequestBody(sb, operation, indent + "    ");
+        GenerateRequestBody(sb, operation, indentLevel + 1);
         
         // Генерируем отправку запроса и обработку ответа
-        sb.AppendLine($"{indent}    var response = await _httpClient.SendAsync(request, cancellationToken);");
-        sb.AppendLine();
-        sb.AppendLine($"{indent}    // Вызываем partial method для кастомизации ответа после получения");
-        sb.AppendLine($"{indent}    ProcessResponseAsync(response, cancellationToken);");
-        sb.AppendLine();
+        CodeFormatter.AppendLine(sb, indentLevel + 1, "var response = await _httpClient.SendAsync(request, cancellationToken);");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, indentLevel + 1, "// Вызываем partial method для кастомизации ответа после получения");
+        CodeFormatter.AppendLine(sb, indentLevel + 1, "ProcessResponseAsync(response, cancellationToken);");
+        CodeFormatter.AppendEmptyLine(sb);
         
         // Генерируем обработку ответов
-        GenerateResponseHandling(sb, operation, indent + "    ");
+        GenerateResponseHandling(sb, operation, indentLevel + 1);
         
-        sb.AppendLine($"{indent}}}");
+        CodeFormatter.AppendLine(sb, indentLevel, "}");
     }
 
     private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, bool generateValidationAttributes, bool generateValidationConstants, string className)
     {
         // Генерируем XML комментарий для свойства
-        if (!string.IsNullOrEmpty(property.Description))
-        {
-            sb.AppendLine("    /// <summary>");
-            sb.AppendLine($"    /// {EscapeXmlComment(property.Description)}");
-            sb.AppendLine("    /// </summary>");
-        }
+        CommentGenerator.GenerateXmlComment(sb, 1, property.Description);
         
         // Генерируем атрибуты валидации
         if (generateValidationAttributes)
@@ -443,20 +419,20 @@ public class CSharpCodeRenderer : ICodeRenderer
             }
             if (!string.IsNullOrEmpty(property.Pattern))
             {
-                var escapedPattern = EscapeString(property.Pattern);
-                sb.AppendLine($"        public const string Pattern = \"{escapedPattern}\";");
-                sb.AppendLine();
-                sb.AppendLine("        public static readonly Regex PatternRegex = new Regex(Pattern, RegexOptions.Compiled);");
+                var escapedPattern = CodeEscapeHelper.EscapeString(property.Pattern);
+                CodeFormatter.AppendLine(sb, 2, $"public const string Pattern = \"{escapedPattern}\";");
+                CodeFormatter.AppendEmptyLine(sb);
+                CodeFormatter.AppendLine(sb, 2, "public static readonly Regex PatternRegex = new Regex(Pattern, RegexOptions.Compiled);");
             }
             if (property.DefaultValue != null)
             {
-                var defaultValueString = FormatDefaultValue(property.DefaultValue, property.TypeInfo);
+                var defaultValueString = DefaultValueFormatter.FormatDefaultValue(property.DefaultValue, property.TypeInfo);
                 var typeString = FormatType(property.TypeInfo);
-                sb.AppendLine($"        public const {typeString} DefaultValue = {defaultValueString};");
+                CodeFormatter.AppendLine(sb, 2, $"public const {typeString} DefaultValue = {defaultValueString};");
             }
             
-            sb.AppendLine("    }");
-            sb.AppendLine();
+            CodeFormatter.AppendLine(sb, 1, "}");
+            CodeFormatter.AppendEmptyLine(sb);
         }
     }
 
@@ -545,20 +521,20 @@ public class CSharpCodeRenderer : ICodeRenderer
             }
             if (!string.IsNullOrEmpty(property.Pattern))
             {
-                var escapedPattern = EscapeString(property.Pattern);
+                var escapedPattern = CodeEscapeHelper.EscapeString(property.Pattern);
                 sb.AppendLine($"    [RegularExpression(\"{escapedPattern}\")]");
             }
         }
     }
 
-    private void GenerateParameterValidation(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void GenerateParameterValidation(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         foreach (var param in operation.PathParameters)
         {
             if (param.IsRequired && !param.TypeInfo.IsNonNullableValueType())
             {
-                sb.AppendLine($"{indent}if ({param.VariableName} == null)");
-                sb.AppendLine($"{indent}    throw new ArgumentNullException(nameof({param.VariableName}));");
+                CodeFormatter.AppendLine(sb, indentLevel, $"if ({param.VariableName} == null)");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new ArgumentNullException(nameof({param.VariableName}));");
             }
         }
         
@@ -566,8 +542,8 @@ public class CSharpCodeRenderer : ICodeRenderer
         {
             if (param.IsRequired && !param.TypeInfo.IsNonNullableValueType())
             {
-                sb.AppendLine($"{indent}if ({param.VariableName} == null)");
-                sb.AppendLine($"{indent}    throw new ArgumentNullException(nameof({param.VariableName}));");
+                CodeFormatter.AppendLine(sb, indentLevel, $"if ({param.VariableName} == null)");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new ArgumentNullException(nameof({param.VariableName}));");
             }
         }
         
@@ -577,133 +553,133 @@ public class CSharpCodeRenderer : ICodeRenderer
                 operation.RequestBodyTypeInfo != null && 
                 !operation.RequestBodyTypeInfo.IsNonNullableValueType())
             {
-                sb.AppendLine($"{indent}if ({operation.RequestBodyParameter} == null)");
-                sb.AppendLine($"{indent}    throw new ArgumentNullException(nameof({operation.RequestBodyParameter}));");
+                CodeFormatter.AppendLine(sb, indentLevel, $"if ({operation.RequestBodyParameter} == null)");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new ArgumentNullException(nameof({operation.RequestBodyParameter}));");
             }
         }
     }
 
-    private void GeneratePathBuilding(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void GeneratePathBuilding(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         if (operation.PathParameters.Count > 0)
         {
-            sb.AppendLine($"{indent}var path = \"{operation.Path}\";");
+            CodeFormatter.AppendLine(sb, indentLevel, $"var path = \"{operation.Path}\";");
             foreach (var param in operation.PathParameters)
             {
                 if (param.TypeInfo.IsNonNullableValueType())
                 {
-                    sb.AppendLine($"{indent}path = path.Replace(\"{{{param.Name}}}\", Uri.EscapeDataString({param.VariableName}.ToString()));");
+                    CodeFormatter.AppendLine(sb, indentLevel, $"path = path.Replace(\"{{{param.Name}}}\", Uri.EscapeDataString({param.VariableName}.ToString()));");
                 }
                 else
                 {
-                    sb.AppendLine($"{indent}path = path.Replace(\"{{{param.Name}}}\", Uri.EscapeDataString({param.VariableName}?.ToString() ?? string.Empty));");
+                    CodeFormatter.AppendLine(sb, indentLevel, $"path = path.Replace(\"{{{param.Name}}}\", Uri.EscapeDataString({param.VariableName}?.ToString() ?? string.Empty));");
                 }
             }
-            sb.AppendLine($"{indent}var url = path;");
+            CodeFormatter.AppendLine(sb, indentLevel, "var url = path;");
         }
         else
         {
-            sb.AppendLine($"{indent}var url = \"{operation.Path}\";");
+            CodeFormatter.AppendLine(sb, indentLevel, $"var url = \"{operation.Path}\";");
         }
     }
 
-    private void GenerateQueryParameters(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void GenerateQueryParameters(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         if (operation.QueryParameters.Count == 0)
             return;
         
-        sb.AppendLine($"{indent}var queryParams = new List<string>();");
+        CodeFormatter.AppendLine(sb, indentLevel, "var queryParams = new List<string>();");
         
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            sb.AppendLine($"{indent}if (query != null)");
-            sb.AppendLine($"{indent}{{");
+            CodeFormatter.AppendLine(sb, indentLevel, "if (query != null)");
+            CodeFormatter.AppendLine(sb, indentLevel, "{");
             foreach (var param in operation.QueryParameters)
             {
-                sb.AppendLine($"{indent}    var {param.VariableName} = query.{param.PropertyName};");
-                sb.AppendLine($"{indent}    if ({param.VariableName} != null)");
-                sb.AppendLine($"{indent}    {{");
-                GenerateQueryParameterValue(sb, param, indent + "        ");
-                sb.AppendLine($"{indent}    }}");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"var {param.VariableName} = query.{param.PropertyName};");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"if ({param.VariableName} != null)");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                GenerateQueryParameterValue(sb, param, indentLevel + 2);
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
             }
-            sb.AppendLine($"{indent}}}");
+            CodeFormatter.AppendLine(sb, indentLevel, "}");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                sb.AppendLine($"{indent}if ({param.VariableName} != null)");
-                sb.AppendLine($"{indent}{{");
-                GenerateQueryParameterValue(sb, param, indent + "    ");
-                sb.AppendLine($"{indent}}}");
+                CodeFormatter.AppendLine(sb, indentLevel, $"if ({param.VariableName} != null)");
+                CodeFormatter.AppendLine(sb, indentLevel, "{");
+                GenerateQueryParameterValue(sb, param, indentLevel + 1);
+                CodeFormatter.AppendLine(sb, indentLevel, "}");
             }
         }
         
-        sb.AppendLine($"{indent}if (queryParams.Count > 0)");
-        sb.AppendLine($"{indent}{{");
-        sb.AppendLine($"{indent}    url += (url.Contains(\"?\") ? \"&\" : \"?\") + string.Join(\"&\", queryParams);");
-        sb.AppendLine($"{indent}}}");
+        CodeFormatter.AppendLine(sb, indentLevel, "if (queryParams.Count > 0)");
+        CodeFormatter.AppendLine(sb, indentLevel, "{");
+        CodeFormatter.AppendLine(sb, indentLevel + 1, "url += (url.Contains(\"?\") ? \"&\" : \"?\") + string.Join(\"&\", queryParams);");
+        CodeFormatter.AppendLine(sb, indentLevel, "}");
     }
 
-    private void GenerateQueryParameterValue(StringBuilder sb, ParameterTemplateData param, string indent)
+    private void GenerateQueryParameterValue(StringBuilder sb, ParameterTemplateData param, int indentLevel)
     {
-        var paramNameEscaped = EscapeString(param.Name);
+        var paramNameEscaped = CodeEscapeHelper.EscapeString(param.Name);
         
         if (param.TypeInfo.IsCollection)
         {
             var itemType = param.TypeInfo.GenericArguments.FirstOrDefault();
             var isItemNonNullableValueType = itemType?.IsNonNullableValueType() ?? false;
-            sb.AppendLine($"{indent}foreach (var item in {param.VariableName})");
-            sb.AppendLine($"{indent}{{");
+            CodeFormatter.AppendLine(sb, indentLevel, $"foreach (var item in {param.VariableName})");
+            CodeFormatter.AppendLine(sb, indentLevel, "{");
             if (isItemNonNullableValueType)
             {
-                sb.AppendLine($"{indent}    queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString(item.ToString())}}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString(item.ToString())}}\");");
             }
             else
             {
-                sb.AppendLine($"{indent}    if (item != null)");
-                sb.AppendLine($"{indent}    {{");
-                sb.AppendLine($"{indent}        queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString(item.ToString() ?? string.Empty)}}\");");
-                sb.AppendLine($"{indent}    }}");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "if (item != null)");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, $"queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString(item.ToString() ?? string.Empty)}}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
             }
-            sb.AppendLine($"{indent}}}");
+            CodeFormatter.AppendLine(sb, indentLevel, "}");
         }
         else if (param.TypeInfo.IsDictionary)
         {
             var valueType = param.TypeInfo.GenericArguments.Count > 1 ? param.TypeInfo.GenericArguments[1] : null;
             var isValueNonNullableValueType = valueType?.IsNonNullableValueType() ?? false;
-            sb.AppendLine($"{indent}foreach (var kvp in {param.VariableName})");
-            sb.AppendLine($"{indent}{{");
+            CodeFormatter.AppendLine(sb, indentLevel, $"foreach (var kvp in {param.VariableName})");
+            CodeFormatter.AppendLine(sb, indentLevel, "{");
             if (isValueNonNullableValueType)
             {
-                sb.AppendLine($"{indent}    queryParams.Add($\"{{Uri.EscapeDataString(kvp.Key)}}={{Uri.EscapeDataString(kvp.Value.ToString())}}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "queryParams.Add($\"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value.ToString())}\");");
             }
             else
             {
-                sb.AppendLine($"{indent}    queryParams.Add($\"{{Uri.EscapeDataString(kvp.Key)}}={{Uri.EscapeDataString(kvp.Value?.ToString() ?? string.Empty)}}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "queryParams.Add($\"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value?.ToString() ?? string.Empty)}\");");
             }
-            sb.AppendLine($"{indent}}}");
+            CodeFormatter.AppendLine(sb, indentLevel, "}");
         }
         else if (!param.TypeInfo.IsPrimitive && param.TypeInfo.BaseType != "object")
         {
-            sb.AppendLine($"{indent}// Complex object - serialize to JSON and add as query parameter");
-            sb.AppendLine($"{indent}var jsonValue = System.Text.Json.JsonSerializer.Serialize({param.VariableName});");
-            sb.AppendLine($"{indent}queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString(jsonValue)}}\");");
+            CodeFormatter.AppendLine(sb, indentLevel, "// Complex object - serialize to JSON and add as query parameter");
+            CodeFormatter.AppendLine(sb, indentLevel, $"var jsonValue = System.Text.Json.JsonSerializer.Serialize({param.VariableName});");
+            CodeFormatter.AppendLine(sb, indentLevel, $"queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString(jsonValue)}}\");");
         }
         else
         {
             if (param.TypeInfo.IsNonNullableValueType())
             {
-                sb.AppendLine($"{indent}queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString({param.VariableName}.ToString())}}\");");
+                CodeFormatter.AppendLine(sb, indentLevel, $"queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString({param.VariableName}.ToString())}}\");");
             }
             else
             {
-                sb.AppendLine($"{indent}queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString({param.VariableName}?.ToString() ?? string.Empty)}}\");");
+                CodeFormatter.AppendLine(sb, indentLevel, $"queryParams.Add($\"{paramNameEscaped}={{Uri.EscapeDataString({param.VariableName}?.ToString() ?? string.Empty)}}\");");
             }
         }
     }
 
-    private void GenerateHeaderParameters(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void GenerateHeaderParameters(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         if (operation.HeaderParameters.Count == 0)
             return;
@@ -712,25 +688,25 @@ public class CSharpCodeRenderer : ICodeRenderer
         {
             if (param.IsRequired && !param.TypeInfo.IsNonNullableValueType())
             {
-                sb.AppendLine($"{indent}if ({param.VariableName} == null)");
-                sb.AppendLine($"{indent}    throw new ArgumentNullException(nameof({param.VariableName}));");
+                CodeFormatter.AppendLine(sb, indentLevel, $"if ({param.VariableName} == null)");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new ArgumentNullException(nameof({param.VariableName}));");
             }
             if (param.TypeInfo.IsNonNullableValueType())
             {
-                sb.AppendLine($"{indent}request.Headers.Add(\"{param.Name}\", {param.VariableName}.ToString());");
+                CodeFormatter.AppendLine(sb, indentLevel, $"request.Headers.Add(\"{param.Name}\", {param.VariableName}.ToString());");
             }
             else
             {
-                sb.AppendLine($"{indent}if ({param.VariableName} != null)");
-                sb.AppendLine($"{indent}{{");
-                sb.AppendLine($"{indent}    request.Headers.Add(\"{param.Name}\", {param.VariableName}.ToString());");
-                sb.AppendLine($"{indent}}}");
+                CodeFormatter.AppendLine(sb, indentLevel, $"if ({param.VariableName} != null)");
+                CodeFormatter.AppendLine(sb, indentLevel, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"request.Headers.Add(\"{param.Name}\", {param.VariableName}.ToString());");
+                CodeFormatter.AppendLine(sb, indentLevel, "}");
             }
         }
-        sb.AppendLine();
+        CodeFormatter.AppendEmptyLine(sb);
     }
 
-    private void GenerateRequestBody(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void GenerateRequestBody(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         if (!operation.HasRequestBody)
             return;
@@ -739,98 +715,98 @@ public class CSharpCodeRenderer : ICodeRenderer
         {
             if (operation.RequestBodyContentType == "application/x-www-form-urlencoded")
             {
-                sb.AppendLine($"{indent}var formData = new Dictionary<string, string>();");
+                CodeFormatter.AppendLine(sb, indentLevel, "var formData = new Dictionary<string, string>();");
                 foreach (var prop in operation.FormDataProperties)
                 {
                     if (prop.IsRequired && !prop.TypeInfo.IsNonNullableValueType())
                     {
-                        sb.AppendLine($"{indent}if ({prop.VariableName} == null)");
-                        sb.AppendLine($"{indent}    throw new ArgumentNullException(nameof({prop.VariableName}));");
+                        CodeFormatter.AppendLine(sb, indentLevel, $"if ({prop.VariableName} == null)");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new ArgumentNullException(nameof({prop.VariableName}));");
                     }
                     // Генерация form-data свойств (упрощенная версия)
                     if (prop.TypeInfo.IsCollection)
                     {
-                        sb.AppendLine($"{indent}if ({prop.VariableName} != null)");
-                        sb.AppendLine($"{indent}{{");
-                        sb.AppendLine($"{indent}    foreach (var item in {prop.VariableName})");
-                        sb.AppendLine($"{indent}    {{");
-                        sb.AppendLine($"{indent}        formData.Add(\"{prop.Name}\", item?.ToString() ?? string.Empty);");
-                        sb.AppendLine($"{indent}    }}");
-                        sb.AppendLine($"{indent}}}");
+                        CodeFormatter.AppendLine(sb, indentLevel, $"if ({prop.VariableName} != null)");
+                        CodeFormatter.AppendLine(sb, indentLevel, "{");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, $"foreach (var item in {prop.VariableName})");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                        CodeFormatter.AppendLine(sb, indentLevel + 2, $"formData.Add(\"{prop.Name}\", item?.ToString() ?? string.Empty);");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
+                        CodeFormatter.AppendLine(sb, indentLevel, "}");
                     }
                     else
                     {
                         if (prop.TypeInfo.IsNonNullableValueType())
                         {
-                            sb.AppendLine($"{indent}formData.Add(\"{prop.Name}\", {prop.VariableName}.ToString());");
+                            CodeFormatter.AppendLine(sb, indentLevel, $"formData.Add(\"{prop.Name}\", {prop.VariableName}.ToString());");
                         }
                         else
                         {
-                            sb.AppendLine($"{indent}if ({prop.VariableName} != null)");
-                            sb.AppendLine($"{indent}{{");
-                            sb.AppendLine($"{indent}    formData.Add(\"{prop.Name}\", {prop.VariableName}.ToString() ?? string.Empty);");
-                            sb.AppendLine($"{indent}}}");
+                            CodeFormatter.AppendLine(sb, indentLevel, $"if ({prop.VariableName} != null)");
+                            CodeFormatter.AppendLine(sb, indentLevel, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"formData.Add(\"{prop.Name}\", {prop.VariableName}.ToString() ?? string.Empty);");
+                            CodeFormatter.AppendLine(sb, indentLevel, "}");
                         }
                     }
                 }
-                sb.AppendLine($"{indent}request.Content = new FormUrlEncodedContent(formData);");
+                CodeFormatter.AppendLine(sb, indentLevel, "request.Content = new FormUrlEncodedContent(formData);");
             }
             else if (operation.RequestBodyContentType == "multipart/form-data")
             {
-                sb.AppendLine($"{indent}var multipartContent = new MultipartFormDataContent();");
+                CodeFormatter.AppendLine(sb, indentLevel, "var multipartContent = new MultipartFormDataContent();");
                 foreach (var prop in operation.FormDataProperties)
                 {
                     if (prop.IsRequired && !prop.TypeInfo.IsNonNullableValueType() && !prop.TypeInfo.IsFile)
                     {
-                        sb.AppendLine($"{indent}if ({prop.VariableName} == null)");
-                        sb.AppendLine($"{indent}    throw new ArgumentNullException(nameof({prop.VariableName}));");
+                        CodeFormatter.AppendLine(sb, indentLevel, $"if ({prop.VariableName} == null)");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new ArgumentNullException(nameof({prop.VariableName}));");
                     }
                     if (prop.TypeInfo.IsFile)
                     {
                         if (prop.TypeInfo.IsCollection)
                         {
-                            sb.AppendLine($"{indent}if ({prop.VariableName} != null)");
-                            sb.AppendLine($"{indent}{{");
-                            sb.AppendLine($"{indent}    foreach (var file in {prop.VariableName})");
-                            sb.AppendLine($"{indent}    {{");
-                            sb.AppendLine($"{indent}        if (file != null)");
-                            sb.AppendLine($"{indent}        {{");
-                            sb.AppendLine($"{indent}            var streamContent = new StreamContent(file);");
-                            sb.AppendLine($"{indent}            multipartContent.Add(streamContent, \"{prop.Name}\", \"file\");");
-                            sb.AppendLine($"{indent}        }}");
-                            sb.AppendLine($"{indent}    }}");
-                            sb.AppendLine($"{indent}}}");
+                            CodeFormatter.AppendLine(sb, indentLevel, $"if ({prop.VariableName} != null)");
+                            CodeFormatter.AppendLine(sb, indentLevel, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"foreach (var file in {prop.VariableName})");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, "if (file != null)");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, "var streamContent = new StreamContent(file);");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, $"multipartContent.Add(streamContent, \"{prop.Name}\", \"file\");");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, "}");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
+                            CodeFormatter.AppendLine(sb, indentLevel, "}");
                         }
                         else
                         {
-                            sb.AppendLine($"{indent}if ({prop.VariableName} != null)");
-                            sb.AppendLine($"{indent}{{");
-                            sb.AppendLine($"{indent}    var streamContent = new StreamContent({prop.VariableName});");
-                            sb.AppendLine($"{indent}    multipartContent.Add(streamContent, \"{prop.Name}\", \"file\");");
-                            sb.AppendLine($"{indent}}}");
+                            CodeFormatter.AppendLine(sb, indentLevel, $"if ({prop.VariableName} != null)");
+                            CodeFormatter.AppendLine(sb, indentLevel, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"var streamContent = new StreamContent({prop.VariableName});");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"multipartContent.Add(streamContent, \"{prop.Name}\", \"file\");");
+                            CodeFormatter.AppendLine(sb, indentLevel, "}");
                         }
                     }
                     // Другие типы form-data свойств (упрощенная версия)
                 }
-                sb.AppendLine($"{indent}request.Content = multipartContent;");
+                CodeFormatter.AppendLine(sb, indentLevel, "request.Content = multipartContent;");
             }
         }
         else if (operation.RequestBodyContentType == "application/json")
         {
-            sb.AppendLine($"{indent}var jsonContent = System.Text.Json.JsonSerializer.Serialize({operation.RequestBodyParameter}, _jsonSerializerOptions);");
-            sb.AppendLine($"{indent}request.Content = new StringContent(jsonContent, Encoding.UTF8, \"application/json\");");
+            CodeFormatter.AppendLine(sb, indentLevel, $"var jsonContent = System.Text.Json.JsonSerializer.Serialize({operation.RequestBodyParameter}, _jsonSerializerOptions);");
+            CodeFormatter.AppendLine(sb, indentLevel, "request.Content = new StringContent(jsonContent, Encoding.UTF8, \"application/json\");");
         }
         else
         {
-            sb.AppendLine($"{indent}request.Content = new StringContent({operation.RequestBodyParameter}?.ToString() ?? string.Empty, Encoding.UTF8, \"{operation.RequestBodyContentType ?? "application/json"}\");");
+            CodeFormatter.AppendLine(sb, indentLevel, $"request.Content = new StringContent({operation.RequestBodyParameter}?.ToString() ?? string.Empty, Encoding.UTF8, \"{operation.RequestBodyContentType ?? "application/json"}\");");
         }
-        sb.AppendLine();
+        CodeFormatter.AppendEmptyLine(sb);
     }
 
-    private void GenerateResponseHandling(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void GenerateResponseHandling(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
-        sb.AppendLine($"{indent}// Обрабатываем ответы и выбрасываем исключения для ошибок");
-        sb.AppendLine($"{indent}var statusCode = (int)response.StatusCode;");
+        CodeFormatter.AppendLine(sb, indentLevel, "// Обрабатываем ответы и выбрасываем исключения для ошибок");
+        CodeFormatter.AppendLine(sb, indentLevel, "var statusCode = (int)response.StatusCode;");
         
         if (operation.Responses.Count > 0)
         {
@@ -841,35 +817,35 @@ public class CSharpCodeRenderer : ICodeRenderer
                     var statusCodeValue = int.TryParse(responseInfo.StatusCode, out var code) ? code : 0;
                     if (statusCodeValue > 0)
                     {
-                        sb.AppendLine($"{indent}if (statusCode == {statusCodeValue})");
-                        sb.AppendLine($"{indent}{{");
+                        CodeFormatter.AppendLine(sb, indentLevel, $"if (statusCode == {statusCodeValue})");
+                        CodeFormatter.AppendLine(sb, indentLevel, "{");
                         if (responseInfo.ResponseTypeInfo != null)
                         {
                             var errorResponseType = FormatType(responseInfo.ResponseTypeInfo);
-                            sb.AppendLine($"{indent}    // Десериализуем ответ ошибки");
-                            sb.AppendLine($"{indent}    {errorResponseType}? errorResponse = null;");
-                            sb.AppendLine($"{indent}    if (response.Content != null && response.Content.Headers.ContentLength > 0)");
-                            sb.AppendLine($"{indent}    {{");
-                            sb.AppendLine($"{indent}        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);");
-                            sb.AppendLine($"{indent}        if (!string.IsNullOrWhiteSpace(responseContent))");
-                            sb.AppendLine($"{indent}        {{");
-                            sb.AppendLine($"{indent}            try");
-                            sb.AppendLine($"{indent}            {{");
-                            sb.AppendLine($"{indent}                errorResponse = System.Text.Json.JsonSerializer.Deserialize<{errorResponseType}>(responseContent, _jsonSerializerOptions);");
-                            sb.AppendLine($"{indent}            }}");
-                            sb.AppendLine($"{indent}            catch (JsonException ex)");
-                            sb.AppendLine($"{indent}            {{");
-                            sb.AppendLine($"{indent}                throw new {responseInfo.ExceptionClassName}(response, default({errorResponseType}), ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
-                            sb.AppendLine($"{indent}            }}");
-                            sb.AppendLine($"{indent}        }}");
-                            sb.AppendLine($"{indent}    }}");
-                            sb.AppendLine($"{indent}    throw new {responseInfo.ExceptionClassName}(response, errorResponse ?? default({errorResponseType}), null, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, "// Десериализуем ответ ошибки");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"{errorResponseType}? errorResponse = null;");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, "if (response.Content != null && response.Content.Headers.ContentLength > 0)");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, "var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, "if (!string.IsNullOrWhiteSpace(responseContent))");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, "try");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 4, $"errorResponse = System.Text.Json.JsonSerializer.Deserialize<{errorResponseType}>(responseContent, _jsonSerializerOptions);");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, "}");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, "catch (JsonException ex)");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, "{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 4, $"throw new {responseInfo.ExceptionClassName}(response, default({errorResponseType}), ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                            CodeFormatter.AppendLine(sb, indentLevel + 3, "}");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, "}");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new {responseInfo.ExceptionClassName}(response, errorResponse ?? default({errorResponseType}), null, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
                         }
                         else
                         {
-                            sb.AppendLine($"{indent}    throw new {responseInfo.ExceptionClassName}(response, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new {responseInfo.ExceptionClassName}(response, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
                         }
-                        sb.AppendLine($"{indent}}}");
+                        CodeFormatter.AppendLine(sb, indentLevel, "}");
                     }
                 }
             }
@@ -880,79 +856,79 @@ public class CSharpCodeRenderer : ICodeRenderer
             var responseType = GetResponseType(operation.ReturnTypeInfo);
             if (!string.IsNullOrEmpty(responseType) && !operation.ReturnTypeInfo.IsVoid && operation.ReturnTypeInfo.BaseType != "HttpResponseMessage")
             {
-                sb.AppendLine($"{indent}// Обрабатываем успешный ответ (2xx)");
-                sb.AppendLine($"{indent}if (statusCode < 200 || statusCode >= 300)");
-                sb.AppendLine($"{indent}{{");
-                sb.AppendLine($"{indent}    response.EnsureSuccessStatusCode();");
-                sb.AppendLine($"{indent}}}");
-                sb.AppendLine();
-                sb.AppendLine($"{indent}// Десериализуем успешный ответ");
-                sb.AppendLine($"{indent}try");
-                sb.AppendLine($"{indent}{{");
-                sb.AppendLine($"{indent}    if (response.Content == null || response.Content.Headers.ContentLength == 0)");
-                sb.AppendLine($"{indent}    {{");
-                sb.AppendLine($"{indent}        return default({responseType});");
-                sb.AppendLine($"{indent}    }}");
-                sb.AppendLine();
-                sb.AppendLine($"{indent}    var contentType = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() ?? string.Empty;");
-                sb.AppendLine();
-                sb.AppendLine($"{indent}    if (contentType.Contains(\"json\") || string.IsNullOrEmpty(contentType))");
-                sb.AppendLine($"{indent}    {{");
-                sb.AppendLine($"{indent}        var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);");
-                sb.AppendLine();
-                sb.AppendLine($"{indent}        if (string.IsNullOrWhiteSpace(responseContent))");
-                sb.AppendLine($"{indent}        {{");
-                sb.AppendLine($"{indent}            return default({responseType});");
-                sb.AppendLine($"{indent}        }}");
-                sb.AppendLine();
-                sb.AppendLine($"{indent}        try");
-                sb.AppendLine($"{indent}        {{");
-                sb.AppendLine($"{indent}            var result = System.Text.Json.JsonSerializer.Deserialize<{responseType}>(responseContent, _jsonSerializerOptions);");
-                sb.AppendLine($"{indent}            return result ?? throw new ValioHttpRequestException($\"Response deserialization returned null for type {{{responseType}}}\", response, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
-                sb.AppendLine($"{indent}        }}");
-                sb.AppendLine($"{indent}        catch (JsonException ex)");
-                sb.AppendLine($"{indent}        {{");
-                sb.AppendLine($"{indent}            var preview = responseContent.Length > 500 ? responseContent.Substring(0, 500) + \"...\" : responseContent;");
-                sb.AppendLine($"{indent}            throw new ValioHttpRequestException($\"Failed to deserialize response to type {{{responseType}}}. Response preview: {{preview}}\", response, ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
-                sb.AppendLine($"{indent}        }}");
-                sb.AppendLine($"{indent}    }}");
-                sb.AppendLine($"{indent}    else");
-                sb.AppendLine($"{indent}    {{");
-                sb.AppendLine($"{indent}        using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);");
-                sb.AppendLine($"{indent}        using var memoryStream = new MemoryStream();");
-                sb.AppendLine($"{indent}        await responseStream.CopyToAsync(memoryStream, cancellationToken);");
-                sb.AppendLine($"{indent}        memoryStream.Position = 0;");
-                sb.AppendLine();
-                sb.AppendLine($"{indent}        try");
-                sb.AppendLine($"{indent}        {{");
-                sb.AppendLine($"{indent}            var result = await System.Text.Json.JsonSerializer.DeserializeAsync<{responseType}>(memoryStream, _jsonSerializerOptions, cancellationToken);");
-                sb.AppendLine($"{indent}            return result ?? throw new ValioHttpRequestException($\"Response deserialization returned null for type {{{responseType}}}\", response, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
-                sb.AppendLine($"{indent}        }}");
-                sb.AppendLine($"{indent}        catch (JsonException ex)");
-                sb.AppendLine($"{indent}        {{");
-                sb.AppendLine($"{indent}            throw new ValioHttpRequestException($\"Failed to deserialize response stream to type {{{responseType}}}. Content-Type: {{contentType}}\", response, ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
-                sb.AppendLine($"{indent}        }}");
-                sb.AppendLine($"{indent}    }}");
-                sb.AppendLine($"{indent}}}");
-                sb.AppendLine($"{indent}catch (ValioHttpRequestException)");
-                sb.AppendLine($"{indent}{{");
-                sb.AppendLine($"{indent}    throw;");
-                sb.AppendLine($"{indent}}}");
-                sb.AppendLine($"{indent}catch (HttpRequestException ex)");
-                sb.AppendLine($"{indent}{{");
-                sb.AppendLine($"{indent}    throw new ValioHttpRequestException($\"HTTP request failed with status {{response.StatusCode}} ({{response.ReasonPhrase}}). Operation: {{{operation.MethodName}}}\", response, ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
-                sb.AppendLine($"{indent}}}");
+                CodeFormatter.AppendLine(sb, indentLevel, "// Обрабатываем успешный ответ (2xx)");
+                CodeFormatter.AppendLine(sb, indentLevel, "if (statusCode < 200 || statusCode >= 300)");
+                CodeFormatter.AppendLine(sb, indentLevel, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "response.EnsureSuccessStatusCode();");
+                CodeFormatter.AppendLine(sb, indentLevel, "}");
+                CodeFormatter.AppendEmptyLine(sb);
+                CodeFormatter.AppendLine(sb, indentLevel, "// Десериализуем успешный ответ");
+                CodeFormatter.AppendLine(sb, indentLevel, "try");
+                CodeFormatter.AppendLine(sb, indentLevel, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "if (response.Content == null || response.Content.Headers.ContentLength == 0)");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, $"return default({responseType});");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
+                CodeFormatter.AppendEmptyLine(sb);
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "var contentType = response.Content.Headers.ContentType?.MediaType?.ToLowerInvariant() ?? string.Empty;");
+                CodeFormatter.AppendEmptyLine(sb);
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "if (contentType.Contains(\"json\") || string.IsNullOrEmpty(contentType))");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "var responseContent = await response.Content.ReadAsStringAsync(cancellationToken);");
+                CodeFormatter.AppendEmptyLine(sb);
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "if (string.IsNullOrWhiteSpace(responseContent))");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, $"return default({responseType});");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "}");
+                CodeFormatter.AppendEmptyLine(sb);
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "try");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, $"var result = System.Text.Json.JsonSerializer.Deserialize<{responseType}>(responseContent, _jsonSerializerOptions);");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, $"return result ?? throw new ValioHttpRequestException($\"Response deserialization returned null for type {{{responseType}}}\", response, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "}");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "catch (JsonException ex)");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, "var preview = responseContent.Length > 500 ? responseContent.Substring(0, 500) + \"...\" : responseContent;");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, $"throw new ValioHttpRequestException($\"Failed to deserialize response to type {{{responseType}}}. Response preview: {{preview}}\", response, ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "}");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "else");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "using var responseStream = await response.Content.ReadAsStreamAsync(cancellationToken);");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "using var memoryStream = new MemoryStream();");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "await responseStream.CopyToAsync(memoryStream, cancellationToken);");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "memoryStream.Position = 0;");
+                CodeFormatter.AppendEmptyLine(sb);
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "try");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, $"var result = await System.Text.Json.JsonSerializer.DeserializeAsync<{responseType}>(memoryStream, _jsonSerializerOptions, cancellationToken);");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, $"return result ?? throw new ValioHttpRequestException($\"Response deserialization returned null for type {{{responseType}}}\", response, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "}");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "catch (JsonException ex)");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 3, $"throw new ValioHttpRequestException($\"Failed to deserialize response stream to type {{{responseType}}}. Content-Type: {{contentType}}\", response, ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                CodeFormatter.AppendLine(sb, indentLevel + 2, "}");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
+                CodeFormatter.AppendLine(sb, indentLevel, "}");
+                CodeFormatter.AppendLine(sb, indentLevel, "catch (ValioHttpRequestException)");
+                CodeFormatter.AppendLine(sb, indentLevel, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "throw;");
+                CodeFormatter.AppendLine(sb, indentLevel, "}");
+                CodeFormatter.AppendLine(sb, indentLevel, "catch (HttpRequestException ex)");
+                CodeFormatter.AppendLine(sb, indentLevel, "{");
+                CodeFormatter.AppendLine(sb, indentLevel + 1, $"throw new ValioHttpRequestException($\"HTTP request failed with status {{response.StatusCode}} ({{response.ReasonPhrase}}). Operation: {{{operation.MethodName}}}\", response, ex, \"{operation.MethodName}\", \"{operation.HttpMethod}\", \"{operation.Path}\");");
+                CodeFormatter.AppendLine(sb, indentLevel, "}");
             }
             else
             {
-                sb.AppendLine($"{indent}response.EnsureSuccessStatusCode();");
-                sb.AppendLine($"{indent}return response;");
+                CodeFormatter.AppendLine(sb, indentLevel, "response.EnsureSuccessStatusCode();");
+                CodeFormatter.AppendLine(sb, indentLevel, "return response;");
             }
         }
         else
         {
-            sb.AppendLine($"{indent}response.EnsureSuccessStatusCode();");
-            sb.AppendLine($"{indent}return response;");
+            CodeFormatter.AppendLine(sb, indentLevel, "response.EnsureSuccessStatusCode();");
+            CodeFormatter.AppendLine(sb, indentLevel, "return response;");
         }
     }
 
@@ -1015,59 +991,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         return returnTypeInfo.FullTypeName;
     }
 
-    private string FormatDefaultValue(object? value, TypeInfo typeInfo)
-    {
-        if (value == null)
-            return "null";
-        
-        var baseType = typeInfo.BaseType;
-        
-        if (baseType == "string")
-        {
-            return $"\"{EscapeString(value.ToString() ?? "")}\"";
-        }
-        
-        if (baseType == "bool")
-        {
-            return value.ToString()?.ToLowerInvariant() ?? "false";
-        }
-        
-        if (baseType == "float")
-        {
-            return $"{value}f";
-        }
-        
-        if (baseType == "double")
-        {
-            return value.ToString() ?? "0.0";
-        }
-        
-        return value.ToString() ?? "0";
-    }
-
-    private string EscapeXmlComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;");
-    }
-
-    private string EscapeString(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("\\", "\\\\")
-            .Replace("\"", "\\\"")
-            .Replace("\n", "\\n")
-            .Replace("\r", "\\r")
-            .Replace("\t", "\\t");
-    }
+    // Методы FormatDefaultValue, EscapeXmlComment и EscapeString теперь в ValIO.Core.Utilities
 
     private T GetOption<T>(Dictionary<string, object> options, string key, T defaultValue)
     {

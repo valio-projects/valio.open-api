@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.CSharp.Renderers;
 
@@ -39,12 +40,7 @@ public class ClassModelRenderer : IModelFormatRenderer
         }
         
         // Генерируем XML комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/// <summary>");
-            sb.AppendLine($"/// {EscapeXmlComment(data.Description)}");
-            sb.AppendLine("/// </summary>");
-        }
+        CommentGenerator.GenerateXmlComment(sb, 0, data.Description);
         
         // Генерируем класс
         var classDeclaration = new StringBuilder();
@@ -63,7 +59,7 @@ public class ClassModelRenderer : IModelFormatRenderer
         // Генерируем свойства
         foreach (var property in data.Properties)
         {
-            GenerateProperty(sb, property, indent: "    ");
+            GenerateProperty(sb, property, indentLevel: 1);
         }
         
         sb.AppendLine("}");
@@ -71,22 +67,17 @@ public class ClassModelRenderer : IModelFormatRenderer
         return sb.ToString();
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, string indent)
+    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, int indentLevel)
     {
         // Генерируем XML комментарий
-        if (!string.IsNullOrEmpty(property.Description))
-        {
-            sb.AppendLine($"{indent}/// <summary>");
-            sb.AppendLine($"{indent}/// {EscapeXmlComment(property.Description)}");
-            sb.AppendLine($"{indent}/// </summary>");
-        }
+        CommentGenerator.GenerateXmlComment(sb, indentLevel, property.Description);
         
         // Генерируем свойство
         var nullable = property.IsNullable ? "?" : "";
         var typeString = FormatType(property.TypeInfo);
-        var defaultValue = property.DefaultValue != null ? $" = {FormatDefaultValue(property.DefaultValue, property.TypeInfo)}" : "";
+        var defaultValue = property.DefaultValue != null ? $" = {DefaultValueFormatter.FormatDefaultValue(property.DefaultValue, property.TypeInfo)}" : "";
         
-        sb.AppendLine($"{indent}public {typeString}{nullable} {property.Name} {{ get; set; }}{defaultValue}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"public {typeString}{nullable} {property.Name} {{ get; set; }}{defaultValue}");
     }
 
     private string FormatType(TypeInfo typeInfo)
@@ -94,41 +85,7 @@ public class ClassModelRenderer : IModelFormatRenderer
         return typeInfo.FullTypeName;
     }
 
-    private string FormatDefaultValue(object? value, TypeInfo typeInfo)
-    {
-        if (value == null)
-            return "null";
-        
-        var baseType = typeInfo.BaseType;
-        
-        if (baseType == "string")
-        {
-            return $"\"{value}\"";
-        }
-        
-        if (baseType == "bool")
-        {
-            return value.ToString()?.ToLowerInvariant() ?? "false";
-        }
-        
-        if (baseType == "float")
-        {
-            return $"{value}f";
-        }
-        
-        return value.ToString() ?? "null";
-    }
-
-    private string EscapeXmlComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;");
-    }
+    // Методы FormatDefaultValue и EscapeXmlComment теперь в ValIO.Core.Utilities
 
     private HashSet<string> ExtractNamespaces(IReadOnlyList<string> dependencies)
     {

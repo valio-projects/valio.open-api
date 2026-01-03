@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.CSharp.Renderers;
 
@@ -28,12 +29,7 @@ public class CSharpEnumRenderer : IEnumFormatRenderer
         }
         
         // Генерируем XML комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/// <summary>");
-            sb.AppendLine($"/// {EscapeXmlComment(data.Description)}");
-            sb.AppendLine("/// </summary>");
-        }
+        CommentGenerator.GenerateXmlComment(sb, 0, data.Description);
         
         // Генерируем объявление enum
         var underlyingType = data.UnderlyingType ?? "int";
@@ -59,16 +55,11 @@ public class CSharpEnumRenderer : IEnumFormatRenderer
             var value = data.Values[i];
             
             // Генерируем XML комментарий для значения
-            if (!string.IsNullOrEmpty(value.Description))
-            {
-                sb.AppendLine("    /// <summary>");
-                sb.AppendLine($"    /// {EscapeXmlComment(value.Description)}");
-                sb.AppendLine("    /// </summary>");
-            }
+            CommentGenerator.GenerateXmlComment(sb, 1, value.Description);
             
             // Генерируем значение enum
             var comma = i < data.Values.Count - 1 ? "," : "";
-            sb.AppendLine($"    {value.Name} = {value.ValueString}{comma}");
+            CodeFormatter.AppendLine(sb, 1, $"{value.Name} = {value.ValueString}{comma}");
         }
         
         sb.AppendLine("}");
@@ -76,14 +67,5 @@ public class CSharpEnumRenderer : IEnumFormatRenderer
         return sb.ToString();
     }
 
-    private string EscapeXmlComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("&", "&amp;")
-            .Replace("<", "&lt;")
-            .Replace(">", "&gt;");
-    }
+    // Метод EscapeXmlComment теперь в ValIO.Core.Utilities.CodeEscapeHelper
 }

@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.TypeScript.Renderers;
 
@@ -21,12 +22,7 @@ public class TypeScriptEnumRenderer : IEnumFormatRenderer
         var sb = new StringBuilder();
         
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         // Генерируем TypeScript enum
         sb.AppendLine($"export enum {data.Name} {{");
@@ -34,30 +30,15 @@ public class TypeScriptEnumRenderer : IEnumFormatRenderer
         {
             var value = data.Values[i];
             
-            if (!string.IsNullOrEmpty(value.Description))
-            {
-                sb.AppendLine("  /**");
-                sb.AppendLine($"   * {EscapeJSDocComment(value.Description)}");
-                sb.AppendLine("   */");
-            }
+            CommentGenerator.GenerateJSDocComment(sb, 1, value.Description);
             
             var comma = i < data.Values.Count - 1 ? "," : "";
-            sb.AppendLine($"  {value.Name} = {value.ValueString}{comma}");
+            CodeFormatter.AppendLine(sb, 1, $"{value.Name} = {value.ValueString}{comma}");
         }
         sb.AppendLine("}");
         
         return sb.ToString();
     }
 
-    private string EscapeJSDocComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("*/", "* /")
-            .Replace("\r\n", " ")
-            .Replace("\n", " ")
-            .Replace("\r", " ");
-    }
+    // Метод EscapeJSDocComment теперь в ValIO.Core.Utilities.CodeEscapeHelper
 }
