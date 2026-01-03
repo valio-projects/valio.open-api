@@ -7,6 +7,10 @@ namespace ValIO.Core.Factories;
 /// <summary>
 /// Фабрика для получения генераторов схем валидации (Factory Pattern)
 /// </summary>
+/// <remarks>
+/// Устаревший класс. Используйте IModelFormatRenderer и IEnumFormatRenderer вместо этого.
+/// </remarks>
+[Obsolete("Use IModelFormatRenderer and IEnumFormatRenderer instead. This factory will be removed in a future version.")]
 public class SchemaGeneratorFactory
 {
     private readonly IServiceProvider _serviceProvider;

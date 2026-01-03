@@ -5,6 +5,10 @@ namespace ValIO.Core.Models;
 /// <summary>
 /// Enum из OpenAPI схемы
 /// </summary>
+/// <remarks>
+/// Устаревший класс. Используйте EnumTemplateData вместо этого.
+/// </remarks>
+[Obsolete("Use EnumTemplateData instead. This class will be removed in a future version.")]
 public class ApiEnum
 {
     public string Name { get; set; } = string.Empty;

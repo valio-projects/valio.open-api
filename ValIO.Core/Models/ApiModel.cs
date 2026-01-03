@@ -6,6 +6,10 @@ namespace ValIO.Core.Models;
 /// <summary>
 /// Модель данных API
 /// </summary>
+/// <remarks>
+/// Устаревший класс. Используйте ModelTemplateData вместо этого.
+/// </remarks>
+[Obsolete("Use ModelTemplateData instead. This class will be removed in a future version.")]
 public class ApiModel
 {
     public string Name { get; set; } = string.Empty;

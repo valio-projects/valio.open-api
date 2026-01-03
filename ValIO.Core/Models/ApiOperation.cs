@@ -6,6 +6,10 @@ namespace ValIO.Core.Models;
 /// <summary>
 /// Операция API
 /// </summary>
+/// <remarks>
+/// Устаревший класс. Используйте OperationTemplateData вместо этого.
+/// </remarks>
+[Obsolete("Use OperationTemplateData instead. This class will be removed in a future version.")]
 public class ApiOperation
 {
     public string OperationId { get; set; } = string.Empty;

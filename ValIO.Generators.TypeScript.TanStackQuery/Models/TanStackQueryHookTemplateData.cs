@@ -1,4 +1,4 @@
-using ValIO.Core.Models;
+using ValIO.Core.Models.TemplateData;
 using ValIO.Generators.TypeScript.Models;
 
 namespace ValIO.Generators.TypeScript.TanStackQuery.Models;
@@ -11,8 +11,14 @@ public class TanStackQueryHookTemplateData
     public string HookName { get; set; } = string.Empty;
     public string FunctionName { get; set; } = string.Empty;
     public string QueryKeyFunctionName { get; set; } = string.Empty;
-    public ApiOperation Operation { get; set; } = null!;
-    public TypeScriptOperationTemplateData OperationTemplate { get; set; } = null!;
+    /// <summary>
+    /// Универсальные данные операции (используется вместо устаревшего ApiOperation)
+    /// </summary>
+    public OperationTemplateData Operation { get; set; } = null!;
+    /// <summary>
+    /// TypeScript специфичные данные операции (для обратной совместимости, может быть удалено в будущем)
+    /// </summary>
+    public TypeScriptOperationTemplateData? OperationTemplate { get; set; }
     public bool IsQuery { get; set; }
     public bool IsMutation { get; set; }
     public TypeScriptGenerationOptions Options { get; set; } = null!;

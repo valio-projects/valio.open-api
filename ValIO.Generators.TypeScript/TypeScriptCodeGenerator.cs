@@ -18,18 +18,27 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     private readonly TypeScriptTypeMapper _typescriptTypeMapper;
     private readonly TypeScriptCodeRenderer _codeRenderer;
     private readonly ILoggerFactory _loggerFactory;
+    private readonly IQueryWrapperRenderer? _queryWrapperRenderer;
+    private readonly IModelFormatRenderer? _zodModelRenderer;
+    private readonly IEnumFormatRenderer? _zodEnumRenderer;
 
     public TypeScriptCodeGenerator(
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
         IFileWriter fileWriter,
         ILogger<TypeScriptCodeGenerator> logger,
-        ILoggerFactory loggerFactory)
+        ILoggerFactory loggerFactory,
+        IQueryWrapperRenderer? queryWrapperRenderer = null,
+        IModelFormatRenderer? zodModelRenderer = null,
+        IEnumFormatRenderer? zodEnumRenderer = null)
         : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.TypeScript)
     {
         _typescriptTypeMapper = typeMapper as TypeScriptTypeMapper ?? throw new InvalidOperationException("TypeMapper must be TypeScriptTypeMapper");
         _codeRenderer = new TypeScriptCodeRenderer();
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _queryWrapperRenderer = queryWrapperRenderer;
+        _zodModelRenderer = zodModelRenderer;
+        _zodEnumRenderer = zodEnumRenderer;
     }
 
     public override bool SupportsLanguage(GenerationLanguage language)
@@ -172,16 +181,25 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         generatedFiles[file.Key] = file.Value;
                     }
                     
-                    // TODO: Генерация TanStack Query хуков временно отключена из-за циклической зависимости
-                    // Если UseTanStackQuery = true, дополнительно генерируем TanStack Query хуки
-                    // if (typescriptOptions.UseTanStackQuery)
-                    // {
-                    //     var queryFiles = await GenerateTanStackQueryHooksAsync(operationTemplateDataList, document, config, schemaResolver, typescriptOptions);
-                    //     foreach (var file in queryFiles)
-                    //     {
-                    //         generatedFiles[file.Key] = file.Value;
-                    //     }
-                    // }
+                    // Если UseTanStackQuery = true и renderer доступен, генерируем TanStack Query хуки
+                    if (typescriptOptions.UseTanStackQuery && _queryWrapperRenderer != null)
+                    {
+                        try
+                        {
+                            var queryFiles = await GenerateTanStackQueryHooksAsync(operationTemplateDataList, config, typescriptOptions);
+                            foreach (var file in queryFiles)
+                            {
+                                generatedFiles[file.Key] = file.Value;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError(ex, "Failed to generate TanStack Query hooks");
+                            var errors = result.Errors.ToList();
+                            errors.Add($"Failed to generate TanStack Query hooks: {ex.Message}");
+                            result.Errors = errors;
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -371,35 +389,31 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 
                 files[modelFilePath] = modelCode;
                 
-                // TODO: Генерация Zod схем временно отключена из-за циклической зависимости
-                // Генерируем Zod схему, если ValidationLibrary = Zod
-                // if (options.ValidationLibrary == ValidationLibrary.Zod)
-                // {
-                //     try
-                //     {
-                //         // Устанавливаем формат на ValidationSchema
-                //         var originalFormat = modelTemplateData.Format;
-                //         modelTemplateData.Format = ModelFormat.ValidationSchema;
-                //         
-                //         // Подготавливаем Zod схемы для всех свойств перед рендерингом
-                //         PrepareZodSchemasForModel(modelTemplateData, document, schemaResolver, zodTypeMapper);
-                //         
-                //         // Рендерим Zod схему
-                //         var schemaCode = zodSchemaRenderer.Render(modelTemplateData);
-                //         var schemaFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.schema.ts";
-                //         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
-                //         
-                //         files[schemaFilePath] = schemaCode;
-                //         
-                //         // Восстанавливаем оригинальный формат
-                //         modelTemplateData.Format = originalFormat;
-                //     }
-                //     catch (Exception ex)
-                //     {
-                //         Logger.LogError(ex, "Failed to generate Zod schema for model: {ModelName}", modelTemplateData.Name);
-                //         // Продолжаем генерацию других моделей
-                //     }
-                // }
+                // Генерируем Zod схему, если ValidationLibrary = Zod и renderer доступен
+                if (options.ValidationLibrary == ValidationLibrary.Zod && _zodModelRenderer != null)
+                {
+                    try
+                    {
+                        // Устанавливаем формат на ValidationSchema
+                        var originalFormat = modelTemplateData.Format;
+                        modelTemplateData.Format = ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema;
+                        
+                        // Рендерим Zod схему через интерфейс
+                        var schemaCode = _zodModelRenderer.Render(modelTemplateData);
+                        var schemaFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.schema.ts";
+                        var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
+                        
+                        files[schemaFilePath] = schemaCode;
+                        
+                        // Восстанавливаем оригинальный формат
+                        modelTemplateData.Format = originalFormat;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "Failed to generate Zod schema for model: {ModelName}", modelTemplateData.Name);
+                        // Продолжаем генерацию других моделей
+                    }
+                }
             }
         }
         
@@ -444,32 +458,31 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 
                 files[enumFilePath] = enumCode;
                 
-                // TODO: Генерация Zod enum схем временно отключена из-за циклической зависимости
-                // Генерируем Zod enum схему, если ValidationLibrary = Zod
-                // if (options.ValidationLibrary == ValidationLibrary.Zod)
-                // {
-                //     try
-                //     {
-                //         // Устанавливаем формат на ValidationSchema
-                //         var originalFormat = enumTemplateData.Format;
-                //         enumTemplateData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
-                //         
-                //         // Рендерим Zod enum схему
-                //         var schemaCode = zodEnumSchemaRenderer.Render(enumTemplateData);
-                //         var schemaFileName = $"{NamingConverter.ToCamelCase(enumTemplateData.Name)}.schema.ts";
-                //         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
-                //         
-                //         files[schemaFilePath] = schemaCode;
-                //         
-                //         // Восстанавливаем оригинальный формат
-                //         enumTemplateData.Format = originalFormat;
-                //     }
-                //     catch (Exception ex)
-                //     {
-                //         Logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", enumTemplateData.Name);
-                //         // Продолжаем генерацию других enum'ов
-                //     }
-                // }
+                // Генерируем Zod enum схему, если ValidationLibrary = Zod и renderer доступен
+                if (options.ValidationLibrary == ValidationLibrary.Zod && _zodEnumRenderer != null)
+                {
+                    try
+                    {
+                        // Устанавливаем формат на ValidationSchema
+                        var originalFormat = enumTemplateData.Format;
+                        enumTemplateData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
+                        
+                        // Рендерим Zod enum схему через интерфейс
+                        var schemaCode = _zodEnumRenderer.Render(enumTemplateData);
+                        var schemaFileName = $"{NamingConverter.ToCamelCase(enumTemplateData.Name)}.schema.ts";
+                        var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
+                        
+                        files[schemaFilePath] = schemaCode;
+                        
+                        // Восстанавливаем оригинальный формат
+                        enumTemplateData.Format = originalFormat;
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", enumTemplateData.Name);
+                        // Продолжаем генерацию других enum'ов
+                    }
+                }
             }
         }
         
@@ -829,26 +842,75 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         result.Warnings = warnings;
     }
 
-    // TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.TanStackQuery
-    private async Task<Dictionary<string, string>> GenerateTanStackQueryHooksAsync(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    /// <summary>
+    /// Генерирует TanStack Query хуки для операций
+    /// </summary>
+    private async Task<Dictionary<string, string>> GenerateTanStackQueryHooksAsync(
+        IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList, 
+        GenerationConfiguration config, 
+        TypeScriptGenerationOptions options)
     {
-        throw new NotImplementedException("TanStack Query hooks generation is temporarily disabled due to circular dependency. Requires architecture refactoring.");
-    }
+        if (_queryWrapperRenderer == null)
+            return new Dictionary<string, string>();
 
-    // TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.TanStackQuery
-    private string GenerateTanStackQueryHooksCode(List<Core.Models.TemplateData.OperationTemplateData> operations, string groupName, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options, object queryRenderer)
-    {
-        throw new NotImplementedException("TanStack Query hooks code generation is temporarily disabled due to circular dependency. Requires architecture refactoring.");
+        var files = new Dictionary<string, string>();
+        
+        // Группируем операции по стратегии из конфигурации
+        var groupedOperations = GroupOperations(operationTemplateDataList, config);
+        
+        foreach (var group in groupedOperations)
+        {
+            var groupName = group.Key;
+            var operations = group.Value;
+            
+            var hooksCode = GenerateTanStackQueryHooksCode(operations, groupName, config, options);
+            var fileName = $"{NamingConverter.ToCamelCase(groupName)}.hooks.ts";
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
+            
+            files[filePath] = hooksCode;
+        }
+        
+        return files;
     }
 
     /// <summary>
-    /// Подготавливает Zod схемы для всех свойств модели перед рендерингом
-    /// TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.Zod
+    /// Генерирует код TanStack Query хуков для группы операций
     /// </summary>
-    private void PrepareZodSchemasForModel(Core.Models.TemplateData.ModelTemplateData modelTemplateData, OpenApiDocument document, ISchemaResolver schemaResolver, object zodTypeMapper)
+    private string GenerateTanStackQueryHooksCode(
+        List<Core.Models.TemplateData.OperationTemplateData> operations, 
+        string groupName, 
+        GenerationConfiguration config, 
+        TypeScriptGenerationOptions options)
     {
-        // TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.Zod
-        throw new NotImplementedException("Zod schema preparation is temporarily disabled due to circular dependency. Requires architecture refactoring.");
+        if (_queryWrapperRenderer == null)
+            return string.Empty;
+
+        var sb = new StringBuilder();
+        
+        // Импорты для TanStack Query
+        sb.AppendLine("import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';");
+        sb.AppendLine();
+        
+        // Генерируем хуки для каждой операции
+        foreach (var operation in operations)
+        {
+            var isQuery = operation.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase);
+            
+            if (isQuery)
+            {
+                var hookCode = _queryWrapperRenderer.RenderQueryHook(operation);
+                sb.AppendLine(hookCode);
+                sb.AppendLine();
+            }
+            else
+            {
+                var hookCode = _queryWrapperRenderer.RenderMutationHook(operation);
+                sb.AppendLine(hookCode);
+                sb.AppendLine();
+            }
+        }
+        
+        return sb.ToString();
     }
 
     // Метод EnsureTemplatesPreloadedAsync удален - шаблоны больше не используются

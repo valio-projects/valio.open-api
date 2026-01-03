@@ -1,7 +1,9 @@
+using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
+using ValIO.Core.Models.TemplateData;
 
 namespace ValIO.Core.Services;
 
@@ -148,5 +150,77 @@ public abstract class BaseCodeGenerator : ICodeGenerator
             warnings.Add("No files were generated");
             result.Warnings = warnings;
         }
+    }
+
+    /// <summary>
+    /// Группирует операции по стратегии из конфигурации
+    /// </summary>
+    protected virtual Dictionary<string, List<OperationTemplateData>> GroupOperations(
+        IReadOnlyList<OperationTemplateData> operations, 
+        GenerationConfiguration config)
+    {
+        var groups = new Dictionary<string, List<OperationTemplateData>>();
+
+        switch (config.FileOrganization.GroupingStrategy)
+        {
+            case FileGroupingStrategy.ByTag:
+                foreach (var operation in operations)
+                {
+                    var tag = operation.Tags?.FirstOrDefault() ?? "Default";
+                    var sanitizedTag = NamingConverter.SanitizeIdentifier(tag);
+                    if (!groups.ContainsKey(sanitizedTag))
+                    {
+                        groups[sanitizedTag] = new List<OperationTemplateData>();
+                    }
+                    groups[sanitizedTag].Add(operation);
+                }
+                break;
+
+            case FileGroupingStrategy.ByRoute:
+                foreach (var operation in operations)
+                {
+                    // Извлекаем базовый путь из route (например, /api/users -> Users)
+                    var routeGroup = ExtractRouteGroup(operation.Path);
+                    if (!groups.ContainsKey(routeGroup))
+                    {
+                        groups[routeGroup] = new List<OperationTemplateData>();
+                    }
+                    groups[routeGroup].Add(operation);
+                }
+                break;
+
+            case FileGroupingStrategy.SingleFile:
+            default:
+                // SingleFile - все операции в одном клиенте
+                groups["Api"] = operations.ToList();
+                break;
+        }
+
+        return groups;
+    }
+
+    /// <summary>
+    /// Извлекает имя группы из пути операции
+    /// Например: /api/users/{id} -> Users, /api/products -> Products
+    /// </summary>
+    protected virtual string ExtractRouteGroup(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return "Default";
+
+        // Убираем параметры пути {id}, {userId} и т.д.
+        var pathWithoutParams = System.Text.RegularExpressions.Regex.Replace(path, @"/\{[^}]+\}", "");
+        
+        // Разбиваем путь на части
+        var parts = pathWithoutParams.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        
+        if (parts.Length == 0)
+            return "Default";
+
+        // Берем последнюю часть пути (например, "users" из "/api/users")
+        var lastPart = parts[^1];
+        
+        // Преобразуем в PascalCase
+        return NamingConverter.ToPascalCase(lastPart);
     }
 }

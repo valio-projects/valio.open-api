@@ -732,53 +732,14 @@ public class ValioHttpRequestException : HttpRequestException
 ";
     }
 
-    private Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>> GroupOperations(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationConfiguration config)
-    {
-        var groups = new Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>>();
-
-        switch (config.FileOrganization.GroupingStrategy)
-        {
-            case FileGroupingStrategy.ByTag:
-                foreach (var operation in operations)
-                {
-                    var tag = operation.Tags?.FirstOrDefault() ?? "Default";
-                    var sanitizedTag = NamingConverter.SanitizeIdentifier(tag);
-                    if (!groups.ContainsKey(sanitizedTag))
-                    {
-                        groups[sanitizedTag] = new List<Core.Models.TemplateData.OperationTemplateData>();
-                    }
-                    groups[sanitizedTag].Add(operation);
-                }
-                break;
-
-            case FileGroupingStrategy.ByRoute:
-                foreach (var operation in operations)
-                {
-                    // Извлекаем базовый путь из route (например, /api/users -> Users)
-                    var routeGroup = ExtractRouteGroup(operation.Path);
-                    if (!groups.ContainsKey(routeGroup))
-                    {
-                        groups[routeGroup] = new List<Core.Models.TemplateData.OperationTemplateData>();
-                    }
-                    groups[routeGroup].Add(operation);
-                }
-                break;
-
-            case FileGroupingStrategy.SingleFile:
-            default:
-                // SingleFile - все операции в одном клиенте
-                groups["Api"] = operations.ToList();
-                break;
-        }
-
-        return groups;
-    }
+    // GroupOperations и ExtractRouteGroup теперь в базовом классе BaseCodeGenerator
+    // Переопределяем ExtractRouteGroup для более сложной логики C#
 
     /// <summary>
-    /// Извлекает имя группы из пути операции
+    /// Извлекает имя группы из пути операции (C# специфичная реализация)
     /// Например: /api/users/{id} -> Users, /api/products -> Products
     /// </summary>
-    private string ExtractRouteGroup(string path)
+    protected override string ExtractRouteGroup(string path)
     {
         if (string.IsNullOrEmpty(path))
             return "Default";

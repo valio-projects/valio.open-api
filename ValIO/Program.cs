@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+﻿using System;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ValIO.CLI;
 using ValIO.Configuration.Interfaces;
@@ -53,12 +54,49 @@ class Program
         services.AddSingleton<IConfigurationLoader, ConfigurationLoader>();
         services.AddSingleton<IConfigurationValidator, ConfigurationValidator>();
 
-        // Schema Generators (Zod, Yup, Valli, etc.)
-        // TODO: Регистрация ZodSchemaRenderer временно отключена из-за циклических зависимостей
-        // и необходимости рефакторинга архитектуры. ZodSchemaRenderer реализует IModelFormatRenderer,
-        // а не ISchemaGenerator, и используется внутри TypeScriptCodeGenerator.
-        // services.AddSingleton<ValIO.Generators.TypeScript.Zod.ZodTypeMapper>(sp => 
-        //     new ValIO.Generators.TypeScript.Zod.ZodTypeMapper(sp.GetRequiredService<INamingConverter>()));
+        // Renderers для TypeScript (опциональные, используются через DI для избежания циклических зависимостей)
+        // Регистрируем только если проекты доступны (через условную компиляцию или проверку типов)
+        try
+        {
+            // Регистрируем TanStack Query renderer
+            var tanStackQueryRendererType = Type.GetType("ValIO.Generators.TypeScript.TanStackQuery.TanStackQueryRenderer, ValIO.Generators.TypeScript.TanStackQuery");
+            if (tanStackQueryRendererType != null)
+            {
+                services.AddSingleton(typeof(IQueryWrapperRenderer), sp =>
+                {
+                    var namingConverter = sp.GetRequiredService<INamingConverter>();
+                    return Activator.CreateInstance(tanStackQueryRendererType, namingConverter)!;
+                });
+            }
+            
+            // Регистрируем Zod renderers
+            var zodTypeMapperType = Type.GetType("ValIO.Generators.TypeScript.Zod.ZodTypeMapper, ValIO.Generators.TypeScript.Zod");
+            var zodSchemaRendererType = Type.GetType("ValIO.Generators.TypeScript.Zod.ZodSchemaRenderer, ValIO.Generators.TypeScript.Zod");
+            if (zodSchemaRendererType != null && zodTypeMapperType != null)
+            {
+                services.AddSingleton(typeof(IModelFormatRenderer), sp =>
+                {
+                    var namingConverter = sp.GetRequiredService<INamingConverter>();
+                    var zodTypeMapper = Activator.CreateInstance(zodTypeMapperType, namingConverter)!;
+                    return Activator.CreateInstance(zodSchemaRendererType, namingConverter, zodTypeMapper)!;
+                });
+            }
+            
+            var zodEnumSchemaRendererType = Type.GetType("ValIO.Generators.TypeScript.Zod.Renderers.ZodEnumSchemaRenderer, ValIO.Generators.TypeScript.Zod");
+            if (zodEnumSchemaRendererType != null)
+            {
+                services.AddSingleton(typeof(IEnumFormatRenderer), sp =>
+                {
+                    var namingConverter = sp.GetRequiredService<INamingConverter>();
+                    return Activator.CreateInstance(zodEnumSchemaRendererType, namingConverter)!;
+                });
+            }
+        }
+        catch
+        {
+            // Если проекты не доступны, просто пропускаем регистрацию
+            // Renderers будут null и функциональность будет отключена
+        }
 
         // Factories
         services.AddSingleton<TypeMapperFactory>();

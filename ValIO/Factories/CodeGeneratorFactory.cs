@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ValIO.Core.Factories;
@@ -57,11 +58,21 @@ public class CodeGeneratorFactory
         var logger = _serviceProvider.GetRequiredService<ILogger<TypeScriptCodeGenerator>>();
         var loggerFactory = _serviceProvider.GetRequiredService<ILoggerFactory>();
 
+        // Получаем опциональные renderers через DI (могут быть не зарегистрированы)
+        var queryWrapperRenderer = _serviceProvider.GetService<IQueryWrapperRenderer>();
+        var zodModelRenderer = _serviceProvider.GetServices<IModelFormatRenderer>()
+            .FirstOrDefault(r => r.Format == ModelFormat.ValidationSchema && r.Language == GenerationLanguage.TypeScript);
+        var zodEnumRenderer = _serviceProvider.GetServices<IEnumFormatRenderer>()
+            .FirstOrDefault(r => r.Format == EnumFormat.ValidationSchema && r.Language == GenerationLanguage.TypeScript);
+
         return new TypeScriptCodeGenerator(
             typeMapper,
             namingConverter,
             fileWriter,
             logger,
-            loggerFactory);
+            loggerFactory,
+            queryWrapperRenderer,
+            zodModelRenderer,
+            zodEnumRenderer);
     }
 }
