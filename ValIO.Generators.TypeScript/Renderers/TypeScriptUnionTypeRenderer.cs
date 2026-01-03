@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.TypeScript.Renderers;
 
@@ -21,12 +22,7 @@ public class TypeScriptUnionTypeRenderer : IEnumFormatRenderer
         var sb = new StringBuilder();
         
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         // Генерируем TypeScript union type
         sb.Append($"export type {data.Name} = ");
@@ -44,15 +40,5 @@ public class TypeScriptUnionTypeRenderer : IEnumFormatRenderer
         return sb.ToString();
     }
 
-    private string EscapeJSDocComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("*/", "* /")
-            .Replace("\r\n", " ")
-            .Replace("\n", " ")
-            .Replace("\r", " ");
-    }
+    // Метод EscapeJSDocComment теперь в ValIO.Core.Utilities.CodeEscapeHelper
 }

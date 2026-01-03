@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.TypeScript;
 
@@ -38,12 +39,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine("import { z } from 'zod';");
             sb.AppendLine();
             
-            if (!string.IsNullOrEmpty(data.Description))
-            {
-                sb.AppendLine("/**");
-                sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-                sb.AppendLine(" */");
-            }
+            CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
             
             sb.AppendLine($"export type {data.Name} = z.infer<typeof {schemaName}>;");
             return sb.ToString();
@@ -62,12 +58,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
         
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         // Определяем формат модели
         var useTypeAlias = !string.IsNullOrEmpty(data.BaseClassName) && data.OwnProperties.Count == 0;
@@ -84,9 +75,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine($"export type {data.Name} = {data.BaseClassName} & {{");
             foreach (var property in data.OwnProperties)
             {
-                GenerateProperty(sb, property, indent: "  ");
+                GenerateProperty(sb, property, indentLevel: 1);
             }
-            sb.AppendLine("};");
+            CodeFormatter.AppendLine(sb, 0, "};");
         }
         else
         {
@@ -94,9 +85,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine($"export interface {data.Name} {{");
             foreach (var property in data.Properties)
             {
-                GenerateProperty(sb, property, indent: "  ");
+                GenerateProperty(sb, property, indentLevel: 1);
             }
-            sb.AppendLine("}");
+            CodeFormatter.AppendLine(sb, 0, "}");
         }
         
         return sb.ToString();
@@ -127,24 +118,14 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine("import { z } from 'zod';");
             sb.AppendLine();
             
-            if (!string.IsNullOrEmpty(data.Description))
-            {
-                sb.AppendLine("/**");
-                sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-                sb.AppendLine(" */");
-            }
+            CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
             
             sb.AppendLine($"export type {data.Name} = z.infer<typeof {schemaName}>;");
             return sb.ToString();
         }
         
         // Стандартная генерация enum'ов
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         if (data.Format == EnumFormat.Enum)
         {
@@ -154,15 +135,10 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             {
                 var value = data.Values[i];
                 
-                if (!string.IsNullOrEmpty(value.Description))
-                {
-                    sb.AppendLine("  /**");
-                    sb.AppendLine($"   * {EscapeJSDocComment(value.Description)}");
-                    sb.AppendLine("   */");
-                }
+                CommentGenerator.GenerateJSDocComment(sb, 1, value.Description);
                 
                 var comma = i < data.Values.Count - 1 ? "," : "";
-                sb.AppendLine($"  {value.Name} = {value.ValueString}{comma}");
+                CodeFormatter.AppendLine(sb, 1, $"{value.Name} = {value.ValueString}{comma}");
             }
             sb.AppendLine("}");
         }
@@ -391,16 +367,10 @@ public class TypeScriptCodeRenderer : ICodeRenderer
     private void RenderFetchOperation(StringBuilder sb, OperationTemplateData operation)
     {
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(operation.Summary))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(operation.Summary)}");
-            if (!string.IsNullOrEmpty(operation.Description))
-            {
-                sb.AppendLine($" * {EscapeJSDocComment(operation.Description)}");
-            }
-            sb.AppendLine(" */");
-        }
+        var commentParams = !string.IsNullOrEmpty(operation.Description) 
+            ? new[] { ("", operation.Description, (string?)null) } 
+            : null;
+        CommentGenerator.GenerateJSDocCommentWithParams(sb, 0, operation.Summary, commentParams);
         
         // Генерируем параметры
         var parameters = BuildParameterList(operation);
@@ -409,71 +379,66 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         sb.AppendLine($"export async function {operation.MethodName}(");
         if (parameters.Count > 0)
         {
-            sb.AppendLine("  " + string.Join(",\n  ", parameters));
+            var paramsStr = string.Join(",\n  ", parameters);
+            CodeFormatter.AppendLine(sb, 1, paramsStr);
         }
         sb.AppendLine($"): Promise<{responseType}> {{");
         
         // Генерируем построение пути
-        sb.AppendLine($"  const path = `{BuildPath(operation.Path, operation.PathParameters)}`;");
+        CodeFormatter.AppendLine(sb, 1, $"const path = `{BuildPath(operation.Path, operation.PathParameters)}`;");
         
         // Генерируем query параметры
-        GenerateQueryParameters(sb, operation, indent: "  ");
+        GenerateQueryParameters(sb, operation, indentLevel: 1);
         
         // Генерируем headers
-        sb.AppendLine("  const headers: Record<string, string> = {};");
+        CodeFormatter.AppendLine(sb, 1, "const headers: Record<string, string> = {};");
         foreach (var headerParam in operation.HeaderParameters)
         {
-            sb.AppendLine($"  if ({headerParam.VariableName} !== undefined) {{");
-            sb.AppendLine($"    headers['{headerParam.Name}'] = {headerParam.VariableName};");
-            sb.AppendLine("  }");
+            CodeFormatter.AppendLine(sb, 1, $"if ({headerParam.VariableName} !== undefined) {{");
+            CodeFormatter.AppendLine(sb, 2, $"headers['{headerParam.Name}'] = {headerParam.VariableName};");
+            CodeFormatter.AppendLine(sb, 1, "}");
         }
         
         // Генерируем request body
-        GenerateRequestBody(sb, operation, indent: "  ", isAxios: false);
+        GenerateRequestBody(sb, operation, indentLevel: 1, isAxios: false);
         
         // Генерируем fetch вызов
         if (operation.HasRequestBody)
         {
-            sb.AppendLine("  const response = await fetch(url, {");
-            sb.AppendLine($"    method: '{operation.HttpMethod}',");
-            sb.AppendLine("    headers,");
+            CodeFormatter.AppendLine(sb, 1, "const response = await fetch(url, {");
+            CodeFormatter.AppendLine(sb, 2, $"method: '{operation.HttpMethod}',");
+            CodeFormatter.AppendLine(sb, 2, "headers,");
             if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
             {
-                sb.AppendLine("    body: formData");
+                CodeFormatter.AppendLine(sb, 2, "body: formData");
             }
             else
             {
-                sb.AppendLine($"    body: JSON.stringify({operation.RequestBodyParameter})");
+                CodeFormatter.AppendLine(sb, 2, $"body: JSON.stringify({operation.RequestBodyParameter})");
             }
-            sb.AppendLine("  });");
+            CodeFormatter.AppendLine(sb, 1, "});");
         }
         else
         {
-            sb.AppendLine("  const response = await fetch(url, {");
-            sb.AppendLine($"    method: '{operation.HttpMethod}',");
-            sb.AppendLine("    headers");
-            sb.AppendLine("  });");
+            CodeFormatter.AppendLine(sb, 1, "const response = await fetch(url, {");
+            CodeFormatter.AppendLine(sb, 2, $"method: '{operation.HttpMethod}',");
+            CodeFormatter.AppendLine(sb, 2, "headers");
+            CodeFormatter.AppendLine(sb, 1, "});");
         }
         
         // Генерируем обработку ответа
-        GenerateResponseHandling(sb, operation, indent: "  ", isAxios: false);
+        GenerateResponseHandling(sb, operation, indentLevel: 1, isAxios: false);
         
-        sb.AppendLine("}");
+        CodeFormatter.AppendLine(sb, 0, "}");
     }
 
     private void RenderAxiosOperation(StringBuilder sb, OperationTemplateData operation, bool hasCustomInstance = false, string? customInstanceName = null)
     {
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(operation.Summary))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(operation.Summary)}");
-            if (!string.IsNullOrEmpty(operation.Description))
-            {
-                sb.AppendLine($" * {EscapeJSDocComment(operation.Description)}");
-            }
-            sb.AppendLine(" */");
-        }
+        var commentParams2 = !string.IsNullOrEmpty(operation.Description) 
+            ? new[] { ("", operation.Description, (string?)null) } 
+            : null;
+        CommentGenerator.GenerateJSDocCommentWithParams(sb, 0, operation.Summary, commentParams2);
         
         // Разделяем параметры на required и optional
         var requiredParams = new List<string>();
@@ -598,127 +563,123 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         sb.AppendLine($"export async function {operation.MethodName}(");
         if (allParams.Count > 0)
         {
-            sb.AppendLine("  " + string.Join(",\n  ", allParams));
+            var paramsStr = string.Join(",\n  ", allParams);
+            CodeFormatter.AppendLine(sb, 1, paramsStr);
         }
-        sb.AppendLine($"): Promise<{responseType}> {{");
+        CodeFormatter.AppendLine(sb, 0, $"): Promise<{responseType}> {{");
         
         // Генерируем построение пути
-        sb.AppendLine($"  const path = `{BuildPath(operation.Path, operation.PathParameters)}`;");
+        CodeFormatter.AppendLine(sb, 1, $"const path = `{BuildPath(operation.Path, operation.PathParameters)}`;");
         
         // Генерируем config
-        sb.AppendLine("  const config: AxiosRequestConfig = {");
-        sb.AppendLine($"    method: '{operation.HttpMethod.ToLowerInvariant()}',");
-        sb.AppendLine("    url: path,");
+        CodeFormatter.AppendLine(sb, 1, "const config: AxiosRequestConfig = {");
+        CodeFormatter.AppendLine(sb, 2, $"method: '{operation.HttpMethod.ToLowerInvariant()}',");
+        CodeFormatter.AppendLine(sb, 2, "url: path,");
         
         // Query parameters
         if (operation.QueryParameters.Count > 0)
         {
             if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
             {
-                sb.AppendLine("    params: params,");
+                CodeFormatter.AppendLine(sb, 2, "params: params,");
             }
             else
             {
-                sb.AppendLine("    params: {");
+                CodeFormatter.AppendLine(sb, 2, "params: {");
                 foreach (var queryParam in operation.QueryParameters)
                 {
-                    sb.AppendLine($"      '{queryParam.Name}': {queryParam.VariableName},");
+                    CodeFormatter.AppendLine(sb, 3, $"'{queryParam.Name}': {queryParam.VariableName},");
                 }
-                sb.AppendLine("    },");
+                CodeFormatter.AppendLine(sb, 2, "},");
             }
         }
         
         // Headers
-        sb.AppendLine("    headers: {");
+        CodeFormatter.AppendLine(sb, 2, "headers: {");
         foreach (var headerParam in operation.HeaderParameters)
         {
-            sb.AppendLine($"      ...({headerParam.VariableName} !== undefined ? {{ '{headerParam.Name}': {headerParam.VariableName} }} : {{}}),");
+            CodeFormatter.AppendLine(sb, 3, $"...({headerParam.VariableName} !== undefined ? {{ '{headerParam.Name}': {headerParam.VariableName} }} : {{}}),");
         }
         if (operation.HasRequestBody)
         {
             if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
             {
-                sb.AppendLine("      'Content-Type': 'multipart/form-data',");
+                CodeFormatter.AppendLine(sb, 3, "'Content-Type': 'multipart/form-data',");
             }
             else
             {
-                sb.AppendLine($"      'Content-Type': '{operation.RequestBodyContentType ?? "application/json"}',");
+                CodeFormatter.AppendLine(sb, 3, $"'Content-Type': '{operation.RequestBodyContentType ?? "application/json"}',");
             }
         }
-        sb.AppendLine("    },");
+        CodeFormatter.AppendLine(sb, 2, "},");
         
         // Request body
-        GenerateRequestBody(sb, operation, indent: "    ", isAxios: true);
+        GenerateRequestBody(sb, operation, indentLevel: 2, isAxios: true);
         
         // Signal и timeout
-        sb.AppendLine("    ...(signal !== undefined ? { signal } : {}),");
-        sb.AppendLine("    ...(timeout !== undefined ? { timeout } : {}),");
-        sb.AppendLine("  };");
-        sb.AppendLine();
+        CodeFormatter.AppendLine(sb, 2, "...(signal !== undefined ? { signal } : {}),");
+        CodeFormatter.AppendLine(sb, 2, "...(timeout !== undefined ? { timeout } : {}),");
+        CodeFormatter.AppendLine(sb, 1, "};");
+        CodeFormatter.AppendEmptyLine(sb);
         
         // Вызов Axios
         var instanceName = hasCustomInstance ? customInstanceName : "ValioAxiosClient";
-        sb.AppendLine($"  const instance = axiosInstance ?? {instanceName};");
-        sb.AppendLine($"  const response = await instance.request<{responseType}>(config);");
+        CodeFormatter.AppendLine(sb, 1, $"const instance = axiosInstance ?? {instanceName};");
+        CodeFormatter.AppendLine(sb, 1, $"const response = await instance.request<{responseType}>(config);");
         
         // Обработка ответа
-        GenerateResponseHandling(sb, operation, indent: "  ", isAxios: true);
+        GenerateResponseHandling(sb, operation, indentLevel: 1, isAxios: true);
         
-        sb.AppendLine("}");
+        CodeFormatter.AppendLine(sb, 0, "}");
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, string indent)
+    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(property.Description))
-        {
-            sb.AppendLine($"{indent}/**");
-            sb.AppendLine($"{indent} * {EscapeJSDocComment(property.Description)}");
-            sb.AppendLine($"{indent} */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
         
         // Генерируем свойство
         var optional = property.IsOptional ? "?" : "";
         var typeString = FormatType(property.TypeInfo);
-        sb.AppendLine($"{indent}{property.Name}{optional}: {typeString};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
-    private void GenerateQueryParameters(StringBuilder sb, OperationTemplateData operation, string indent)
+    private void GenerateQueryParameters(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         if (operation.QueryParameters.Count == 0)
         {
-            sb.AppendLine($"{indent}const url = path;");
+            CodeFormatter.AppendLine(sb, indentLevel, "const url = path;");
             return;
         }
         
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            sb.AppendLine($"{indent}const queryParams = params ? Object.entries(params)");
-            sb.AppendLine($"{indent}  .filter(([_, value]) => value !== undefined && value !== null)");
-            sb.AppendLine($"{indent}  .map(([key, value]) => `${{key}}=${{encodeURIComponent(String(value))}}`)");
-            sb.AppendLine($"{indent}  .join('&') : '';");
-            sb.AppendLine($"{indent}const url = queryParams ? `${{path}}?${{queryParams}}` : path;");
+            CodeFormatter.AppendLine(sb, indentLevel, "const queryParams = params ? Object.entries(params)");
+            CodeFormatter.AppendLine(sb, indentLevel + 1, ".filter(([_, value]) => value !== undefined && value !== null)");
+            CodeFormatter.AppendLine(sb, indentLevel + 1, ".map(([key, value]) => `${key}=${encodeURIComponent(String(value))}`)");
+            CodeFormatter.AppendLine(sb, indentLevel + 1, ".join('&') : '';");
+            CodeFormatter.AppendLine(sb, indentLevel, "const url = queryParams ? `${path}?${queryParams}` : path;");
         }
         else
         {
-            sb.AppendLine($"{indent}const queryParams = [");
+            CodeFormatter.AppendLine(sb, indentLevel, "const queryParams = [");
             foreach (var queryParam in operation.QueryParameters)
             {
                 if (queryParam.IsRequired)
                 {
-                    sb.AppendLine($"{indent}  `{queryParam.Name}=${{{queryParam.VariableName}}}`,");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"`{queryParam.Name}=${{{queryParam.VariableName}}}`,");
                 }
                 else
                 {
-                    sb.AppendLine($"{indent}  {queryParam.VariableName} !== undefined ? `{queryParam.Name}=${{{queryParam.VariableName}}}` : null,");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"{queryParam.VariableName} !== undefined ? `{queryParam.Name}=${{{queryParam.VariableName}}}` : null,");
                 }
             }
-            sb.AppendLine($"{indent}].filter(Boolean).join('&');");
-            sb.AppendLine($"{indent}const url = queryParams ? `${{path}}?${{queryParams}}` : path;");
+            CodeFormatter.AppendLine(sb, indentLevel, "].filter(Boolean).join('&');");
+            CodeFormatter.AppendLine(sb, indentLevel, "const url = queryParams ? `${path}?${queryParams}` : path;");
         }
     }
 
-    private void GenerateRequestBody(StringBuilder sb, OperationTemplateData operation, string indent, bool isAxios)
+    private void GenerateRequestBody(StringBuilder sb, OperationTemplateData operation, int indentLevel, bool isAxios)
     {
         if (!operation.HasRequestBody)
             return;
@@ -729,54 +690,54 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             {
                 if (!string.IsNullOrEmpty(operation.RequestSchemaName))
                 {
-                    sb.AppendLine($"{indent}data: (() => {{");
-                    sb.AppendLine($"{indent}  // Валидация и конвертация через Zod схему");
-                    sb.AppendLine($"{indent}  const dto = {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
-                    sb.AppendLine($"{indent}  const formData = new FormData();");
+                    CodeFormatter.AppendLine(sb, indentLevel, "data: (() => {");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "// Валидация и конвертация через Zod схему");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"const dto = {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "const formData = new FormData();");
                     foreach (var formProp in operation.FormDataProperties)
                     {
-                        sb.AppendLine($"{indent}  if (dto.{formProp.VariableName} !== undefined && dto.{formProp.VariableName} !== null) {{");
-                        sb.AppendLine($"{indent}    formData.append('{formProp.Name}', dto.{formProp.VariableName});");
-                        sb.AppendLine($"{indent}  }}");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, $"if (dto.{formProp.VariableName} !== undefined && dto.{formProp.VariableName} !== null) {{");
+                        CodeFormatter.AppendLine(sb, indentLevel + 2, $"formData.append('{formProp.Name}', dto.{formProp.VariableName});");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
                     }
-                    sb.AppendLine($"{indent}  return formData;");
-                    sb.AppendLine($"{indent}}})(),");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "return formData;");
+                    CodeFormatter.AppendLine(sb, indentLevel, "})(),");
                 }
                 else
                 {
-                    sb.AppendLine($"{indent}data: (() => {{");
-                    sb.AppendLine($"{indent}  const formData = new FormData();");
+                    CodeFormatter.AppendLine(sb, indentLevel, "data: (() => {");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "const formData = new FormData();");
                     foreach (var formProp in operation.FormDataProperties)
                     {
                         if (formProp.IsRequired)
                         {
-                            sb.AppendLine($"{indent}  formData.append('{formProp.Name}', {formProp.VariableName});");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"formData.append('{formProp.Name}', {formProp.VariableName});");
                         }
                         else
                         {
-                            sb.AppendLine($"{indent}  if ({formProp.VariableName} !== undefined) {{");
-                            sb.AppendLine($"{indent}    formData.append('{formProp.Name}', {formProp.VariableName});");
-                            sb.AppendLine($"{indent}  }}");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, $"if ({formProp.VariableName} !== undefined) {{");
+                            CodeFormatter.AppendLine(sb, indentLevel + 2, $"formData.append('{formProp.Name}', {formProp.VariableName});");
+                            CodeFormatter.AppendLine(sb, indentLevel + 1, "}");
                         }
                     }
-                    sb.AppendLine($"{indent}  return formData;");
-                    sb.AppendLine($"{indent}}})(),");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "return formData;");
+                    CodeFormatter.AppendLine(sb, indentLevel, "})(),");
                 }
             }
             else
             {
-                sb.AppendLine($"{indent}const formData = new FormData();");
+                CodeFormatter.AppendLine(sb, indentLevel, "const formData = new FormData();");
                 foreach (var formProp in operation.FormDataProperties)
                 {
                     if (formProp.IsRequired)
                     {
-                        sb.AppendLine($"{indent}formData.append('{formProp.Name}', {formProp.VariableName});");
+                        CodeFormatter.AppendLine(sb, indentLevel, $"formData.append('{formProp.Name}', {formProp.VariableName});");
                     }
                     else
                     {
-                        sb.AppendLine($"{indent}if ({formProp.VariableName} !== undefined) {{");
-                        sb.AppendLine($"{indent}  formData.append('{formProp.Name}', {formProp.VariableName});");
-                        sb.AppendLine($"{indent}}}");
+                        CodeFormatter.AppendLine(sb, indentLevel, $"if ({formProp.VariableName} !== undefined) {{");
+                        CodeFormatter.AppendLine(sb, indentLevel + 1, $"formData.append('{formProp.Name}', {formProp.VariableName});");
+                        CodeFormatter.AppendLine(sb, indentLevel, "}");
                     }
                 }
             }
@@ -787,14 +748,14 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             {
                 if (!string.IsNullOrEmpty(operation.RequestSchemaName))
                 {
-                    sb.AppendLine($"{indent}data: (() => {{");
-                    sb.AppendLine($"{indent}  // Валидация и конвертация через Zod схему");
-                    sb.AppendLine($"{indent}  return {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
-                    sb.AppendLine($"{indent}}})(),");
+                    CodeFormatter.AppendLine(sb, indentLevel, "data: (() => {");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "// Валидация и конвертация через Zod схему");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"return {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
+                    CodeFormatter.AppendLine(sb, indentLevel, "})(),");
                 }
                 else
                 {
-                    sb.AppendLine($"{indent}data: {operation.RequestBodyParameter},");
+                    CodeFormatter.AppendLine(sb, indentLevel, $"data: {operation.RequestBodyParameter},");
                 }
             }
             else
@@ -804,7 +765,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateResponseHandling(StringBuilder sb, OperationTemplateData operation, string indent, bool isAxios)
+    private void GenerateResponseHandling(StringBuilder sb, OperationTemplateData operation, int indentLevel, bool isAxios)
     {
         var responseTypeInfo = operation.ReturnTypeInfo.BaseType == "Task" && operation.ReturnTypeInfo.GenericArguments.Count > 0
             ? operation.ReturnTypeInfo.GenericArguments[0]
@@ -813,9 +774,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         
         if (!isAxios)
         {
-            sb.AppendLine($"{indent}if (!response.ok) {{");
-            sb.AppendLine($"{indent}  throw new Error(`HTTP error! status: ${{response.status}}`);");
-            sb.AppendLine($"{indent}}}");
+            CodeFormatter.AppendLine(sb, indentLevel, "if (!response.ok) {");
+            CodeFormatter.AppendLine(sb, indentLevel + 1, "throw new Error(`HTTP error! status: ${response.status}`);");
+            CodeFormatter.AppendLine(sb, indentLevel, "}");
         }
         
         if (shouldReturnData)
@@ -824,25 +785,25 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             {
                 if (!string.IsNullOrEmpty(operation.ResponseSchemaName))
                 {
-                    sb.AppendLine($"{indent}// Валидация и конвертация через Zod схему");
-                    sb.AppendLine($"{indent}return {operation.ResponseSchemaName}.parse(response.data);");
+                    CodeFormatter.AppendLine(sb, indentLevel, "// Валидация и конвертация через Zod схему");
+                    CodeFormatter.AppendLine(sb, indentLevel, $"return {operation.ResponseSchemaName}.parse(response.data);");
                 }
                 else
                 {
-                    sb.AppendLine($"{indent}return response.data;");
+                    CodeFormatter.AppendLine(sb, indentLevel, "return response.data;");
                 }
             }
             else
             {
                 var responseType = GetResponseType(operation.ReturnTypeInfo);
-                sb.AppendLine($"{indent}return await response.json() as {responseType};");
+                CodeFormatter.AppendLine(sb, indentLevel, $"return await response.json() as {responseType};");
             }
         }
         else
         {
             if (!isAxios)
             {
-                sb.AppendLine($"{indent}return;");
+                CodeFormatter.AppendLine(sb, indentLevel, "return;");
             }
         }
     }
@@ -956,15 +917,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         return char.ToLowerInvariant(schemaName[0]) + schemaName.Substring(1);
     }
 
-    private string EscapeJSDocComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("*/", "* /")
-            .Replace("/*", "/ *");
-    }
+    // Метод EscapeJSDocComment теперь в ValIO.Core.Utilities.CodeEscapeHelper
 
     private T GetOption<T>(Dictionary<string, object> options, string key, T defaultValue)
     {
