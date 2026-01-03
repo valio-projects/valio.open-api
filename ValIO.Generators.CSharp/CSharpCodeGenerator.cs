@@ -28,6 +28,38 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         _codeRenderer = new CSharpCodeRenderer();
     }
 
+    /// <summary>
+    /// Создает анализатор зависимостей для C#
+    /// </summary>
+    protected override IDependencyAnalyzer CreateDependencyAnalyzer()
+    {
+        return new Services.CSharpDependencyAnalyzer(NamingConverter);
+    }
+
+    /// <summary>
+    /// Создает построитель TypeInfo для C#
+    /// </summary>
+    protected override ITypeInfoBuilder CreateTypeInfoBuilder(ISchemaResolver schemaResolver)
+    {
+        return new Services.CSharpTypeInfoBuilder(TypeMapper, schemaResolver);
+    }
+
+    /// <summary>
+    /// Создает извлекатель enum для C#
+    /// </summary>
+    protected override IEnumExtractor CreateEnumExtractor(ISchemaResolver schemaResolver)
+    {
+        return new Services.CSharpEnumExtractor(schemaResolver, NamingConverter);
+    }
+
+    /// <summary>
+    /// Создает стратегию именования для операций C#
+    /// </summary>
+    protected override IOperationNamingStrategy CreateOperationNamingStrategy()
+    {
+        return new Services.CSharpOperationNamingStrategy();
+    }
+
     public override bool SupportsLanguage(GenerationLanguage language)
     {
         return language == GenerationLanguage.CSharp;

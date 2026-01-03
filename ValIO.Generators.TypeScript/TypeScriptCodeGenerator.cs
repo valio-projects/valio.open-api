@@ -40,6 +40,38 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         _zodEnumRenderer = zodEnumRenderer;
     }
 
+    /// <summary>
+    /// Создает анализатор зависимостей для TypeScript
+    /// </summary>
+    protected override IDependencyAnalyzer CreateDependencyAnalyzer()
+    {
+        return new Services.TypeScriptDependencyAnalyzer(NamingConverter);
+    }
+
+    /// <summary>
+    /// Создает построитель TypeInfo для TypeScript
+    /// </summary>
+    protected override ITypeInfoBuilder CreateTypeInfoBuilder(ISchemaResolver schemaResolver)
+    {
+        return new Services.TypeScriptTypeInfoBuilder(TypeMapper, schemaResolver);
+    }
+
+    /// <summary>
+    /// Создает извлекатель enum для TypeScript
+    /// </summary>
+    protected override IEnumExtractor CreateEnumExtractor(ISchemaResolver schemaResolver)
+    {
+        return new Services.TypeScriptEnumExtractor(schemaResolver, NamingConverter);
+    }
+
+    /// <summary>
+    /// Создает стратегию именования для операций TypeScript
+    /// </summary>
+    protected override IOperationNamingStrategy CreateOperationNamingStrategy()
+    {
+        return new Services.TypeScriptOperationNamingStrategy();
+    }
+
     public override bool SupportsLanguage(GenerationLanguage language)
     {
         return language == GenerationLanguage.TypeScript;

@@ -59,40 +59,41 @@ public class ModelExtractor : IModelExtractor
         return false;
     }
 
-    public IReadOnlyList<ModelTemplateData> ExtractModelTemplateData(OpenApiDocument document, GenerationLanguage language, ITypeMapper typeMapper)
+    public IReadOnlyList<ModelTemplateData> ExtractModelTemplateData(OpenApiDocument document, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, IDependencyAnalyzer dependencyAnalyzer)
     {
         var models = new List<ModelTemplateData>(16);
 
         if (document.Components?.Schemas == null)
             return models;
 
-        var typeInfoBuilder = new TypeInfoBuilder(typeMapper, _schemaResolver, language);
-        var dependencyCollector = new DependencyCollector(new DependencyAnalyzer(_namingConverter));
+        var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
 
         foreach (var schemaEntry in document.Components.Schemas)
         {
             var schemaName = schemaEntry.Key;
             var schema = schemaEntry.Value;
 
-            var modelTemplateData = ExtractModelTemplateData(schema, schemaName, language, typeMapper, typeInfoBuilder, dependencyCollector);
+            var modelTemplateData = ExtractModelTemplateData(schema, schemaName, typeMapper, typeInfoBuilder, dependencyCollector);
             models.Add(modelTemplateData);
         }
 
         return models;
     }
 
-    public ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, GenerationLanguage language, ITypeMapper typeMapper)
+    public ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, IDependencyAnalyzer dependencyAnalyzer)
     {
-        return ExtractModelTemplateData(schema, modelName, language, typeMapper, null, null);
+        var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
+        return ExtractModelTemplateData(schema, modelName, typeMapper, typeInfoBuilder, dependencyCollector);
     }
 
-    private ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, GenerationLanguage language, ITypeMapper typeMapper, TypeInfoBuilder? typeInfoBuilder, DependencyCollector? dependencyCollector)
+    private ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, DependencyCollector dependencyCollector)
     {
-        typeInfoBuilder ??= new TypeInfoBuilder(typeMapper, _schemaResolver, language);
-        dependencyCollector ??= new DependencyCollector(new DependencyAnalyzer(_namingConverter));
 
         var resolvedSchema = _schemaResolver.ResolveSchema(schema);
         var sanitizedName = _namingConverter.SanitizeIdentifier(modelName);
+
+        // Определяем язык из TypeInfoBuilder
+        var language = typeInfoBuilder.Language;
 
         var modelTemplateData = new ModelTemplateData
         {
@@ -236,7 +237,7 @@ public class ModelExtractor : IModelExtractor
         return modelTemplateData;
     }
 
-    private PropertyTemplateData ExtractPropertyTemplateData(string propertyName, IOpenApiSchema propertySchema, IOpenApiSchema parentSchema, TypeInfoBuilder typeInfoBuilder)
+    private PropertyTemplateData ExtractPropertyTemplateData(string propertyName, IOpenApiSchema propertySchema, IOpenApiSchema parentSchema, ITypeInfoBuilder typeInfoBuilder)
     {
         var resolvedPropertySchema = _schemaResolver.ResolveSchema(propertySchema);
         var isRequired = parentSchema.Required?.Contains(propertyName) ?? false;
@@ -245,8 +246,8 @@ public class ModelExtractor : IModelExtractor
         // Создаем TypeInfo для свойства
         var typeInfo = typeInfoBuilder.BuildFromSchema(propertySchema, isNullable);
         
-        // Определяем язык из TypeInfo
-        var language = typeInfo.Language ?? GenerationLanguage.CSharp;
+        // Определяем язык из TypeInfoBuilder
+        var builderLanguage = typeInfoBuilder.Language;
 
         // Извлекаем ограничения
         decimal? min = null;
@@ -289,7 +290,7 @@ public class ModelExtractor : IModelExtractor
         object? defaultValue = ExtractDefaultValue(resolvedPropertySchema.Default);
 
         // Определяем IsOptional для TypeScript
-        var isOptional = !isRequired && (language == GenerationLanguage.TypeScript);
+        var isOptional = !isRequired && (builderLanguage == GenerationLanguage.TypeScript);
 
         return new PropertyTemplateData
         {

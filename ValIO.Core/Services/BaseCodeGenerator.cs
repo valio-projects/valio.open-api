@@ -54,6 +54,26 @@ public abstract class BaseCodeGenerator : ICodeGenerator
     public abstract Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config);
 
     /// <summary>
+    /// Создает анализатор зависимостей для текущего языка
+    /// </summary>
+    protected abstract IDependencyAnalyzer CreateDependencyAnalyzer();
+
+    /// <summary>
+    /// Создает построитель TypeInfo для текущего языка
+    /// </summary>
+    protected abstract ITypeInfoBuilder CreateTypeInfoBuilder(ISchemaResolver schemaResolver);
+
+    /// <summary>
+    /// Создает извлекатель enum для текущего языка
+    /// </summary>
+    protected abstract IEnumExtractor CreateEnumExtractor(ISchemaResolver schemaResolver);
+
+    /// <summary>
+    /// Создает стратегию именования для операций текущего языка
+    /// </summary>
+    protected abstract IOperationNamingStrategy CreateOperationNamingStrategy();
+
+    /// <summary>
     /// Валидирует входные данные для генерации
     /// </summary>
     protected virtual List<string> ValidateInputs(OpenApiDocument? document, GenerationConfiguration? config)
@@ -304,12 +324,17 @@ public abstract class BaseCodeGenerator : ICodeGenerator
         // Создаем extractors с SchemaResolver
         var modelExtractor = new ModelExtractor(schemaResolver, NamingConverter);
         var operationExtractor = new OperationExtractor(schemaResolver);
-        var enumExtractor = new EnumExtractor(schemaResolver, NamingConverter);
-
+        
+        // Создаем язык-специфичные компоненты
+        var dependencyAnalyzer = CreateDependencyAnalyzer();
+        var typeInfoBuilder = CreateTypeInfoBuilder(schemaResolver);
+        var enumExtractor = CreateEnumExtractor(schemaResolver);
+        var operationNamingStrategy = CreateOperationNamingStrategy();
+        
         // Извлекаем данные
-        var models = modelExtractor.ExtractModelTemplateData(document, Language, TypeMapper);
-        var operations = operationExtractor.ExtractOperationTemplateData(document, Language, TypeMapper, NamingConverter);
-        var enums = enumExtractor.ExtractEnumTemplateData(document, Language);
+        var models = modelExtractor.ExtractModelTemplateData(document, TypeMapper, typeInfoBuilder, dependencyAnalyzer);
+        var operations = operationExtractor.ExtractOperationTemplateData(document, TypeMapper, NamingConverter, typeInfoBuilder, dependencyAnalyzer, operationNamingStrategy);
+        var enums = enumExtractor.ExtractEnumTemplateData(document);
 
         Logger.LogInformation("Extracted {ModelCount} models, {OperationCount} operations, {EnumCount} enums", 
             models.Count, operations.Count, enums.Count);

@@ -9,11 +9,11 @@ namespace ValIO.Core.Services;
 /// </summary>
 public class DependencyCollector
 {
-    private readonly DependencyAnalyzer _dependencyAnalyzer;
+    private readonly IDependencyAnalyzer _dependencyAnalyzer;
 
-    public DependencyCollector(DependencyAnalyzer dependencyAnalyzer)
+    public DependencyCollector(IDependencyAnalyzer dependencyAnalyzer)
     {
-        _dependencyAnalyzer = dependencyAnalyzer;
+        _dependencyAnalyzer = dependencyAnalyzer ?? throw new ArgumentNullException(nameof(dependencyAnalyzer));
     }
 
     /// <summary>
@@ -55,11 +55,10 @@ public class DependencyCollector
     /// </summary>
     public Dictionary<string, string> ResolveImportPaths(
         IReadOnlyList<string> dependencies,
-        GenerationLanguage language,
         string? modelsPath = null,
         string? schemasPath = null)
     {
-        return _dependencyAnalyzer.ResolveImportPaths(dependencies, language, modelsPath, schemasPath);
+        return _dependencyAnalyzer.ResolveImportPaths(dependencies, modelsPath, schemasPath);
     }
 
     /// <summary>
@@ -71,7 +70,7 @@ public class DependencyCollector
         string? schemasPath = null)
     {
         var dependencies = CollectFromModel(model);
-        return ResolveImportPaths(dependencies, model.Language, modelsPath, schemasPath);
+        return ResolveImportPaths(dependencies, modelsPath, schemasPath);
     }
 
     /// <summary>
@@ -83,7 +82,7 @@ public class DependencyCollector
         string? schemasPath = null)
     {
         var dependencies = CollectFromOperation(operation);
-        return ResolveImportPaths(dependencies, operation.Language, modelsPath, schemasPath);
+        return ResolveImportPaths(dependencies, modelsPath, schemasPath);
     }
 
     /// <summary>
@@ -95,6 +94,6 @@ public class DependencyCollector
         string? schemasPath = null)
     {
         var dependencies = CollectFromClient(client);
-        return ResolveImportPaths(dependencies, client.Language, modelsPath, schemasPath);
+        return ResolveImportPaths(dependencies, modelsPath, schemasPath);
     }
 }

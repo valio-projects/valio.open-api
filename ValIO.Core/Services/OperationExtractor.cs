@@ -15,9 +15,8 @@ public class OperationExtractor : IOperationExtractor
 
     public OperationExtractor(ISchemaResolver schemaResolver)
     {
-        _schemaResolver = schemaResolver;
+        _schemaResolver = schemaResolver ?? throw new ArgumentNullException(nameof(schemaResolver));
     }
-
 
     private static Models.ParameterLocation MapParameterLocation(Microsoft.OpenApi.ParameterLocation location)
     {
@@ -31,15 +30,20 @@ public class OperationExtractor : IOperationExtractor
         };
     }
 
-    public IReadOnlyList<OperationTemplateData> ExtractOperationTemplateData(OpenApiDocument document, GenerationLanguage language, ITypeMapper typeMapper, INamingConverter namingConverter)
+    public IReadOnlyList<OperationTemplateData> ExtractOperationTemplateData(
+        OpenApiDocument document, 
+        ITypeMapper typeMapper, 
+        INamingConverter namingConverter, 
+        ITypeInfoBuilder typeInfoBuilder, 
+        IDependencyAnalyzer dependencyAnalyzer, 
+        IOperationNamingStrategy namingStrategy)
     {
         var operations = new List<OperationTemplateData>(16 * 1024);
 
         if (document.Paths == null)
             return operations;
 
-        var typeInfoBuilder = new TypeInfoBuilder(typeMapper, _schemaResolver, language);
-        var dependencyCollector = new DependencyCollector(new DependencyAnalyzer(namingConverter));
+        var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
 
         foreach (var pathEntry in document.Paths)
         {
@@ -51,7 +55,16 @@ public class OperationExtractor : IOperationExtractor
             {
                 foreach (var operationEntry in pathItem.Operations)
                 {
-                    var operationTemplateData = ExtractOperationTemplateData(pathItem, operationEntry.Key, path, language, typeMapper, namingConverter, typeInfoBuilder, dependencyCollector);
+                    var operationTemplateData = ExtractOperationTemplateData(
+                        pathItem, 
+                        operationEntry.Key, 
+                        path, 
+                        typeMapper, 
+                        namingConverter, 
+                        typeInfoBuilder, 
+                        dependencyCollector, 
+                        dependencyAnalyzer, 
+                        namingStrategy);
                     operations.Add(operationTemplateData);
                 }
             }
@@ -60,21 +73,48 @@ public class OperationExtractor : IOperationExtractor
         return operations;
     }
 
-    public OperationTemplateData ExtractOperationTemplateData(IOpenApiPathItem pathItem, HttpMethod operationType, string path, GenerationLanguage language, ITypeMapper typeMapper, INamingConverter namingConverter)
+    public OperationTemplateData ExtractOperationTemplateData(
+        IOpenApiPathItem pathItem, 
+        HttpMethod operationType, 
+        string path, 
+        ITypeMapper typeMapper, 
+        INamingConverter namingConverter, 
+        ITypeInfoBuilder typeInfoBuilder, 
+        IDependencyAnalyzer dependencyAnalyzer, 
+        IOperationNamingStrategy namingStrategy)
     {
-        return ExtractOperationTemplateData(pathItem, operationType, path, language, typeMapper, namingConverter, null, null);
+        var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
+        return ExtractOperationTemplateData(
+            pathItem, 
+            operationType, 
+            path, 
+            typeMapper, 
+            namingConverter, 
+            typeInfoBuilder, 
+            dependencyCollector, 
+            dependencyAnalyzer, 
+            namingStrategy);
     }
 
-    private OperationTemplateData ExtractOperationTemplateData(IOpenApiPathItem pathItem, HttpMethod operationType, string path, GenerationLanguage language, ITypeMapper typeMapper, INamingConverter namingConverter, TypeInfoBuilder? typeInfoBuilder, DependencyCollector? dependencyCollector)
+    private OperationTemplateData ExtractOperationTemplateData(
+        IOpenApiPathItem pathItem, 
+        HttpMethod operationType, 
+        string path, 
+        ITypeMapper typeMapper, 
+        INamingConverter namingConverter, 
+        ITypeInfoBuilder typeInfoBuilder, 
+        DependencyCollector dependencyCollector, 
+        IDependencyAnalyzer dependencyAnalyzer, 
+        IOperationNamingStrategy namingStrategy)
     {
         if (pathItem.Operations == null || !pathItem.Operations.TryGetValue(operationType, out var openApiOperation) || openApiOperation == null)
             throw new ArgumentException($"Operation {operationType.Method} not found for path {path}");
 
-        typeInfoBuilder ??= new TypeInfoBuilder(typeMapper, _schemaResolver, language);
-        dependencyCollector ??= new DependencyCollector(new DependencyAnalyzer(namingConverter));
-
         var operationId = openApiOperation.OperationId ?? $"{operationType.Method.ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
         var methodName = namingConverter.ToPascalCase(operationId);
+
+        // Определяем язык из TypeInfoBuilder
+        var language = typeInfoBuilder.Language;
 
         var operationTemplateData = new OperationTemplateData
         {
@@ -100,7 +140,7 @@ public class OperationExtractor : IOperationExtractor
 
             foreach (var parameter in openApiOperation.Parameters)
             {
-                var paramTemplateData = ExtractParameterTemplateData(parameter, typeInfoBuilder, namingConverter, language);
+                var paramTemplateData = ExtractParameterTemplateData(parameter, typeInfoBuilder, namingConverter, namingStrategy, language);
                 var location = parameter.In ?? Microsoft.OpenApi.ParameterLocation.Query;
                 
                 switch (location)
@@ -125,7 +165,7 @@ public class OperationExtractor : IOperationExtractor
         // Извлекаем request body
         if (openApiOperation.RequestBody != null)
         {
-            var requestBodyData = ExtractRequestBodyTemplateData(openApiOperation.RequestBody, typeInfoBuilder, namingConverter, language);
+            var requestBodyData = ExtractRequestBodyTemplateData(openApiOperation.RequestBody, typeInfoBuilder, namingConverter, namingStrategy, language);
             operationTemplateData.HasRequestBody = true;
             operationTemplateData.RequestBodyParameter = "request";
             operationTemplateData.RequestBodyTypeInfo = requestBodyData.TypeInfo;
@@ -238,7 +278,12 @@ public class OperationExtractor : IOperationExtractor
         return operationTemplateData;
     }
 
-    private ParameterTemplateData ExtractParameterTemplateData(IOpenApiParameter parameter, TypeInfoBuilder typeInfoBuilder, INamingConverter namingConverter, GenerationLanguage language)
+    private ParameterTemplateData ExtractParameterTemplateData(
+        IOpenApiParameter parameter, 
+        ITypeInfoBuilder typeInfoBuilder, 
+        INamingConverter namingConverter, 
+        IOperationNamingStrategy namingStrategy,
+        GenerationLanguage language)
     {
         var parameterName = parameter.Name ?? string.Empty;
         var isRequired = parameter.Required;
@@ -252,15 +297,14 @@ public class OperationExtractor : IOperationExtractor
         }
         else
         {
-            // По умолчанию string для параметров без схемы
-            typeInfo = TypeInfo.Simple(language == GenerationLanguage.TypeScript ? "string" : "string", isPrimitive: true, language: language);
+            // Используем стратегию для получения типа по умолчанию
+            var defaultType = namingStrategy.GetDefaultParameterType();
+            typeInfo = TypeInfo.Simple(defaultType, isPrimitive: true, language: language);
         }
 
-        // Определяем имена переменных в зависимости от языка
-        var variableName = language == GenerationLanguage.TypeScript 
-            ? namingConverter.ToCamelCase(parameterName)
-            : namingConverter.ToPascalCase(parameterName);
-        var propertyName = namingConverter.ToPascalCase(parameterName);
+        // Используем стратегию для именования
+        var variableName = namingStrategy.ToVariableName(parameterName, namingConverter);
+        var propertyName = namingStrategy.ToPropertyName(parameterName, namingConverter);
 
         return new ParameterTemplateData
         {
@@ -275,8 +319,9 @@ public class OperationExtractor : IOperationExtractor
 
     private (TypeInfo? TypeInfo, string? ContentType, bool IsFormData, IReadOnlyList<FormDataPropertyTemplateData>? FormDataProperties) ExtractRequestBodyTemplateData(
         IOpenApiRequestBody requestBody, 
-        TypeInfoBuilder typeInfoBuilder, 
+        ITypeInfoBuilder typeInfoBuilder, 
         INamingConverter namingConverter,
+        IOperationNamingStrategy namingStrategy,
         GenerationLanguage language)
     {
         // Берем первый content type и схему
@@ -297,12 +342,14 @@ public class OperationExtractor : IOperationExtractor
             if (isFormData)
             {
                 var resolvedSchema = _schemaResolver.ResolveSchema(schema);
-                formDataProperties = ExtractFormDataPropertiesTemplateData(resolvedSchema, typeInfoBuilder, namingConverter, language);
+                formDataProperties = ExtractFormDataPropertiesTemplateData(resolvedSchema, typeInfoBuilder, namingConverter, namingStrategy, language);
             }
         }
         else
         {
-            typeInfo = TypeInfo.Simple(language == GenerationLanguage.TypeScript ? "any" : "object", language: language);
+            // Используем стратегию для получения типа по умолчанию
+            var defaultType = namingStrategy.GetDefaultRequestBodyType();
+            typeInfo = TypeInfo.Simple(defaultType, language: language);
         }
 
         return (typeInfo, contentType, isFormData, formDataProperties);
@@ -310,8 +357,9 @@ public class OperationExtractor : IOperationExtractor
 
     private IReadOnlyList<FormDataPropertyTemplateData> ExtractFormDataPropertiesTemplateData(
         IOpenApiSchema schema, 
-        TypeInfoBuilder typeInfoBuilder, 
+        ITypeInfoBuilder typeInfoBuilder, 
         INamingConverter namingConverter,
+        IOperationNamingStrategy namingStrategy,
         GenerationLanguage language)
     {
         var properties = new List<FormDataPropertyTemplateData>(16);
@@ -329,9 +377,8 @@ public class OperationExtractor : IOperationExtractor
             var isNullable = !isRequired;
             var typeInfo = typeInfoBuilder.BuildFromSchema(propertySchema, isNullable);
 
-            var variableName = language == GenerationLanguage.TypeScript 
-                ? namingConverter.ToCamelCase(propertyName)
-                : namingConverter.ToPascalCase(propertyName);
+            // Используем стратегию для именования
+            var variableName = namingStrategy.ToVariableName(propertyName, namingConverter);
 
             properties.Add(new FormDataPropertyTemplateData
             {
@@ -346,4 +393,3 @@ public class OperationExtractor : IOperationExtractor
         return properties;
     }
 }
-

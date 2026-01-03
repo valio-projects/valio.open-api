@@ -5,21 +5,23 @@ using ValIO.Core.Models.TemplateData;
 namespace ValIO.Core.Services;
 
 /// <summary>
-/// Анализатор зависимостей между типами для определения импортов/usings
+/// Базовый класс для анализа зависимостей между типами
 /// </summary>
-public class DependencyAnalyzer
+public abstract class BaseDependencyAnalyzer : IDependencyAnalyzer
 {
-    private readonly INamingConverter _namingConverter;
+    protected readonly INamingConverter NamingConverter;
+    protected readonly GenerationLanguage Language;
 
-    public DependencyAnalyzer(INamingConverter namingConverter)
+    protected BaseDependencyAnalyzer(INamingConverter namingConverter, GenerationLanguage language)
     {
-        _namingConverter = namingConverter;
+        NamingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        Language = language;
     }
 
     /// <summary>
     /// Анализирует зависимости модели
     /// </summary>
-    public IReadOnlyList<string> AnalyzeModelDependencies(ModelTemplateData model)
+    public virtual IReadOnlyList<string> AnalyzeModelDependencies(ModelTemplateData model)
     {
         var dependencies = new HashSet<string>();
 
@@ -47,7 +49,7 @@ public class DependencyAnalyzer
     /// <summary>
     /// Анализирует зависимости операции
     /// </summary>
-    public IReadOnlyList<string> AnalyzeOperationDependencies(OperationTemplateData operation)
+    public virtual IReadOnlyList<string> AnalyzeOperationDependencies(OperationTemplateData operation)
     {
         var dependencies = new HashSet<string>();
 
@@ -117,7 +119,7 @@ public class DependencyAnalyzer
     /// <summary>
     /// Собирает все зависимости из TypeInfo
     /// </summary>
-    public void CollectDependenciesFromTypeInfo(TypeInfo typeInfo, HashSet<string> dependencies)
+    public virtual void CollectDependenciesFromTypeInfo(TypeInfo typeInfo, HashSet<string> dependencies)
     {
         if (typeInfo == null)
             return;
@@ -126,7 +128,7 @@ public class DependencyAnalyzer
         if (!typeInfo.IsPrimitive && typeInfo.BaseType != "void" && !string.IsNullOrEmpty(typeInfo.BaseType))
         {
             // Проверяем, не является ли это встроенным типом языка
-            if (!IsBuiltInType(typeInfo.BaseType, typeInfo.Language))
+            if (!IsBuiltInType(typeInfo.BaseType, typeInfo.Language ?? Language))
             {
                 dependencies.Add(typeInfo.BaseType);
             }
@@ -141,7 +143,7 @@ public class DependencyAnalyzer
         // Собираем зависимости из списка зависимостей TypeInfo
         foreach (var dependency in typeInfo.Dependencies)
         {
-            if (!string.IsNullOrEmpty(dependency) && !IsBuiltInType(dependency, typeInfo.Language))
+            if (!string.IsNullOrEmpty(dependency) && !IsBuiltInType(dependency, typeInfo.Language ?? Language))
             {
                 dependencies.Add(dependency);
             }
@@ -151,7 +153,7 @@ public class DependencyAnalyzer
     /// <summary>
     /// Собирает все зависимости из модели
     /// </summary>
-    public IReadOnlyList<string> CollectAllDependencies(ModelTemplateData model)
+    public virtual IReadOnlyList<string> CollectAllDependencies(ModelTemplateData model)
     {
         var dependencies = new HashSet<string>();
         var modelDependencies = AnalyzeModelDependencies(model);
@@ -173,7 +175,7 @@ public class DependencyAnalyzer
     /// <summary>
     /// Собирает все зависимости из операции
     /// </summary>
-    public IReadOnlyList<string> CollectAllDependencies(OperationTemplateData operation)
+    public virtual IReadOnlyList<string> CollectAllDependencies(OperationTemplateData operation)
     {
         var dependencies = new HashSet<string>();
         var operationDependencies = AnalyzeOperationDependencies(operation);
@@ -195,7 +197,7 @@ public class DependencyAnalyzer
     /// <summary>
     /// Собирает все зависимости из клиента
     /// </summary>
-    public IReadOnlyList<string> CollectAllDependencies(ClientTemplateData client)
+    public virtual IReadOnlyList<string> CollectAllDependencies(ClientTemplateData client)
     {
         var dependencies = new HashSet<string>();
 
@@ -225,9 +227,8 @@ public class DependencyAnalyzer
     /// <summary>
     /// Определяет пути импорта для зависимостей
     /// </summary>
-    public Dictionary<string, string> ResolveImportPaths(
+    public virtual Dictionary<string, string> ResolveImportPaths(
         IReadOnlyList<string> dependencies,
-        GenerationLanguage language,
         string? modelsPath = null,
         string? schemasPath = null)
     {
@@ -238,7 +239,7 @@ public class DependencyAnalyzer
             if (string.IsNullOrEmpty(dependency))
                 continue;
 
-            var importPath = ResolveImportPath(dependency, language, modelsPath, schemasPath);
+            var importPath = ResolveImportPath(dependency, modelsPath, schemasPath);
             if (!string.IsNullOrEmpty(importPath))
             {
                 importPaths[dependency] = importPath;
@@ -249,95 +250,15 @@ public class DependencyAnalyzer
     }
 
     /// <summary>
-    /// Определяет путь импорта для одного типа
+    /// Определяет путь импорта для одного типа (язык-специфичная реализация)
     /// </summary>
-    private string? ResolveImportPath(
+    protected abstract string? ResolveImportPath(
         string typeName,
-        GenerationLanguage language,
         string? modelsPath = null,
-        string? schemasPath = null)
-    {
-        if (IsBuiltInType(typeName, language))
-            return null;
-
-        return language switch
-        {
-            GenerationLanguage.TypeScript => ResolveTypeScriptImportPath(typeName, modelsPath, schemasPath),
-            GenerationLanguage.CSharp => ResolveCSharpImportPath(typeName),
-            _ => null
-        };
-    }
+        string? schemasPath = null);
 
     /// <summary>
-    /// Определяет путь импорта для TypeScript
+    /// Проверяет, является ли тип встроенным типом языка (язык-специфичная реализация)
     /// </summary>
-    private string ResolveTypeScriptImportPath(string typeName, string? modelsPath, string? schemasPath)
-    {
-        // Определяем, является ли это схемой валидации (по суффиксу Schema)
-        if (typeName.EndsWith("Schema", StringComparison.OrdinalIgnoreCase))
-        {
-            var schemaName = typeName.Substring(0, typeName.Length - 6); // Убираем "Schema"
-            var fileName = _namingConverter.ToCamelCase(schemaName);
-            var path = schemasPath ?? "./schemas";
-            return $"{path}/{fileName}";
-        }
-
-        // Обычная модель
-        var modelFileName = _namingConverter.ToCamelCase(typeName);
-        var modelPath = modelsPath ?? "./models";
-        return $"{modelPath}/{modelFileName}";
-    }
-
-    /// <summary>
-    /// Определяет путь импорта для C# (namespace)
-    /// </summary>
-    private string? ResolveCSharpImportPath(string typeName)
-    {
-        // Для C# пути импорта определяются через namespace, который должен быть указан в TemplateData
-        // Здесь возвращаем null, так как namespace должен быть указан явно
-        return null;
-    }
-
-    /// <summary>
-    /// Проверяет, является ли тип встроенным типом языка
-    /// </summary>
-    private static bool IsBuiltInType(string typeName, GenerationLanguage? language)
-    {
-        if (string.IsNullOrEmpty(typeName))
-            return true;
-
-        // Проверяем generic типы типа Record<string, any>, List<T>, Dictionary<K,V> и т.д.
-        if (typeName.Contains('<'))
-        {
-            // Извлекаем базовое имя типа до '<'
-            var baseTypeName = typeName.Substring(0, typeName.IndexOf('<'));
-            return IsBuiltInType(baseTypeName, language);
-        }
-
-        // Проверяем массивы TypeScript типа Type[]
-        if (language == GenerationLanguage.TypeScript && typeName.EndsWith("[]"))
-        {
-            var baseTypeName = typeName.Substring(0, typeName.Length - 2);
-            return IsBuiltInType(baseTypeName, language);
-        }
-
-        var builtInTypes = language switch
-        {
-            GenerationLanguage.CSharp => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "object", "string", "int", "long", "short", "byte", "sbyte", "uint", "ulong", "ushort",
-                "float", "double", "decimal", "bool", "char", "void", "DateTime", "DateTimeOffset",
-                "TimeSpan", "Guid", "Uri", "Stream", "byte[]", "List", "Dictionary", "IEnumerable",
-                "ICollection", "IList", "IDictionary", "Task", "HttpResponseMessage"
-            },
-            GenerationLanguage.TypeScript => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "any", "unknown", "object", "string", "number", "boolean", "void", "null", "undefined",
-                "Date", "Blob", "File", "Array", "Record", "Promise", "Response"
-            },
-            _ => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        };
-
-        return builtInTypes.Contains(typeName);
-    }
+    protected abstract bool IsBuiltInType(string typeName, GenerationLanguage language);
 }
