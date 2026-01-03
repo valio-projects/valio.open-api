@@ -2,23 +2,22 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
-using ValIO.Generators.CSharp.Models;
+using ValIO.Core.Models;
+using ValIO.Core.Services;
 
 namespace ValIO.Generators.CSharp;
 
 /// <summary>
 /// Маппер типов OpenAPI на типы C#
 /// </summary>
-public class CSharpTypeMapper : ITypeMapper
+public class CSharpTypeMapper : BaseTypeMapper
 {
-    private readonly INamingConverter _namingConverter;
-
     public CSharpTypeMapper(INamingConverter namingConverter)
+        : base(namingConverter, GenerationLanguage.CSharp)
     {
-        _namingConverter = namingConverter;
     }
 
-    public string MapType(IOpenApiSchema schema, ISchemaResolver schemaResolver)
+    public override string MapType(IOpenApiSchema schema, ISchemaResolver schemaResolver)
     {
         if (schema == null)
             return "object";
@@ -27,7 +26,7 @@ public class CSharpTypeMapper : ITypeMapper
         return MapTypeInternal(resolvedSchema, schemaResolver, false);
     }
 
-    public string MapPropertyType(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver)
+    public override string MapPropertyType(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver)
     {
         if (schema == null)
             return "object?";
@@ -37,7 +36,7 @@ public class CSharpTypeMapper : ITypeMapper
         return MapTypeInternal(resolvedSchema, schemaResolver, isNullable);
     }
 
-    public string MapEnumType(IOpenApiSchema schema, ISchemaResolver schemaResolver)
+    public override string MapEnumType(IOpenApiSchema schema, ISchemaResolver schemaResolver)
     {
         if (schema == null)
             return "string";
@@ -48,7 +47,7 @@ public class CSharpTypeMapper : ITypeMapper
         if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
         {
             var schemaName = schemaResolver.GetSchemaName(resolvedSchema, "Enum");
-            return _namingConverter.ToPascalCase(schemaName);
+            return NamingConverter.ToPascalCase(schemaName);
         }
 
         // Иначе возвращаем базовый тип
@@ -58,10 +57,10 @@ public class CSharpTypeMapper : ITypeMapper
     /// <summary>
     /// Маппит схему OpenAPI в TypeInfo с мета-данными
     /// </summary>
-    public TypeInfo MapTypeInfo(IOpenApiSchema schema, ISchemaResolver schemaResolver)
+    public override TypeInfo MapTypeInfo(IOpenApiSchema schema, ISchemaResolver schemaResolver)
     {
         if (schema == null)
-            return TypeInfo.Simple("object");
+            return TypeInfo.Simple("object", language: Language);
 
         var resolvedSchema = schemaResolver.ResolveSchema(schema);
         return MapTypeInfoInternal(resolvedSchema, schemaResolver, false);
@@ -70,10 +69,10 @@ public class CSharpTypeMapper : ITypeMapper
     /// <summary>
     /// Маппит схему OpenAPI в TypeInfo для свойства с учетом nullable
     /// </summary>
-    public TypeInfo MapPropertyTypeInfo(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver)
+    public override TypeInfo MapPropertyTypeInfo(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver)
     {
         if (schema == null)
-            return TypeInfo.Nullable(TypeInfo.Simple("object"));
+            return TypeInfo.Nullable(TypeInfo.Simple("object", language: Language));
 
         var resolvedSchema = schemaResolver.ResolveSchema(schema);
         var isNullable = !isRequired || IsSchemaNullable(resolvedSchema);
@@ -86,7 +85,7 @@ public class CSharpTypeMapper : ITypeMapper
     public TypeInfo MapFormDataPropertyTypeInfo(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver)
     {
         if (schema == null)
-            return TypeInfo.Simple("string", isPrimitive: true);
+            return TypeInfo.Simple("string", isPrimitive: true, language: GenerationLanguage.CSharp);
 
         var resolvedSchema = schemaResolver.ResolveSchema(schema);
         var isNullable = !isRequired;
@@ -101,15 +100,15 @@ public class CSharpTypeMapper : ITypeMapper
         {
             if (isArray)
             {
-                return TypeInfo.Collection("List", TypeInfo.Simple("Stream", isFile: true), isNullable);
+                return TypeInfo.Collection("List", TypeInfo.Simple("Stream", isFile: true, language: Language), isNullable, Language);
             }
-            return TypeInfo.Simple("Stream", isFile: true);
+            return TypeInfo.Simple("Stream", isFile: true, language: Language);
         }
         
         if (isArray && resolvedSchema.Items != null)
         {
             var itemTypeInfo = MapFormDataPropertyTypeInfo(resolvedSchema.Items, false, schemaResolver);
-            return TypeInfo.Collection("List", itemTypeInfo, isNullable);
+            return TypeInfo.Collection("List", itemTypeInfo, isNullable, Language);
         }
         
         // Маппим примитивные типы для form-data
@@ -122,143 +121,83 @@ public class CSharpTypeMapper : ITypeMapper
     /// </summary>
     private TypeInfo MapTypeInfoInternal(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable)
     {
-        // Проверяем на ссылку на схему ДО разрешения
-        // Это важно, так как после ResolveSchema мы теряем информацию о ссылке
-        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
+        // Проверяем на ссылку на схему
+        var typeName = ResolveSchemaReference(schema, schemaResolver);
+        if (!string.IsNullOrEmpty(typeName))
         {
-            var reference = referenceHolder.Reference;
-            if (reference != null && !string.IsNullOrEmpty(reference.Id))
-            {
-                var typeName = _namingConverter.ToPascalCase(reference.Id);
-                var typeInfo = TypeInfo.Simple(typeName);
-                return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
-            }
-        }
-        
-        // Также проверяем через GetSchemaName для случаев, когда ссылка может быть в другом формате
-        // Это должно быть ДО разрешения схемы, чтобы сохранить информацию о ссылке
-        var schemaName = schemaResolver.GetSchemaName(schema, string.Empty);
-        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
-        {
-            var typeName = _namingConverter.ToPascalCase(schemaName);
-            var typeInfo = TypeInfo.Simple(typeName);
-            return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
+            return CreateReferenceTypeInfo(typeName, isNullable);
         }
 
         // Обрабатываем allOf (наследование)
         if (schema.AllOf != null && schema.AllOf.Count > 0)
         {
-            string? baseTypeName = null;
-            foreach (var subSchema in schema.AllOf)
-            {
-                var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
-                if (resolvedSubSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
-                {
-                    var reference = refHolder.Reference;
-                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                    {
-                        baseTypeName = _namingConverter.ToPascalCase(reference.Id);
-                        break;
-                    }
-                }
-            }
-            
-            if (!string.IsNullOrEmpty(baseTypeName))
-            {
-                var typeInfo = TypeInfo.Simple(baseTypeName);
-                return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
-            }
-            
-            var lastSchema = schema.AllOf.Last();
-            var resolvedLastSchema = schemaResolver.ResolveSchema(lastSchema);
-            return MapTypeInfoInternal(resolvedLastSchema, schemaResolver, isNullable);
+            return HandleAllOf(schema, schemaResolver, isNullable);
         }
 
         // Обрабатываем oneOf/anyOf
         if ((schema.OneOf != null && schema.OneOf.Count > 0) || (schema.AnyOf != null && schema.AnyOf.Count > 0))
         {
-            var schemas = schema.OneOf ?? schema.AnyOf ?? Array.Empty<IOpenApiSchema>();
-            var commonBaseType = FindCommonBaseType(schemas, schemaResolver);
-            if (!string.IsNullOrEmpty(commonBaseType))
-            {
-                var typeInfo = TypeInfo.Simple(commonBaseType);
-                return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
-            }
-            
-            var typeInfoObj = TypeInfo.Simple("object");
-            return isNullable ? TypeInfo.Nullable(typeInfoObj) : typeInfoObj;
+            return HandleOneOfAnyOf(schema, schemaResolver, isNullable);
         }
 
         // Обрабатываем массивы
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Array))
+        if (IsCollection(schema))
         {
             if (schema.Items != null)
             {
                 var itemTypeInfo = MapTypeInfoInternal(schema.Items, schemaResolver, false);
-                return TypeInfo.Collection("List", itemTypeInfo, isNullable);
+                return CreateCollectionTypeInfo(itemTypeInfo, isNullable);
             }
-            return TypeInfo.Collection("List", TypeInfo.Simple("object"), isNullable);
+            return CreateCollectionTypeInfo(CreateObjectTypeInfo(null, false), isNullable);
         }
 
         // Обрабатываем объекты
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Object))
+        if (IsObject(schema))
         {
             if (schema.Properties != null && schema.Properties.Count > 0)
             {
-                // Пытаемся найти имя схемы ДО разрешения, чтобы сохранить информацию о ссылке
+                // Пытаемся найти имя схемы
                 var objectSchemaName = schemaResolver.GetSchemaName(schema, string.Empty);
                 
-                // Если нашли имя схемы, используем его
                 if (!string.IsNullOrEmpty(objectSchemaName) && objectSchemaName != "object")
                 {
-                    var typeName = _namingConverter.ToPascalCase(objectSchemaName);
-                    var objectTypeInfo = TypeInfo.Simple(typeName);
-                    return isNullable ? TypeInfo.Nullable(objectTypeInfo) : objectTypeInfo;
+                    var resolvedTypeName = NamingConverter.ToPascalCase(objectSchemaName);
+                    return CreateObjectTypeInfo(resolvedTypeName, isNullable);
                 }
                 
                 // Если имя не найдено, проверяем разрешенную схему
-                // Это может быть случай, когда схема уже разрешена, но ссылка потеряна
                 var resolvedSchema = schemaResolver.ResolveSchema(schema);
                 var resolvedSchemaName = schemaResolver.GetSchemaName(resolvedSchema, string.Empty);
                 
                 if (!string.IsNullOrEmpty(resolvedSchemaName) && resolvedSchemaName != "object")
                 {
-                    var typeName = _namingConverter.ToPascalCase(resolvedSchemaName);
-                    var objectTypeInfo = TypeInfo.Simple(typeName);
-                    return isNullable ? TypeInfo.Nullable(objectTypeInfo) : objectTypeInfo;
+                    var resolvedTypeName = NamingConverter.ToPascalCase(resolvedSchemaName);
+                    return CreateObjectTypeInfo(resolvedTypeName, isNullable);
                 }
                 
-                // Иначе используем "object"
-                var defaultObjectTypeInfo = TypeInfo.Simple("object");
-                return isNullable ? TypeInfo.Nullable(defaultObjectTypeInfo) : defaultObjectTypeInfo;
+                return CreateObjectTypeInfo(null, isNullable);
             }
 
-            if (schema.AdditionalProperties != null)
+            if (IsDictionary(schema))
             {
-                var valueTypeInfo = MapTypeInfoInternal(schema.AdditionalProperties, schemaResolver, false);
-                var keyTypeInfo = TypeInfo.Simple("string", isPrimitive: true);
-                return TypeInfo.Dictionary("Dictionary", keyTypeInfo, valueTypeInfo, isNullable);
+                var valueTypeInfo = schema.AdditionalProperties != null
+                    ? MapTypeInfoInternal(schema.AdditionalProperties, schemaResolver, false)
+                    : CreateObjectTypeInfo(null, false);
+                var keyTypeInfo = TypeInfo.Simple("string", isPrimitive: true, language: Language);
+                return CreateDictionaryTypeInfo(keyTypeInfo, valueTypeInfo, isNullable);
             }
 
-            if (schema.AdditionalPropertiesAllowed)
-            {
-                var valueTypeInfo = TypeInfo.Simple("object");
-                var keyTypeInfo = TypeInfo.Simple("string", isPrimitive: true);
-                return TypeInfo.Dictionary("Dictionary", keyTypeInfo, valueTypeInfo, isNullable);
-            }
-
-            var typeInfoObj = TypeInfo.Simple("object");
-            return isNullable ? TypeInfo.Nullable(typeInfoObj) : typeInfoObj;
+            return CreateObjectTypeInfo(null, isNullable);
         }
 
         // Обрабатываем примитивные типы
-        if (schema.Type.HasValue)
+        if (IsPrimitive(schema) && schema.Type.HasValue)
         {
             var type = schema.Type.Value;
             var format = schema.Format?.ToLowerInvariant();
             var baseType = type & ~JsonSchemaType.Null;
 
-            var (baseTypeName, isPrimitive, isFile) = (baseType, format) switch
+            var (baseTypeName, isPrimitiveType, isFile) = (baseType, format) switch
             {
                 (JsonSchemaType.Boolean, _) => ("bool", true, false),
                 (JsonSchemaType.Integer, "int32") => ("int", true, false),
@@ -278,149 +217,93 @@ public class CSharpTypeMapper : ITypeMapper
                 _ => ("object", false, false)
             };
 
-            var typeInfo = TypeInfo.Simple(baseTypeName, isPrimitive, isFile);
-            
-            // Для string, byte[], object nullable не добавляется через "?"
-            if (isNullable && baseTypeName != "string" && baseTypeName != "byte[]" && baseTypeName != "object")
-            {
-                return TypeInfo.Nullable(typeInfo);
-            }
-            
-            return typeInfo;
+            return CreatePrimitiveTypeInfo(baseTypeName, isPrimitiveType, isFile, isNullable);
         }
 
         // Если тип не определен, возвращаем object
-        var defaultTypeInfo = TypeInfo.Simple("object");
-        return isNullable ? TypeInfo.Nullable(defaultTypeInfo) : defaultTypeInfo;
+        return CreateObjectTypeInfo(null, isNullable);
     }
 
     private string MapTypeInternal(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable)
     {
         // Проверяем на ссылку на схему
-        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
+        var typeName = ResolveSchemaReference(schema, schemaResolver);
+        if (!string.IsNullOrEmpty(typeName))
         {
-            var reference = referenceHolder.Reference;
-            if (reference != null && !string.IsNullOrEmpty(reference.Id))
-            {
-                var typeName = _namingConverter.ToPascalCase(reference.Id);
-                return isNullable ? $"{typeName}?" : typeName;
-            }
+            return isNullable ? $"{typeName}?" : typeName;
         }
 
         // Обрабатываем allOf (наследование)
-        // allOf означает, что схема должна включать все свойства из всех указанных схем
-        // В C# это обычно реализуется через наследование или композицию
         if (schema.AllOf != null && schema.AllOf.Count > 0)
         {
-            // Ищем первую схему-ссылку как базовый класс
-            // Остальные схемы добавляют дополнительные свойства
             string? baseTypeName = null;
             foreach (var subSchema in schema.AllOf)
             {
                 var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
-                if (resolvedSubSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                baseTypeName = ResolveSchemaReference(resolvedSubSchema, schemaResolver);
+                if (!string.IsNullOrEmpty(baseTypeName))
                 {
-                    var reference = refHolder.Reference;
-                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                    {
-                        baseTypeName = _namingConverter.ToPascalCase(reference.Id);
-                        break; // Берем первую ссылку как базовый класс
-                    }
+                    break;
                 }
             }
             
-            // Если нашли базовый класс, используем его
             if (!string.IsNullOrEmpty(baseTypeName))
             {
                 return isNullable ? $"{baseTypeName}?" : baseTypeName;
             }
             
-            // Если нет ссылок, берем последнюю схему как основную
             var lastSchema = schema.AllOf.Last();
             var resolvedLastSchema = schemaResolver.ResolveSchema(lastSchema);
             return MapTypeInternal(resolvedLastSchema, schemaResolver, isNullable);
         }
 
-        // Обрабатываем oneOf (union type - ровно один из типов)
-        // В C# нет нативных union types, используем object или пытаемся найти общий базовый тип
-        if (schema.OneOf != null && schema.OneOf.Count > 0)
+        // Обрабатываем oneOf/anyOf
+        if ((schema.OneOf != null && schema.OneOf.Count > 0) || (schema.AnyOf != null && schema.AnyOf.Count > 0))
         {
-            // Пытаемся найти общий базовый тип среди всех схем
-            var commonBaseType = FindCommonBaseType(schema.OneOf, schemaResolver);
+            var schemas = schema.OneOf ?? schema.AnyOf ?? Array.Empty<IOpenApiSchema>();
+            var commonBaseType = FindCommonBaseType(schemas, schemaResolver);
             if (!string.IsNullOrEmpty(commonBaseType))
             {
                 return isNullable ? $"{commonBaseType}?" : commonBaseType;
             }
-            
-            // Если не нашли общий тип, используем object
-            return isNullable ? "object?" : "object";
-        }
-
-        // Обрабатываем anyOf (union type - один или несколько из типов)
-        // В C# нет нативных union types, используем object или пытаемся найти общий базовый тип
-        if (schema.AnyOf != null && schema.AnyOf.Count > 0)
-        {
-            // Пытаемся найти общий базовый тип среди всех схем
-            var commonBaseType = FindCommonBaseType(schema.AnyOf, schemaResolver);
-            if (!string.IsNullOrEmpty(commonBaseType))
-            {
-                return isNullable ? $"{commonBaseType}?" : commonBaseType;
-            }
-            
-            // Если не нашли общий тип, используем object
             return isNullable ? "object?" : "object";
         }
 
         // Обрабатываем массивы
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Array))
+        if (IsCollection(schema))
         {
             if (schema.Items != null)
             {
                 var itemType = MapTypeInternal(schema.Items, schemaResolver, false);
-                // Для массивов nullable применяется к самому массиву, а не к элементам
-                // В C# List<T>? означает nullable список, но элементы могут быть nullable отдельно
                 return isNullable ? $"List<{itemType}>?" : $"List<{itemType}>";
             }
             return isNullable ? "List<object>?" : "List<object>";
         }
 
         // Обрабатываем объекты
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Object))
+        if (IsObject(schema))
         {
-            // Если есть свойства, это объект (даже если есть дополнительные свойства)
             if (schema.Properties != null && schema.Properties.Count > 0)
             {
                 return isNullable ? "object?" : "object";
             }
 
-            // Если нет свойств, но есть дополнительные свойства - это dictionary
-            if (schema.AdditionalProperties != null)
+            if (IsDictionary(schema))
             {
-                var valueType = MapTypeInternal(schema.AdditionalProperties, schemaResolver, false);
-                // Для словарей nullable применяется к самому словарю
+                var valueType = schema.AdditionalProperties != null
+                    ? MapTypeInternal(schema.AdditionalProperties, schemaResolver, false)
+                    : "object";
                 return isNullable ? $"Dictionary<string, {valueType}>?" : $"Dictionary<string, {valueType}>";
             }
 
-            // Если additionalPropertiesAllowed = true и нет схемы - это Dictionary<string, object>
-            // По умолчанию AdditionalPropertiesAllowed = true в OpenAPI
-            // Если явно установлено false, то дополнительные свойства запрещены
-            if (schema.AdditionalPropertiesAllowed)
-            {
-                // Если нет явной схемы для дополнительных свойств, используем object
-                return isNullable ? "Dictionary<string, object>?" : "Dictionary<string, object>";
-            }
-
-            // Если дополнительные свойства запрещены и нет свойств - это пустой объект
             return isNullable ? "object?" : "object";
         }
 
         // Обрабатываем примитивные типы
-        if (schema.Type.HasValue)
+        if (IsPrimitive(schema) && schema.Type.HasValue)
         {
             var type = schema.Type.Value;
             var format = schema.Format?.ToLowerInvariant();
-
-            // Убираем Null из типа для обработки
             var baseType = type & ~JsonSchemaType.Null;
 
             var csharpType = (baseType, format) switch
@@ -448,63 +331,89 @@ public class CSharpTypeMapper : ITypeMapper
                 : csharpType;
         }
 
-        // Если тип не определен, возвращаем object
         return isNullable ? "object?" : "object";
     }
 
     /// <summary>
-    /// Пытается найти общий базовый тип среди схем oneOf/anyOf
+    /// Создает TypeInfo для коллекции
     /// </summary>
-    private string? FindCommonBaseType(IList<IOpenApiSchema> schemas, ISchemaResolver schemaResolver)
+    protected override TypeInfo CreateCollectionTypeInfo(TypeInfo itemType, bool isNullable)
     {
-        if (schemas == null || schemas.Count == 0)
-            return null;
-
-        // Собираем все типы из ссылок
-        var typeNames = new List<string>();
-        foreach (var subSchema in schemas)
-        {
-            var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
-            if (resolvedSubSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
-            {
-                var reference = refHolder.Reference;
-                if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                {
-                    var typeName = _namingConverter.ToPascalCase(reference.Id);
-                    typeNames.Add(typeName);
-                }
-            }
-        }
-
-        // Если все схемы - ссылки на один и тот же тип, возвращаем его
-        if (typeNames.Count == schemas.Count && typeNames.Distinct().Count() == 1)
-        {
-            return typeNames.First();
-        }
-
-        // Если все схемы - ссылки, но разные типы, возвращаем null (будет использован object)
-        // В будущем можно добавить логику поиска общего базового класса через анализ схем
-        return null;
+        return TypeInfo.Collection("List", itemType, isNullable, Language);
     }
 
-    private static bool IsSchemaNullable(IOpenApiSchema schema)
+    /// <summary>
+    /// Создает TypeInfo для словаря
+    /// </summary>
+    protected override TypeInfo CreateDictionaryTypeInfo(TypeInfo keyType, TypeInfo valueType, bool isNullable)
     {
-        // Проверяем, содержит ли тип Null
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Null))
-        {
-            return true;
-        }
+        return TypeInfo.Dictionary("Dictionary", keyType, valueType, isNullable, Language);
+    }
 
-        // Проверяем расширения для обратной совместимости с OpenAPI 3.0
-        if (schema.Extensions != null && schema.Extensions.TryGetValue(OpenApiConstants.NullableExtension, out var nullableExtension))
+    /// <summary>
+    /// Создает TypeInfo для примитивного типа
+    /// </summary>
+    protected override TypeInfo CreatePrimitiveTypeInfo(string baseTypeName, bool isPrimitive, bool isFile, bool isNullable)
+    {
+        var typeInfo = TypeInfo.Simple(baseTypeName, isPrimitive, isFile, Language);
+        
+        // Для string, byte[], object nullable не добавляется через "?"
+        if (isNullable && baseTypeName != "string" && baseTypeName != "byte[]" && baseTypeName != "object")
         {
-            if (nullableExtension is JsonNodeExtension { Node: { } jsonNode } && jsonNode.GetValueKind() == System.Text.Json.JsonValueKind.True)
+            return TypeInfo.Nullable(typeInfo);
+        }
+        
+        return typeInfo;
+    }
+
+    /// <summary>
+    /// Создает TypeInfo для объекта
+    /// </summary>
+    protected override TypeInfo CreateObjectTypeInfo(string? typeName, bool isNullable)
+    {
+        var typeInfo = TypeInfo.Simple(typeName ?? "object", language: Language);
+        return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
+    }
+
+    /// <summary>
+    /// Обрабатывает allOf (наследование)
+    /// </summary>
+    protected override TypeInfo HandleAllOf(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable)
+    {
+        string? baseTypeName = null;
+        foreach (var subSchema in schema.AllOf)
+        {
+            var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
+            baseTypeName = ResolveSchemaReference(resolvedSubSchema, schemaResolver);
+            if (!string.IsNullOrEmpty(baseTypeName))
             {
-                return true;
+                break;
             }
         }
+        
+        if (!string.IsNullOrEmpty(baseTypeName))
+        {
+            return CreateReferenceTypeInfo(baseTypeName, isNullable);
+        }
+        
+        var lastSchema = schema.AllOf.Last();
+        var resolvedLastSchema = schemaResolver.ResolveSchema(lastSchema);
+        return MapTypeInfoInternal(resolvedLastSchema, schemaResolver, isNullable);
+    }
 
-        return false;
+    /// <summary>
+    /// Обрабатывает oneOf/anyOf (union)
+    /// </summary>
+    protected override TypeInfo HandleOneOfAnyOf(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable)
+    {
+        var schemas = schema.OneOf ?? schema.AnyOf ?? Array.Empty<IOpenApiSchema>();
+        var commonBaseType = FindCommonBaseType(schemas, schemaResolver);
+        if (!string.IsNullOrEmpty(commonBaseType))
+        {
+            return CreateReferenceTypeInfo(commonBaseType, isNullable);
+        }
+        
+        return CreateObjectTypeInfo(null, isNullable);
     }
 }
 

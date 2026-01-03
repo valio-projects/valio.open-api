@@ -43,12 +43,6 @@ class Program
         services.AddSingleton<INamingConverter, NamingConverter>();
         services.AddSingleton<IFileWriter, FileWriter>();
         
-        // Template Cache
-        services.AddSingleton<ITemplateCache, TemplateCache>();
-        
-        // Template Registry Factory
-        services.AddSingleton<TemplateRegistryFactory>();
-        
         // Note: Extractors создаются внутри генераторов, так как они требуют SchemaResolver,
         // который создается для каждого документа. Генераторы создают их самостоятельно.
 
@@ -60,42 +54,11 @@ class Program
         services.AddSingleton<IConfigurationValidator, ConfigurationValidator>();
 
         // Schema Generators (Zod, Yup, Valli, etc.)
-        // Регистрируем через фабрику, так как требуются зависимости, которые создаются динамически
-        services.AddSingleton<ValIO.Generators.TypeScript.Zod.ZodTypeMapper>(sp => 
-            new ValIO.Generators.TypeScript.Zod.ZodTypeMapper(sp.GetRequiredService<INamingConverter>()));
-        
-        services.AddSingleton<ValIO.Core.Interfaces.ISchemaGenerator>(sp =>
-        {
-            var namingConverter = sp.GetRequiredService<INamingConverter>();
-            var typeMapperFactory = sp.GetRequiredService<TypeMapperFactory>();
-            var templateRegistryFactory = sp.GetRequiredService<TemplateRegistryFactory>();
-            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-            
-            // Создаем TypeScriptTypeMapper
-            var typeMapper = typeMapperFactory.CreateMapper(GenerationLanguage.TypeScript) as ValIO.Generators.TypeScript.TypeScriptTypeMapper;
-            if (typeMapper == null)
-                throw new InvalidOperationException("Failed to create TypeScriptTypeMapper");
-            
-            // Создаем ZodTypeMapper
-            var zodTypeMapper = sp.GetRequiredService<ValIO.Generators.TypeScript.Zod.ZodTypeMapper>();
-            
-            // Создаем TemplateRegistry для Zod шаблонов
-            var zodAssembly = typeof(ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator).Assembly;
-            var zodTemplateRegistry = templateRegistryFactory.CreateRegistry(zodAssembly);
-            
-            // Предзагружаем шаблоны Zod (синхронно, так как это singleton)
-            zodTemplateRegistry.PreloadTemplatesAsync().GetAwaiter().GetResult();
-            
-            // Создаем logger
-            var logger = loggerFactory.CreateLogger<ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator>();
-            
-            return new ValIO.Generators.TypeScript.Zod.ZodSchemaGenerator(
-                namingConverter,
-                typeMapper,
-                zodTypeMapper,
-                zodTemplateRegistry,
-                logger);
-        });
+        // TODO: Регистрация ZodSchemaRenderer временно отключена из-за циклических зависимостей
+        // и необходимости рефакторинга архитектуры. ZodSchemaRenderer реализует IModelFormatRenderer,
+        // а не ISchemaGenerator, и используется внутри TypeScriptCodeGenerator.
+        // services.AddSingleton<ValIO.Generators.TypeScript.Zod.ZodTypeMapper>(sp => 
+        //     new ValIO.Generators.TypeScript.Zod.ZodTypeMapper(sp.GetRequiredService<INamingConverter>()));
 
         // Factories
         services.AddSingleton<TypeMapperFactory>();

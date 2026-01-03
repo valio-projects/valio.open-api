@@ -1,5 +1,6 @@
 using Microsoft.OpenApi;
 using ValIO.Core.Models;
+using ValIO.Core.Models.TemplateData;
 
 namespace ValIO.Core.Interfaces;
 
@@ -9,12 +10,12 @@ namespace ValIO.Core.Interfaces;
 public interface IEnumExtractor
 {
     /// <summary>
-    /// Извлекает все enum из документа
+    /// Извлекает enum в виде TemplateData с уже подготовленными данными
     /// </summary>
-    IReadOnlyList<ApiEnum> ExtractEnums(OpenApiDocument document);
-
+    IReadOnlyList<EnumTemplateData> ExtractEnumTemplateData(OpenApiDocument document, GenerationLanguage language);
+    
     /// <summary>
-    /// Извлекает enum из схемы
+    /// Извлекает enum в виде TemplateData
     /// </summary>
-    ApiEnum? ExtractEnum(IOpenApiSchema schema, string enumName);
+    EnumTemplateData? ExtractEnumTemplateData(IOpenApiSchema schema, string enumName, GenerationLanguage language);
 }

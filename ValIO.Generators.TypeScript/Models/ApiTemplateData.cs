@@ -1,5 +1,5 @@
 using ValIO.Core.Models;
-using ValIO.Generators.CSharp.Models;
+using ValIO.Core.Models;
 
 namespace ValIO.Generators.TypeScript.Models;
 

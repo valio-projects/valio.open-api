@@ -26,52 +26,42 @@ public class CodeGeneratorFactory
     {
         var namingConverter = _serviceProvider.GetRequiredService<INamingConverter>();
         var fileWriter = _serviceProvider.GetRequiredService<IFileWriter>();
-        var templateRegistryFactory = _serviceProvider.GetRequiredService<TemplateRegistryFactory>();
 
         return language switch
         {
-            GenerationLanguage.CSharp => CreateCSharpGenerator(namingConverter, fileWriter, templateRegistryFactory),
-            GenerationLanguage.TypeScript => CreateTypeScriptGenerator(namingConverter, fileWriter, templateRegistryFactory),
+            GenerationLanguage.CSharp => CreateCSharpGenerator(namingConverter, fileWriter),
+            GenerationLanguage.TypeScript => CreateTypeScriptGenerator(namingConverter, fileWriter),
             _ => throw new NotSupportedException($"Generator for language {language} is not supported")
         };
     }
 
     private ICodeGenerator CreateCSharpGenerator(
         INamingConverter namingConverter,
-        IFileWriter fileWriter,
-        TemplateRegistryFactory templateRegistryFactory)
+        IFileWriter fileWriter)
     {
         var typeMapper = _typeMapperFactory.CreateMapper(GenerationLanguage.CSharp);
-        var templateRegistry = templateRegistryFactory.CreateRegistry(typeof(CSharpCodeGenerator).Assembly);
         var logger = _serviceProvider.GetRequiredService<ILogger<CSharpCodeGenerator>>();
 
         return new CSharpCodeGenerator(
             typeMapper,
             namingConverter,
             fileWriter,
-            templateRegistry,
             logger);
     }
 
     private ICodeGenerator CreateTypeScriptGenerator(
         INamingConverter namingConverter,
-        IFileWriter fileWriter,
-        TemplateRegistryFactory templateRegistryFactory)
+        IFileWriter fileWriter)
     {
         var typeMapper = _typeMapperFactory.CreateMapper(GenerationLanguage.TypeScript);
-        var templateRegistry = templateRegistryFactory.CreateRegistry(typeof(TypeScriptCodeGenerator).Assembly);
         var logger = _serviceProvider.GetRequiredService<ILogger<TypeScriptCodeGenerator>>();
         var loggerFactory = _serviceProvider.GetRequiredService<ILoggerFactory>();
-        var schemaGeneratorFactory = _serviceProvider.GetRequiredService<SchemaGeneratorFactory>();
 
         return new TypeScriptCodeGenerator(
             typeMapper,
             namingConverter,
             fileWriter,
-            templateRegistry,
             logger,
-            loggerFactory,
-            schemaGeneratorFactory,
-            templateRegistryFactory);
+            loggerFactory);
     }
 }

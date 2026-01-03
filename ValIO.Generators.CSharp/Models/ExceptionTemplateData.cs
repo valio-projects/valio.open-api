@@ -1,4 +1,4 @@
-using ValIO.Generators.CSharp.Models;
+using ValIO.Core.Models;
 
 namespace ValIO.Generators.CSharp.Models;
 

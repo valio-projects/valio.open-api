@@ -21,5 +21,15 @@ public interface ITypeMapper
     /// Маппинг типа enum
     /// </summary>
     string MapEnumType(IOpenApiSchema schema, ISchemaResolver schemaResolver);
+    
+    /// <summary>
+    /// Маппит схему OpenAPI в TypeInfo с мета-данными
+    /// </summary>
+    TypeInfo MapTypeInfo(IOpenApiSchema schema, ISchemaResolver schemaResolver);
+    
+    /// <summary>
+    /// Маппит схему OpenAPI в TypeInfo для свойства с учетом nullable
+    /// </summary>
+    TypeInfo MapPropertyTypeInfo(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver);
 }
 

@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
+using ValIO.Core.Models.TemplateData;
 
 namespace ValIO.Core.Services;
 
@@ -18,82 +19,6 @@ public class EnumExtractor : IEnumExtractor
     {
         _schemaResolver = schemaResolver;
         _namingConverter = namingConverter;
-    }
-
-    public IReadOnlyList<ApiEnum> ExtractEnums(OpenApiDocument document)
-    {
-        var enums = new List<ApiEnum>();
-
-        if (document.Components?.Schemas == null)
-            return enums;
-
-        foreach (var schemaEntry in document.Components.Schemas)
-        {
-            var schemaName = schemaEntry.Key;
-            var schema = schemaEntry.Value;
-
-            var resolvedSchema = _schemaResolver.ResolveSchema(schema);
-            
-            // Проверяем, является ли схема enum'ом
-            if (IsEnumSchema(resolvedSchema))
-            {
-                var apiEnum = ExtractEnum(resolvedSchema, schemaName);
-                if (apiEnum != null)
-                {
-                    enums.Add(apiEnum);
-                }
-            }
-        }
-
-        return enums;
-    }
-
-    public ApiEnum? ExtractEnum(IOpenApiSchema schema, string enumName)
-    {
-        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
-        
-        if (!IsEnumSchema(resolvedSchema))
-            return null;
-
-        var sanitizedName = _namingConverter.SanitizeIdentifier(enumName);
-        var underlyingType = DetermineUnderlyingType(resolvedSchema);
-        
-        var enumValues = new List<ApiEnumValue>();
-        
-        if (resolvedSchema.Enum != null)
-        {
-            // Получаем имена enum из расширений (x-enumNames, x-enumnames, x-enum-varnames)
-            var enumNames = GetEnumNames(resolvedSchema);
-            var enumDescriptions = GetEnumDescriptions(resolvedSchema);
-
-            for (int i = 0; i < resolvedSchema.Enum.Count; i++)
-            {
-                var enumValue = resolvedSchema.Enum[i];
-                var valueName = enumNames != null && i < enumNames.Count 
-                    ? enumNames[i] 
-                    : GenerateEnumValueName(enumValue, underlyingType);
-                
-                var valueDescription = enumDescriptions != null && i < enumDescriptions.Count
-                    ? enumDescriptions[i]
-                    : null;
-
-                enumValues.Add(new ApiEnumValue
-                {
-                    Name = _namingConverter.SanitizeIdentifier(valueName),
-                    Value = enumValue,
-                    Description = valueDescription
-                });
-            }
-        }
-
-        return new ApiEnum
-        {
-            Name = sanitizedName,
-            Description = resolvedSchema.Description,
-            Values = enumValues,
-            UnderlyingType = underlyingType,
-            OriginalSchema = resolvedSchema
-        };
     }
 
     private static bool IsEnumSchema(IOpenApiSchema schema)
@@ -133,20 +58,8 @@ public class EnumExtractor : IEnumExtractor
                 };
             }
             
-            // Обрабатываем примитивные типы (если не JsonNode)
-            if (firstValue is int)
-                return "int";
-            if (firstValue is long)
-                return "long";
-            if (firstValue is float)
-                return "float";
-            if (firstValue is double)
-                return "double";
-            if (firstValue is string)
-                return "string";
-            if (firstValue is bool)
-                return "bool";
-            
+            // Если не JsonNode, возвращаем значение по умолчанию
+            // (в OpenAPI enum значения обычно представлены как JsonNode)
             return "int";
         }
 
@@ -238,5 +151,115 @@ public class EnumExtractor : IEnumExtractor
         }
 
         return null;
+    }
+
+    public IReadOnlyList<EnumTemplateData> ExtractEnumTemplateData(OpenApiDocument document, GenerationLanguage language)
+    {
+        var enums = new List<EnumTemplateData>();
+
+        if (document.Components?.Schemas == null)
+            return enums;
+
+        foreach (var schemaEntry in document.Components.Schemas)
+        {
+            var schemaName = schemaEntry.Key;
+            var schema = schemaEntry.Value;
+
+            var resolvedSchema = _schemaResolver.ResolveSchema(schema);
+            
+            // Проверяем, является ли схема enum'ом
+            if (IsEnumSchema(resolvedSchema))
+            {
+                var enumTemplateData = ExtractEnumTemplateData(resolvedSchema, schemaName, language);
+                if (enumTemplateData != null)
+                {
+                    enums.Add(enumTemplateData);
+                }
+            }
+        }
+
+        return enums;
+    }
+
+    public EnumTemplateData? ExtractEnumTemplateData(IOpenApiSchema schema, string enumName, GenerationLanguage language)
+    {
+        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
+        
+        if (!IsEnumSchema(resolvedSchema))
+            return null;
+
+        var sanitizedName = _namingConverter.SanitizeIdentifier(enumName);
+        var underlyingType = DetermineUnderlyingType(resolvedSchema);
+        
+        var enumValues = new List<EnumValueTemplateData>();
+        
+        if (resolvedSchema.Enum != null)
+        {
+            // Получаем имена enum из расширений
+            var enumNames = GetEnumNames(resolvedSchema);
+            var enumDescriptions = GetEnumDescriptions(resolvedSchema);
+
+            for (int i = 0; i < resolvedSchema.Enum.Count; i++)
+            {
+                var enumValue = resolvedSchema.Enum[i];
+                var valueName = enumNames != null && i < enumNames.Count 
+                    ? enumNames[i] 
+                    : GenerateEnumValueName(enumValue, underlyingType);
+                
+                var valueDescription = enumDescriptions != null && i < enumDescriptions.Count
+                    ? enumDescriptions[i]
+                    : null;
+
+                // Форматируем значение для генерации кода
+                var valueString = FormatEnumValueString(enumValue, underlyingType);
+
+                enumValues.Add(new EnumValueTemplateData
+                {
+                    Name = _namingConverter.SanitizeIdentifier(valueName),
+                    Value = enumValue,
+                    Description = valueDescription,
+                    ValueString = valueString
+                });
+            }
+        }
+
+        // Определяем формат enum в зависимости от языка
+        var format = language switch
+        {
+            GenerationLanguage.TypeScript when underlyingType == "string" => EnumFormat.Union,
+            _ => EnumFormat.Enum
+        };
+
+        return new EnumTemplateData
+        {
+            Name = sanitizedName,
+            Description = resolvedSchema.Description,
+            Values = enumValues,
+            UnderlyingType = underlyingType,
+            Language = language,
+            Format = format
+        };
+    }
+
+    private static string FormatEnumValueString(object? value, string underlyingType)
+    {
+        if (value == null)
+            return "null";
+
+        if (underlyingType == "string")
+        {
+            var stringValue = value.ToString() ?? "";
+            // Экранируем кавычки и специальные символы
+            var escaped = stringValue
+                .Replace("\\", "\\\\")
+                .Replace("\"", "\\\"")
+                .Replace("\n", "\\n")
+                .Replace("\r", "\\r")
+                .Replace("\t", "\\t");
+            return $"\"{escaped}\"";
+        }
+
+        // Для числовых значений просто возвращаем строковое представление
+        return value.ToString() ?? "0";
     }
 }

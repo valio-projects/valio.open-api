@@ -5,72 +5,46 @@ using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Core.Factories;
 using ValIO.Generators.TypeScript.Models;
-using ValIO.Generators.CSharp.Models;
 using System.Linq;
-using System.Reflection;
 using System.Text;
-using System.Text.Json.Nodes;
-using TypeInfo = ValIO.Generators.CSharp.Models.TypeInfo;
 
 namespace ValIO.Generators.TypeScript;
 
 /// <summary>
 /// Базовый генератор кода для TypeScript
 /// </summary>
-public class TypeScriptCodeGenerator : ICodeGenerator
+public class TypeScriptCodeGenerator : BaseCodeGenerator
 {
-    private readonly ITypeMapper _typeMapper;
     private readonly TypeScriptTypeMapper _typescriptTypeMapper;
-    private readonly INamingConverter _namingConverter;
-    private readonly IFileWriter _fileWriter;
-    private readonly ITemplateRegistry _templateRegistry;
-    private readonly TemplateRegistryFactory? _templateRegistryFactory;
-    private readonly ILogger<TypeScriptCodeGenerator> _logger;
+    private readonly TypeScriptCodeRenderer _codeRenderer;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly ValIO.Core.Factories.SchemaGeneratorFactory _schemaGeneratorFactory;
-    private bool _templatesPreloaded;
-    
-    // Кэш для поиска операций (path + method -> operation)
-    private Dictionary<string, OpenApiOperation>? _operationCache;
-    
-    // Кэш для маппинга схем в TypeInfo (schema reference -> TypeInfo)
-    private Dictionary<string, TypeInfo>? _schemaTypeInfoCache;
 
     public TypeScriptCodeGenerator(
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
         IFileWriter fileWriter,
-        ITemplateRegistry templateRegistry,
         ILogger<TypeScriptCodeGenerator> logger,
-        ILoggerFactory loggerFactory,
-        ValIO.Core.Factories.SchemaGeneratorFactory schemaGeneratorFactory,
-        TemplateRegistryFactory? templateRegistryFactory = null)
+        ILoggerFactory loggerFactory)
+        : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.TypeScript)
     {
-        _typeMapper = typeMapper;
         _typescriptTypeMapper = typeMapper as TypeScriptTypeMapper ?? throw new InvalidOperationException("TypeMapper must be TypeScriptTypeMapper");
-        _namingConverter = namingConverter;
-        _fileWriter = fileWriter;
-        _templateRegistry = templateRegistry ?? throw new ArgumentNullException(nameof(templateRegistry));
-        _templateRegistryFactory = templateRegistryFactory;
-        _logger = logger;
+        _codeRenderer = new TypeScriptCodeRenderer();
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-        _schemaGeneratorFactory = schemaGeneratorFactory ?? throw new ArgumentNullException(nameof(schemaGeneratorFactory));
-        _templatesPreloaded = false;
     }
 
-    public bool SupportsLanguage(GenerationLanguage language)
+    public override bool SupportsLanguage(GenerationLanguage language)
     {
         return language == GenerationLanguage.TypeScript;
     }
 
-    public bool SupportsOptions(GenerationOptions? options)
+    public override bool SupportsOptions(GenerationOptions? options)
     {
         // Базовый TypeScript генератор поддерживает базовые опции
         // Специализированные генераторы будут проверять конкретные комбинации
         return true;
     }
 
-    public async Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config)
+    public override async Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config)
     {
         var result = new GenerationResult
         {
@@ -91,17 +65,12 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 return result;
             }
 
-            // Предзагружаем шаблоны при первом использовании
-            if (!_templatesPreloaded)
-            {
-                await EnsureTemplatesPreloadedAsync();
-            }
+            // Шаблоны больше не используются - используется TypeScriptCodeRenderer
 
-            _logger.LogInformation("Starting TypeScript code generation");
+            Logger.LogInformation("Starting TypeScript code generation");
 
             // Инициализируем кэши
-            _operationCache = new Dictionary<string, OpenApiOperation>();
-            _schemaTypeInfoCache = new Dictionary<string, TypeInfo>();
+            InitializeCaches();
             
             // Предзаполняем кэш операций для быстрого поиска
             BuildOperationCache(document);
@@ -110,27 +79,27 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             var schemaResolver = new SchemaResolver(document);
 
             // Создаем extractors с SchemaResolver
-            var modelExtractor = new ModelExtractor(schemaResolver, _namingConverter);
+            var modelExtractor = new ModelExtractor(schemaResolver, NamingConverter);
             var operationExtractor = new OperationExtractor(schemaResolver);
-            var enumExtractor = new EnumExtractor(schemaResolver, _namingConverter);
+            var enumExtractor = new EnumExtractor(schemaResolver, NamingConverter);
 
-            // Извлекаем модели
-            var models = modelExtractor.ExtractModels(document);
-            _logger.LogInformation("Extracted {Count} models", models.Count);
+            // Извлекаем модели в виде TemplateData
+            var modelTemplateDataList = modelExtractor.ExtractModelTemplateData(document, GenerationLanguage.TypeScript, _typescriptTypeMapper);
+            Logger.LogInformation("Extracted {Count} models", modelTemplateDataList.Count);
             
-            if (config.GenerateModels && models.Count == 0)
+            if (config.GenerateModels && modelTemplateDataList.Count == 0)
             {
                 result.Warnings = new List<string> { "No models found in OpenAPI schema" };
             }
             
             // Валидируем модели на пустые имена
-            ValidateModels(models, result);
+            ValidateModelTemplateData(modelTemplateDataList, result);
 
-            // Извлекаем операции
-            var operations = operationExtractor.ExtractOperations(document);
-            _logger.LogInformation("Extracted {Count} operations", operations.Count);
+            // Извлекаем операции в виде TemplateData
+            var operationTemplateDataList = operationExtractor.ExtractOperationTemplateData(document, GenerationLanguage.TypeScript, _typescriptTypeMapper, NamingConverter);
+            Logger.LogInformation("Extracted {Count} operations", operationTemplateDataList.Count);
             
-            if (config.GenerateClients && operations.Count == 0)
+            if (config.GenerateClients && operationTemplateDataList.Count == 0)
             {
                 var warnings = result.Warnings.ToList();
                 warnings.Add("No operations found in OpenAPI schema");
@@ -138,81 +107,20 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
             
             // Валидируем операции на дублирующиеся operationId
-            ValidateOperations(operations, result);
+            ValidateOperationTemplateData(operationTemplateDataList, result);
 
-            // Маппим типы для моделей
-            var mappingErrors = new List<string>();
-            var mappingWarnings = new List<string>();
-            foreach (var model in models)
-            {
-                try
-            {
-                MapModelTypes(model, schemaResolver);
-                }
-                catch (Exception ex)
-                {
-                    var errorMsg = $"Failed to map types for model '{model.Name}': {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        errorMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    mappingErrors.Add(errorMsg);
-                    _logger.LogWarning(ex, "Failed to map types for model: {ModelName}", model.Name);
-                }
-            }
-
-            // Маппим типы для операций
-            foreach (var operation in operations)
-            {
-                try
-                {
-                    MapOperationTypes(operation, document, schemaResolver);
-                }
-                catch (Exception ex)
-                {
-                    var warningMsg = $"Failed to map types for operation '{operation.OperationId}' (Path: {operation.Path}, Method: {operation.HttpMethod.Method}): {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        warningMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    mappingWarnings.Add(warningMsg);
-                    _logger.LogWarning(ex, "Failed to map types for operation: {OperationId} at {Path} {Method}", 
-                        operation.OperationId, operation.Path, operation.HttpMethod.Method);
-                }
-            }
-
-            // Извлекаем enum'ы
-            var enums = enumExtractor.ExtractEnums(document);
-            _logger.LogInformation("Extracted {Count} enums", enums.Count);
+            // Извлекаем enum в виде TemplateData
+            var enumTemplateDataList = enumExtractor.ExtractEnumTemplateData(document, GenerationLanguage.TypeScript);
+            Logger.LogInformation("Extracted {Count} enums", enumTemplateDataList.Count);
             
-            if (config.GenerateEnums && enums.Count == 0)
+            if (config.GenerateEnums && enumTemplateDataList.Count == 0)
             {
                 var warnings = result.Warnings.ToList();
                 warnings.Add("No enums found in OpenAPI schema");
                 result.Warnings = warnings;
             }
 
-            // Добавляем ошибки и предупреждения маппинга
-            if (mappingErrors.Count > 0)
-            {
-                var errors = result.Errors.ToList();
-                errors.AddRange(mappingErrors);
-                result.Errors = errors;
-            }
-            
-            if (mappingWarnings.Count > 0)
-            {
-                var warnings = result.Warnings.ToList();
-                warnings.AddRange(mappingWarnings);
-                result.Warnings = warnings;
-            }
-
-            // Если есть критические ошибки, прекращаем генерацию
-            if (mappingErrors.Count > 0)
-            {
-                result.Success = false;
-                return result;
-            }
+            // Маппинг типов теперь выполняется в extractors при создании TemplateData
 
             // Получаем TypeScript опции
             var typescriptOptions = GetTypeScriptOptions(config);
@@ -222,78 +130,34 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             var generationErrors = new List<string>();
             var generationWarnings = new List<string>();
 
-            if (config.GenerateEnums)
+            // Унифицированная генерация моделей и enum через один processor с несколькими renderers
+            if (config.GenerateModels || config.GenerateEnums)
             {
                 try
                 {
-                    var enumFiles = GenerateEnums(enums, config, typescriptOptions);
-                    foreach (var file in enumFiles)
+                    var unifiedFiles = await GenerateModelsAndEnumsUnifiedAsync(
+                        modelTemplateDataList, 
+                        enumTemplateDataList, 
+                        document, 
+                        schemaResolver, 
+                        config, 
+                        typescriptOptions);
+                    
+                    foreach (var file in unifiedFiles)
                     {
                         generatedFiles[file.Key] = file.Value;
                     }
                 }
                 catch (Exception ex)
                 {
-                    var errorMsg = $"Failed to generate enums: {ex.Message}";
+                    var errorMsg = $"Failed to generate models and enums: {ex.Message}";
                     if (ex.InnerException != null)
                     {
                         errorMsg += $" (Inner: {ex.InnerException.Message})";
                     }
                     generationErrors.Add(errorMsg);
-                    _logger.LogError(ex, "Failed to generate enums. Count: {Count}", enums.Count);
-                }
-            }
-
-            if (config.GenerateModels)
-            {
-                try
-                {
-                    var modelFiles = GenerateModels(models, enums, config, document, schemaResolver, typescriptOptions);
-                foreach (var file in modelFiles)
-                {
-                    generatedFiles[file.Key] = file.Value;
-                    }
-                    
-                    // Генерируем Zod схемы, если ValidationLibrary = Zod (независимо от ModelFormat)
-                    _logger.LogDebug("Checking if Zod schemas should be generated. ValidationLibrary: {ValidationLibrary}", typescriptOptions.ValidationLibrary);
-                    if (typescriptOptions.ValidationLibrary == ValidationLibrary.Zod)
-                    {
-                        _logger.LogInformation("Generating Zod schemas for {ModelCount} models and {EnumCount} enums", models.Count, enums.Count);
-                        try
-                        {
-                            var zodSchemaFiles = await GenerateZodSchemasAsync(models, enums, config, document, schemaResolver, typescriptOptions);
-                            _logger.LogInformation("Generated {Count} Zod schema files", zodSchemaFiles.Count);
-                            foreach (var file in zodSchemaFiles)
-                            {
-                                generatedFiles[file.Key] = file.Value;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            var errorMsg = $"Failed to generate Zod schemas: {ex.Message}";
-                            if (ex.InnerException != null)
-                            {
-                                errorMsg += $" (Inner: {ex.InnerException.Message})";
-                            }
-                            generationWarnings.Add(errorMsg);
-                            generationErrors.Add(errorMsg);
-                            _logger.LogError(ex, "Failed to generate Zod schemas. Stack trace: {StackTrace}", ex.StackTrace);
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Skipping Zod schema generation. ValidationLibrary is {ValidationLibrary}, expected Zod", typescriptOptions.ValidationLibrary);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    var errorMsg = $"Failed to generate models: {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        errorMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    generationErrors.Add(errorMsg);
-                    _logger.LogError(ex, "Failed to generate models. Count: {Count}", models.Count);
+                    Logger.LogError(ex, "Failed to generate models and enums. Models: {ModelCount}, Enums: {EnumCount}", 
+                        modelTemplateDataList.Count, enumTemplateDataList.Count);
                 }
             }
 
@@ -302,21 +166,22 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                 try
                 {
                     // Всегда генерируем базовые клиенты (axios или fetch) в отдельные файлы
-                    var clientFiles = GenerateClients(operations, document, config, schemaResolver, typescriptOptions);
+                    var clientFiles = GenerateClients(operationTemplateDataList, config, typescriptOptions);
                     foreach (var file in clientFiles)
                     {
                         generatedFiles[file.Key] = file.Value;
                     }
                     
+                    // TODO: Генерация TanStack Query хуков временно отключена из-за циклической зависимости
                     // Если UseTanStackQuery = true, дополнительно генерируем TanStack Query хуки
-                    if (typescriptOptions.UseTanStackQuery)
-                    {
-                        var queryFiles = await GenerateTanStackQueryHooksAsync(operations, document, config, schemaResolver, typescriptOptions);
-                        foreach (var file in queryFiles)
-                        {
-                            generatedFiles[file.Key] = file.Value;
-                        }
-                    }
+                    // if (typescriptOptions.UseTanStackQuery)
+                    // {
+                    //     var queryFiles = await GenerateTanStackQueryHooksAsync(operationTemplateDataList, document, config, schemaResolver, typescriptOptions);
+                    //     foreach (var file in queryFiles)
+                    //     {
+                    //         generatedFiles[file.Key] = file.Value;
+                    //     }
+                    // }
                 }
                 catch (Exception ex)
                 {
@@ -326,7 +191,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                         errorMsg += $" (Inner: {ex.InnerException.Message})";
                     }
                     generationErrors.Add(errorMsg);
-                    _logger.LogError(ex, "Failed to generate clients. Operations count: {Count}", operations.Count);
+                    Logger.LogError(ex, "Failed to generate clients. Operations count: {Count}", operationTemplateDataList.Count);
                 }
             }
 
@@ -339,38 +204,18 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
 
             // Записываем файлы
-            if (generatedFiles.Count > 0)
-            {
-                try
-                {
-            await _fileWriter.WriteFilesAsync(generatedFiles);
-                }
-                catch (Exception ex)
-                {
-                    var errorMsg = $"Failed to write generated files: {ex.Message}";
-                    var errors = result.Errors.ToList();
-                    errors.Add(errorMsg);
-                    result.Errors = errors;
-                    _logger.LogError(ex, "Failed to write generated files");
-                }
-            }
-            else
-            {
-                var warnings = result.Warnings.ToList();
-                warnings.Add("No files were generated");
-                result.Warnings = warnings;
-            }
+            await WriteGeneratedFilesAsync(generatedFiles, result);
 
             result.Success = result.Errors.Count == 0;
             result.GeneratedFiles = generatedFiles;
             
             if (result.Success)
             {
-            _logger.LogInformation("TypeScript code generation completed successfully. Generated {Count} files", generatedFiles.Count);
+            Logger.LogInformation("TypeScript code generation completed successfully. Generated {Count} files", generatedFiles.Count);
             }
             else
             {
-                _logger.LogWarning("TypeScript code generation completed with errors. Generated {Count} files, {ErrorCount} errors", 
+                Logger.LogWarning("TypeScript code generation completed with errors. Generated {Count} files, {ErrorCount} errors", 
                     generatedFiles.Count, result.Errors.Count);
             }
         }
@@ -383,11 +228,11 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
             if (!string.IsNullOrEmpty(ex.StackTrace))
             {
-                _logger.LogError(ex, "Error during TypeScript code generation. Stack trace: {StackTrace}", ex.StackTrace);
+                Logger.LogError(ex, "Error during TypeScript code generation. Stack trace: {StackTrace}", ex.StackTrace);
             }
             else
         {
-            _logger.LogError(ex, "Error during TypeScript code generation");
+            Logger.LogError(ex, "Error during TypeScript code generation");
             }
             result.Errors = new List<string> { errorMessage };
             result.Success = false;
@@ -396,36 +241,6 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         return result;
     }
 
-    /// <summary>
-    /// Валидирует входные данные для генерации
-    /// </summary>
-    private List<string> ValidateInputs(OpenApiDocument? document, GenerationConfiguration? config)
-    {
-        var errors = new List<string>();
-
-        if (document == null)
-        {
-            errors.Add("OpenAPI document cannot be null");
-        }
-
-        if (config == null)
-        {
-            errors.Add("Generation configuration cannot be null");
-            return errors;
-        }
-
-        if (string.IsNullOrWhiteSpace(config.OutputPath))
-        {
-            errors.Add("OutputPath is required in configuration");
-        }
-
-        if (config.Language != GenerationLanguage.TypeScript)
-        {
-            errors.Add($"Language must be TypeScript, but got {config.Language}");
-        }
-
-        return errors;
-    }
 
     /// <summary>
     /// Получает TypeScript специфичные опции из конфигурации
@@ -483,88 +298,192 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         return defaultOptions;
     }
 
-    private void MapModelTypes(ApiModel model, ISchemaResolver schemaResolver)
+    // Методы MapModelTypes и MapOperationTypes удалены - маппинг теперь выполняется в extractors
+
+    /// <summary>
+    /// Унифицированная генерация моделей и enum через один processor с несколькими renderers
+    /// </summary>
+    private async Task<Dictionary<string, string>> GenerateModelsAndEnumsUnifiedAsync(
+        IReadOnlyList<Core.Models.TemplateData.ModelTemplateData> modelTemplateDataList,
+        IReadOnlyList<Core.Models.TemplateData.EnumTemplateData> enumTemplateDataList,
+        OpenApiDocument document,
+        ISchemaResolver schemaResolver,
+        GenerationConfiguration config,
+        TypeScriptGenerationOptions options)
     {
-        if (model.OriginalSchema == null)
-            return;
-
-        foreach (var property in model.Properties)
+        var files = new Dictionary<string, string>();
+        
+        // Создаем словарь enum'ов по имени для быстрой проверки
+        var enumsByName = enumTemplateDataList.ToDictionary(
+            e => e.Name, 
+            StringComparer.OrdinalIgnoreCase);
+        
+        // Создаем renderers один раз
+        // TODO: Рефакторинг - ZodTypeMapper и ZodSchemaRenderer требуют ссылку на ValIO.Generators.TypeScript.Zod,
+        // что создает циклическую зависимость. Нужно вынести интерфейсы в Core или использовать DI.
+        // Временно отключаем генерацию Zod схем до рефакторинга архитектуры.
+        // var zodTypeMapper = new ZodTypeMapper(NamingConverter);
+        // var zodSchemaRenderer = new ZodSchemaRenderer(NamingConverter, zodTypeMapper);
+        // var zodEnumSchemaRenderer = new Renderers.ZodEnumSchemaRenderer(NamingConverter);
+        var interfaceModelRenderer = new Renderers.InterfaceModelRenderer();
+        var typeScriptEnumRenderer = new Renderers.TypeScriptEnumRenderer();
+        var typeScriptUnionTypeRenderer = new Renderers.TypeScriptUnionTypeRenderer();
+        
+        // Генерируем модели
+        if (config.GenerateModels)
         {
-            // Находим схему свойства в оригинальной схеме
-            if (model.OriginalSchema.Properties != null &&
-                model.OriginalSchema.Properties.TryGetValue(property.Name, out var propertySchema))
+            Logger.LogDebug("Generating models. Count: {Count}", modelTemplateDataList.Count);
+            
+            foreach (var modelTemplateData in modelTemplateDataList)
             {
-                property.Type = _typeMapper.MapPropertyType(propertySchema, property.IsRequired, schemaResolver);
-            }
-        }
-    }
-
-    private void MapOperationTypes(ApiOperation operation, OpenApiDocument document, ISchemaResolver schemaResolver)
-    {
-        // Находим оригинальную операцию в документе
-        var originalOperation = FindOriginalOperation(document, operation);
-        if (originalOperation == null)
-            return;
-
-        // Маппим типы параметров
-        if (originalOperation.Parameters != null)
-        {
-            var parameterMap = originalOperation.Parameters
-                .Where(p => p.Name != null)
-                .ToDictionary(p => p.Name!, p => p);
-
-            foreach (var parameter in operation.Parameters)
-            {
-                if (parameterMap.TryGetValue(parameter.Name, out var originalParam) && originalParam.Schema != null)
+                if (string.IsNullOrWhiteSpace(modelTemplateData.Name))
                 {
-                    var resolvedSchema = schemaResolver.ResolveSchema(originalParam.Schema);
-                    parameter.Type = _typeMapper.MapPropertyType(resolvedSchema, parameter.IsRequired, schemaResolver);
+                    Logger.LogWarning("Skipping model with empty name");
+                    continue;
                 }
-                else if (string.IsNullOrEmpty(parameter.Type) || parameter.Type == "object")
+                
+                // Пропускаем модели, которые являются enum'ами
+                if (enumsByName.ContainsKey(modelTemplateData.Name))
                 {
-                    parameter.Type = "string";
+                    Logger.LogDebug("Skipping model '{ModelName}' - it is an enum", modelTemplateData.Name);
+                    continue;
                 }
-            }
-        }
-
-        // Маппим тип request body
-        if (operation.RequestBody != null && originalOperation.RequestBody != null)
-        {
-            var content = originalOperation.RequestBody.Content?.FirstOrDefault();
-            var schema = content.HasValue ? content.Value.Value?.Schema : null;
-            if (schema != null)
-            {
-                var resolvedSchema = schemaResolver.ResolveSchema(schema);
-                operation.RequestBody.Type = _typeMapper.MapType(resolvedSchema, schemaResolver);
-            }
-        }
-
-        // Маппим типы ответов
-        if (originalOperation.Responses != null)
-        {
-            foreach (var responseEntry in originalOperation.Responses)
-            {
-                if (operation.Responses.TryGetValue(responseEntry.Key, out var apiResponse))
+                
+                // Устанавливаем формат модели из опций, если не установлен
+                // Для TypeScript: ModelFormat.Interfaces -> Core ModelFormat.Interface, ModelFormat.ValidationSchemas -> Core ModelFormat.ValidationSchema
+                if (modelTemplateData.Format == ValIO.Core.Models.TemplateData.ModelFormat.Class)
                 {
-                    var originalResponse = responseEntry.Value;
-                    var content = originalResponse.Content?.FirstOrDefault();
-                    var schema = content.HasValue ? content.Value.Value?.Schema : null;
-                    if (schema != null)
-                    {
-                        var resolvedSchema = schemaResolver.ResolveSchema(schema);
-                        apiResponse.Type = _typeMapper.MapType(resolvedSchema, schemaResolver);
-                    }
+                    modelTemplateData.Format = options.ModelFormat == ValIO.Generators.TypeScript.Models.ModelFormat.ValidationSchemas 
+                        ? ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema 
+                        : ValIO.Core.Models.TemplateData.ModelFormat.Interface;
                 }
+                
+                // Устанавливаем ValidationLibrary в опциях, если не установлен
+                if (!modelTemplateData.Options.ContainsKey("ValidationLibrary"))
+                {
+                    modelTemplateData.Options["ValidationLibrary"] = options.ValidationLibrary ?? ValidationLibrary.Zod;
+                }
+                
+                // Генерируем TypeScript интерфейс
+                var modelCode = interfaceModelRenderer.Render(modelTemplateData);
+                var modelFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.model.ts";
+                var modelFilePath = ResolveFilePath(modelFileName, config, FileCategory.Models);
+                
+                files[modelFilePath] = modelCode;
+                
+                // TODO: Генерация Zod схем временно отключена из-за циклической зависимости
+                // Генерируем Zod схему, если ValidationLibrary = Zod
+                // if (options.ValidationLibrary == ValidationLibrary.Zod)
+                // {
+                //     try
+                //     {
+                //         // Устанавливаем формат на ValidationSchema
+                //         var originalFormat = modelTemplateData.Format;
+                //         modelTemplateData.Format = ModelFormat.ValidationSchema;
+                //         
+                //         // Подготавливаем Zod схемы для всех свойств перед рендерингом
+                //         PrepareZodSchemasForModel(modelTemplateData, document, schemaResolver, zodTypeMapper);
+                //         
+                //         // Рендерим Zod схему
+                //         var schemaCode = zodSchemaRenderer.Render(modelTemplateData);
+                //         var schemaFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.schema.ts";
+                //         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
+                //         
+                //         files[schemaFilePath] = schemaCode;
+                //         
+                //         // Восстанавливаем оригинальный формат
+                //         modelTemplateData.Format = originalFormat;
+                //     }
+                //     catch (Exception ex)
+                //     {
+                //         Logger.LogError(ex, "Failed to generate Zod schema for model: {ModelName}", modelTemplateData.Name);
+                //         // Продолжаем генерацию других моделей
+                //     }
+                // }
             }
         }
+        
+        // Генерируем enum'ы
+        if (config.GenerateEnums)
+        {
+            Logger.LogDebug("Generating enums. Count: {Count}", enumTemplateDataList.Count);
+            
+            foreach (var enumTemplateData in enumTemplateDataList)
+            {
+                if (string.IsNullOrWhiteSpace(enumTemplateData.Name))
+                {
+                    Logger.LogWarning("Skipping enum with empty name");
+                    continue;
+                }
+                
+                // Устанавливаем формат enum из опций, если не установлен
+                // Для TypeScript: EnumFormat.Enum -> Core EnumFormat.Enum, EnumFormat.UnionType -> Core EnumFormat.Union
+                if (enumTemplateData.Format == ValIO.Core.Models.TemplateData.EnumFormat.Enum && options.EnumFormat != ValIO.Generators.TypeScript.Models.EnumFormat.Enum)
+                {
+                    enumTemplateData.Format = options.EnumFormat == ValIO.Generators.TypeScript.Models.EnumFormat.UnionType 
+                        ? ValIO.Core.Models.TemplateData.EnumFormat.Union 
+                        : ValIO.Core.Models.TemplateData.EnumFormat.Enum;
+                }
+                
+                // Устанавливаем ValidationLibrary в опциях, если не установлен
+                if (!enumTemplateData.Options.ContainsKey("ValidationLibrary"))
+                {
+                    enumTemplateData.Options["ValidationLibrary"] = options.ValidationLibrary ?? ValidationLibrary.Zod;
+                }
+                
+                // Генерируем TypeScript enum/union type
+                IEnumFormatRenderer enumRenderer = enumTemplateData.Format switch
+                {
+                    ValIO.Core.Models.TemplateData.EnumFormat.Union => typeScriptUnionTypeRenderer,
+                    _ => typeScriptEnumRenderer
+                };
+                
+                var enumCode = enumRenderer.Render(enumTemplateData);
+                var enumFileName = $"{NamingConverter.ToCamelCase(enumTemplateData.Name)}.enum.ts";
+                var enumFilePath = ResolveFilePath(enumFileName, config, FileCategory.Models);
+                
+                files[enumFilePath] = enumCode;
+                
+                // TODO: Генерация Zod enum схем временно отключена из-за циклической зависимости
+                // Генерируем Zod enum схему, если ValidationLibrary = Zod
+                // if (options.ValidationLibrary == ValidationLibrary.Zod)
+                // {
+                //     try
+                //     {
+                //         // Устанавливаем формат на ValidationSchema
+                //         var originalFormat = enumTemplateData.Format;
+                //         enumTemplateData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
+                //         
+                //         // Рендерим Zod enum схему
+                //         var schemaCode = zodEnumSchemaRenderer.Render(enumTemplateData);
+                //         var schemaFileName = $"{NamingConverter.ToCamelCase(enumTemplateData.Name)}.schema.ts";
+                //         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
+                //         
+                //         files[schemaFilePath] = schemaCode;
+                //         
+                //         // Восстанавливаем оригинальный формат
+                //         enumTemplateData.Format = originalFormat;
+                //     }
+                //     catch (Exception ex)
+                //     {
+                //         Logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", enumTemplateData.Name);
+                //         // Продолжаем генерацию других enum'ов
+                //     }
+                // }
+            }
+        }
+        
+        return files;
     }
 
     /// <summary>
-    /// Предзаполняет кэш операций для быстрого поиска
+    /// Переопределяет BuildOperationCache для более сложной логики с operationId
     /// </summary>
-    private void BuildOperationCache(OpenApiDocument document)
+    protected override void BuildOperationCache(OpenApiDocument document)
     {
-        if (document.Paths == null || _operationCache == null)
+        OperationCache = new Dictionary<string, OpenApiOperation>();
+        
+        if (document.Paths == null)
             return;
 
         foreach (var pathEntry in document.Paths)
@@ -579,53 +498,13 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                     $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
 
                 var cacheKey = $"{operationId}|{operationEntry.Key.Method}|{pathEntry.Key}";
-                _operationCache[cacheKey] = openApiOperation;
+                OperationCache[cacheKey] = openApiOperation;
             }
         }
         
-        _logger.LogDebug("Built operation cache with {Count} entries", _operationCache.Count);
+        Logger.LogDebug("Built operation cache with {Count} entries", OperationCache.Count);
     }
 
-    /// <summary>
-    /// Находит оригинальную операцию в документе
-    /// </summary>
-    private OpenApiOperation? FindOriginalOperation(OpenApiDocument document, ApiOperation operation)
-    {
-        if (_operationCache != null)
-        {
-            var operationId = operation.OperationId ?? GenerateOperationId(operation.Path, operation.HttpMethod);
-            var cacheKey = $"{operationId}|{operation.HttpMethod.Method}|{operation.Path}";
-            
-            if (_operationCache.TryGetValue(cacheKey, out var cachedOperation))
-            {
-                return cachedOperation;
-            }
-        }
-
-        if (document.Paths == null)
-            return null;
-
-        foreach (var pathEntry in document.Paths)
-        {
-            if (pathEntry.Value.Operations == null)
-                continue;
-
-            foreach (var operationEntry in pathEntry.Value.Operations)
-            {
-                var openApiOperation = operationEntry.Value;
-                var openApiOperationId = openApiOperation.OperationId ?? 
-                    $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
-
-                if (openApiOperationId == operation.OperationId && 
-                    operationEntry.Key.Method == operation.HttpMethod.Method)
-                {
-                    return openApiOperation;
-                }
-            }
-        }
-
-        return null;
-    }
 
     private string GenerateOperationId(string path, HttpMethod httpMethod)
     {
@@ -637,740 +516,110 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         lastSegment = lastSegment.Replace("{", "").Replace("}", "");
         
         var methodPrefix = httpMethod.Method.ToUpperInvariant();
-        return $"{methodPrefix}{_namingConverter.ToPascalCase(lastSegment)}";
+        return $"{methodPrefix}{NamingConverter.ToPascalCase(lastSegment)}";
     }
 
-    private Dictionary<string, string> GenerateEnums(IReadOnlyList<ApiEnum> enums, GenerationConfiguration config, TypeScriptGenerationOptions options)
+    /// <summary>
+    /// Определяет путь к файлу на основе конфигурации организации файлов
+    /// </summary>
+    /// <param name="fileName">Имя файла</param>
+    /// <param name="config">Конфигурация генерации</param>
+    /// <param name="fileCategory">Категория файла (models, clients, etc.)</param>
+    /// <returns>Полный путь к файлу</returns>
+    private string ResolveFilePath(string fileName, GenerationConfiguration config, FileCategory fileCategory = FileCategory.Models)
     {
-        var files = new Dictionary<string, string>();
-
-        foreach (var apiEnum in enums)
+        var shouldSeparate = fileCategory switch
         {
-            if (string.IsNullOrWhiteSpace(apiEnum.Name))
-            {
-                _logger.LogWarning("Skipping enum with empty name");
-                continue;
-            }
-            
-            var enumCode = GenerateEnumCode(apiEnum, config, options);
-            var fileName = $"{_namingConverter.ToCamelCase(apiEnum.Name)}.enum.ts";
-            
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
-            {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
-
-            files[filePath] = enumCode;
-        }
-
-        return files;
-    }
-
-    private string GenerateEnumCode(ApiEnum apiEnum, GenerationConfiguration config, TypeScriptGenerationOptions options)
-    {
-        var enumName = _namingConverter.ToPascalCase(apiEnum.Name);
-
-        var enumValues = apiEnum.Values.Select(v => new TypeScriptEnumValueTemplateData
-        {
-            Name = _namingConverter.ToPascalCase(v.Name),
-            Value = v.Value,
-            Description = DecodeHtmlEntities(v.Description),
-            ValueString = FormatEnumValue(v.Value, apiEnum.UnderlyingType, options.EnumFormat)
-        }).ToList();
-
-        var templateData = new TypeScriptEnumTemplateData
-        {
-            EnumName = enumName,
-            Description = DecodeHtmlEntities(apiEnum.Description),
-            EnumFormat = options.EnumFormat,
-            Values = enumValues,
-            ValidationLibrary = options.ValidationLibrary
+            FileCategory.Models => config.FileOrganization.SeparateModels,
+            FileCategory.Clients => config.FileOrganization.SeparateClients,
+            _ => false
         };
 
-        return _templateRegistry.Render("typescript-enum.cshtml", templateData);
-    }
-
-    private static string? DecodeHtmlEntities(string? text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return text;
-        return System.Net.WebUtility.HtmlDecode(text);
-    }
-
-    private static string FormatEnumValue(object? value, string underlyingType, EnumFormat enumFormat)
-    {
-        if (value == null)
-            return enumFormat == EnumFormat.Enum ? "0" : "\"\"";
-
-        if (enumFormat == EnumFormat.Enum)
+        if (shouldSeparate)
         {
-            return underlyingType switch
+            var categoryPath = fileCategory switch
             {
-                "string" => $"\"{value}\"",
-                _ => value.ToString() ?? "0"
+                FileCategory.Models => config.FileOrganization.ModelsPath ?? "models",
+                FileCategory.Clients => config.FileOrganization.ClientsPath ?? "api",
+                _ => string.Empty
             };
+            
+            return Path.Combine(config.OutputPath, categoryPath, fileName);
         }
-        else
-        {
-            return $"\"{value}\"";
-        }
+        
+        return Path.Combine(config.OutputPath, fileName);
     }
 
-    private Dictionary<string, string> GenerateModels(IReadOnlyList<ApiModel> models, IReadOnlyList<ApiEnum> enums, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    /// <summary>
+    /// Категория файла для определения пути
+    /// </summary>
+    private enum FileCategory
     {
-        var files = new Dictionary<string, string>();
-
-        // Создаем словарь enum'ов по имени для быстрой проверки
-        var enumsByName = enums.ToDictionary(
-            e => _namingConverter.ToPascalCase(e.Name), 
-            StringComparer.OrdinalIgnoreCase);
-
-        foreach (var model in models)
-        {
-            if (string.IsNullOrWhiteSpace(model.Name))
-            {
-                _logger.LogWarning("Skipping model with empty name");
-                continue;
-            }
-            
-            // Пропускаем модели, которые являются enum'ами
-            // Проверяем по имени (если есть в списке enum'ов)
-            var modelNamePascal = _namingConverter.ToPascalCase(model.Name);
-            if (enumsByName.ContainsKey(modelNamePascal))
-            {
-                _logger.LogDebug("Skipping model '{ModelName}' - it is an enum", model.Name);
-                continue;
-            }
-            
-            // Также проверяем по OriginalSchema - если это enum схема, пропускаем
-            if (model.OriginalSchema != null)
-            {
-                var resolvedSchema = schemaResolver.ResolveSchema(model.OriginalSchema);
-                if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
-                {
-                    _logger.LogDebug("Skipping model '{ModelName}' - OriginalSchema contains enum values", model.Name);
-                    continue;
-                }
-            }
-            
-            var modelCode = GenerateModelCode(model, models, config, document, schemaResolver, options);
-            var fileName = $"{_namingConverter.ToCamelCase(model.Name)}.model.ts";
-            
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
-            {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
-
-            files[filePath] = modelCode;
-        }
-
-        return files;
+        Models,
+        Clients
     }
 
-    private string GenerateModelCode(ApiModel model, IReadOnlyList<ApiModel> allModels, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
-    {
-        var interfaceName = _namingConverter.ToPascalCase(model.Name);
-
-        var properties = new List<TypeScriptPropertyTemplateData>();
-        foreach (var p in model.Properties)
-        {
-            TypeInfo typeInfo = TypeInfo.Simple("any");
-            try
-            {
-                // Используем PropertySchemas, который включает свойства из allOf
-                if (model.PropertySchemas != null &&
-                    model.PropertySchemas.TryGetValue(p.Name, out var propertySchema))
-                {
-                    typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchema, p.IsRequired, schemaResolver);
-                }
-                // Fallback на OriginalSchema.Properties для обратной совместимости
-                else if (model.OriginalSchema?.Properties != null &&
-                    model.OriginalSchema.Properties.TryGetValue(p.Name, out var propertySchemaFromOriginal))
-                {
-                    typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchemaFromOriginal, p.IsRequired, schemaResolver);
-                }
-                else
-                {
-                    typeInfo = TypeInfo.Simple(p.Type);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to map type for property '{PropertyName}' in model '{ModelName}'", p.Name, model.Name);
-                typeInfo = TypeInfo.Simple("any");
-            }
-            
-            properties.Add(new TypeScriptPropertyTemplateData
-        {
-            Name = _namingConverter.ToCamelCase(p.Name),
-                TypeInfo = typeInfo,
-                Type = typeInfo.FullTypeName,
-                IsOptional = !p.IsRequired,
-                Description = DecodeHtmlEntities(p.Description)
-            });
-        }
-
-        // Разделяем свойства на базовые (из allOf) и собственные
-        var baseClassProperties = new List<TypeScriptPropertyTemplateData>();
-        var ownProperties = new List<TypeScriptPropertyTemplateData>();
-        string? baseClassName = null;
-        
-        if (model.BaseClassName != null && model.BaseClassProperties != null)
-        {
-            baseClassName = model.BaseClassName;
-            var baseClassPropertyNames = model.BaseClassProperties;
-            
-            // Создаем словарь для быстрого поиска: имя свойства в camelCase -> является ли базовым
-            var baseClassPropertyNamesCamelCase = new HashSet<string>(
-                baseClassPropertyNames.Select(name => _namingConverter.ToCamelCase(name)),
-                StringComparer.OrdinalIgnoreCase);
-            
-            foreach (var prop in properties)
-            {
-                // Проверяем, является ли свойство базовым (из allOf)
-                // prop.Name уже в camelCase, baseClassPropertyNames в исходном формате из схемы
-                if (baseClassPropertyNamesCamelCase.Contains(prop.Name))
-                {
-                    baseClassProperties.Add(prop);
-                }
-                else
-                {
-                    ownProperties.Add(prop);
-                }
-            }
-        }
-        else
-        {
-            // Если нет базового класса, все свойства собственные
-            ownProperties = properties;
-        }
-
-        // Собираем связанные типы для импортов (включая базовый класс, если есть)
-        var importedTypes = CollectModelUsedTypes(properties, interfaceName);
-        
-        // Собираем все типы из базового класса, чтобы исключить их из импортов
-        var baseClassTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        if (!string.IsNullOrEmpty(baseClassName))
-        {
-            // Добавляем сам базовый класс
-            baseClassTypes.Add(baseClassName);
-            
-            // Находим модель базового класса и собираем все её типы
-            var baseModel = allModels.FirstOrDefault(m => string.Equals(m.Name, baseClassName, StringComparison.OrdinalIgnoreCase));
-            if (baseModel != null)
-            {
-                // Собираем типы из свойств базового класса
-                var baseModelProperties = new List<TypeScriptPropertyTemplateData>();
-                foreach (var p in baseModel.Properties)
-                {
-                    TypeInfo typeInfo = TypeInfo.Simple("any");
-                    try
-                    {
-                        if (baseModel.PropertySchemas != null &&
-                            baseModel.PropertySchemas.TryGetValue(p.Name, out var propertySchema))
-                        {
-                            typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchema, p.IsRequired, schemaResolver);
-                        }
-                        else if (baseModel.OriginalSchema?.Properties != null &&
-                            baseModel.OriginalSchema.Properties.TryGetValue(p.Name, out var propertySchemaFromOriginal))
-                        {
-                            typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchemaFromOriginal, p.IsRequired, schemaResolver);
-                        }
-                        else
-                        {
-                            typeInfo = TypeInfo.Simple(p.Type);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to map type for property '{PropertyName}' in base model '{ModelName}'", p.Name, baseModel.Name);
-                        typeInfo = TypeInfo.Simple("any");
-                    }
-                    
-                    baseModelProperties.Add(new TypeScriptPropertyTemplateData
-                    {
-                        Name = _namingConverter.ToCamelCase(p.Name),
-                        TypeInfo = typeInfo,
-                        Type = typeInfo.FullTypeName,
-                        IsOptional = !p.IsRequired,
-                        Description = DecodeHtmlEntities(p.Description)
-                    });
-                }
-                
-                // Собираем типы из свойств базового класса
-                var baseClassUsedTypes = CollectModelUsedTypes(baseModelProperties, baseClassName);
-                foreach (var type in baseClassUsedTypes)
-                {
-                    baseClassTypes.Add(type);
-                }
-                
-                // Рекурсивно собираем типы из базового класса базового класса (если есть)
-                if (!string.IsNullOrEmpty(baseModel.BaseClassName))
-                {
-                    baseClassTypes.Add(baseModel.BaseClassName);
-                }
-            }
-        }
-        
-        // Исключаем типы, которые уже включены в базовый класс
-        importedTypes = importedTypes.Where(t => !baseClassTypes.Contains(t)).ToList();
-        
-        if (!string.IsNullOrEmpty(baseClassName) && !importedTypes.Contains(baseClassName))
-        {
-            importedTypes.Add(baseClassName);
-        }
-
-        var templateData = new TypeScriptModelTemplateData
-        {
-            InterfaceName = interfaceName,
-            Description = DecodeHtmlEntities(model.Description),
-            Properties = properties,
-            UseStrictNullChecks = options.UseStrictNullChecks,
-            ImportedTypes = importedTypes,
-            BaseClassName = baseClassName,
-            BaseClassProperties = baseClassProperties,
-            OwnProperties = ownProperties,
-            ValidationLibrary = options.ValidationLibrary
-        };
-
-        return _templateRegistry.Render("typescript-model.cshtml", templateData);
-    }
+    // Методы DecodeHtmlEntities и FormatEnumValue удалены - они больше не используются
+    // Декодирование HTML и форматирование enum значений теперь выполняется в renderers
 
     /// <summary>
     /// Генерирует код модели для query параметров
     /// </summary>
-    private string GenerateQueryParametersModelCode(string interfaceName, List<TypeScriptParameterTemplateData> parameters, GenerationConfiguration config, TypeScriptGenerationOptions options)
+    private string GenerateQueryParametersModelCode(string interfaceName, List<Core.Models.TemplateData.ParameterTemplateData> parameters, GenerationConfiguration config, TypeScriptGenerationOptions options)
     {
-        var properties = new List<TypeScriptPropertyTemplateData>();
-        foreach (var param in parameters)
-        {
-            properties.Add(new TypeScriptPropertyTemplateData
+        var properties = parameters.Select(param => new Core.Models.TemplateData.PropertyTemplateData
             {
                 Name = param.VariableName, // Используем VariableName (camelCase)
                 TypeInfo = param.TypeInfo,
-                Type = param.TypeInfo.FullTypeName,
                 IsOptional = !param.IsRequired,
                 Description = param.Description
-            });
-        }
+        }).ToList();
 
         // Собираем используемые типы для импортов
-        var importedTypes = CollectModelUsedTypes(properties, interfaceName);
+        var importedTypes = properties.SelectMany(p => p.TypeInfo.Dependencies).Distinct().ToList();
 
-        var templateData = new TypeScriptModelTemplateData
+        var templateData = new Core.Models.TemplateData.ModelTemplateData
         {
-            InterfaceName = interfaceName, // Используем переданное имя (уже в PascalCase)
+            Name = interfaceName, // Используем переданное имя (уже в PascalCase)
             Description = null, // Query parameters модели обычно не имеют описания
             Properties = properties,
-            UseStrictNullChecks = options.UseStrictNullChecks,
-            ImportedTypes = importedTypes,
-            BaseClassName = null,
-            BaseClassProperties = null,
-            OwnProperties = properties,
-            ValidationLibrary = options.ValidationLibrary
+            Language = GenerationLanguage.TypeScript,
+            Format = ValIO.Core.Models.TemplateData.ModelFormat.Interface,
+            Dependencies = importedTypes,
+            Options = new Dictionary<string, object>
+            {
+                ["UseStrictNullChecks"] = options.UseStrictNullChecks,
+                ["ValidationLibrary"] = options.ValidationLibrary ?? ValidationLibrary.Zod
+            }
         };
 
-        return _templateRegistry.Render("typescript-model.cshtml", templateData);
+        var modelRenderer = new Renderers.InterfaceModelRenderer();
+        return modelRenderer.Render(templateData);
     }
 
-    /// <summary>
-    /// Создает ApiModel из query parameters операции для генерации Zod схем
-    /// Используем информацию из оригинальных OpenAPI схем параметров
-    /// </summary>
-    private ApiModel? CreateApiModelFromQueryParameters(string modelName, ApiOperation operation, OpenApiDocument document, ISchemaResolver schemaResolver)
-    {
-        var originalOperation = FindOriginalOperation(document, operation);
-        if (originalOperation == null || originalOperation.Parameters == null)
-            return null;
+    // Методы GenerateModelCode, CreateApiModelFromQueryParameters, CollectModelUsedTypes и связанные вспомогательные методы удалены
+    // - они больше не используются, так как данные теперь извлекаются через extractors в виде TemplateData
 
-        // Находим query parameters
-        var queryParams = originalOperation.Parameters
-            .Where(p => p.In == Microsoft.OpenApi.ParameterLocation.Query && p.Schema != null && !string.IsNullOrEmpty(p.Name))
-            .ToList();
-
-        if (queryParams.Count == 0)
-            return null;
-
-        // Создаем свойства модели из параметров
-        var properties = new List<ApiProperty>();
-        var requiredProperties = new List<string>();
-        var propertySchemas = new Dictionary<string, IOpenApiSchema>();
-
-        foreach (var param in queryParams)
-        {
-            if (param.Schema == null || string.IsNullOrEmpty(param.Name))
-                continue;
-
-            var resolvedSchema = schemaResolver.ResolveSchema(param.Schema);
-            var isNullable = !param.Required && IsSchemaNullable(resolvedSchema);
-
-            // Извлекаем ограничения из схемы
-            decimal? min = null;
-            decimal? max = null;
-            if (!string.IsNullOrEmpty(resolvedSchema.Minimum) && decimal.TryParse(resolvedSchema.Minimum, out var parsedMin))
-                min = parsedMin;
-            if (!string.IsNullOrEmpty(resolvedSchema.Maximum) && decimal.TryParse(resolvedSchema.Maximum, out var parsedMax))
-                max = parsedMax;
-
-            decimal? exclusiveMin = null;
-            decimal? exclusiveMax = null;
-            if (!string.IsNullOrEmpty(resolvedSchema.ExclusiveMinimum) && decimal.TryParse(resolvedSchema.ExclusiveMinimum, out var parsedExclusiveMin))
-                exclusiveMin = parsedExclusiveMin;
-            if (!string.IsNullOrEmpty(resolvedSchema.ExclusiveMaximum) && decimal.TryParse(resolvedSchema.ExclusiveMaximum, out var parsedExclusiveMax))
-                exclusiveMax = parsedExclusiveMax;
-
-            object? defaultValue = null;
-            if (resolvedSchema.Default != null)
-            {
-                // Извлекаем значение по умолчанию
-                defaultValue = ExtractDefaultValueFromJsonNode(resolvedSchema.Default);
-            }
-
-            var apiProperty = new ApiProperty
-            {
-                Name = param.Name,
-                Type = "object", // Будет определено TypeMapper'ом при генерации схемы
-                IsRequired = param.Required,
-                IsNullable = isNullable,
-                Description = resolvedSchema.Description ?? param.Description,
-                DefaultValue = defaultValue,
-                Min = min,
-                Max = max,
-                ExclusiveMin = exclusiveMin,
-                ExclusiveMax = exclusiveMax,
-                MinLength = resolvedSchema.MinLength,
-                MaxLength = resolvedSchema.MaxLength,
-                Pattern = resolvedSchema.Pattern
-            };
-
-            properties.Add(apiProperty);
-            propertySchemas[param.Name] = param.Schema;
-
-            if (param.Required)
-            {
-                requiredProperties.Add(param.Name);
-            }
-        }
-
-        // Создаем временную объектную схему для OriginalSchema
-        // Используем null, так как у нас нет реальной объектной схемы
-        // Это не критично для генерации Zod схем, так как схемы свойств доступны через PropertySchemas
-        var apiModel = new ApiModel
-        {
-            Name = modelName,
-            Description = $"Параметры запроса для операции '{operation.OperationId}'",
-            Properties = properties,
-            RequiredProperties = requiredProperties,
-            PropertySchemas = propertySchemas,
-            OriginalSchema = null
-        };
-
-        return apiModel;
-    }
-
-    /// <summary>
-    /// Проверяет, является ли схема nullable
-    /// </summary>
-    private static bool IsSchemaNullable(IOpenApiSchema schema)
-    {
-        // Проверяем, содержит ли тип Null
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(Microsoft.OpenApi.JsonSchemaType.Null))
-            return true;
-
-        // Проверяем расширения для обратной совместимости с OpenAPI 3.0
-        if (schema.Extensions != null && schema.Extensions.TryGetValue(Microsoft.OpenApi.OpenApiConstants.NullableExtension, out var nullableExtension))
-        {
-            if (nullableExtension is Microsoft.OpenApi.JsonNodeExtension { Node: { } jsonNode } && jsonNode.GetValueKind() == System.Text.Json.JsonValueKind.True)
-                return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Извлекает значение по умолчанию из JsonNode
-    /// </summary>
-    private static object? ExtractDefaultValueFromJsonNode(JsonNode? jsonNode)
-    {
-        if (jsonNode == null)
-            return null;
-
-        return jsonNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<object>(),
-            JsonObject jsonObject => jsonObject,
-            JsonArray jsonArray => jsonArray,
-            _ => jsonNode.ToString()
-        };
-    }
-    
-    /// <summary>
-    /// Собирает все используемые типы из свойств модели для импортов
-    /// </summary>
-    private List<string> CollectModelUsedTypes(IReadOnlyList<TypeScriptPropertyTemplateData> properties, string currentModelName)
-    {
-        var usedTypes = new HashSet<string>();
-
-        foreach (var property in properties)
-        {
-            CollectModelTypesFromTypeInfo(property.TypeInfo, usedTypes, currentModelName);
-        }
-
-        return usedTypes.OrderBy(t => t).ToList();
-    }
-
-    /// <summary>
-    /// Рекурсивно собирает типы из TypeInfo для моделей
-    /// </summary>
-    private void CollectModelTypesFromTypeInfo(TypeInfo typeInfo, HashSet<string> usedTypes, string currentModelName)
-    {
-        if (typeInfo == null)
-            return;
-        
-        var baseType = typeInfo.BaseType;
-        
-        // Пропускаем примитивные типы и встроенные типы
-        if (typeInfo.IsPrimitive || 
-            typeInfo.IsVoid ||
-            typeInfo.IsFile ||
-            string.IsNullOrEmpty(baseType))
-        {
-            // Но все равно проверяем generic аргументы
-            foreach (var genericArg in typeInfo.GenericArguments)
-            {
-                CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
-            }
-            return;
-        }
-        
-        // Пропускаем встроенные типы TypeScript (включая Record, Array и т.д.)
-        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "string", "number", "boolean", "any", "void", "null", "undefined",
-            "Date", "Blob", "File", "FormData", "Record", "Array", "object"
-        };
-        
-        var fullTypeName = typeInfo.FullTypeName;
-        
-        // Проверяем, является ли это системным типом TypeScript
-        // Record<string, any> или Record<string, T> - это системный тип
-        // BaseType может быть "Record<string, any>" (когда создается через TypeInfo.Simple)
-        // или просто "Record" (когда создается через TypeInfo.Dictionary)
-        var isBuiltInType = builtInTypes.Contains(baseType) || 
-                           baseType.StartsWith("Record<", StringComparison.OrdinalIgnoreCase) ||
-                           (!string.IsNullOrEmpty(fullTypeName) && fullTypeName.StartsWith("Record<", StringComparison.OrdinalIgnoreCase)) ||
-                           (baseType.Contains("[]") && builtInTypes.Contains(baseType.Replace("[]", "").Trim()));
-        
-        if (isBuiltInType)
-        {
-            // Для Dictionary (Record<K, V>) извлекаем типы из generic аргументов
-            if (typeInfo.IsDictionary)
-            {
-                // Для Dictionary GenericArguments[0] - это key, GenericArguments[1] - это value
-                // Key всегда string для Record, пропускаем его
-                if (typeInfo.GenericArguments.Count > 1)
-                {
-                    CollectModelTypesFromTypeInfo(typeInfo.GenericArguments[1], usedTypes, currentModelName);
-                }
-            }
-            // Для Collection (Array<T>) извлекаем типы из generic аргументов
-            else if (typeInfo.IsCollection)
-            {
-                foreach (var genericArg in typeInfo.GenericArguments)
-                {
-                    CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
-                }
-            }
-            // Также проверяем FullTypeName для извлечения типов из Record<string, T>
-            // Но только если это не Record<string, any> (any - это примитив)
-            else if (!string.IsNullOrEmpty(fullTypeName) && 
-                     fullTypeName.Contains("<") && 
-                     fullTypeName.StartsWith("Record<", StringComparison.OrdinalIgnoreCase) &&
-                     !fullTypeName.Contains("Record<string, any>"))
-            {
-                ExtractTypesFromGenericString(fullTypeName, usedTypes, currentModelName);
-            }
-            return;
-        }
-        
-        // Пропускаем текущую модель (чтобы избежать циклических импортов)
-        if (string.Equals(baseType, currentModelName, StringComparison.OrdinalIgnoreCase))
-        {
-            // Но проверяем generic аргументы
-            foreach (var genericArg in typeInfo.GenericArguments)
-            {
-                CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
-            }
-            return;
-        }
-
-        // Если это не примитив и не текущая модель, добавляем в список
-        // Проверяем, что тип начинается с заглавной буквы (это пользовательский тип)
-        if (!string.IsNullOrEmpty(baseType) && char.IsUpper(baseType[0]))
-        {
-            usedTypes.Add(baseType);
-        }
-
-        // Рекурсивно обрабатываем generic аргументы (для Dictionary, Collection и т.д.)
-        foreach (var genericArg in typeInfo.GenericArguments)
-        {
-            CollectModelTypesFromTypeInfo(genericArg, usedTypes, currentModelName);
-        }
-        
-        // Также обрабатываем FullTypeName для извлечения типов из строкового представления
-        // Например, для "PagingResult<ItemType>" нужно извлечь "PagingResult" и "ItemType"
-        if (!string.IsNullOrEmpty(typeInfo.FullTypeName) && 
-            typeInfo.FullTypeName.Contains("<") && 
-            !typeInfo.IsDictionary && 
-            !typeInfo.IsCollection)
-        {
-            // Извлекаем типы из generic синтаксиса
-            ExtractTypesFromGenericString(typeInfo.FullTypeName, usedTypes, currentModelName);
-        }
-    }
-    
-    /// <summary>
-    /// Извлекает типы из строкового представления generic типа (например, "PagingResult<ItemType>")
-    /// </summary>
-    private void ExtractTypesFromGenericString(string typeString, HashSet<string> usedTypes, string currentModelName)
-    {
-        // Убираем nullable маркеры
-        typeString = typeString.Replace("?", "").Trim();
-        
-        // Находим позицию <
-        var genericStart = typeString.IndexOf('<');
-        if (genericStart < 0)
-            return;
-        
-        // Извлекаем базовое имя типа
-        var baseTypeName = typeString.Substring(0, genericStart).Trim();
-        
-        // Пропускаем системные типы
-        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "Record", "Array", "Promise", "Task"
-        };
-        
-        if (builtInTypes.Contains(baseTypeName))
-        {
-            // Для системных типов извлекаем только generic аргументы
-            var genericPart = typeString.Substring(genericStart + 1);
-            genericPart = genericPart.TrimEnd('>');
-            
-            // Разделяем по запятым, учитывая вложенные generic
-            var types = SplitGenericArguments(genericPart);
-            foreach (var type in types)
-            {
-                var cleanType = type.Trim().Split('<')[0].Split('[')[0].Trim();
-                if (!string.IsNullOrEmpty(cleanType) && 
-                    char.IsUpper(cleanType[0]) && 
-                    !string.Equals(cleanType, currentModelName, StringComparison.OrdinalIgnoreCase))
-                {
-                    usedTypes.Add(cleanType);
-                }
-            }
-            return;
-        }
-        
-        // Для пользовательских типов добавляем базовый тип
-        if (!string.IsNullOrEmpty(baseTypeName) && 
-            char.IsUpper(baseTypeName[0]) && 
-            !string.Equals(baseTypeName, currentModelName, StringComparison.OrdinalIgnoreCase))
-        {
-            usedTypes.Add(baseTypeName);
-        }
-        
-        // Извлекаем generic аргументы
-        var genericArgs = typeString.Substring(genericStart + 1);
-        genericArgs = genericArgs.TrimEnd('>');
-        var argTypes = SplitGenericArguments(genericArgs);
-        foreach (var argType in argTypes)
-        {
-            var cleanType = argType.Trim().Split('<')[0].Split('[')[0].Trim();
-            if (!string.IsNullOrEmpty(cleanType) && 
-                char.IsUpper(cleanType[0]) && 
-                !string.Equals(cleanType, currentModelName, StringComparison.OrdinalIgnoreCase) &&
-                !builtInTypes.Contains(cleanType))
-            {
-                usedTypes.Add(cleanType);
-            }
-        }
-    }
-    
-    /// <summary>
-    /// Разделяет generic аргументы, учитывая вложенные generic
-    /// </summary>
-    private List<string> SplitGenericArguments(string genericArgs)
-    {
-        var result = new List<string>();
-        var current = new StringBuilder();
-        var depth = 0;
-        
-        foreach (var ch in genericArgs)
-        {
-            if (ch == '<')
-            {
-                depth++;
-                current.Append(ch);
-            }
-            else if (ch == '>')
-            {
-                depth--;
-                current.Append(ch);
-            }
-            else if (ch == ',' && depth == 0)
-            {
-                result.Add(current.ToString());
-                current.Clear();
-            }
-            else
-            {
-                current.Append(ch);
-            }
-        }
-        
-        if (current.Length > 0)
-        {
-            result.Add(current.ToString());
-        }
-        
-        return result;
-    }
-
-    private Dictionary<string, string> GenerateClients(IReadOnlyList<ApiOperation> operations, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    private Dictionary<string, string> GenerateClients(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList, GenerationConfiguration config, TypeScriptGenerationOptions options)
     {
         var files = new Dictionary<string, string>();
 
-        var groupedOperations = GroupOperations(operations, config);
+        var groupedOperations = GroupOperations(operationTemplateDataList, config);
 
         // Собираем модели query parameters для генерации
-        var queryParametersModels = new Dictionary<string, (List<TypeScriptParameterTemplateData> Parameters, string FileName, ApiOperation Operation)>();
-        var useQueryParametersModel = options.QueryParametersStyle == QueryParametersStyle.ModelClass;
+        var queryParametersModels = new Dictionary<string, List<Core.Models.TemplateData.ParameterTemplateData>>();
+        // TypeScript всегда использует отдельные параметры для query, не модель
+        var useQueryParametersModel = false;
         
-        foreach (var operation in operations)
+        foreach (var operationTemplate in operationTemplateDataList)
         {
-            var operationTemplate = CreateTypeScriptOperationTemplateData(operation, document, config, schemaResolver, options);
-            
             if (useQueryParametersModel && operationTemplate.QueryParameters.Count > 0 && 
-                !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName) &&
-                !string.IsNullOrEmpty(operationTemplate.QueryParametersModelFileName))
+                !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
             {
                 if (!queryParametersModels.ContainsKey(operationTemplate.QueryParametersModelTypeName))
                 {
                     queryParametersModels[operationTemplate.QueryParametersModelTypeName] = 
-                        (operationTemplate.QueryParameters.ToList(), operationTemplate.QueryParametersModelFileName, operation);
+                        operationTemplate.QueryParameters.ToList();
                 }
             }
         }
@@ -1378,92 +627,24 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         // Генерируем модели query parameters
         foreach (var queryModel in queryParametersModels)
         {
-            var modelCode = GenerateQueryParametersModelCode(queryModel.Key, queryModel.Value.Parameters, config, options);
-            var fileName = $"{queryModel.Value.FileName}.model.ts";
-            
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
-            {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+            var modelCode = GenerateQueryParametersModelCode(queryModel.Key, queryModel.Value, config, options);
+            var fileName = $"{NamingConverter.ToCamelCase(queryModel.Key)}.model.ts";
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
 
             files[filePath] = modelCode;
         }
 
-        // Генерируем Zod схемы для query parameters моделей, если ValidationLibrary = Zod
-        if (options.ValidationLibrary == ValidationLibrary.Zod && queryParametersModels.Count > 0)
-        {
-            try
-            {
-                var schemaGenerator = _schemaGeneratorFactory.GetSchemaGenerator(options.ValidationLibrary);
-                if (schemaGenerator != null)
-                {
-                    foreach (var queryModel in queryParametersModels)
-                    {
-                        try
-                        {
-                            var apiModel = CreateApiModelFromQueryParameters(
-                                queryModel.Key, 
-                                queryModel.Value.Operation, 
-                                document, 
-                                schemaResolver);
-                            
-                            if (apiModel != null)
-                            {
-                                var schemaCode = schemaGenerator.GenerateSchema(apiModel, schemaResolver);
-                                var schemaFileName = $"{queryModel.Value.FileName}.schema.ts";
-                                
-                                string schemaFilePath;
-                                if (config.FileOrganization.SeparateModels)
-                                {
-                                    var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                                    schemaFilePath = Path.Combine(config.OutputPath, modelsPath, schemaFileName);
-                                }
-                                else
-                                {
-                                    schemaFilePath = Path.Combine(config.OutputPath, schemaFileName);
-                                }
-
-                                files[schemaFilePath] = schemaCode;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to generate Zod schema for query parameters model: {ModelName}", queryModel.Key);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to generate Zod schemas for query parameters models");
-            }
-        }
+        // Генерация Zod схем для query parameters моделей теперь выполняется через ModelFormatRenderer
 
         // Генерируем клиенты
         foreach (var group in groupedOperations)
         {
-            var clientCode = GenerateClientCode(group.Value, group.Key, document, config, schemaResolver, options);
+            var clientCode = GenerateClientCode(group.Value, group.Key, config, options);
             
             // Определяем расширение файла в зависимости от HTTP клиента
             var fileExtension = options.HttpClientLibrary == HttpClientLibrary.Axios ? ".axios.ts" : ".fetch.ts";
-            var fileName = $"{_namingConverter.ToCamelCase(group.Key)}{fileExtension}";
-            
-            string filePath;
-            if (config.FileOrganization.SeparateClients)
-            {
-                var clientsPath = config.FileOrganization.ClientsPath ?? "api";
-                filePath = Path.Combine(config.OutputPath, clientsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+            var fileName = $"{NamingConverter.ToCamelCase(group.Key)}{fileExtension}";
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
 
             files[filePath] = clientCode;
         }
@@ -1471,20 +652,20 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         return files;
     }
 
-    private Dictionary<string, List<ApiOperation>> GroupOperations(IReadOnlyList<ApiOperation> operations, GenerationConfiguration config)
+    private Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>> GroupOperations(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationConfiguration config)
     {
-        var groups = new Dictionary<string, List<ApiOperation>>();
+        var groups = new Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>>();
 
         switch (config.FileOrganization.GroupingStrategy)
         {
             case FileGroupingStrategy.ByTag:
             foreach (var operation in operations)
             {
-                var tag = operation.Tags.FirstOrDefault() ?? "Default";
-                    var sanitizedTag = _namingConverter.SanitizeIdentifier(tag);
+                var tag = operation.Tags?.FirstOrDefault() ?? "Default";
+                    var sanitizedTag = NamingConverter.SanitizeIdentifier(tag);
                     if (!groups.ContainsKey(sanitizedTag))
                     {
-                        groups[sanitizedTag] = new List<ApiOperation>();
+                        groups[sanitizedTag] = new List<Core.Models.TemplateData.OperationTemplateData>();
                     }
                     groups[sanitizedTag].Add(operation);
                 }
@@ -1496,7 +677,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
                     var routeGroup = ExtractRouteGroup(operation.Path);
                     if (!groups.ContainsKey(routeGroup))
                     {
-                        groups[routeGroup] = new List<ApiOperation>();
+                        groups[routeGroup] = new List<Core.Models.TemplateData.OperationTemplateData>();
                     }
                     groups[routeGroup].Add(operation);
                 }
@@ -1528,16 +709,14 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             lastSegment = segments[^2];
         }
 
-        var sanitized = _namingConverter.SanitizeIdentifier(lastSegment);
-        return _namingConverter.ToPascalCase(sanitized);
+        var sanitized = NamingConverter.SanitizeIdentifier(lastSegment);
+        return NamingConverter.ToPascalCase(sanitized);
     }
 
-    private string GenerateClientCode(List<ApiOperation> operations, string clientName, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    private string GenerateClientCode(List<Core.Models.TemplateData.OperationTemplateData> operations, string clientName, GenerationConfiguration config, TypeScriptGenerationOptions options)
     {
-        var operationTemplates = operations.Select(op => CreateTypeScriptOperationTemplateData(op, document, config, schemaResolver, options)).ToList();
-
         // Собираем используемые типы для импортов
-        var importedTypes = CollectUsedTypes(operationTemplates);
+        var importedTypes = operations.SelectMany(op => op.Dependencies).Distinct().ToList();
         
         // Вычисляем путь к моделям для импортов
         string? modelsImportPath = null;
@@ -1558,518 +737,43 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             }
         }
         
-        var templateData = new TypeScriptClientTemplateData
+        var templateData = new Core.Models.TemplateData.ClientTemplateData
         {
-            ClientName = clientName,
-            Operations = operationTemplates,
+            Name = clientName,
+            Operations = operations,
+            Language = GenerationLanguage.TypeScript,
             HttpClientLibrary = options.HttpClientLibrary,
-            ImportedTypes = importedTypes,
+            Dependencies = importedTypes,
             ModelsPath = modelsImportPath,
-            AxiosOptions = options.Axios
+            Options = new Dictionary<string, object>
+            {
+                ["Axios"] = options.Axios
+            }
         };
 
-        // Выбираем шаблон в зависимости от HTTP клиента
-        var templateName = options.HttpClientLibrary == HttpClientLibrary.Axios
-            ? "axios-client.cshtml"
-            : "typescript-client.cshtml";
-
-        return _templateRegistry.Render(templateName, templateData);
+        return _codeRenderer.RenderClient(templateData);
     }
 
     /// <summary>
     /// Собирает все используемые типы из операций для генерации импортов
     /// </summary>
-    private List<string> CollectUsedTypes(IReadOnlyList<TypeScriptOperationTemplateData> operations)
-    {
-        var types = new HashSet<string>();
-        
-        foreach (var operation in operations)
-        {
-            // Собираем типы из return type
-            CollectTypesFromTypeInfo(operation.ReturnTypeInfo, types);
-            
-            // Собираем типы из request body
-            if (operation.RequestBodyTypeInfo != null)
-            {
-                CollectTypesFromTypeInfo(operation.RequestBodyTypeInfo, types);
-            }
-            
-            // Собираем типы из параметров
-            foreach (var param in operation.PathParameters)
-            {
-                CollectTypesFromTypeInfo(param.TypeInfo, types);
-            }
-            
-            // Query parameters: если используется модель, НЕ добавляем её тип в importedTypes,
-            // так как она импортируется отдельно через queryParamsModelImports в шаблоне
-            // Если модель НЕ используется, собираем типы из отдельных параметров
-            if (!operation.UseQueryParametersModel)
-            {
-                foreach (var param in operation.QueryParameters)
-                {
-                    CollectTypesFromTypeInfo(param.TypeInfo, types);
-                }
-            }
-            
-            foreach (var param in operation.HeaderParameters)
-            {
-                CollectTypesFromTypeInfo(param.TypeInfo, types);
-            }
-            
-            // Собираем типы из form data properties
-            if (operation.FormDataProperties != null)
-            {
-                foreach (var formProp in operation.FormDataProperties)
-                {
-                    CollectTypesFromTypeInfo(formProp.TypeInfo, types);
-                }
-            }
-        }
-        
-        return types.OrderBy(t => t).ToList();
-    }
+    // Методы CollectUsedTypes, CollectTypesFromTypeInfo, CreateTypeScriptOperationTemplateData, DetermineReturnTypeInfo, FindSchemaInContent удалены
+    // - они больше не используются, так как операции теперь извлекаются через extractors в виде OperationTemplateData
 
-    /// <summary>
-    /// Рекурсивно собирает типы из TypeInfo
-    /// </summary>
-    private void CollectTypesFromTypeInfo(TypeInfo typeInfo, HashSet<string> types)
-    {
-        if (typeInfo == null)
-            return;
-        
-        // Пропускаем примитивные типы и встроенные типы
-        if (typeInfo.IsPrimitive || 
-            typeInfo.IsVoid ||
-            typeInfo.IsFile ||
-            string.IsNullOrEmpty(typeInfo.BaseType))
-        {
-            // Но все равно проверяем generic аргументы
-            foreach (var genericArg in typeInfo.GenericArguments)
-            {
-                CollectTypesFromTypeInfo(genericArg, types);
-            }
-            return;
-        }
-        
-        var baseType = typeInfo.BaseType;
-        
-        // Обрабатываем массивы (TypeScript формат: Type[])
-        if (baseType.Contains("[]"))
-        {
-            // Извлекаем тип элемента массива
-            var elementType = baseType.Replace("[]", "").Trim();
-            if (!string.IsNullOrEmpty(elementType) && 
-                elementType != "any" && 
-                elementType != "unknown" && 
-                elementType != "object")
-            {
-                // Рекурсивно обрабатываем тип элемента
-                var elementTypeInfo = TypeInfo.Simple(elementType);
-                CollectTypesFromTypeInfo(elementTypeInfo, types);
-            }
-            return;
-        }
-        
-        // Обрабатываем коллекции через IsCollection
-        if (typeInfo.IsCollection && typeInfo.GenericArguments.Count > 0)
-        {
-            // Обрабатываем generic аргументы (элементы коллекции)
-            foreach (var genericArg in typeInfo.GenericArguments)
-            {
-                CollectTypesFromTypeInfo(genericArg, types);
-            }
-            return;
-        }
-        
-        // Обрабатываем словари через IsDictionary
-        if (typeInfo.IsDictionary && typeInfo.GenericArguments.Count >= 2)
-        {
-            // Обрабатываем generic аргументы (ключ и значение)
-            foreach (var genericArg in typeInfo.GenericArguments)
-            {
-                CollectTypesFromTypeInfo(genericArg, types);
-            }
-            return;
-        }
-        
-        // Пропускаем встроенные типы TypeScript
-        if (baseType == "any" || 
-            baseType == "unknown" || 
-            baseType == "object" ||
-            baseType == "Record" ||
-            baseType == "Array" ||
-            baseType == "Promise" ||
-            baseType == "Response" ||
-            baseType.StartsWith("Record<"))
-        {
-            // Но все равно проверяем generic аргументы
-            foreach (var genericArg in typeInfo.GenericArguments)
-            {
-                CollectTypesFromTypeInfo(genericArg, types);
-            }
-            return;
-        }
-        
-        // Извлекаем имя типа без generic параметров и массивов
-        var typeName = baseType.Split('<')[0].Split('[')[0].Trim();
-        
-        // Если это не встроенный тип, добавляем его
-        if (!string.IsNullOrEmpty(typeName) && 
-            typeName != "any" && 
-            typeName != "unknown" && 
-            typeName != "object" &&
-            !typeName.Contains("Record") &&
-            !typeName.Contains("Array") &&
-            !typeName.Contains("Promise"))
-        {
-            types.Add(typeName);
-        }
-        
-        // Рекурсивно обрабатываем generic аргументы
-        foreach (var genericArg in typeInfo.GenericArguments)
-        {
-            CollectTypesFromTypeInfo(genericArg, types);
-        }
-    }
-
-    private TypeScriptOperationTemplateData CreateTypeScriptOperationTemplateData(ApiOperation operation, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
-    {
-        var operationId = string.IsNullOrWhiteSpace(operation.OperationId) 
-            ? GenerateOperationId(operation.Path, operation.HttpMethod) 
-            : operation.OperationId;
-        var methodName = _namingConverter.ToCamelCase(operationId);
-        
-        if (string.IsNullOrWhiteSpace(methodName))
-        {
-            methodName = "execute";
-        }
-        
-        var httpMethod = operation.HttpMethod.Method.ToUpperInvariant();
-        var path = operation.Path ?? string.Empty;
-
-        var pathParameters = new List<TypeScriptParameterTemplateData>();
-        var queryParameters = new List<TypeScriptParameterTemplateData>();
-        var headerParameters = new List<TypeScriptParameterTemplateData>();
-        var seenVariableNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var duplicateParams = new List<string>();
-
-        foreach (var parameter in operation.Parameters)
-        {
-            var paramName = _namingConverter.ToCamelCase(parameter.Name);
-            
-            // Проверяем на дубликаты по VariableName
-            if (seenVariableNames.Contains(paramName))
-            {
-                duplicateParams.Add(paramName);
-                _logger?.LogWarning(
-                    "Duplicate parameter variable name '{VariableName}' found in operation '{OperationId}' at path '{Path}'. " +
-                    "Parameter will be deduplicated.",
-                    paramName, operation.OperationId ?? "unknown", operation.Path ?? "unknown");
-                continue;
-            }
-            seenVariableNames.Add(paramName);
-            
-            TypeInfo paramTypeInfo;
-            var originalOperation = FindOriginalOperation(document, operation);
-            if (originalOperation != null && originalOperation.Parameters != null)
-            {
-                var openApiParam = originalOperation.Parameters.FirstOrDefault(p => p.Name == parameter.Name);
-                if (openApiParam?.Schema != null)
-                {
-                    paramTypeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(openApiParam.Schema, parameter.IsRequired, schemaResolver);
-                }
-                else
-                {
-                    paramTypeInfo = TypeInfo.Simple(parameter.Type ?? "string");
-                }
-            }
-            else
-            {
-                paramTypeInfo = TypeInfo.Simple(parameter.Type ?? "string");
-            }
-
-            var paramTemplate = new TypeScriptParameterTemplateData
-            {
-                Name = parameter.Name,
-                VariableName = paramName,
-                TypeInfo = paramTypeInfo,
-                Type = paramTypeInfo.FullTypeName,
-                IsRequired = parameter.IsRequired,
-                Description = DecodeHtmlEntities(parameter.Description)
-            };
-
-            switch (parameter.Location)
-            {
-                case Core.Models.ParameterLocation.Path:
-                    pathParameters.Add(paramTemplate);
-                    break;
-                case Core.Models.ParameterLocation.Query:
-                    queryParameters.Add(paramTemplate);
-                    break;
-                case Core.Models.ParameterLocation.Header:
-                    headerParameters.Add(paramTemplate);
-                    break;
-            }
-        }
-
-        TypeInfo? requestBodyTypeInfo = null;
-        var requestBodyContentType = "application/json";
-        var isFormData = false;
-        var formDataProperties = new List<TypeScriptFormDataPropertyTemplateData>();
-        
-        if (operation.RequestBody != null)
-        {
-            requestBodyContentType = operation.RequestBody.ContentType ?? "application/json";
-            isFormData = operation.RequestBody.IsFormData;
-            
-            if (isFormData && operation.RequestBody.FormDataProperties != null)
-            {
-                foreach (var formDataPropEntry in operation.RequestBody.FormDataProperties)
-                {
-                    var formDataProp = formDataPropEntry.Value;
-                    var propName = _namingConverter.ToCamelCase(formDataProp.Name);
-                    
-                    TypeInfo typeInfo = TypeInfo.Simple("string", isPrimitive: true);
-                    var originalOperation = FindOriginalOperation(document, operation);
-                    if (originalOperation?.RequestBody?.Content != null)
-                    {
-                        var content = originalOperation.RequestBody.Content.FirstOrDefault();
-                        if (content.Key != null && content.Value?.Schema?.Properties != null)
-                        {
-                            var propertySchema = content.Value.Schema.Properties.FirstOrDefault(p => p.Key == formDataProp.Name).Value;
-                            if (propertySchema != null)
-                            {
-                                typeInfo = _typescriptTypeMapper.MapPropertyTypeInfo(propertySchema, formDataProp.IsRequired, schemaResolver);
-                            }
-                        }
-                    }
-                    
-                    formDataProperties.Add(new TypeScriptFormDataPropertyTemplateData
-                    {
-                        Name = formDataProp.Name,
-                        VariableName = propName,
-                        TypeInfo = typeInfo,
-                        IsRequired = formDataProp.IsRequired,
-                        Description = DecodeHtmlEntities(formDataProp.Description)
-                    });
-                }
-            }
-            else
-            {
-                var originalOperation = FindOriginalOperation(document, operation);
-                if (originalOperation?.RequestBody?.Content != null)
-                {
-                    var contentTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
-                    var requestBodySchema = FindSchemaInContent(originalOperation.RequestBody.Content, contentTypes);
-                    
-                    if (requestBodySchema != null)
-                    {
-                        requestBodyTypeInfo = _typescriptTypeMapper.MapTypeInfo(requestBodySchema, schemaResolver);
-                    }
-                }
-                
-                if (requestBodyTypeInfo == null)
-                {
-                    requestBodyTypeInfo = TypeInfo.Simple(operation.RequestBody.Type ?? "any");
-                }
-            }
-        }
-
-        var returnTypeInfo = DetermineReturnTypeInfo(operation, document, schemaResolver);
-
-        // Определяем схемы для валидации request body (если включено SerializeWithSchemas)
-        string? requestSchemaName = null;
-        string? requestSchemaFileName = null;
-        if (options.ModelFormat == ModelFormat.ValidationSchemas &&
-            options.ValidationLibrary == ValidationLibrary.Zod &&
-            options.SerializeWithSchemas &&
-            operation.RequestBody != null &&
-            requestBodyTypeInfo != null)
-        {
-            // Не создаем схему для Blob/File типов
-            var requestBaseType = requestBodyTypeInfo.BaseType;
-            if (!string.Equals(requestBaseType, "Blob", StringComparison.OrdinalIgnoreCase) &&
-                !string.Equals(requestBaseType, "File", StringComparison.OrdinalIgnoreCase) &&
-                !requestBodyTypeInfo.IsFile)
-            {
-                var requestTypeName = requestBodyTypeInfo.FullTypeName;
-                // Извлекаем имя типа без массивов и дженериков
-                var cleanTypeName = requestTypeName.Split('<')[0].Split('[')[0].Trim();
-                // Проверяем еще раз на Blob/File после очистки
-                if (!string.Equals(cleanTypeName, "Blob", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(cleanTypeName, "File", StringComparison.OrdinalIgnoreCase))
-                {
-                    requestSchemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
-                    requestSchemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
-                }
-            }
-        }
-
-        // Определяем схемы для валидации response (если включено DeserializeWithSchemas)
-        string? responseSchemaName = null;
-        string? responseSchemaFileName = null;
-        if (options.ModelFormat == ModelFormat.ValidationSchemas &&
-            options.ValidationLibrary == ValidationLibrary.Zod &&
-            options.DeserializeWithSchemas)
-        {
-            var responseTypeInfo = returnTypeInfo.IsTask && returnTypeInfo.GenericArguments.Count > 0
-                ? returnTypeInfo.GenericArguments[0]
-                : returnTypeInfo;
-            
-            var responseTypeName = responseTypeInfo.FullTypeName;
-            
-            if (!string.IsNullOrEmpty(responseTypeName) && responseTypeName != "void")
-            {
-                // Не создаем схему для Blob/File типов
-                var responseBaseType = responseTypeInfo.BaseType;
-                if (!string.Equals(responseBaseType, "Blob", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(responseBaseType, "File", StringComparison.OrdinalIgnoreCase) &&
-                    !responseTypeInfo.IsFile)
-                {
-                    // Извлекаем имя типа без массивов и дженериков
-                    var cleanTypeName = responseTypeName.Split('<')[0].Split('[')[0].Trim();
-                    // Проверяем еще раз на Blob/File после очистки
-                    if (!string.Equals(cleanTypeName, "Blob", StringComparison.OrdinalIgnoreCase) &&
-                        !string.Equals(cleanTypeName, "File", StringComparison.OrdinalIgnoreCase))
-                    {
-                        responseSchemaName = $"{_namingConverter.ToPascalCase(cleanTypeName)}Schema";
-                        responseSchemaFileName = _namingConverter.ToCamelCase(cleanTypeName);
-                    }
-                }
-            }
-        }
-
-        // Определяем, использовать ли модель для query parameters
-        var useQueryParametersModel = options.QueryParametersStyle == QueryParametersStyle.ModelClass && queryParameters.Count > 0;
-        string? queryParametersModelTypeName = null;
-        string? queryParametersModelFileName = null;
-        if (useQueryParametersModel)
-        {
-            var methodNamePascal = _namingConverter.ToPascalCase(methodName);
-            queryParametersModelTypeName = $"{methodNamePascal}Params";
-            queryParametersModelFileName = methodName; // camelCase для имени файла
-        }
-
-        return new TypeScriptOperationTemplateData
-        {
-            MethodName = methodName,
-            HttpMethod = httpMethod,
-            Path = path,
-            Summary = DecodeHtmlEntities(operation.Summary),
-            Description = DecodeHtmlEntities(operation.Description),
-            Parameters = "", // Будет сгенерировано в шаблоне
-            ReturnTypeInfo = returnTypeInfo,
-            ReturnType = returnTypeInfo.IsTask && returnTypeInfo.GenericArguments.Count > 0 
-                ? returnTypeInfo.GenericArguments[0].FullTypeName 
-                : returnTypeInfo.FullTypeName,
-            HasRequestBody = operation.RequestBody != null,
-            RequestBodyParameter = "request",
-            RequestBodyTypeInfo = requestBodyTypeInfo,
-            RequestBodyContentType = requestBodyContentType,
-            PathParameters = pathParameters,
-            QueryParameters = queryParameters,
-            HeaderParameters = headerParameters,
-            IsFormData = isFormData,
-            FormDataProperties = formDataProperties.Count > 0 ? formDataProperties : null,
-            RequestSchemaName = requestSchemaName,
-            RequestSchemaFileName = requestSchemaFileName,
-            ResponseSchemaName = responseSchemaName,
-            ResponseSchemaFileName = responseSchemaFileName,
-            UseQueryParametersModel = useQueryParametersModel,
-            QueryParametersModelTypeName = queryParametersModelTypeName,
-            QueryParametersModelFileName = queryParametersModelFileName
-        };
-    }
-
-    private TypeInfo DetermineReturnTypeInfo(ApiOperation operation, OpenApiDocument document, ISchemaResolver schemaResolver)
-    {
-        var successResponseKeys = new[] { "200", "201", "202", "204", "default" };
-        var successResponse = operation.Responses.FirstOrDefault(r => successResponseKeys.Contains(r.Key));
-
-        if (successResponse.Key == null)
-        {
-            successResponse = operation.Responses.FirstOrDefault();
-        }
-
-        if (successResponse.Key == null)
-        {
-            return TypeInfo.Simple("Response");
-        }
-
-        var originalOperation = FindOriginalOperation(document, operation);
-        if (originalOperation != null && originalOperation.Responses != null)
-        {
-            var openApiResponse = originalOperation.Responses.FirstOrDefault(r => r.Key == successResponse.Key);
-            
-            if (openApiResponse.Key != null && openApiResponse.Value?.Content != null)
-            {
-                var contentTypes = new[] { "application/json", "application/xml", "text/json", "text/xml" };
-                var responseSchema = FindSchemaInContent(openApiResponse.Value.Content, contentTypes);
-                
-                if (responseSchema != null)
-                {
-                    try
-                    {
-                        var typeInfo = _typescriptTypeMapper.MapTypeInfo(responseSchema, schemaResolver);
-                        return typeInfo;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to map response type for operation '{OperationId}'", operation.OperationId);
-                    }
-                }
-            }
-        }
-
-        var responseType = successResponse.Value.Type;
-        if (string.IsNullOrEmpty(responseType))
-        {
-            return TypeInfo.Simple("Response");
-        }
-
-        if (responseType == "void" || responseType == "null")
-        {
-            return TypeInfo.Void();
-        }
-
-        return TypeInfo.Simple(responseType);
-    }
-
-    private IOpenApiSchema? FindSchemaInContent(IDictionary<string, IOpenApiMediaType> content, string[] preferredContentTypes)
-    {
-        foreach (var contentType in preferredContentTypes)
-        {
-            if (content.TryGetValue(contentType, out var mediaType) && mediaType?.Schema != null)
-            {
-                return mediaType.Schema;
-            }
-        }
-        
-        var firstContent = content.FirstOrDefault();
-        if (firstContent.Key != null && firstContent.Value?.Schema != null)
-        {
-            return firstContent.Value.Schema;
-        }
-        
-        return null;
-    }
-
-    private void ValidateOperations(IReadOnlyList<ApiOperation> operations, GenerationResult result)
+    private void ValidateOperationTemplateData(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationResult result)
     {
         var operationIds = new Dictionary<string, List<string>>();
         var warnings = result.Warnings.ToList();
         
         foreach (var operation in operations)
         {
-            var operationId = string.IsNullOrWhiteSpace(operation.OperationId) 
-                ? GenerateOperationId(operation.Path, operation.HttpMethod) 
-                : operation.OperationId;
+            var operationId = operation.MethodName;
             
             if (string.IsNullOrWhiteSpace(operationId))
             {
-                var warning = $"Operation at path '{operation.Path}' with method '{operation.HttpMethod.Method}' has empty operationId";
+                var warning = $"Operation at path '{operation.Path}' with method '{operation.HttpMethod}' has empty method name";
                 warnings.Add(warning);
-                _logger.LogWarning(warning);
+                Logger.LogWarning(warning);
                 continue;
             }
             
@@ -2078,7 +782,7 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 operationIds[key] = new List<string>();
             }
-            operationIds[key].Add($"{operation.HttpMethod.Method} {operation.Path}");
+            operationIds[key].Add($"{operation.HttpMethod} {operation.Path}");
         }
         
         foreach (var kvp in operationIds)
@@ -2087,14 +791,14 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 var warning = $"Duplicate operationId '{kvp.Key}' found at: {string.Join(", ", kvp.Value)}";
                 warnings.Add(warning);
-                _logger.LogWarning(warning);
+                Logger.LogWarning(warning);
             }
         }
         
         result.Warnings = warnings;
     }
 
-    private void ValidateModels(IReadOnlyList<ApiModel> models, GenerationResult result)
+    private void ValidateModelTemplateData(IReadOnlyList<Core.Models.TemplateData.ModelTemplateData> models, GenerationResult result)
     {
         var modelNames = new HashSet<string>();
         var warnings = result.Warnings.ToList();
@@ -2105,16 +809,16 @@ public class TypeScriptCodeGenerator : ICodeGenerator
             {
                 var warning = "Found model with empty name, skipping";
                 warnings.Add(warning);
-                _logger.LogWarning(warning);
+                Logger.LogWarning(warning);
                 continue;
             }
             
-            var modelName = _namingConverter.ToPascalCase(model.Name);
+            var modelName = model.Name;
             if (modelNames.Contains(modelName))
             {
-                var warning = $"Duplicate model name '{modelName}' found (original: '{model.Name}')";
+                var warning = $"Duplicate model name '{modelName}' found";
                 warnings.Add(warning);
-                _logger.LogWarning(warning);
+                Logger.LogWarning(warning);
             }
             else
             {
@@ -2125,479 +829,27 @@ public class TypeScriptCodeGenerator : ICodeGenerator
         result.Warnings = warnings;
     }
 
-    private  async Task<Dictionary<string, string>> GenerateZodSchemasAsync(IReadOnlyList<ApiModel> models, IReadOnlyList<ApiEnum> enums, GenerationConfiguration config, OpenApiDocument document, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    // TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.TanStackQuery
+    private async Task<Dictionary<string, string>> GenerateTanStackQueryHooksAsync(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
     {
-        var files = new Dictionary<string, string>();
-        
-        _logger.LogDebug("Starting schema generation. Models: {ModelCount}, Enums: {EnumCount}", models.Count, enums.Count);
-        
-        // Получаем генератор схем через фабрику
-        var schemaGenerator = _schemaGeneratorFactory.GetSchemaGenerator(options.ValidationLibrary);
-        
-        if (schemaGenerator == null)
-        {
-            _logger.LogWarning("Schema generator not found for ValidationLibrary: {ValidationLibrary}", options.ValidationLibrary);
-            return files;
-        }
-        
-        _logger.LogDebug("Using schema generator: {GeneratorType} for {ValidationLibrary}", 
-            schemaGenerator.GetType().Name, options.ValidationLibrary);
-
-        // Создаем словарь для быстрого поиска моделей и enums по имени
-        var modelsByName = models.ToDictionary(m => _namingConverter.ToPascalCase(m.Name), StringComparer.OrdinalIgnoreCase);
-        var enumsByName = enums.ToDictionary(e => _namingConverter.ToPascalCase(e.Name), StringComparer.OrdinalIgnoreCase);
-        
-        // Генерируем схемы для моделей и собираем зависимости
-        _logger.LogDebug("Generating schemas for {Count} models", models.Count);
-        foreach (var model in models)
-        {
-            if (string.IsNullOrWhiteSpace(model.Name))
-            {
-                _logger.LogWarning("Skipping model with empty name");
-                continue;
-            }
-            
-            try
-            {
-                _logger.LogDebug("Generating schema for model: {ModelName}", model.Name);
-                var schemaCode = schemaGenerator.GenerateSchema(model, schemaResolver);
-                var fileName = $"{_namingConverter.ToCamelCase(model.Name)}.schema.ts";
-                
-                string filePath;
-                if (config.FileOrganization.SeparateModels)
-                {
-                    var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                    filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-                }
-                else
-                {
-                    filePath = Path.Combine(config.OutputPath, fileName);
-                }
-
-                files[filePath] = schemaCode;
-                _logger.LogDebug("Generated schema file: {FilePath}", filePath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to generate schema for model: {ModelName}", model.Name);
-                throw;
-            }
-        }
-
-        // Генерируем схемы для enum'ов
-        _logger.LogDebug("Generating schemas for {Count} enums", enums.Count);
-        foreach (var apiEnum in enums)
-        {
-            if (string.IsNullOrWhiteSpace(apiEnum.Name))
-            {
-                _logger.LogWarning("Skipping enum with empty name");
-                continue;
-            }
-            
-            try
-            {
-                _logger.LogDebug("Generating schema for enum: {EnumName}", apiEnum.Name);
-                var schemaCode = schemaGenerator.GenerateEnumSchema(apiEnum);
-                var fileName = $"{_namingConverter.ToCamelCase(apiEnum.Name)}.schema.ts";
-                
-                string filePath;
-                if (config.FileOrganization.SeparateModels)
-                {
-                    var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-                    filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-                }
-                else
-                {
-                    filePath = Path.Combine(config.OutputPath, fileName);
-                }
-
-                files[filePath] = schemaCode;
-                _logger.LogDebug("Generated schema file: {FilePath}", filePath);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to generate schema for enum: {EnumName}", apiEnum.Name);
-                throw;
-            }
-        }
-
-        // Генерируем недостающие схемы для зависимостей, которые не являются основными моделями
-        // Это нужно для вложенных схем, которые не были извлечены как отдельные модели
-        // Проверяем, что все зависимости имеют соответствующие файлы
-        // Если зависимость ссылается на схему, которая существует в document.Components.Schemas,
-        // но не была сгенерирована, нужно её сгенерировать
-        if (document.Components?.Schemas != null)
-        {
-            var modelsPathForMissing = config.FileOrganization.SeparateModels ? (config.FileOrganization.ModelsPath ?? "models") : null;
-            
-            foreach (var schemaEntry in document.Components.Schemas)
-            {
-                var schemaName = schemaEntry.Key;
-                var sanitizedName = _namingConverter.SanitizeIdentifier(schemaName);
-                var pascalName = _namingConverter.ToPascalCase(sanitizedName);
-                var camelName = _namingConverter.ToCamelCase(sanitizedName);
-                var fileName = $"{camelName}.schema.ts";
-                
-                string filePath;
-                if (config.FileOrganization.SeparateModels && modelsPathForMissing != null)
-                {
-                    filePath = Path.Combine(config.OutputPath, modelsPathForMissing, fileName);
-                }
-                else
-                {
-                    filePath = Path.Combine(config.OutputPath, fileName);
-                }
-                
-                // Если файл еще не создан, проверяем, нужно ли его создать
-                if (!files.ContainsKey(filePath))
-                {
-                    // Проверяем, является ли это моделью или enum'ом
-                    if (modelsByName.ContainsKey(pascalName))
-                    {
-                        // Модель уже обработана
-                        continue;
-                    }
-                    
-                    if (enumsByName.ContainsKey(pascalName))
-                    {
-                        // Enum уже обработан
-                        continue;
-                    }
-                    
-                    // Это может быть вложенная схема, которая не была извлечена как отдельная модель
-                    // Пытаемся создать модель из схемы
-                    try
-                    {
-                        var modelExtractor = new ValIO.Core.Services.ModelExtractor(schemaResolver, _namingConverter);
-                        var extractedModel = modelExtractor.ExtractModel(schemaEntry.Value, schemaName);
-                        
-                        // Проверяем, не является ли это enum'ом
-                        var resolvedSchema = schemaResolver.ResolveSchema(schemaEntry.Value);
-                        if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
-                        {
-                            // Это enum, пропускаем (enums уже обработаны)
-                            continue;
-                        }
-                        
-                        // Генерируем схему для этой модели
-                        _logger.LogDebug("Generating missing schema for: {SchemaName}", schemaName);
-                        var schemaCode = schemaGenerator.GenerateSchema(extractedModel, schemaResolver);
-                        files[filePath] = schemaCode;
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "Failed to generate missing schema for: {SchemaName}", schemaName);
-                    }
-                }
-            }
-        }
-
-        _logger.LogInformation("Successfully generated {Count} schema files", files.Count);
-        return files;
+        throw new NotImplementedException("TanStack Query hooks generation is temporarily disabled due to circular dependency. Requires architecture refactoring.");
     }
 
-    private async Task<Dictionary<string, string>> GenerateTanStackQueryHooksAsync(IReadOnlyList<ApiOperation> operations, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options)
+    // TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.TanStackQuery
+    private string GenerateTanStackQueryHooksCode(List<Core.Models.TemplateData.OperationTemplateData> operations, string groupName, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options, object queryRenderer)
     {
-        var files = new Dictionary<string, string>();
-
-        // Создаем TanStack Query генератор
-        // Используем полное имя типа, чтобы избежать циклической зависимости
-        var tanStackQueryAssembly = Assembly.Load("ValIO.Generators.TypeScript.TanStackQuery");
-        var tanStackQueryGeneratorType = tanStackQueryAssembly.GetType("ValIO.Generators.TypeScript.TanStackQuery.TanStackQueryGenerator");
-        if (tanStackQueryGeneratorType == null)
-        {
-            throw new InvalidOperationException("TanStackQueryGenerator type not found. Make sure ValIO.Generators.TypeScript.TanStackQuery assembly is loaded.");
-        }
-        
-        var queryTemplateRegistry = _templateRegistryFactory != null
-            ? _templateRegistryFactory.CreateRegistry(tanStackQueryAssembly)
-            : _templateRegistry;
-        
-        // Предзагружаем шаблоны TanStack Query
-        await queryTemplateRegistry.PreloadTemplatesAsync();
-
-        // Создаем logger для TanStackQueryGenerator через reflection
-        // Используем NullLogger, так как logger опционален
-        var nullLoggerType = typeof(Microsoft.Extensions.Logging.Abstractions.NullLogger<>).MakeGenericType(tanStackQueryGeneratorType);
-        var logger = Activator.CreateInstance(nullLoggerType);
-        
-        // Получаем конструктор с правильными типами параметров
-        var constructor = tanStackQueryGeneratorType.GetConstructor(new[]
-        {
-            typeof(INamingConverter),
-            typeof(TypeScriptTypeMapper),
-            typeof(ITemplateRegistry),
-            typeof(ILogger<>).MakeGenericType(tanStackQueryGeneratorType)
-        });
-        
-        if (constructor == null)
-        {
-            throw new InvalidOperationException($"Constructor not found for TanStackQueryGenerator. Expected: (INamingConverter, TypeScriptTypeMapper, ITemplateRegistry, ILogger<{tanStackQueryGeneratorType.Name}>)");
-        }
-        
-        var queryGenerator = constructor.Invoke(new object[]
-        {
-            _namingConverter,
-            _typescriptTypeMapper,
-            queryTemplateRegistry,
-            logger!
-        }) as dynamic;
-        
-        if (queryGenerator == null)
-        {
-            throw new InvalidOperationException("Failed to create TanStackQueryGenerator instance.");
-        }
-
-        // Группируем операции
-        var groupedOperations = GroupOperations(operations, config);
-
-        foreach (var group in groupedOperations)
-        {
-            var hooksCode = GenerateTanStackQueryHooksCode(group.Value, group.Key, document, config, schemaResolver, options, queryGenerator);
-            var fileName = $"{_namingConverter.ToCamelCase(group.Key)}.queries.ts";
-            
-            string filePath;
-            if (config.FileOrganization.SeparateClients)
-            {
-                var clientsPath = config.FileOrganization.ClientsPath ?? "api";
-                filePath = Path.Combine(config.OutputPath, clientsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
-
-            files[filePath] = hooksCode;
-        }
-
-        return files;
+        throw new NotImplementedException("TanStack Query hooks code generation is temporarily disabled due to circular dependency. Requires architecture refactoring.");
     }
 
-    private string GenerateTanStackQueryHooksCode(List<ApiOperation> operations, string groupName, OpenApiDocument document, GenerationConfiguration config, ISchemaResolver schemaResolver, TypeScriptGenerationOptions options, dynamic queryGenerator)
+    /// <summary>
+    /// Подготавливает Zod схемы для всех свойств модели перед рендерингом
+    /// TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.Zod
+    /// </summary>
+    private void PrepareZodSchemasForModel(Core.Models.TemplateData.ModelTemplateData modelTemplateData, OpenApiDocument document, ISchemaResolver schemaResolver, object zodTypeMapper)
     {
-        var hooks = new List<string>();
-        var allOperationTemplates = new List<TypeScriptOperationTemplateData>();
-        
-        // Вычисляем путь к моделям для импортов
-        string? modelsImportPath = null;
-        if (config.FileOrganization.SeparateModels)
-        {
-            var modelsPath = config.FileOrganization.ModelsPath ?? "models";
-            if (config.FileOrganization.SeparateClients)
-            {
-                // Клиенты в отдельной папке (api/), модели в отдельной папке (models/)
-                // Путь из api/ к models/ = ../models/
-                modelsImportPath = $"../{modelsPath}";
-            }
-            else
-            {
-                // Клиенты в корне, модели в отдельной папке (models/)
-                // Путь из корня к models/ = ./models/
-                modelsImportPath = $"./{modelsPath}";
-            }
-        }
-        
-        // Вычисляем путь к базовым клиентам для импортов
-        // Базовые клиенты находятся в той же папке, что и queries файлы
-        var clientFileExtension = options.HttpClientLibrary == HttpClientLibrary.Axios ? ".axios" : ".fetch";
-        var clientFileName = $"{_namingConverter.ToCamelCase(groupName)}{clientFileExtension}";
-        var clientImportPath = $"./{clientFileName}";
-
-        // Сначала создаем все operation templates для сбора типов
-        foreach (var operation in operations)
-        {
-            var operationTemplate = CreateTypeScriptOperationTemplateData(operation, document, config, schemaResolver, options);
-            allOperationTemplates.Add(operationTemplate);
-        }
-
-        // Собираем все используемые типы из всех операций
-        var importedTypes = CollectUsedTypes(allOperationTemplates);
-        
-        // Схемы валидации больше не импортируются здесь - они используются только в axios клиенте
-
-        // Генерируем импорты один раз в начале файла
-        var imports = new List<string>();
-        
-        // Типы для экспорта после импортов
-        var typeExports = new List<string>();
-        
-        // Создаем словарь для связи methodName -> operationTemplate для получения типов ответа
-        var methodToTemplateMap = new Dictionary<string, TypeScriptOperationTemplateData>();
-        
-        // Импорт базовых методов из клиентских файлов
-        var methodNames = new List<string>();
-        for (int i = 0; i < operations.Count; i++)
-        {
-            var operation = operations[i];
-            var operationTemplate = allOperationTemplates[i];
-            var operationId = string.IsNullOrWhiteSpace(operation.OperationId)
-                ? GenerateOperationId(operation.Path, operation.HttpMethod)
-                : operation.OperationId;
-            var methodName = _namingConverter.ToCamelCase(operationId);
-            if (!string.IsNullOrWhiteSpace(methodName) && !methodNames.Contains(methodName))
-            {
-                methodNames.Add(methodName);
-                methodToTemplateMap[methodName] = operationTemplate;
-            }
-        }
-        
-        if (methodNames.Count > 0)
-        {
-            var methodNamesStr = string.Join(", ", methodNames);
-            imports.Add($"import {{ {methodNamesStr} }} from '{clientImportPath}';");
-        }
-        
-        // Импорт TanStack Query
-        var hasQuery = operations.Any(o => o.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase));
-        var hasMutation = operations.Any(o => !o.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase));
-        
-        // Собираем все необходимые типы для TanStack Query
-        var tanStackImports = new List<string>();
-        
-        if (hasQuery)
-        {
-            tanStackImports.AddRange(new[] { "useQuery", "UseQueryOptions", "UseQueryResult", "QueryFunction", "QueryKey", "QueryClient", "useInfiniteQuery", "UseInfiniteQueryOptions", "UseInfiniteQueryResult", "InfiniteData" });
-        }
-        
-        if (hasMutation)
-        {
-            tanStackImports.AddRange(new[] { "useMutation", "UseMutationOptions", "UseMutationResult", "MutationFunction" });
-            // QueryClient уже добавлен выше, если есть queries, но нам он нужен и для mutations
-            if (!hasQuery)
-            {
-                tanStackImports.Add("QueryClient");
-            }
-        }
-        
-        // Импорт AxiosInstance если используется Axios
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios && (hasQuery || hasMutation))
-        {
-            imports.Insert(0, "import { AxiosInstance } from 'axios';");
-        }
-        
-        // Удаляем дубликаты и сортируем для консистентности
-        var uniqueImports = tanStackImports.Distinct().OrderBy(x => x).ToList();
-        
-        if (uniqueImports.Count > 0)
-        {
-            var importsStr = string.Join(", ", uniqueImports);
-            imports.Add($"import {{ {importsStr} }} from '@tanstack/react-query';");
-        }
-        
-        // Импорт типов моделей
-        if (importedTypes.Count > 0 && modelsImportPath != null)
-        {
-            foreach (var typeName in importedTypes)
-            {
-                var fileName = char.ToLowerInvariant(typeName[0]) + typeName.Substring(1);
-                imports.Add($"import type {{ {typeName} }} from '{modelsImportPath}/{fileName}.model';");
-            }
-        }
-        
-        // Импорт типов query parameters моделей
-        var queryParamsModelImports = new HashSet<(string TypeName, string FileName)>();
-        foreach (var operationTemplate in allOperationTemplates)
-        {
-            if (operationTemplate.UseQueryParametersModel && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName) && !string.IsNullOrEmpty(operationTemplate.QueryParametersModelFileName) && modelsImportPath != null)
-            {
-                queryParamsModelImports.Add((operationTemplate.QueryParametersModelTypeName, operationTemplate.QueryParametersModelFileName));
-            }
-        }
-        
-        if (queryParamsModelImports.Count > 0 && modelsImportPath != null)
-        {
-            foreach (var modelImport in queryParamsModelImports.OrderBy(x => x.TypeName))
-            {
-                imports.Add($"import type {{ {modelImport.TypeName} }} from '{modelsImportPath}/{modelImport.FileName}.model';");
-            }
-        }
-        
-        // Схемы валидации больше не импортируются здесь - они используются только в axios клиенте
-
-        // Генерируем хуки без импортов
-        for (int i = 0; i < operations.Count; i++)
-        {
-            var operation = operations[i];
-            var operationTemplate = allOperationTemplates[i];
-            
-            var operationId = string.IsNullOrWhiteSpace(operation.OperationId)
-                ? GenerateOperationId(operation.Path, operation.HttpMethod)
-                : operation.OperationId;
-            var clientMethodName = _namingConverter.ToCamelCase(operationId);
-            
-            var isGet = operation.HttpMethod.Method.Equals("GET", StringComparison.OrdinalIgnoreCase);
-            
-            if (isGet)
-            {
-                var hookCode = queryGenerator.GenerateQueryHook(operation, operationTemplate, options, schemaResolver, importedTypes, modelsImportPath, clientMethodName, clientImportPath);
-                hooks.Add(hookCode);
-            }
-            else
-            {
-                var hookCode = queryGenerator.GenerateMutationHook(operation, operationTemplate, options, schemaResolver, importedTypes, modelsImportPath, clientMethodName, clientImportPath);
-                hooks.Add(hookCode);
-            }
-        }
-
-        // Генерируем type exports после всех импортов
-        foreach (var methodName in methodNames)
-        {
-            if (methodToTemplateMap.TryGetValue(methodName, out var operationTemplate))
-            {
-                var returnTypeName = char.ToUpperInvariant(methodName[0]) + methodName.Substring(1) + "ReturnType";
-                var awaitedReturnTypeName = char.ToUpperInvariant(methodName[0]) + methodName.Substring(1) + "AwaitedReturnType";
-                
-                // Получаем тип ответа из operationTemplate.ReturnType (это уже развернутый тип без Promise)
-                var responseType = operationTemplate.ReturnType;
-                
-                // Генерируем ReturnType как Promise<ResponseType>
-                typeExports.Add($"export type {returnTypeName} = Promise<{responseType}>;");
-                
-                // Генерируем AwaitedReturnType как Awaited<ReturnType>
-                typeExports.Add($"export type {awaitedReturnTypeName} = Awaited<{returnTypeName}>;");
-            }
-        }
-        
-        // Объединяем импорты, type exports и хуки
-        var importsCode = string.Join("\n", imports);
-        var typeExportsCode = typeExports.Count > 0 ? "\n" + string.Join("\n", typeExports) : "";
-        var hooksCode = string.Join("\n\n", hooks);
-        
-        if (!string.IsNullOrEmpty(importsCode))
-        {
-            return importsCode + typeExportsCode + "\n\n" + hooksCode;
-        }
-        
-        if (!string.IsNullOrEmpty(typeExportsCode))
-        {
-            return typeExportsCode.TrimStart() + "\n\n" + hooksCode;
-        }
-        
-        return hooksCode;
+        // TODO: Метод временно отключен из-за циклической зависимости с ValIO.Generators.TypeScript.Zod
+        throw new NotImplementedException("Zod schema preparation is temporarily disabled due to circular dependency. Requires architecture refactoring.");
     }
 
-    private async Task EnsureTemplatesPreloadedAsync()
-    {
-        if (_templatesPreloaded)
-            return;
-
-        try
-        {
-            if (!_templateRegistry.HasTemplate("typescript-model.cshtml") || 
-                !_templateRegistry.HasTemplate("typescript-client.cshtml") ||
-                !_templateRegistry.HasTemplate("typescript-enum.cshtml") ||
-                !_templateRegistry.HasTemplate("axios-client.cshtml"))
-            {
-                await _templateRegistry.PreloadTemplatesAsync();
-            }
-
-            _templatesPreloaded = true;
-            _logger.LogInformation("Templates preloaded successfully");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to preload templates");
-            throw;
-        }
-    }
+    // Метод EnsureTemplatesPreloadedAsync удален - шаблоны больше не используются
 }
