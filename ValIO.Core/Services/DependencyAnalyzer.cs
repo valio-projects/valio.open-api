@@ -306,6 +306,21 @@ public class DependencyAnalyzer
         if (string.IsNullOrEmpty(typeName))
             return true;
 
+        // Проверяем generic типы типа Record<string, any>, List<T>, Dictionary<K,V> и т.д.
+        if (typeName.Contains('<'))
+        {
+            // Извлекаем базовое имя типа до '<'
+            var baseTypeName = typeName.Substring(0, typeName.IndexOf('<'));
+            return IsBuiltInType(baseTypeName, language);
+        }
+
+        // Проверяем массивы TypeScript типа Type[]
+        if (language == GenerationLanguage.TypeScript && typeName.EndsWith("[]"))
+        {
+            var baseTypeName = typeName.Substring(0, typeName.Length - 2);
+            return IsBuiltInType(baseTypeName, language);
+        }
+
         var builtInTypes = language switch
         {
             GenerationLanguage.CSharp => new HashSet<string>(StringComparer.OrdinalIgnoreCase)
