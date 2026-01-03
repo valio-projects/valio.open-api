@@ -1,4 +1,5 @@
 using ValIO.Core.Models;
+using ValIO.Core.Models.TemplateData;
 
 namespace ValIO.Generators.TypeScript.Models;
 
@@ -10,7 +11,7 @@ public class TypeScriptGenerationOptions
     /// <summary>
     /// Формат моделей: Interfaces или ValidationSchemas
     /// </summary>
-    public ModelFormat ModelFormat { get; set; } = ModelFormat.Interfaces;
+    public TypeScriptModelFormat ModelFormat { get; set; } = TypeScriptModelFormat.Interfaces;
     
     /// <summary>
     /// Библиотека валидации (если ModelFormat = ValidationSchemas)
@@ -40,7 +41,7 @@ public class TypeScriptGenerationOptions
     /// <summary>
     /// Генерировать enum'ы как TypeScript enum или union types
     /// </summary>
-    public EnumFormat EnumFormat { get; set; } = EnumFormat.Enum;
+    public TypeScriptEnumFormat EnumFormat { get; set; } = TypeScriptEnumFormat.Enum;
     
     /// <summary>
     /// Использовать strict null checks
@@ -73,9 +74,9 @@ public class AxiosOptions
 }
 
 /// <summary>
-/// Формат моделей для генерации
+/// Формат моделей для генерации TypeScript
 /// </summary>
-public enum ModelFormat
+public enum TypeScriptModelFormat
 {
     /// <summary>
     /// TypeScript interfaces
@@ -89,9 +90,9 @@ public enum ModelFormat
 }
 
 /// <summary>
-/// Формат enum'ов для генерации
+/// Формат enum'ов для генерации TypeScript
 /// </summary>
-public enum EnumFormat
+public enum TypeScriptEnumFormat
 {
     /// <summary>
     /// enum MyEnum { ... }

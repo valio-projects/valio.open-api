@@ -101,7 +101,6 @@ class Program
         // Factories
         services.AddSingleton<TypeMapperFactory>();
         services.AddSingleton<CodeGeneratorFactory>();
-        services.AddSingleton<SchemaGeneratorFactory>();
 
         // CLI
         services.AddSingleton<RootCommand>();

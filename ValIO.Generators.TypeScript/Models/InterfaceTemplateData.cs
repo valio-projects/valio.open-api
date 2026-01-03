@@ -1,5 +1,4 @@
 using ValIO.Core.Models;
-using ValIO.Core.Models;
 
 namespace ValIO.Generators.TypeScript.Models;
 
@@ -75,7 +74,7 @@ public class TypeScriptEnumTemplateData
 {
     public string EnumName { get; set; } = string.Empty;
     public string? Description { get; set; }
-    public EnumFormat EnumFormat { get; set; } = EnumFormat.Enum;
+    public TypeScriptEnumFormat EnumFormat { get; set; } = TypeScriptEnumFormat.Enum;
     public IReadOnlyList<TypeScriptEnumValueTemplateData> Values { get; set; } = Array.Empty<TypeScriptEnumValueTemplateData>();
     
     /// <summary>

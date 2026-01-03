@@ -97,13 +97,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 }
                 catch (Exception ex)
                 {
-                    var errorMsg = $"Failed to generate enums: {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        errorMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    generationErrors.Add(errorMsg);
-                    Logger.LogError(ex, "Failed to generate enums. Count: {Count}", enumTemplateDataList.Count);
+                    HandleGenerationError(ex, "enums", generationErrors, enumTemplateDataList.Count);
                 }
             }
 
@@ -119,13 +113,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 }
                 catch (Exception ex)
                 {
-                    var errorMsg = $"Failed to generate models: {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        errorMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    generationErrors.Add(errorMsg);
-                    Logger.LogError(ex, "Failed to generate models. Count: {Count}", modelTemplateDataList.Count);
+                    HandleGenerationError(ex, "models", generationErrors, modelTemplateDataList.Count);
                 }
             }
 
@@ -141,13 +129,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 }
                 catch (Exception ex)
                 {
-                    var errorMsg = $"Failed to generate clients: {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        errorMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    generationErrors.Add(errorMsg);
-                    Logger.LogError(ex, "Failed to generate clients. Operations count: {Count}", operationTemplateDataList.Count);
+                    HandleGenerationError(ex, "clients", generationErrors, operationTemplateDataList.Count);
                 }
             }
 
@@ -252,19 +234,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
             
             var enumCode = enumRenderer.Render(enumTemplateData);
             var fileName = $"{enumTemplateData.Name}.cs";
-            
-            // Определяем путь для файла enum
-            // Enum'ы обычно размещаются вместе с моделями или в отдельной папке
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
-            {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "Models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
 
             files[filePath] = enumCode;
         }
@@ -346,18 +316,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
             
             var modelCode = modelRenderer.Render(modelTemplateData);
             var fileName = $"{modelTemplateData.Name}.cs";
-            
-            // Определяем путь для файла модели
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
-            {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "Models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
 
             files[filePath] = modelCode;
         }
@@ -447,17 +406,11 @@ public class CSharpCodeGenerator : BaseCodeGenerator
             var exceptionCode = GenerateExceptionCode(exceptionData);
             var fileName = $"{exceptionData.ClassName}.cs";
             
-            // Определяем путь для файла исключения
-            string filePath;
-            if (config.FileOrganization.SeparateClients)
-            {
-                var clientsPath = config.FileOrganization.ClientsPath ?? "Clients";
-                filePath = Path.Combine(config.OutputPath, clientsPath, "Exceptions", fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, "Exceptions", fileName);
-            }
+            // Исключения размещаются в папке Exceptions
+            var exceptionPath = config.FileOrganization.SeparateClients 
+                ? Path.Combine(config.FileOrganization.ClientsPath ?? "Clients", "Exceptions")
+                : "Exceptions";
+            var filePath = Path.Combine(config.OutputPath, exceptionPath, fileName);
 
             files[filePath] = exceptionCode;
         }
@@ -467,18 +420,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         {
             var modelCode = GenerateQueryParametersModelCode(queryModel.Key, queryModel.Value, config);
             var fileName = $"{queryModel.Key}.cs";
-            
-            // Определяем путь для файла модели
-            string filePath;
-            if (config.FileOrganization.SeparateModels)
-            {
-                var modelsPath = config.FileOrganization.ModelsPath ?? "Models";
-                filePath = Path.Combine(config.OutputPath, modelsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
 
             files[filePath] = modelCode;
         }
@@ -488,18 +430,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         {
             var clientCode = GenerateClientCode(group.Value, group.Key, config);
             var fileName = $"{NamingConverter.ToPascalCase(group.Key)}Client.cs";
-            
-            // Определяем путь для файла клиента
-            string filePath;
-            if (config.FileOrganization.SeparateClients)
-            {
-                var clientsPath = config.FileOrganization.ClientsPath ?? "Clients";
-                filePath = Path.Combine(config.OutputPath, clientsPath, fileName);
-            }
-            else
-            {
-                filePath = Path.Combine(config.OutputPath, fileName);
-            }
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
 
             files[filePath] = clientCode;
         }

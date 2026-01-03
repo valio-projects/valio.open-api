@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
-using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Zod.Models;
 
 namespace ValIO.Generators.TypeScript.Zod;
@@ -21,9 +20,9 @@ public class ZodTypeMapper
     /// <summary>
     /// Маппит схему OpenAPI в Zod схему (старый метод для обратной совместимости)
     /// </summary>
-    public string MapToZodSchema(IOpenApiSchema schema, ApiProperty property, ISchemaResolver schemaResolver)
+    public string MapToZodSchema(IOpenApiSchema schema, string propertyName, ISchemaResolver schemaResolver)
     {
-        var result = MapToZodSchemaWithDependencies(schema, property, schemaResolver, new HashSet<string>(), null);
+        var result = MapToZodSchemaWithDependencies(schema, propertyName, schemaResolver, new HashSet<string>(), null);
         return result.ZodSchema;
     }
 
@@ -32,7 +31,7 @@ public class ZodTypeMapper
     /// </summary>
     public ZodSchemaMappingResult MapToZodSchemaWithDependencies(
         IOpenApiSchema schema, 
-        ApiProperty property, 
+        string propertyName, 
         ISchemaResolver schemaResolver,
         HashSet<string> processedSchemas,
         string? currentSchemaName = null)
@@ -104,7 +103,7 @@ public class ZodTypeMapper
         {
             if (resolvedSchema2.Items != null)
             {
-                var itemResult = MapToZodSchemaWithDependencies(resolvedSchema2.Items, property, schemaResolver, processedSchemas, currentSchemaName);
+                var itemResult = MapToZodSchemaWithDependencies(resolvedSchema2.Items, propertyName, schemaResolver, processedSchemas, currentSchemaName);
                 result.ZodSchema = $"z.array({itemResult.ZodSchema})";
                 result.SchemaDependencies.UnionWith(itemResult.SchemaDependencies);
                 result.EnumDependencies.UnionWith(itemResult.EnumDependencies);
@@ -177,7 +176,7 @@ public class ZodTypeMapper
                 var props = new List<string>();
                 foreach (var prop in resolvedSchema2.Properties)
                 {
-                    var propResult = MapToZodSchemaWithDependencies(prop.Value, new ApiProperty { Name = prop.Key }, schemaResolver, processedSchemas, currentSchemaName);
+                    var propResult = MapToZodSchemaWithDependencies(prop.Value, prop.Key, schemaResolver, processedSchemas, currentSchemaName);
                     props.Add($"{_namingConverter.ToCamelCase(prop.Key)}: {propResult.ZodSchema}");
                     
                     // Собираем зависимости
@@ -189,7 +188,7 @@ public class ZodTypeMapper
             }
             else if (resolvedSchema2.AdditionalProperties != null)
             {
-                var valueResult = MapToZodSchemaWithDependencies(resolvedSchema2.AdditionalProperties, property, schemaResolver, processedSchemas, currentSchemaName);
+                var valueResult = MapToZodSchemaWithDependencies(resolvedSchema2.AdditionalProperties, propertyName, schemaResolver, processedSchemas, currentSchemaName);
                 result.ZodSchema = $"z.record(z.string(), {valueResult.ZodSchema})";
                 result.SchemaDependencies.UnionWith(valueResult.SchemaDependencies);
                 result.EnumDependencies.UnionWith(valueResult.EnumDependencies);
@@ -224,33 +223,33 @@ public class ZodTypeMapper
                 _ => "z.any()"
             };
 
-            // Добавляем валидацию на основе ограничений
-            if (property.Min.HasValue)
+            // Добавляем валидацию на основе ограничений из схемы
+            if (resolvedSchema2.Minimum.HasValue)
             {
-                zodType += $".min({property.Min})";
+                zodType += $".min({resolvedSchema2.Minimum})";
             }
-            if (property.Max.HasValue)
+            if (resolvedSchema2.Maximum.HasValue)
             {
-                zodType += $".max({property.Max})";
+                zodType += $".max({resolvedSchema2.Maximum})";
             }
-            if (property.MinLength.HasValue)
+            if (resolvedSchema2.MinLength.HasValue)
             {
-                zodType += $".min({property.MinLength})";
+                zodType += $".min({resolvedSchema2.MinLength})";
             }
-            if (property.MaxLength.HasValue)
+            if (resolvedSchema2.MaxLength.HasValue)
             {
-                zodType += $".max({property.MaxLength})";
+                zodType += $".max({resolvedSchema2.MaxLength})";
             }
-            if (!string.IsNullOrEmpty(property.Pattern))
+            if (!string.IsNullOrEmpty(resolvedSchema2.Pattern))
             {
-                zodType += $".regex(/{property.Pattern}/)";
+                zodType += $".regex(/{resolvedSchema2.Pattern}/)";
             }
             
             // Если есть enum значения, создаем отдельную enum схему
             if (resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0)
             {
                 // Генерируем имя для enum схемы на основе контекста
-                var enumSchemaName = GenerateEnumSchemaName(property, resolvedSchema2, schemaResolver);
+                var enumSchemaName = GenerateEnumSchemaName(propertyName, resolvedSchema2, schemaResolver);
                 var enumSchemaNamePascal = _namingConverter.ToPascalCase(enumSchemaName);
                 var enumSchemaNameFull = $"{enumSchemaNamePascal}Schema";
                 
@@ -315,7 +314,7 @@ public class ZodTypeMapper
     /// <summary>
     /// Генерирует имя для enum схемы на основе контекста
     /// </summary>
-    private string GenerateEnumSchemaName(ApiProperty property, IOpenApiSchema schema, ISchemaResolver schemaResolver)
+    private string GenerateEnumSchemaName(string propertyName, IOpenApiSchema schema, ISchemaResolver schemaResolver)
     {
         // Пытаемся получить имя из схемы
         var schemaName = schemaResolver.GetSchemaName(schema, string.Empty);
@@ -325,6 +324,6 @@ public class ZodTypeMapper
         }
         
         // Если имя не найдено, генерируем на основе имени свойства
-        return $"{property.Name}Enum";
+        return $"{propertyName}Enum";
     }
 }

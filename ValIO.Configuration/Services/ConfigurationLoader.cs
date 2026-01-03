@@ -4,6 +4,7 @@ using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
 using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Models;
+using ValIO.Generators.TypeScript.Models;
 using YamlDotNet.Serialization;
 
 namespace ValIO.Configuration.Services;
@@ -312,9 +313,9 @@ public class ConfigurationLoader : IConfigurationLoader
         {
             options.ModelFormat = config.ModelFormat.ToLowerInvariant() switch
             {
-                "interfaces" => ValIO.Generators.TypeScript.Models.ModelFormat.Interfaces,
-                "validationschemas" or "validation-schemas" => ValIO.Generators.TypeScript.Models.ModelFormat.ValidationSchemas,
-                _ => ValIO.Generators.TypeScript.Models.ModelFormat.Interfaces
+                "interfaces" => TypeScriptModelFormat.Interfaces,
+                "validationschemas" or "validation-schemas" => TypeScriptModelFormat.ValidationSchemas,
+                _ => TypeScriptModelFormat.Interfaces
             };
         }
 
@@ -378,9 +379,9 @@ public class ConfigurationLoader : IConfigurationLoader
         {
             options.EnumFormat = config.EnumFormat.ToLowerInvariant() switch
             {
-                "enum" => ValIO.Generators.TypeScript.Models.EnumFormat.Enum,
-                "uniontype" or "union-type" => ValIO.Generators.TypeScript.Models.EnumFormat.UnionType,
-                _ => ValIO.Generators.TypeScript.Models.EnumFormat.Enum
+                "enum" => TypeScriptEnumFormat.Enum,
+                "uniontype" or "union-type" => TypeScriptEnumFormat.UnionType,
+                _ => TypeScriptEnumFormat.Enum
             };
         }
 

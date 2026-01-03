@@ -3,7 +3,6 @@ using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
-using ValIO.Core.Factories;
 using ValIO.Generators.TypeScript.Models;
 using System.Linq;
 using System.Text;
@@ -123,14 +122,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 }
                 catch (Exception ex)
                 {
-                    var errorMsg = $"Failed to generate models and enums: {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        errorMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    generationErrors.Add(errorMsg);
-                    Logger.LogError(ex, "Failed to generate models and enums. Models: {ModelCount}, Enums: {EnumCount}", 
-                        modelTemplateDataList.Count, enumTemplateDataList.Count);
+                    HandleGenerationError(ex, "models and enums", generationErrors, 
+                        modelTemplateDataList.Count + enumTemplateDataList.Count);
                 }
             }
 
@@ -167,13 +160,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 }
                 catch (Exception ex)
                 {
-                    var errorMsg = $"Failed to generate clients: {ex.Message}";
-                    if (ex.InnerException != null)
-                    {
-                        errorMsg += $" (Inner: {ex.InnerException.Message})";
-                    }
-                    generationErrors.Add(errorMsg);
-                    Logger.LogError(ex, "Failed to generate clients. Operations count: {Count}", operationTemplateDataList.Count);
+                    HandleGenerationError(ex, "clients", generationErrors, operationTemplateDataList.Count);
                 }
             }
 
@@ -330,7 +317,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 // Для TypeScript: ModelFormat.Interfaces -> Core ModelFormat.Interface, ModelFormat.ValidationSchemas -> Core ModelFormat.ValidationSchema
                 if (modelTemplateData.Format == ValIO.Core.Models.TemplateData.ModelFormat.Class)
                 {
-                    modelTemplateData.Format = options.ModelFormat == ValIO.Generators.TypeScript.Models.ModelFormat.ValidationSchemas 
+                    modelTemplateData.Format = options.ModelFormat == TypeScriptModelFormat.ValidationSchemas 
                         ? ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema 
                         : ValIO.Core.Models.TemplateData.ModelFormat.Interface;
                 }
@@ -391,9 +378,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 
                 // Устанавливаем формат enum из опций, если не установлен
                 // Для TypeScript: EnumFormat.Enum -> Core EnumFormat.Enum, EnumFormat.UnionType -> Core EnumFormat.Union
-                if (enumTemplateData.Format == ValIO.Core.Models.TemplateData.EnumFormat.Enum && options.EnumFormat != ValIO.Generators.TypeScript.Models.EnumFormat.Enum)
+                if (enumTemplateData.Format == ValIO.Core.Models.TemplateData.EnumFormat.Enum && options.EnumFormat != TypeScriptEnumFormat.Enum)
                 {
-                    enumTemplateData.Format = options.EnumFormat == ValIO.Generators.TypeScript.Models.EnumFormat.UnionType 
+                    enumTemplateData.Format = options.EnumFormat == TypeScriptEnumFormat.UnionType 
                         ? ValIO.Core.Models.TemplateData.EnumFormat.Union 
                         : ValIO.Core.Models.TemplateData.EnumFormat.Enum;
                 }
@@ -494,43 +481,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// <summary>
     /// Определяет путь к файлу на основе конфигурации организации файлов
     /// </summary>
-    /// <param name="fileName">Имя файла</param>
-    /// <param name="config">Конфигурация генерации</param>
-    /// <param name="fileCategory">Категория файла (models, clients, etc.)</param>
-    /// <returns>Полный путь к файлу</returns>
-    private string ResolveFilePath(string fileName, GenerationConfiguration config, FileCategory fileCategory = FileCategory.Models)
-    {
-        var shouldSeparate = fileCategory switch
-        {
-            FileCategory.Models => config.FileOrganization.SeparateModels,
-            FileCategory.Clients => config.FileOrganization.SeparateClients,
-            _ => false
-        };
-
-        if (shouldSeparate)
-        {
-            var categoryPath = fileCategory switch
-            {
-                FileCategory.Models => config.FileOrganization.ModelsPath ?? "models",
-                FileCategory.Clients => config.FileOrganization.ClientsPath ?? "api",
-                _ => string.Empty
-            };
-            
-            return Path.Combine(config.OutputPath, categoryPath, fileName);
-        }
-        
-        return Path.Combine(config.OutputPath, fileName);
-    }
-
-    /// <summary>
-    /// Категория файла для определения пути
-    /// </summary>
-    private enum FileCategory
-    {
-        Models,
-        Clients
-    }
-
+    // Метод ResolveFilePath и enum FileCategory теперь в BaseCodeGenerator
     // Методы DecodeHtmlEntities и FormatEnumValue удалены - они больше не используются
     // Декодирование HTML и форматирование enum значений теперь выполняется в renderers
 
@@ -624,7 +575,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         return files;
     }
 
-    private Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>> GroupOperations(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationConfiguration config)
+    protected override Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>> GroupOperations(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationConfiguration config)
     {
         var groups = new Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>>();
 
@@ -664,7 +615,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         return groups;
     }
 
-    private string ExtractRouteGroup(string path)
+    protected override string ExtractRouteGroup(string path)
     {
         if (string.IsNullOrEmpty(path))
             return "Default";

@@ -249,8 +249,8 @@ public abstract class BaseCodeGenerator : ICodeGenerator
         {
             var categoryPath = fileCategory switch
             {
-                FileCategory.Models => config.FileOrganization.ModelsPath ?? "Models",
-                FileCategory.Clients => config.FileOrganization.ClientsPath ?? "Api",
+                FileCategory.Models => config.FileOrganization.ModelsPath ?? (Language == GenerationLanguage.TypeScript ? "models" : "Models"),
+                FileCategory.Clients => config.FileOrganization.ClientsPath ?? (Language == GenerationLanguage.TypeScript ? "api" : "Api"),
                 _ => string.Empty
             };
             
