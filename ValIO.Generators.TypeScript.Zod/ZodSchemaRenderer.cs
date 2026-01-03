@@ -47,9 +47,75 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         if (schemaResolver == null)
             throw new ArgumentNullException(nameof(schemaResolver));
 
+        // Пытаемся найти схему в документе
+        var schema = FindSchemaInDocument(data.Name, document);
+        if (schema == null)
+        {
+            // Если схема не найдена, создаем модель с базовыми Zod опциями (z.any() для всех свойств)
+            return CreateFallbackZodModel(data);
+        }
+
         // Создаем модель с Zod опциями, используя ZodTypeMapper для маппинга свойств
-        var zodModelData = CreateZodModelTemplateData(data, document, schemaResolver);
+        var zodModelData = CreateZodModelTemplateData(data, schema, document, schemaResolver);
         return Render(zodModelData);
+    }
+
+    /// <summary>
+    /// Находит схему в документе по имени модели (с учетом sanitized имен)
+    /// </summary>
+    private IOpenApiSchema? FindSchemaInDocument(string modelName, Microsoft.OpenApi.OpenApiDocument document)
+    {
+        if (document.Components?.Schemas == null)
+            return null;
+
+        // Сначала пытаемся найти по точному имени
+        if (document.Components.Schemas.TryGetValue(modelName, out var exactSchema))
+        {
+            return exactSchema;
+        }
+
+        // Если не найдено, ищем по sanitized имени среди всех схем
+        foreach (var schemaEntry in document.Components.Schemas)
+        {
+            var originalName = schemaEntry.Key;
+            var sanitizedName = _namingConverter.SanitizeIdentifier(originalName);
+            if (sanitizedName.Equals(modelName, StringComparison.OrdinalIgnoreCase))
+            {
+                return schemaEntry.Value;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Создает fallback Zod модель с z.any() для всех свойств (когда схема не найдена)
+    /// </summary>
+    private string CreateFallbackZodModel(IModelTemplateData data)
+    {
+        var sb = new StringBuilder(4096);
+        
+        var schemaName = $"{data.Name}Schema";
+        
+        sb.AppendLine("import { z } from 'zod';");
+        sb.AppendLine();
+        
+        // Генерируем JSDoc комментарий
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
+        
+        // Генерируем Zod схему с z.any() для всех свойств
+        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.object({{");
+        
+        foreach (var property in data.Properties)
+        {
+            CommentGenerator.GenerateJSDocComment(sb, 1, property.Description);
+            var optional = property.IsRequired ? "" : ".optional()";
+            CodeFormatter.AppendLine(sb, 1, $"{property.Name}: z.any(){optional},");
+        }
+        
+        CodeFormatter.AppendLine(sb, 0, "});");
+        
+        return sb.ToString();
     }
 
     /// <summary>
@@ -57,15 +123,10 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
     /// </summary>
     private ModelTemplateData<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions> CreateZodModelTemplateData(
         IModelTemplateData data, 
+        IOpenApiSchema schema,
         Microsoft.OpenApi.OpenApiDocument document, 
         ISchemaResolver schemaResolver)
     {
-        // Получаем OpenAPI схему для модели из document
-        if (document.Components?.Schemas == null || !document.Components.Schemas.TryGetValue(data.Name, out var schema))
-        {
-            throw new InvalidOperationException($"Schema '{data.Name}' not found in OpenAPI document");
-        }
-
         var modelSchema = schemaResolver.ResolveSchema(schema);
 
         // Создаем свойства с Zod опциями и собираем зависимости
