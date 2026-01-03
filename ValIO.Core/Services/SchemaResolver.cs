@@ -14,7 +14,7 @@ public class SchemaResolver : ISchemaResolver
     public SchemaResolver(OpenApiDocument document)
     {
         _document = document;
-        _visitedReferences = new HashSet<string>();
+        _visitedReferences = new HashSet<string>(16 * 1024);
     }
 
     public IOpenApiSchema ResolveReference(BaseOpenApiReference reference)

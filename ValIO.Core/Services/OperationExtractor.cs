@@ -33,7 +33,7 @@ public class OperationExtractor : IOperationExtractor
 
     public IReadOnlyList<OperationTemplateData> ExtractOperationTemplateData(OpenApiDocument document, GenerationLanguage language, ITypeMapper typeMapper, INamingConverter namingConverter)
     {
-        var operations = new List<OperationTemplateData>();
+        var operations = new List<OperationTemplateData>(16 * 1024);
 
         if (document.Paths == null)
             return operations;
@@ -85,18 +85,18 @@ public class OperationExtractor : IOperationExtractor
             Description = openApiOperation.Description,
             Tags = openApiOperation.Tags?.Select(t => t.Name).Where(n => n != null).Cast<string>().ToList(),
             Language = language,
-            PathParameters = new List<ParameterTemplateData>(),
-            QueryParameters = new List<ParameterTemplateData>(),
-            HeaderParameters = new List<ParameterTemplateData>(),
-            Responses = new List<ResponseTemplateData>()
+            PathParameters = new List<ParameterTemplateData>(8),
+            QueryParameters = new List<ParameterTemplateData>(8),
+            HeaderParameters = new List<ParameterTemplateData>(8),
+            Responses = new List<ResponseTemplateData>(8)
         };
 
         // Извлекаем параметры
         if (openApiOperation.Parameters != null)
         {
-            var pathParams = new List<ParameterTemplateData>();
-            var queryParams = new List<ParameterTemplateData>();
-            var headerParams = new List<ParameterTemplateData>();
+            var pathParams = new List<ParameterTemplateData>(8);
+            var queryParams = new List<ParameterTemplateData>(8);
+            var headerParams = new List<ParameterTemplateData>(8);
 
             foreach (var parameter in openApiOperation.Parameters)
             {
@@ -137,7 +137,7 @@ public class OperationExtractor : IOperationExtractor
         // Извлекаем responses
         if (openApiOperation.Responses != null)
         {
-            var responses = new List<ResponseTemplateData>();
+            var responses = new List<ResponseTemplateData>(8);
             TypeInfo? successResponseType = null;
 
             foreach (var responseEntry in openApiOperation.Responses)
@@ -185,7 +185,7 @@ public class OperationExtractor : IOperationExtractor
         }
 
         // Собираем зависимости
-        var allDependencies = new HashSet<string>();
+        var allDependencies = new HashSet<string>(8);
         
         // Зависимости из параметров
         foreach (var param in operationTemplateData.PathParameters.Concat(operationTemplateData.QueryParameters).Concat(operationTemplateData.HeaderParameters))
@@ -314,7 +314,7 @@ public class OperationExtractor : IOperationExtractor
         INamingConverter namingConverter,
         GenerationLanguage language)
     {
-        var properties = new List<FormDataPropertyTemplateData>();
+        var properties = new List<FormDataPropertyTemplateData>(16);
 
         if (schema.Properties == null)
             return properties;

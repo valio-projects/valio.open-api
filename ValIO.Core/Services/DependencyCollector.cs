@@ -21,7 +21,7 @@ public class DependencyCollector
     /// </summary>
     public IReadOnlyList<string> CollectFromTypeInfo(TypeInfo typeInfo)
     {
-        var dependencies = new HashSet<string>();
+        var dependencies = new HashSet<string>(16 * 1024);
         _dependencyAnalyzer.CollectDependenciesFromTypeInfo(typeInfo, dependencies);
         return dependencies.ToList();
     }

@@ -108,7 +108,7 @@ public class EnumExtractor : IEnumExtractor
                 {
                     if (jsonNode is JsonArray jsonArray)
                     {
-                        var names = new List<string>();
+                        var names = new List<string>(8);
                         foreach (var item in jsonArray)
                         {
                             if (item != null && item.GetValueKind() == JsonValueKind.String)
@@ -137,7 +137,7 @@ public class EnumExtractor : IEnumExtractor
             {
                 if (jsonNode is JsonArray jsonArray)
                 {
-                    var descriptions = new List<string>();
+                    var descriptions = new List<string>(8);
                     foreach (var item in jsonArray)
                     {
                         if (item != null && item.GetValueKind() == JsonValueKind.String)
@@ -155,7 +155,7 @@ public class EnumExtractor : IEnumExtractor
 
     public IReadOnlyList<EnumTemplateData> ExtractEnumTemplateData(OpenApiDocument document, GenerationLanguage language)
     {
-        var enums = new List<EnumTemplateData>();
+        var enums = new List<EnumTemplateData>(32);
 
         if (document.Components?.Schemas == null)
             return enums;
@@ -191,7 +191,7 @@ public class EnumExtractor : IEnumExtractor
         var sanitizedName = _namingConverter.SanitizeIdentifier(enumName);
         var underlyingType = DetermineUnderlyingType(resolvedSchema);
         
-        var enumValues = new List<EnumValueTemplateData>();
+        var enumValues = new List<EnumValueTemplateData>(8);
         
         if (resolvedSchema.Enum != null)
         {

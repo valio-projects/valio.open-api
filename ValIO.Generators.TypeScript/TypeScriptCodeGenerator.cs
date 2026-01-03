@@ -57,9 +57,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         var result = new GenerationResult
         {
             Success = false,
-            GeneratedFiles = new Dictionary<string, string>(),
-            Errors = new List<string>(),
-            Warnings = new List<string>()
+            GeneratedFiles = new Dictionary<string, string>(8192),
+            Errors = new List<string>(8192),
+            Warnings = new List<string>(8192)
         };
 
         try
@@ -79,16 +79,16 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
             // Инициализируем кэши
             InitializeCaches();
-            
+
             // Предзаполняем кэш операций для быстрого поиска
             BuildOperationCache(document);
 
             // Извлекаем данные из OpenAPI документа
             var extractedData = ExtractData(document);
-            
+
             // Валидируем извлеченные данные
             ValidateExtractedData(extractedData, config, result);
-            
+
             var modelTemplateDataList = extractedData.Models;
             var operationTemplateDataList = extractedData.Operations;
             var enumTemplateDataList = extractedData.Enums;
@@ -108,13 +108,13 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 try
                 {
                     var unifiedFiles = await GenerateModelsAndEnumsUnifiedAsync(
-                        modelTemplateDataList.Cast<IModelTemplateData>().ToList(), 
-                        enumTemplateDataList, 
-                        document, 
-                        schemaResolver, 
-                        config, 
+                        modelTemplateDataList.Cast<IModelTemplateData>().ToList(),
+                        enumTemplateDataList,
+                        document,
+                        schemaResolver,
+                        config,
                         typescriptOptions);
-                    
+
                     foreach (var file in unifiedFiles)
                     {
                         generatedFiles[file.Key] = file.Value;
@@ -122,7 +122,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 }
                 catch (Exception ex)
                 {
-                    HandleGenerationError(ex, "models and enums", generationErrors, 
+                    HandleGenerationError(ex, "models and enums", generationErrors,
                         modelTemplateDataList.Count + enumTemplateDataList.Count);
                 }
             }
@@ -137,7 +137,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     {
                         generatedFiles[file.Key] = file.Value;
                     }
-                    
+
                     // Если UseTanStackQuery = true и renderer доступен, генерируем TanStack Query хуки
                     if (typescriptOptions.UseTanStackQuery && _queryWrapperRenderer != null)
                     {
@@ -177,14 +177,14 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
             result.Success = result.Errors.Count == 0;
             result.GeneratedFiles = generatedFiles;
-            
+
             if (result.Success)
             {
-            Logger.LogInformation("TypeScript code generation completed successfully. Generated {Count} files", generatedFiles.Count);
+                Logger.LogInformation("TypeScript code generation completed successfully. Generated {Count} files", generatedFiles.Count);
             }
             else
             {
-                Logger.LogWarning("TypeScript code generation completed with errors. Generated {Count} files, {ErrorCount} errors", 
+                Logger.LogWarning("TypeScript code generation completed with errors. Generated {Count} files, {ErrorCount} errors",
                     generatedFiles.Count, result.Errors.Count);
             }
         }
@@ -195,14 +195,16 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             {
                 errorMessage += $" (Inner: {ex.InnerException.Message})";
             }
+
             if (!string.IsNullOrEmpty(ex.StackTrace))
             {
                 Logger.LogError(ex, "Error during TypeScript code generation. Stack trace: {StackTrace}", ex.StackTrace);
             }
             else
-        {
-            Logger.LogError(ex, "Error during TypeScript code generation");
+            {
+                Logger.LogError(ex, "Error during TypeScript code generation");
             }
+
             result.Errors = new List<string> { errorMessage };
             result.Success = false;
         }
@@ -220,50 +222,50 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         if (config.Options?.TypeScriptOptions is TypeScriptGenerationOptions typescriptOptions)
         {
             // Если UseTanStackQuery не задан явно, но QueryWrapperLibrary = TanStackQuery, устанавливаем UseTanStackQuery = true
-            if (!typescriptOptions.UseTanStackQuery && 
+            if (!typescriptOptions.UseTanStackQuery &&
                 config.Options.QueryWrapperLibrary == QueryWrapperLibrary.TanStackQuery)
             {
                 typescriptOptions.UseTanStackQuery = true;
             }
-            
+
             // Если HttpClientLibrary не задан в TypeScript опциях, но задан на верхнем уровне, используем его
-            if (typescriptOptions.HttpClientLibrary == HttpClientLibrary.Fetch && 
+            if (typescriptOptions.HttpClientLibrary == HttpClientLibrary.Fetch &&
                 config.Options.HttpClientLibrary.HasValue)
             {
                 typescriptOptions.HttpClientLibrary = config.Options.HttpClientLibrary.Value;
             }
-            
+
             // Если ValidationLibrary не задан в TypeScript опциях, но задан на верхнем уровне, используем его
-            if (typescriptOptions.ValidationLibrary == null && 
+            if (typescriptOptions.ValidationLibrary == null &&
                 config.Options.ValidationLibrary.HasValue)
             {
                 typescriptOptions.ValidationLibrary = config.Options.ValidationLibrary.Value;
             }
-            
+
             return typescriptOptions;
         }
-        
+
         // Если TypeScript опции не заданы, создаем их на основе общих опций
         var defaultOptions = new TypeScriptGenerationOptions();
-        
+
         if (config.Options != null)
         {
             if (config.Options.HttpClientLibrary.HasValue)
             {
                 defaultOptions.HttpClientLibrary = config.Options.HttpClientLibrary.Value;
             }
-            
+
             if (config.Options.ValidationLibrary.HasValue)
             {
                 defaultOptions.ValidationLibrary = config.Options.ValidationLibrary.Value;
             }
-            
+
             if (config.Options.QueryWrapperLibrary == QueryWrapperLibrary.TanStackQuery)
             {
                 defaultOptions.UseTanStackQuery = true;
             }
         }
-        
+
         return defaultOptions;
     }
 
@@ -280,24 +282,24 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         GenerationConfiguration config,
         TypeScriptGenerationOptions options)
     {
-        var files = new Dictionary<string, string>();
-        
+        var files = new Dictionary<string, string>(16 * 1024);
+
         // Создаем словарь enum'ов по имени для быстрой проверки
         var enumsByName = enumTemplateDataList.ToDictionary(
-            e => e.Name, 
+            e => e.Name,
             StringComparer.OrdinalIgnoreCase);
-        
+
         // Создаем renderers один раз
         // Zod renderers теперь передаются через DI в конструктор (решает циклические зависимости)
         var interfaceModelRenderer = new Renderers.InterfaceModelRenderer();
         var typeScriptEnumRenderer = new Renderers.TypeScriptEnumRenderer();
         var typeScriptUnionTypeRenderer = new Renderers.TypeScriptUnionTypeRenderer();
-        
+
         // Генерируем модели
         if (config.GenerateModels)
         {
             Logger.LogDebug("Generating models. Count: {Count}", modelTemplateDataList.Count);
-            
+
             foreach (var modelTemplateData in modelTemplateDataList)
             {
                 if (string.IsNullOrWhiteSpace(modelTemplateData.Name))
@@ -305,29 +307,29 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     Logger.LogWarning("Skipping model with empty name");
                     continue;
                 }
-                
+
                 // Пропускаем модели, которые являются enum'ами
                 if (enumsByName.ContainsKey(modelTemplateData.Name))
                 {
                     Logger.LogDebug("Skipping model '{ModelName}' - it is an enum", modelTemplateData.Name);
                     continue;
                 }
-                
+
                 // Устанавливаем формат модели из опций, если не установлен
                 // Для TypeScript: ModelFormat.Interfaces -> Core ModelFormat.Interface, ModelFormat.ValidationSchemas -> Core ModelFormat.ValidationSchema
                 if (modelTemplateData.Format == ValIO.Core.Models.TemplateData.ModelFormat.Class)
                 {
-                    modelTemplateData.Format = options.ModelFormat == TypeScriptModelFormat.ValidationSchemas 
-                        ? ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema 
+                    modelTemplateData.Format = options.ModelFormat == TypeScriptModelFormat.ValidationSchemas
+                        ? ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema
                         : ValIO.Core.Models.TemplateData.ModelFormat.Interface;
                 }
-                
+
                 // Создаем типизированные Options для TypeScript
                 var modelOptions = new TypeScriptModelTemplateDataOptions
                 {
                     ValidationLibrary = options.ValidationLibrary ?? ValidationLibrary.Zod
                 };
-                
+
                 // Создаем типизированную версию TemplateData
                 var typedModelData = new Core.Models.TemplateData.ModelTemplateData<TypeScriptModelTemplateDataOptions, TypeScriptPropertyTemplateDataOptions>
                 {
@@ -340,7 +342,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     Namespace = modelTemplateData.Namespace,
                     ImportPath = modelTemplateData.ImportPath,
                     Options = modelOptions,
-                    Properties = modelTemplateData.Properties.Select(p => 
+                    Properties = modelTemplateData.Properties.Select(p =>
                     {
                         return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
                         {
@@ -361,7 +363,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                             Options = new TypeScriptPropertyTemplateDataOptions()
                         };
                     }).ToList(),
-                    BaseClassProperties = modelTemplateData.BaseClassProperties.Select(p => 
+                    BaseClassProperties = modelTemplateData.BaseClassProperties.Select(p =>
                     {
                         return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
                         {
@@ -382,7 +384,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                             Options = new TypeScriptPropertyTemplateDataOptions()
                         };
                     }).ToList(),
-                    OwnProperties = modelTemplateData.OwnProperties.Select(p => 
+                    OwnProperties = modelTemplateData.OwnProperties.Select(p =>
                     {
                         return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
                         {
@@ -404,14 +406,14 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         };
                     }).ToList()
                 };
-                
+
                 // Передаем интерфейс IModelTemplateData в renderer (без каста)
                 var modelCode = interfaceModelRenderer.Render(typedModelData);
                 var modelFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.model.ts";
                 var modelFilePath = ResolveFilePath(modelFileName, config, FileCategory.Models);
-                
+
                 files[modelFilePath] = modelCode;
-                
+
                 // Генерируем Zod схему, если ValidationLibrary = Zod и renderer доступен
                 if (modelOptions.ValidationLibrary == ValidationLibrary.Zod && _zodModelRenderer != null)
                 {
@@ -420,14 +422,14 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         // Устанавливаем формат на ValidationSchema
                         var originalFormat = typedModelData.Format;
                         typedModelData.Format = ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema;
-                        
+
                         // Передаем интерфейс IModelTemplateData в renderer (без каста)
                         var schemaCode = _zodModelRenderer.Render(typedModelData);
                         var schemaFileName = $"{NamingConverter.ToCamelCase(typedModelData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
-                        
+
                         files[schemaFilePath] = schemaCode;
-                        
+
                         // Восстанавливаем оригинальный формат
                         typedModelData.Format = originalFormat;
                     }
@@ -439,12 +441,12 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 }
             }
         }
-        
+
         // Генерируем enum'ы
         if (config.GenerateEnums)
         {
             Logger.LogDebug("Generating enums. Count: {Count}", enumTemplateDataList.Count);
-            
+
             foreach (var enumTemplateData in enumTemplateDataList)
             {
                 if (string.IsNullOrWhiteSpace(enumTemplateData.Name))
@@ -452,22 +454,22 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     Logger.LogWarning("Skipping enum with empty name");
                     continue;
                 }
-                
+
                 // Устанавливаем формат enum из опций, если не установлен
                 // Для TypeScript: EnumFormat.Enum -> Core EnumFormat.Enum, EnumFormat.UnionType -> Core EnumFormat.Union
                 if (enumTemplateData.Format == ValIO.Core.Models.TemplateData.EnumFormat.Enum && options.EnumFormat != TypeScriptEnumFormat.Enum)
                 {
-                    enumTemplateData.Format = options.EnumFormat == TypeScriptEnumFormat.UnionType 
-                        ? ValIO.Core.Models.TemplateData.EnumFormat.Union 
+                    enumTemplateData.Format = options.EnumFormat == TypeScriptEnumFormat.UnionType
+                        ? ValIO.Core.Models.TemplateData.EnumFormat.Union
                         : ValIO.Core.Models.TemplateData.EnumFormat.Enum;
                 }
-                
+
                 // Создаем типизированные Options для TypeScript
                 var enumOptions = new TypeScriptEnumTemplateDataOptions
                 {
                     ValidationLibrary = options.ValidationLibrary ?? ValidationLibrary.Zod
                 };
-                
+
                 // Создаем типизированную версию TemplateData
                 var typedEnumData = new Core.Models.TemplateData.EnumTemplateData<TypeScriptEnumTemplateDataOptions>
                 {
@@ -481,23 +483,23 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     Options = enumOptions,
                     Values = enumTemplateData.Values
                 };
-                
+
                 // Приводим к базовому типу для renderer
                 var enumTemplateDataForRenderer = (Core.Models.TemplateData.EnumTemplateData)(object)typedEnumData;
-                
+
                 // Генерируем TypeScript enum/union type
                 IEnumFormatRenderer enumRenderer = enumTemplateData.Format switch
                 {
                     ValIO.Core.Models.TemplateData.EnumFormat.Union => typeScriptUnionTypeRenderer,
                     _ => typeScriptEnumRenderer
                 };
-                
+
                 var enumCode = enumRenderer.Render(enumTemplateData);
                 var enumFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.enum.ts";
                 var enumFilePath = ResolveFilePath(enumFileName, config, FileCategory.Models);
-                
+
                 files[enumFilePath] = enumCode;
-                
+
                 // Генерируем Zod enum схему, если ValidationLibrary = Zod и renderer доступен
                 if (enumOptions.ValidationLibrary == ValidationLibrary.Zod && _zodEnumRenderer != null)
                 {
@@ -506,17 +508,17 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         // Устанавливаем формат на ValidationSchema
                         var originalFormat = typedEnumData.Format;
                         typedEnumData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
-                        
+
                         // Приводим к базовому типу для renderer
                         var schemaEnumDataForRenderer = (Core.Models.TemplateData.EnumTemplateData)(object)typedEnumData;
-                        
+
                         // Рендерим Zod enum схему через интерфейс
                         var schemaCode = _zodEnumRenderer.Render(schemaEnumDataForRenderer);
                         var schemaFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
-                        
+
                         files[schemaFilePath] = schemaCode;
-                        
+
                         // Восстанавливаем оригинальный формат
                         typedEnumData.Format = originalFormat;
                     }
@@ -528,7 +530,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 }
             }
         }
-        
+
         return files;
     }
 
@@ -537,8 +539,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// </summary>
     protected override void BuildOperationCache(OpenApiDocument document)
     {
-        OperationCache = new Dictionary<string, OpenApiOperation>();
-        
+        OperationCache = new Dictionary<string, OpenApiOperation>(16 * 1024);
+
         if (document.Paths == null)
             return;
 
@@ -550,14 +552,14 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             foreach (var operationEntry in pathEntry.Value.Operations)
             {
                 var openApiOperation = operationEntry.Value;
-                var operationId = openApiOperation.OperationId ?? 
-                    $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
+                var operationId = openApiOperation.OperationId ??
+                                  $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
 
                 var cacheKey = $"{operationId}|{operationEntry.Key.Method}|{pathEntry.Key}";
                 OperationCache[cacheKey] = openApiOperation;
             }
         }
-        
+
         Logger.LogDebug("Built operation cache with {Count} entries", OperationCache.Count);
     }
 
@@ -566,11 +568,11 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     {
         if (string.IsNullOrWhiteSpace(path))
             return $"{httpMethod.Method}Request";
-        
+
         var segments = path.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
         var lastSegment = segments.Length > 0 ? segments[^1] : "request";
         lastSegment = lastSegment.Replace("{", "").Replace("}", "");
-        
+
         var methodPrefix = httpMethod.Method.ToUpperInvariant();
         return $"{methodPrefix}{NamingConverter.ToPascalCase(lastSegment)}";
     }
@@ -585,9 +587,10 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// <summary>
     /// Генерирует код модели для query параметров
     /// </summary>
-    private string GenerateQueryParametersModelCode(string interfaceName, List<Core.Models.TemplateData.ParameterTemplateData> parameters, GenerationConfiguration config, TypeScriptGenerationOptions options)
+    private string GenerateQueryParametersModelCode(string interfaceName, List<Core.Models.TemplateData.ParameterTemplateData> parameters, GenerationConfiguration config,
+        TypeScriptGenerationOptions options)
     {
-        var properties = parameters.Select(param => 
+        var properties = parameters.Select(param =>
         {
             return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
             {
@@ -617,7 +620,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             Dependencies = importedTypes,
             Options = modelOptions
         };
-        
+
         // Передаем интерфейс IModelTemplateData в renderer (без каста)
         var modelRenderer = new Renderers.InterfaceModelRenderer();
         return modelRenderer.Render(templateData);
@@ -626,7 +629,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     // Методы GenerateModelCode, CreateApiModelFromQueryParameters, CollectModelUsedTypes и связанные вспомогательные методы удалены
     // - они больше не используются, так как данные теперь извлекаются через extractors в виде TemplateData
 
-    private Dictionary<string, string> GenerateClients(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList, GenerationConfiguration config, TypeScriptGenerationOptions options)
+    private Dictionary<string, string> GenerateClients(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList, GenerationConfiguration config,
+        TypeScriptGenerationOptions options)
     {
         var files = new Dictionary<string, string>();
 
@@ -636,15 +640,15 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         var queryParametersModels = new Dictionary<string, List<Core.Models.TemplateData.ParameterTemplateData>>();
         // TypeScript всегда использует отдельные параметры для query, не модель
         var useQueryParametersModel = false;
-        
+
         foreach (var operationTemplate in operationTemplateDataList)
         {
-            if (useQueryParametersModel && operationTemplate.QueryParameters.Count > 0 && 
+            if (useQueryParametersModel && operationTemplate.QueryParameters.Count > 0 &&
                 !string.IsNullOrEmpty(operationTemplate.QueryParametersModelTypeName))
             {
                 if (!queryParametersModels.ContainsKey(operationTemplate.QueryParametersModelTypeName))
                 {
-                    queryParametersModels[operationTemplate.QueryParametersModelTypeName] = 
+                    queryParametersModels[operationTemplate.QueryParametersModelTypeName] =
                         operationTemplate.QueryParameters.ToList();
                 }
             }
@@ -666,7 +670,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         foreach (var group in groupedOperations)
         {
             var clientCode = GenerateClientCode(group.Value, group.Key, config, options);
-            
+
             // Определяем расширение файла в зависимости от HTTP клиента
             var fileExtension = options.HttpClientLibrary == HttpClientLibrary.Axios ? ".axios.ts" : ".fetch.ts";
             var fileName = $"{NamingConverter.ToCamelCase(group.Key)}{fileExtension}";
@@ -678,23 +682,26 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         return files;
     }
 
-    protected override Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>> GroupOperations(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationConfiguration config)
+    protected override Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>> GroupOperations(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations,
+        GenerationConfiguration config)
     {
         var groups = new Dictionary<string, List<Core.Models.TemplateData.OperationTemplateData>>();
 
         switch (config.FileOrganization.GroupingStrategy)
         {
             case FileGroupingStrategy.ByTag:
-            foreach (var operation in operations)
-            {
-                var tag = operation.Tags?.FirstOrDefault() ?? "Default";
+                foreach (var operation in operations)
+                {
+                    var tag = operation.Tags?.FirstOrDefault() ?? "Default";
                     var sanitizedTag = NamingConverter.SanitizeIdentifier(tag);
                     if (!groups.ContainsKey(sanitizedTag))
                     {
                         groups[sanitizedTag] = new List<Core.Models.TemplateData.OperationTemplateData>();
                     }
+
                     groups[sanitizedTag].Add(operation);
                 }
+
                 break;
 
             case FileGroupingStrategy.ByRoute:
@@ -705,13 +712,15 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     {
                         groups[routeGroup] = new List<Core.Models.TemplateData.OperationTemplateData>();
                     }
+
                     groups[routeGroup].Add(operation);
                 }
+
                 break;
 
             case FileGroupingStrategy.SingleFile:
             default:
-            groups["Api"] = operations.ToList();
+                groups["Api"] = operations.ToList();
                 break;
         }
 
@@ -725,7 +734,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
         var cleanPath = path.Trim('/');
         var segments = cleanPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        
+
         if (segments.Length == 0)
             return "Default";
 
@@ -743,7 +752,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     {
         // Собираем используемые типы для импортов
         var importedTypes = operations.SelectMany(op => op.Dependencies).Distinct().ToList();
-        
+
         // Вычисляем путь к моделям для импортов
         string? modelsImportPath = null;
         if (config.FileOrganization.SeparateModels)
@@ -762,15 +771,15 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 modelsImportPath = $"./{modelsPath}";
             }
         }
-        
+
         // Создаем типизированные Options для Client
         var clientOptions = new TypeScriptClientTemplateDataOptions
         {
             AxiosOptions = options.Axios
         };
-        
+
         // Создаем типизированные Operations с Options
-        var typedOperations = operations.Select(op => 
+        var typedOperations = operations.Select(op =>
         {
             var operationOptions = new TypeScriptOperationTemplateDataOptions();
             return new Core.Models.TemplateData.OperationTemplateData<TypeScriptOperationTemplateDataOptions>
@@ -805,7 +814,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 Options = operationOptions
             };
         }).ToList();
-        
+
         var templateData = new Core.Models.TemplateData.ClientTemplateData<TypeScriptClientTemplateDataOptions, TypeScriptOperationTemplateDataOptions>
         {
             Name = clientName,
@@ -816,7 +825,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             ModelsPath = modelsImportPath,
             Options = clientOptions
         };
-        
+
         // Передаем интерфейс IClientTemplateData в renderer (без каста)
         return _codeRenderer.RenderClient(templateData);
     }
@@ -833,30 +842,30 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// Генерирует TanStack Query хуки для операций
     /// </summary>
     private async Task<Dictionary<string, string>> GenerateTanStackQueryHooksAsync(
-        IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList, 
-        GenerationConfiguration config, 
+        IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operationTemplateDataList,
+        GenerationConfiguration config,
         TypeScriptGenerationOptions options)
     {
         if (_queryWrapperRenderer == null)
             return new Dictionary<string, string>();
 
         var files = new Dictionary<string, string>();
-        
+
         // Группируем операции по стратегии из конфигурации
         var groupedOperations = GroupOperations(operationTemplateDataList, config);
-        
+
         foreach (var group in groupedOperations)
         {
             var groupName = group.Key;
             var operations = group.Value;
-            
+
             var hooksCode = GenerateTanStackQueryHooksCode(operations, groupName, config, options);
             var fileName = $"{NamingConverter.ToCamelCase(groupName)}.hooks.ts";
             var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
-            
+
             files[filePath] = hooksCode;
         }
-        
+
         return files;
     }
 
@@ -864,25 +873,25 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// Генерирует код TanStack Query хуков для группы операций
     /// </summary>
     private string GenerateTanStackQueryHooksCode(
-        List<Core.Models.TemplateData.OperationTemplateData> operations, 
-        string groupName, 
-        GenerationConfiguration config, 
+        List<Core.Models.TemplateData.OperationTemplateData> operations,
+        string groupName,
+        GenerationConfiguration config,
         TypeScriptGenerationOptions options)
     {
         if (_queryWrapperRenderer == null)
             return string.Empty;
 
         var sb = new StringBuilder();
-        
+
         // Импорты для TanStack Query
         sb.AppendLine("import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';");
         sb.AppendLine();
-        
+
         // Генерируем хуки для каждой операции
         foreach (var operation in operations)
         {
             var isQuery = operation.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase);
-            
+
             if (isQuery)
             {
                 var hookCode = _queryWrapperRenderer.RenderQueryHook(operation);
@@ -896,7 +905,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 sb.AppendLine();
             }
         }
-        
+
         return sb.ToString();
     }
 

@@ -61,7 +61,7 @@ public class ModelExtractor : IModelExtractor
 
     public IReadOnlyList<ModelTemplateData> ExtractModelTemplateData(OpenApiDocument document, GenerationLanguage language, ITypeMapper typeMapper)
     {
-        var models = new List<ModelTemplateData>();
+        var models = new List<ModelTemplateData>(16);
 
         if (document.Components?.Schemas == null)
             return models;
@@ -100,18 +100,18 @@ public class ModelExtractor : IModelExtractor
             Description = resolvedSchema.Description,
             Language = language,
             Format = language == GenerationLanguage.CSharp ? ModelFormat.Class : ModelFormat.Interface,
-            Properties = new List<PropertyTemplateData>(),
-            BaseClassProperties = new List<PropertyTemplateData>(),
-            OwnProperties = new List<PropertyTemplateData>()
+            Properties = new List<PropertyTemplateData>(16),
+            BaseClassProperties = new List<PropertyTemplateData>(8),
+            OwnProperties = new List<PropertyTemplateData>(8)
         };
 
         // Обрабатываем allOf - объединяем свойства из всех схем
         if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
         {
-            var allProperties = new Dictionary<string, PropertyTemplateData>();
-            var baseClassProperties = new List<PropertyTemplateData>();
-            var ownProperties = new List<PropertyTemplateData>();
-            var allRequired = new HashSet<string>();
+            var allProperties = new Dictionary<string, PropertyTemplateData>(32);
+            var baseClassProperties = new List<PropertyTemplateData>(32);
+            var ownProperties = new List<PropertyTemplateData>(32);
+            var allRequired = new HashSet<string>(32);
             string? baseClassName = null;
 
             foreach (var subSchema in resolvedSchema.AllOf)
@@ -204,7 +204,7 @@ public class ModelExtractor : IModelExtractor
             // Обычная схема без allOf
             if (resolvedSchema.Properties != null)
             {
-                var properties = new List<PropertyTemplateData>();
+                var properties = new List<PropertyTemplateData>(32);
                 var required = resolvedSchema.Required?.ToHashSet() ?? new HashSet<string>();
                 
                 foreach (var propertyEntry in resolvedSchema.Properties)
@@ -222,7 +222,7 @@ public class ModelExtractor : IModelExtractor
         }
 
         // Собираем зависимости из всех свойств
-        var allDependencies = new HashSet<string>();
+        var allDependencies = new HashSet<string>(32);
         foreach (var property in modelTemplateData.Properties)
         {
             var propertyDependencies = dependencyCollector.CollectFromTypeInfo(property.TypeInfo);

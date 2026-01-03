@@ -118,8 +118,8 @@ public abstract class BaseCodeGenerator : ICodeGenerator
     /// </summary>
     protected virtual void InitializeCaches()
     {
-        OperationCache = new Dictionary<string, OpenApiOperation>();
-        SchemaTypeInfoCache = new Dictionary<string, TypeInfo>();
+        OperationCache = new Dictionary<string, OpenApiOperation>(16 * 1024);
+        SchemaTypeInfoCache = new Dictionary<string, TypeInfo>(16 * 1024);
     }
 
     /// <summary>
@@ -159,7 +159,7 @@ public abstract class BaseCodeGenerator : ICodeGenerator
         IReadOnlyList<OperationTemplateData> operations, 
         GenerationConfiguration config)
     {
-        var groups = new Dictionary<string, List<OperationTemplateData>>();
+        var groups = new Dictionary<string, List<OperationTemplateData>>(1024);
 
         switch (config.FileOrganization.GroupingStrategy)
         {
@@ -170,7 +170,7 @@ public abstract class BaseCodeGenerator : ICodeGenerator
                     var sanitizedTag = NamingConverter.SanitizeIdentifier(tag);
                     if (!groups.ContainsKey(sanitizedTag))
                     {
-                        groups[sanitizedTag] = new List<OperationTemplateData>();
+                        groups[sanitizedTag] = new List<OperationTemplateData>(128);
                     }
                     groups[sanitizedTag].Add(operation);
                 }
@@ -183,7 +183,7 @@ public abstract class BaseCodeGenerator : ICodeGenerator
                     var routeGroup = ExtractRouteGroup(operation.Path);
                     if (!groups.ContainsKey(routeGroup))
                     {
-                        groups[routeGroup] = new List<OperationTemplateData>();
+                        groups[routeGroup] = new List<OperationTemplateData>(128);
                     }
                     groups[routeGroup].Add(operation);
                 }
@@ -362,7 +362,7 @@ public abstract class BaseCodeGenerator : ICodeGenerator
     /// </summary>
     protected virtual void ValidateModelTemplateData(IReadOnlyList<ModelTemplateData> models, GenerationResult result)
     {
-        var modelNames = new HashSet<string>();
+        var modelNames = new HashSet<string>(16 * 1024);
         var warnings = result.Warnings.ToList();
         var errors = result.Errors.ToList();
 
@@ -401,9 +401,9 @@ public abstract class BaseCodeGenerator : ICodeGenerator
     /// </summary>
     protected virtual void ValidateOperationTemplateData(IReadOnlyList<OperationTemplateData> operations, GenerationResult result)
     {
-        var operationIds = new Dictionary<string, List<string>>();
+        var operationIds = new Dictionary<string, List<string>>(16 * 1024);
         var warnings = result.Warnings.ToList();
-        var errors = new List<string>();
+        var errors = new List<string>(8192);
 
         foreach (var operation in operations)
         {
