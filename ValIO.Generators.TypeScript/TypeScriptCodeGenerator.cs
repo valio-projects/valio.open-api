@@ -108,11 +108,11 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 try
                 {
                     var unifiedFiles = await GenerateModelsAndEnumsUnifiedAsync(
-                        modelTemplateDataList.Cast<IModelTemplateData>().ToList(),
-                        enumTemplateDataList,
-                        document,
-                        schemaResolver,
-                        config,
+                        modelTemplateDataList.Cast<IModelTemplateData>().ToList(), 
+                        enumTemplateDataList.Cast<IEnumTemplateData>().ToList(), 
+                        document, 
+                        schemaResolver, 
+                        config, 
                         typescriptOptions);
 
                     foreach (var file in unifiedFiles)
@@ -276,7 +276,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// </summary>
     private async Task<Dictionary<string, string>> GenerateModelsAndEnumsUnifiedAsync(
         IReadOnlyList<IModelTemplateData> modelTemplateDataList,
-        IReadOnlyList<Core.Models.TemplateData.EnumTemplateData> enumTemplateDataList,
+        IReadOnlyList<IEnumTemplateData> enumTemplateDataList,
         OpenApiDocument document,
         ISchemaResolver schemaResolver,
         GenerationConfiguration config,
@@ -484,17 +484,14 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     Values = enumTemplateData.Values
                 };
 
-                // Приводим к базовому типу для renderer
-                var enumTemplateDataForRenderer = (Core.Models.TemplateData.EnumTemplateData)(object)typedEnumData;
-
                 // Генерируем TypeScript enum/union type
-                IEnumFormatRenderer enumRenderer = enumTemplateData.Format switch
+                IEnumFormatRenderer enumRenderer = typedEnumData.Format switch
                 {
                     ValIO.Core.Models.TemplateData.EnumFormat.Union => typeScriptUnionTypeRenderer,
                     _ => typeScriptEnumRenderer
                 };
 
-                var enumCode = enumRenderer.Render(enumTemplateData);
+                var enumCode = enumRenderer.Render(typedEnumData);
                 var enumFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.enum.ts";
                 var enumFilePath = ResolveFilePath(enumFileName, config, FileCategory.Models);
 
@@ -509,11 +506,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         var originalFormat = typedEnumData.Format;
                         typedEnumData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
 
-                        // Приводим к базовому типу для renderer
-                        var schemaEnumDataForRenderer = (Core.Models.TemplateData.EnumTemplateData)(object)typedEnumData;
-
                         // Рендерим Zod enum схему через интерфейс
-                        var schemaCode = _zodEnumRenderer.Render(schemaEnumDataForRenderer);
+                        var schemaCode = _zodEnumRenderer.Render(typedEnumData);
                         var schemaFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
 

@@ -14,7 +14,7 @@ public class CSharpEnumRenderer : IEnumFormatRenderer
     public EnumFormat Format => EnumFormat.Enum;
     public GenerationLanguage Language => GenerationLanguage.CSharp;
 
-    public string Render(EnumTemplateData data)
+    public string Render(IEnumTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));

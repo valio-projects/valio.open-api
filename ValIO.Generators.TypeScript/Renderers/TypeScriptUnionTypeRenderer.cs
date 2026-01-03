@@ -14,7 +14,7 @@ public class TypeScriptUnionTypeRenderer : IEnumFormatRenderer
     public EnumFormat Format => EnumFormat.Union;
     public GenerationLanguage Language => GenerationLanguage.TypeScript;
 
-    public string Render(EnumTemplateData data)
+    public string Render(IEnumTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));

@@ -34,7 +34,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         if (data == null)
             throw new ArgumentNullException(nameof(data));
 
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(4096);
         
         var schemaName = $"{data.Name}Schema";
         var typeName = data.Name;

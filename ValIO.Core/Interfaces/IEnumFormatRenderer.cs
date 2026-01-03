@@ -21,5 +21,5 @@ public interface IEnumFormatRenderer
     /// <summary>
     /// Рендерит enum в указанном формате
     /// </summary>
-    string Render(EnumTemplateData data);
+    string Render(IEnumTemplateData data);
 }

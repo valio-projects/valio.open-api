@@ -21,7 +21,7 @@ public class ZodEnumSchemaRenderer : IEnumFormatRenderer
     public EnumFormat Format => EnumFormat.ValidationSchema;
     public GenerationLanguage Language => GenerationLanguage.TypeScript;
 
-    public string Render(EnumTemplateData data)
+    public string Render(IEnumTemplateData data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));

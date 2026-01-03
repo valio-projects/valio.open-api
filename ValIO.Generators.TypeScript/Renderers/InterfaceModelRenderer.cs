@@ -19,7 +19,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
         if (data == null)
             throw new ArgumentNullException(nameof(data));
 
-        var sb = new StringBuilder();
+        var sb = new StringBuilder(4096);
         
         // Генерируем импорты
         if (data.Dependencies.Count > 0 && !string.IsNullOrEmpty(data.ImportPath))
@@ -87,7 +87,7 @@ public class InterfaceModelRenderer : IModelFormatRenderer
         if (string.IsNullOrEmpty(modelName))
             return "model";
         
-        var result = new StringBuilder();
+        var result = new StringBuilder(128);
         for (int i = 0; i < modelName.Length; i++)
         {
             var c = modelName[i];

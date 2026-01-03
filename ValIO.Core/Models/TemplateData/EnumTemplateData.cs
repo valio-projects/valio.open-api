@@ -1,3 +1,4 @@
+using ValIO.Core.Interfaces;
 using ValIO.Core.Models.TemplateData.Options;
 
 namespace ValIO.Core.Models.TemplateData;
@@ -6,7 +7,7 @@ namespace ValIO.Core.Models.TemplateData;
 /// Универсальные данные для шаблона enum (enum, union type, schema)
 /// </summary>
 /// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
-public class EnumTemplateData<TOptions> where TOptions : EnumTemplateDataOptions, new()
+public class EnumTemplateData<TOptions> : IEnumTemplateData where TOptions : EnumTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя enum
