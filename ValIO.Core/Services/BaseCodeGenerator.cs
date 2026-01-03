@@ -223,4 +223,222 @@ public abstract class BaseCodeGenerator : ICodeGenerator
         // Преобразуем в PascalCase
         return NamingConverter.ToPascalCase(lastPart);
     }
+
+    /// <summary>
+    /// Категория файла для определения пути
+    /// </summary>
+    protected enum FileCategory
+    {
+        Models,
+        Clients
+    }
+
+    /// <summary>
+    /// Разрешает путь к файлу на основе категории и конфигурации
+    /// </summary>
+    protected virtual string ResolveFilePath(string fileName, GenerationConfiguration config, FileCategory fileCategory = FileCategory.Models)
+    {
+        var shouldSeparate = fileCategory switch
+        {
+            FileCategory.Models => config.FileOrganization.SeparateModels,
+            FileCategory.Clients => config.FileOrganization.SeparateClients,
+            _ => false
+        };
+
+        if (shouldSeparate)
+        {
+            var categoryPath = fileCategory switch
+            {
+                FileCategory.Models => config.FileOrganization.ModelsPath ?? "Models",
+                FileCategory.Clients => config.FileOrganization.ClientsPath ?? "Api",
+                _ => string.Empty
+            };
+            
+            return Path.Combine(config.OutputPath, categoryPath, fileName);
+        }
+        
+        return Path.Combine(config.OutputPath, fileName);
+    }
+
+    /// <summary>
+    /// Обрабатывает ошибку генерации и добавляет её в список ошибок
+    /// </summary>
+    protected virtual void HandleGenerationError(Exception ex, string operationName, List<string> generationErrors, int? itemCount = null)
+    {
+        var errorMsg = $"Failed to generate {operationName}: {ex.Message}";
+        if (ex.InnerException != null)
+        {
+            errorMsg += $" (Inner: {ex.InnerException.Message})";
+        }
+        generationErrors.Add(errorMsg);
+        
+        if (itemCount.HasValue)
+        {
+            Logger.LogError(ex, "Failed to generate {OperationName}. Count: {Count}", operationName, itemCount.Value);
+        }
+        else
+        {
+            Logger.LogError(ex, "Failed to generate {OperationName}", operationName);
+        }
+    }
+
+    /// <summary>
+    /// Структура для извлеченных данных
+    /// </summary>
+    protected class ExtractedData
+    {
+        public IReadOnlyList<ModelTemplateData> Models { get; set; } = Array.Empty<ModelTemplateData>();
+        public IReadOnlyList<OperationTemplateData> Operations { get; set; } = Array.Empty<OperationTemplateData>();
+        public IReadOnlyList<EnumTemplateData> Enums { get; set; } = Array.Empty<EnumTemplateData>();
+        public ISchemaResolver SchemaResolver { get; set; } = null!;
+    }
+
+    /// <summary>
+    /// Извлекает данные из OpenAPI документа (модели, операции, enum'ы)
+    /// </summary>
+    protected virtual ExtractedData ExtractData(OpenApiDocument document)
+    {
+        // Создаем SchemaResolver для документа
+        var schemaResolver = new SchemaResolver(document);
+
+        // Создаем extractors с SchemaResolver
+        var modelExtractor = new ModelExtractor(schemaResolver, NamingConverter);
+        var operationExtractor = new OperationExtractor(schemaResolver);
+        var enumExtractor = new EnumExtractor(schemaResolver, NamingConverter);
+
+        // Извлекаем данные
+        var models = modelExtractor.ExtractModelTemplateData(document, Language, TypeMapper);
+        var operations = operationExtractor.ExtractOperationTemplateData(document, Language, TypeMapper, NamingConverter);
+        var enums = enumExtractor.ExtractEnumTemplateData(document, Language);
+
+        Logger.LogInformation("Extracted {ModelCount} models, {OperationCount} operations, {EnumCount} enums", 
+            models.Count, operations.Count, enums.Count);
+
+        return new ExtractedData
+        {
+            Models = models,
+            Operations = operations,
+            Enums = enums,
+            SchemaResolver = schemaResolver
+        };
+    }
+
+    /// <summary>
+    /// Валидирует извлеченные данные и добавляет предупреждения/ошибки в результат
+    /// </summary>
+    protected virtual void ValidateExtractedData(ExtractedData data, GenerationConfiguration config, GenerationResult result)
+    {
+        // Валидируем модели
+        ValidateModelTemplateData(data.Models, result);
+        
+        if (config.GenerateModels && data.Models.Count == 0)
+        {
+            var warnings = result.Warnings.ToList();
+            warnings.Add("No models found in OpenAPI schema");
+            result.Warnings = warnings;
+        }
+
+        // Валидируем операции
+        ValidateOperationTemplateData(data.Operations, result);
+        
+        if (config.GenerateClients && data.Operations.Count == 0)
+        {
+            var warnings = result.Warnings.ToList();
+            warnings.Add("No operations found in OpenAPI schema");
+            result.Warnings = warnings;
+        }
+
+        // Валидируем enum'ы
+        if (config.GenerateEnums && data.Enums.Count == 0)
+        {
+            var warnings = result.Warnings.ToList();
+            warnings.Add("No enums found in OpenAPI schema");
+            result.Warnings = warnings;
+        }
+    }
+
+    /// <summary>
+    /// Валидирует модели TemplateData на пустые имена и дубликаты
+    /// </summary>
+    protected virtual void ValidateModelTemplateData(IReadOnlyList<ModelTemplateData> models, GenerationResult result)
+    {
+        var modelNames = new HashSet<string>();
+        var warnings = result.Warnings.ToList();
+        var errors = result.Errors.ToList();
+
+        foreach (var model in models)
+        {
+            if (string.IsNullOrWhiteSpace(model.Name))
+            {
+                errors.Add("Model has empty name");
+                continue;
+            }
+
+            var modelName = model.Name;
+            if (modelNames.Contains(modelName))
+            {
+                var warning = $"Duplicate model name '{modelName}' found";
+                warnings.Add(warning);
+                Logger.LogWarning(warning);
+            }
+            else
+            {
+                modelNames.Add(modelName);
+            }
+        }
+
+        result.Warnings = warnings;
+        if (errors.Count > 0)
+        {
+            var existingErrors = result.Errors.ToList();
+            existingErrors.AddRange(errors);
+            result.Errors = existingErrors;
+        }
+    }
+
+    /// <summary>
+    /// Валидирует операции TemplateData на дублирующиеся operationId
+    /// </summary>
+    protected virtual void ValidateOperationTemplateData(IReadOnlyList<OperationTemplateData> operations, GenerationResult result)
+    {
+        var operationIds = new Dictionary<string, List<string>>();
+        var warnings = result.Warnings.ToList();
+        var errors = new List<string>();
+
+        foreach (var operation in operations)
+        {
+            var operationId = operation.MethodName;
+            if (string.IsNullOrWhiteSpace(operationId))
+            {
+                errors.Add("Operation has empty method name");
+                continue;
+            }
+
+            var location = $"{operation.HttpMethod} {operation.Path}";
+            if (!operationIds.ContainsKey(operationId))
+            {
+                operationIds[operationId] = new List<string>();
+            }
+            operationIds[operationId].Add(location);
+        }
+
+        // Проверяем дубликаты
+        foreach (var kvp in operationIds)
+        {
+            if (kvp.Value.Count > 1)
+            {
+                var warning = $"Duplicate operationId '{kvp.Key}' found at: {string.Join(", ", kvp.Value)}";
+                warnings.Add(warning);
+                Logger.LogWarning(warning);
+            }
+        }
+
+        result.Warnings = warnings;
+        if (errors.Count > 0)
+        {
+            var existingErrors = result.Errors.ToList();
+            existingErrors.AddRange(errors);
+            result.Errors = existingErrors;
+        }
+    }
 }

@@ -84,52 +84,16 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             // Предзаполняем кэш операций для быстрого поиска
             BuildOperationCache(document);
 
-            // Создаем SchemaResolver для документа
-            var schemaResolver = new SchemaResolver(document);
-
-            // Создаем extractors с SchemaResolver
-            var modelExtractor = new ModelExtractor(schemaResolver, NamingConverter);
-            var operationExtractor = new OperationExtractor(schemaResolver);
-            var enumExtractor = new EnumExtractor(schemaResolver, NamingConverter);
-
-            // Извлекаем модели в виде TemplateData
-            var modelTemplateDataList = modelExtractor.ExtractModelTemplateData(document, GenerationLanguage.TypeScript, _typescriptTypeMapper);
-            Logger.LogInformation("Extracted {Count} models", modelTemplateDataList.Count);
+            // Извлекаем данные из OpenAPI документа
+            var extractedData = ExtractData(document);
             
-            if (config.GenerateModels && modelTemplateDataList.Count == 0)
-            {
-                result.Warnings = new List<string> { "No models found in OpenAPI schema" };
-            }
+            // Валидируем извлеченные данные
+            ValidateExtractedData(extractedData, config, result);
             
-            // Валидируем модели на пустые имена
-            ValidateModelTemplateData(modelTemplateDataList, result);
-
-            // Извлекаем операции в виде TemplateData
-            var operationTemplateDataList = operationExtractor.ExtractOperationTemplateData(document, GenerationLanguage.TypeScript, _typescriptTypeMapper, NamingConverter);
-            Logger.LogInformation("Extracted {Count} operations", operationTemplateDataList.Count);
-            
-            if (config.GenerateClients && operationTemplateDataList.Count == 0)
-            {
-                var warnings = result.Warnings.ToList();
-                warnings.Add("No operations found in OpenAPI schema");
-                result.Warnings = warnings;
-            }
-            
-            // Валидируем операции на дублирующиеся operationId
-            ValidateOperationTemplateData(operationTemplateDataList, result);
-
-            // Извлекаем enum в виде TemplateData
-            var enumTemplateDataList = enumExtractor.ExtractEnumTemplateData(document, GenerationLanguage.TypeScript);
-            Logger.LogInformation("Extracted {Count} enums", enumTemplateDataList.Count);
-            
-            if (config.GenerateEnums && enumTemplateDataList.Count == 0)
-            {
-                var warnings = result.Warnings.ToList();
-                warnings.Add("No enums found in OpenAPI schema");
-                result.Warnings = warnings;
-            }
-
-            // Маппинг типов теперь выполняется в extractors при создании TemplateData
+            var modelTemplateDataList = extractedData.Models;
+            var operationTemplateDataList = extractedData.Operations;
+            var enumTemplateDataList = extractedData.Enums;
+            var schemaResolver = extractedData.SchemaResolver;
 
             // Получаем TypeScript опции
             var typescriptOptions = GetTypeScriptOptions(config);
@@ -337,12 +301,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             StringComparer.OrdinalIgnoreCase);
         
         // Создаем renderers один раз
-        // TODO: Рефакторинг - ZodTypeMapper и ZodSchemaRenderer требуют ссылку на ValIO.Generators.TypeScript.Zod,
-        // что создает циклическую зависимость. Нужно вынести интерфейсы в Core или использовать DI.
-        // Временно отключаем генерацию Zod схем до рефакторинга архитектуры.
-        // var zodTypeMapper = new ZodTypeMapper(NamingConverter);
-        // var zodSchemaRenderer = new ZodSchemaRenderer(NamingConverter, zodTypeMapper);
-        // var zodEnumSchemaRenderer = new Renderers.ZodEnumSchemaRenderer(NamingConverter);
+        // Zod renderers теперь передаются через DI в конструктор (решает циклические зависимости)
         var interfaceModelRenderer = new Renderers.InterfaceModelRenderer();
         var typeScriptEnumRenderer = new Renderers.TypeScriptEnumRenderer();
         var typeScriptUnionTypeRenderer = new Renderers.TypeScriptUnionTypeRenderer();
@@ -773,74 +732,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     // Методы CollectUsedTypes, CollectTypesFromTypeInfo, CreateTypeScriptOperationTemplateData, DetermineReturnTypeInfo, FindSchemaInContent удалены
     // - они больше не используются, так как операции теперь извлекаются через extractors в виде OperationTemplateData
 
-    private void ValidateOperationTemplateData(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationResult result)
-    {
-        var operationIds = new Dictionary<string, List<string>>();
-        var warnings = result.Warnings.ToList();
-        
-        foreach (var operation in operations)
-        {
-            var operationId = operation.MethodName;
-            
-            if (string.IsNullOrWhiteSpace(operationId))
-            {
-                var warning = $"Operation at path '{operation.Path}' with method '{operation.HttpMethod}' has empty method name";
-                warnings.Add(warning);
-                Logger.LogWarning(warning);
-                continue;
-            }
-            
-            var key = $"{operationId}";
-            if (!operationIds.ContainsKey(key))
-            {
-                operationIds[key] = new List<string>();
-            }
-            operationIds[key].Add($"{operation.HttpMethod} {operation.Path}");
-        }
-        
-        foreach (var kvp in operationIds)
-        {
-            if (kvp.Value.Count > 1)
-            {
-                var warning = $"Duplicate operationId '{kvp.Key}' found at: {string.Join(", ", kvp.Value)}";
-                warnings.Add(warning);
-                Logger.LogWarning(warning);
-            }
-        }
-        
-        result.Warnings = warnings;
-    }
-
-    private void ValidateModelTemplateData(IReadOnlyList<Core.Models.TemplateData.ModelTemplateData> models, GenerationResult result)
-    {
-        var modelNames = new HashSet<string>();
-        var warnings = result.Warnings.ToList();
-        
-        foreach (var model in models)
-        {
-            if (string.IsNullOrWhiteSpace(model.Name))
-            {
-                var warning = "Found model with empty name, skipping";
-                warnings.Add(warning);
-                Logger.LogWarning(warning);
-                continue;
-            }
-            
-            var modelName = model.Name;
-            if (modelNames.Contains(modelName))
-            {
-                var warning = $"Duplicate model name '{modelName}' found";
-                warnings.Add(warning);
-                Logger.LogWarning(warning);
-            }
-            else
-            {
-                modelNames.Add(modelName);
-            }
-        }
-        
-        result.Warnings = warnings;
-    }
+    // Методы ValidateModelTemplateData и ValidateOperationTemplateData теперь в BaseCodeGenerator
 
     /// <summary>
     /// Генерирует TanStack Query хуки для операций

@@ -70,54 +70,15 @@ public class CSharpCodeGenerator : BaseCodeGenerator
             // Предзаполняем кэш операций для быстрого поиска
             BuildOperationCache(document);
 
-            // Создаем SchemaResolver для документа
-            var schemaResolver = new SchemaResolver(document);
-
-            // Создаем extractors с SchemaResolver
-            var modelExtractor = new ModelExtractor(schemaResolver, NamingConverter);
-            var operationExtractor = new OperationExtractor(schemaResolver);
-            var enumExtractor = new EnumExtractor(schemaResolver, NamingConverter);
-
-            // Извлекаем модели в виде TemplateData
-            var modelTemplateDataList = modelExtractor.ExtractModelTemplateData(document, GenerationLanguage.CSharp, _csharpTypeMapper);
-            Logger.LogInformation("Extracted {Count} models", modelTemplateDataList.Count);
+            // Извлекаем данные из OpenAPI документа
+            var extractedData = ExtractData(document);
             
-            if (config.GenerateModels && modelTemplateDataList.Count == 0)
-            {
-                result.Warnings = new List<string> { "No models found in OpenAPI schema" };
-            }
+            // Валидируем извлеченные данные
+            ValidateExtractedData(extractedData, config, result);
             
-            // Валидируем модели на пустые имена
-            ValidateModelTemplateData(modelTemplateDataList, result);
-
-            // Извлекаем операции в виде TemplateData
-            var operationTemplateDataList = operationExtractor.ExtractOperationTemplateData(document, GenerationLanguage.CSharp, _csharpTypeMapper, NamingConverter);
-            Logger.LogInformation("Extracted {Count} operations", operationTemplateDataList.Count);
-            
-            if (config.GenerateClients && operationTemplateDataList.Count == 0)
-            {
-                var warnings = result.Warnings.ToList();
-                warnings.Add("No operations found in OpenAPI schema");
-                result.Warnings = warnings;
-            }
-            
-            // Валидируем операции на дублирующиеся operationId
-            ValidateOperationTemplateData(operationTemplateDataList, result);
-
-            // Маппинг типов теперь выполняется в extractors при создании TemplateData
-
-            // Извлекаем enum в виде TemplateData
-            var enumTemplateDataList = enumExtractor.ExtractEnumTemplateData(document, GenerationLanguage.CSharp);
-            Logger.LogInformation("Extracted {Count} enums", enumTemplateDataList.Count);
-            
-            if (config.GenerateEnums && enumTemplateDataList.Count == 0)
-            {
-                var warnings = result.Warnings.ToList();
-                warnings.Add("No enums found in OpenAPI schema");
-                result.Warnings = warnings;
-            }
-
-            // Ошибки маппинга обрабатываются в extractors
+            var modelTemplateDataList = extractedData.Models;
+            var operationTemplateDataList = extractedData.Operations;
+            var enumTemplateDataList = extractedData.Enums;
 
             // Генерируем файлы
             var generatedFiles = new Dictionary<string, string>();
@@ -898,62 +859,6 @@ public class ValioHttpRequestException : HttpRequestException
 
 
     // Метод EnsureTemplatesPreloadedAsync удален - шаблоны больше не используются
-    
-    /// <summary>
-    /// Валидирует модели TemplateData на пустые имена
-    /// </summary>
-    private void ValidateModelTemplateData(IReadOnlyList<Core.Models.TemplateData.ModelTemplateData> models, GenerationResult result)
-    {
-        var errors = new List<string>();
-        foreach (var model in models)
-        {
-            if (string.IsNullOrWhiteSpace(model.Name))
-            {
-                errors.Add("Model has empty name");
-            }
-        }
-        
-        if (errors.Count > 0)
-        {
-            var existingErrors = result.Errors.ToList();
-            existingErrors.AddRange(errors);
-            result.Errors = existingErrors;
-        }
-    }
-    
-    /// <summary>
-    /// Валидирует операции TemplateData на дублирующиеся operationId
-    /// </summary>
-    private void ValidateOperationTemplateData(IReadOnlyList<Core.Models.TemplateData.OperationTemplateData> operations, GenerationResult result)
-    {
-        var operationIds = new HashSet<string>();
-        var duplicates = new List<string>();
-        
-        foreach (var operation in operations)
-        {
-            var operationId = operation.MethodName;
-            if (string.IsNullOrWhiteSpace(operationId))
-            {
-                duplicates.Add("Operation has empty method name");
-                continue;
-            }
-            
-            if (operationIds.Contains(operationId))
-            {
-                duplicates.Add($"Duplicate operationId: {operationId}");
-            }
-            else
-            {
-                operationIds.Add(operationId);
-            }
-        }
-        
-        if (duplicates.Count > 0)
-        {
-            var existingWarnings = result.Warnings.ToList();
-            existingWarnings.AddRange(duplicates);
-            result.Warnings = existingWarnings;
-        }
-    }
+    // Методы ValidateModelTemplateData и ValidateOperationTemplateData теперь в BaseCodeGenerator
 }
 
