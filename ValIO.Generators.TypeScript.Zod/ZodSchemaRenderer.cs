@@ -2,6 +2,8 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
+using ValIO.Generators.TypeScript.Zod.Models;
 
 namespace ValIO.Generators.TypeScript.Zod;
 
@@ -40,9 +42,21 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         // Генерируем импорты
         sb.AppendLine("import { z } from 'zod';");
         
+        // Получаем типизированные Options через приведение через object
+        ZodModelTemplateDataOptions? zodOptions;
+        try
+        {
+            var typedData = (ModelTemplateData<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions>)(object)data;
+            zodOptions = typedData.Options;
+        }
+        catch
+        {
+            zodOptions = new ZodModelTemplateDataOptions();
+        }
+        
         // Генерируем импорты зависимостей схем
-        var schemaDependencies = GetOption<List<string>>(data.Options, "SchemaDependencies", new List<string>());
-        var enumDependencies = GetOption<List<string>>(data.Options, "EnumDependencies", new List<string>());
+        var schemaDependencies = zodOptions.SchemaDependencies ?? Array.Empty<string>();
+        var enumDependencies = zodOptions.EnumDependencies ?? Array.Empty<string>();
         
         if (schemaDependencies.Count > 0 || enumDependencies.Count > 0)
         {
@@ -61,8 +75,8 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         }
         
         // Проверяем наличие циклических ссылок
-        var hasCircularReference = GetOption<bool>(data.Options, "HasCircularReference", false);
-        var typeDependencies = GetOption<List<string>>(data.Options, "TypeDependencies", new List<string>());
+        var hasCircularReference = zodOptions.HasCircularReference;
+        var typeDependencies = zodOptions.TypeDependencies ?? Array.Empty<string>();
         
         if (hasCircularReference)
         {
@@ -79,39 +93,36 @@ public class ZodSchemaRenderer : IModelFormatRenderer
             }
             
             sb.AppendLine("// TypeScript интерфейс для строгой типизации рекурсивной схемы");
-            sb.AppendLine($"type {typeName} = {{");
-            foreach (var property in data.Properties)
+            CodeFormatter.AppendLine(sb, 0, $"type {typeName} = {{");
+            foreach (var propertyBase in data.Properties)
             {
-                GeneratePropertyType(sb, property, indent: "  ");
+                var property = propertyBase as PropertyTemplateData ?? (PropertyTemplateData)(object)propertyBase;
+                GeneratePropertyType(sb, property, indentLevel: 1);
             }
-            sb.AppendLine("};");
-            sb.AppendLine();
+            CodeFormatter.AppendLine(sb, 0, "};");
+            CodeFormatter.AppendEmptyLine(sb);
         }
         
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         // Генерируем Zod схему
         if (hasCircularReference)
         {
-            sb.AppendLine($"export const {schemaName}: z.ZodType<{typeName}> = z.object({{");
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: z.ZodType<{typeName}> = z.object({{");
         }
         else
         {
-            sb.AppendLine($"export const {schemaName} = z.object({{");
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.object({{");
         }
         
-        foreach (var property in data.Properties)
+        foreach (var propertyBase in data.Properties)
         {
-            GeneratePropertySchema(sb, property, indent: "  ");
+            var property = propertyBase as PropertyTemplateData ?? (PropertyTemplateData)(object)propertyBase;
+            GeneratePropertySchema(sb, property, indentLevel: 1);
         }
         
-        sb.AppendLine("});");
+        CodeFormatter.AppendLine(sb, 0, "});");
         
         return sb.ToString();
     }
@@ -138,56 +149,51 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         // Генерируем массив значений enum
         if (isStringEnum)
         {
-            sb.AppendLine($"export const {constArrayName} = [");
+            CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
             for (int i = 0; i < data.Values.Count; i++)
             {
                 var value = data.Values[i];
                 var comma = i < data.Values.Count - 1 ? "," : "";
                 var valueString = FormatEnumValue(value.ValueString, underlyingType);
-                sb.AppendLine($"  {valueString}{comma}");
+                CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
             }
-            sb.AppendLine("] as const satisfies readonly string[];");
-            sb.AppendLine();
+            CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly string[];");
+            CodeFormatter.AppendEmptyLine(sb);
         }
         else
         {
-            sb.AppendLine($"export const {constArrayName} = [");
+            CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
             for (int i = 0; i < data.Values.Count; i++)
             {
                 var value = data.Values[i];
                 var comma = i < data.Values.Count - 1 ? "," : "";
                 var valueString = FormatEnumValue(value.ValueString, underlyingType);
-                sb.AppendLine($"  {valueString}{comma}");
+                CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
             }
-            sb.AppendLine("] as const satisfies readonly number[];");
-            sb.AppendLine();
+            CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly number[];");
+            CodeFormatter.AppendEmptyLine(sb);
         }
         
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         // Генерируем Zod схему enum
         if (isStringEnum)
         {
-            sb.AppendLine($"export const {schemaName} = z.enum({constArrayName});");
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.enum({constArrayName});");
         }
         else
         {
             // Числовые enum'ы в Zod требуют использования z.union с z.literal
-            sb.AppendLine($"export const {schemaName} = z.union([");
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.union([");
             for (int i = 0; i < data.Values.Count; i++)
             {
                 var value = data.Values[i];
                 var comma = i < data.Values.Count - 1 ? "," : "";
                 var valueString = FormatEnumValue(value.ValueString, underlyingType);
-                sb.AppendLine($"  z.literal({valueString}){comma}");
+                CodeFormatter.AppendLine(sb, 1, $"z.literal({valueString}){comma}");
             }
-            sb.AppendLine("]);");
+            CodeFormatter.AppendLine(sb, 0, "]);");
         }
         
         return sb.ToString();
@@ -195,53 +201,39 @@ public class ZodSchemaRenderer : IModelFormatRenderer
 
     #region Private Helper Methods
 
-    private void GeneratePropertyType(StringBuilder sb, PropertyTemplateData property, string indent)
+    private void GeneratePropertyType(StringBuilder sb, PropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(property.Description))
-        {
-            sb.AppendLine($"{indent}/**");
-            sb.AppendLine($"{indent} * {EscapeJSDocComment(property.Description)}");
-            sb.AppendLine($"{indent} */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
         
         // Генерируем тип свойства
         var optional = property.IsOptional ? "?" : "";
-        var typeString = GetTypeScriptTypeFromTypeInfo(property.TypeInfo);
-        sb.AppendLine($"{indent}{property.Name}{optional}: {typeString};");
+        var typeString = property.TypeInfo.FullTypeName;
+        CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
-    private void GeneratePropertySchema(StringBuilder sb, PropertyTemplateData property, string indent)
+    private void GeneratePropertySchema(StringBuilder sb, PropertyTemplateData property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(property.Description))
-        {
-            sb.AppendLine($"{indent}/**");
-            sb.AppendLine($"{indent} * {EscapeJSDocComment(property.Description)}");
-            sb.AppendLine($"{indent} */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
         
         // Генерируем Zod схему для свойства
-        // Получаем Zod схему из Options (должна быть подготовлена заранее)
-        var zodSchema = GetOption<string>(property.Options, "ZodSchema", "z.any()");
+        // Получаем Zod схему из Options через приведение через object
+        string zodSchema;
+        try
+        {
+            var typedProperty = (PropertyTemplateData<ZodPropertyTemplateDataOptions>)(object)property;
+            zodSchema = typedProperty.Options.ZodSchema ?? "z.any()";
+        }
+        catch
+        {
+            zodSchema = "z.any()";
+        }
         var optional = property.IsRequired ? "" : ".optional()";
         
-        sb.AppendLine($"{indent}{property.Name}: {zodSchema}{optional},");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}: {zodSchema}{optional},");
     }
 
-    private string GetTypeScriptTypeFromTypeInfo(TypeInfo typeInfo)
-    {
-        // Используем FullTypeName из TypeInfo
-        var typeScriptType = typeInfo.FullTypeName;
-        
-        // Убираем "?" из типа, если он там есть
-        if (typeScriptType.EndsWith("?"))
-        {
-            typeScriptType = typeScriptType.Substring(0, typeScriptType.Length - 1).Trim();
-        }
-        
-        return typeScriptType;
-    }
 
     private string FormatEnumValue(string valueString, string underlyingType)
     {
@@ -278,38 +270,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         return _namingConverter.ToCamelCase(typeName);
     }
 
-    private string EscapeJSDocComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("*/", "* /")
-            .Replace("/*", "/ *");
-    }
 
-    private T GetOption<T>(Dictionary<string, object> options, string key, T defaultValue)
-    {
-        if (options == null || !options.TryGetValue(key, out var value))
-            return defaultValue;
-        
-        if (value is T directValue)
-            return directValue;
-        
-        if (value is IConvertible convertible)
-        {
-            try
-            {
-                return (T)Convert.ChangeType(value, typeof(T));
-            }
-            catch
-            {
-                return defaultValue;
-            }
-        }
-        
-        return defaultValue;
-    }
 
 
     #endregion

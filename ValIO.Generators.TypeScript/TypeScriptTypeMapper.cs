@@ -346,6 +346,9 @@ public class TypeScriptTypeMapper : BaseTypeMapper
     /// </summary>
     protected override TypeInfo HandleAllOf(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable)
     {
+        if (schema.AllOf == null)
+            return CreateObjectTypeInfo(null, isNullable);
+        
         var types = new List<TypeInfo>();
         foreach (var subSchema in schema.AllOf)
         {

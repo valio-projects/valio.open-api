@@ -123,7 +123,7 @@ public class DependencyAnalyzer
             return;
 
         // Если это не примитивный тип и не void, добавляем базовый тип в зависимости
-        if (!typeInfo.IsPrimitive && !typeInfo.IsVoid && !string.IsNullOrEmpty(typeInfo.BaseType))
+        if (!typeInfo.IsPrimitive && typeInfo.BaseType != "void" && !string.IsNullOrEmpty(typeInfo.BaseType))
         {
             // Проверяем, не является ли это встроенным типом языка
             if (!IsBuiltInType(typeInfo.BaseType, typeInfo.Language))
@@ -202,7 +202,11 @@ public class DependencyAnalyzer
         // Собираем зависимости из всех операций
         foreach (var operation in client.Operations)
         {
-            var operationDependencies = CollectAllDependencies(operation);
+            // Operations в ClientTemplateData может быть типизированным, приводим к базовому типу
+            // Базовая версия OperationTemplateData наследуется от generic, поэтому можем привести через object
+            OperationTemplateData baseOperation = operation is OperationTemplateData nonGeneric ? 
+                nonGeneric : (OperationTemplateData)(object)operation;
+            var operationDependencies = CollectAllDependencies(baseOperation);
             foreach (var dependency in operationDependencies)
             {
                 dependencies.Add(dependency);

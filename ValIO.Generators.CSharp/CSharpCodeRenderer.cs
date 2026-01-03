@@ -3,6 +3,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Core.Utilities;
+using ValIO.Generators.CSharp.Models;
 
 namespace ValIO.Generators.CSharp;
 
@@ -23,14 +24,31 @@ public class CSharpCodeRenderer : ICodeRenderer
 
         var sb = new StringBuilder();
         
+        // Получаем типизированные Options через проверку типа через object
+        CSharpModelTemplateDataOptions typedOptions;
+        try
+        {
+            var typedData = (ModelTemplateData<CSharpModelTemplateDataOptions, CSharpPropertyTemplateDataOptions>)(object)data;
+            typedOptions = typedData.Options;
+        }
+        catch
+        {
+            // Если это базовый тип, создаем Options по умолчанию
+            typedOptions = new CSharpModelTemplateDataOptions();
+        }
+        
         // Определяем тип модели из Format и Options
-        var (typeKeyword, isRecord) = GetModelTypeInfo(data.Format, data.Options);
-        var isSealed = GetOption<bool>(data.Options, "IsSealed", false);
-        var generateEqualityMembers = GetOption<bool>(data.Options, "GenerateEqualityMembers", true);
-        var generateValidationConstants = GetOption<bool>(data.Options, "GenerateValidationConstants", false);
-        var generateValidationAttributes = GetOption<bool>(data.Options, "GenerateValidationAttributes", false);
-        var needsDataAnnotations = GetOption<bool>(data.Options, "NeedsDataAnnotations", false);
-        var needsRegularExpressions = GetOption<bool>(data.Options, "NeedsRegularExpressions", false);
+        var (typeKeyword, isRecord) = GetModelTypeInfo(data.Format, typedOptions);
+        var isSealed = typedOptions.IsSealed;
+        var generateEqualityMembers = typedOptions.GenerateEqualityMembers;
+        var generateValidationConstants = typedOptions.GenerateValidationConstants;
+        var generateValidationAttributes = typedOptions.GenerateValidationAttributes;
+        
+        // Определяем нужны ли DataAnnotations (если есть валидационные атрибуты)
+        var needsDataAnnotations = generateValidationAttributes;
+        
+        // Определяем нужны ли регулярные выражения (проверяем свойства на наличие Pattern)
+        var needsRegularExpressions = data.Properties.Any(p => !string.IsNullOrEmpty(p.Pattern));
         
         // Определяем модификатор sealed
         var sealedModifier = isSealed && data.Format == ModelFormat.Class ? "sealed " : string.Empty;
@@ -67,13 +85,16 @@ public class CSharpCodeRenderer : ICodeRenderer
             // Генерируем константы валидации для record
             if (generateValidationConstants)
             {
-                GenerateValidationConstants(sb, data.Properties);
+                var baseProperties = data.Properties.Cast<PropertyTemplateData>().ToList();
+                GenerateValidationConstants(sb, baseProperties);
             }
             
             // Генерируем свойства для record
             foreach (var property in data.Properties)
             {
-                GenerateProperty(sb, property, generateValidationAttributes, generateValidationConstants, data.Name);
+                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
+                var propertyOptions = ExtractPropertyOptions(property);
+                GenerateProperty(sb, baseProperty, propertyOptions, generateValidationAttributes, generateValidationConstants, data.Name);
             }
             
             sb.AppendLine("}");
@@ -93,13 +114,16 @@ public class CSharpCodeRenderer : ICodeRenderer
             // Генерируем константы валидации для class
             if (generateValidationConstants)
             {
-                GenerateValidationConstants(sb, data.Properties);
+                var baseProperties = data.Properties.Cast<PropertyTemplateData>().ToList();
+                GenerateValidationConstants(sb, baseProperties);
             }
             
             // Генерируем свойства для class
             foreach (var property in data.Properties)
             {
-                GenerateProperty(sb, property, generateValidationAttributes, generateValidationConstants, data.Name);
+                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
+                var propertyOptions = ExtractPropertyOptions(property);
+                GenerateProperty(sb, baseProperty, propertyOptions, generateValidationAttributes, generateValidationConstants, data.Name);
             }
             
             // Генерируем методы сравнения для class (если нужно)
@@ -225,13 +249,13 @@ public class CSharpCodeRenderer : ICodeRenderer
         }
         
         // Генерируем XML комментарий для клиента
-        var clientName = GetOption<string>(data.Options, "ClientName", data.Name);
+        var clientName = data.Name;
         sb.AppendLine("/// <summary>");
         sb.AppendLine($"/// HTTP клиент для {clientName}");
         sb.AppendLine("/// </summary>");
         
         // Генерируем объявление класса клиента
-        var className = GetOption<string>(data.Options, "ClassName", data.Name);
+        var className = data.Name;
         sb.AppendLine($"public partial class {className}");
         sb.AppendLine("{");
         sb.AppendLine("    private readonly HttpClient _httpClient;");
@@ -266,8 +290,10 @@ public class CSharpCodeRenderer : ICodeRenderer
         sb.AppendLine();
         
         // Генерируем операции
-        foreach (var operation in data.Operations)
+        foreach (var operationBase in data.Operations)
         {
+            // Приводим типизированную операцию к базовому типу
+            var operation = operationBase as OperationTemplateData ?? (OperationTemplateData)(object)operationBase;
             CodeFormatter.AppendEmptyLine(sb);
             RenderOperation(sb, operation, indentLevel: 1);
         }
@@ -308,13 +334,31 @@ public class CSharpCodeRenderer : ICodeRenderer
 
     #region Private Helper Methods
 
+    /// <summary>
+    /// Извлекает CSharpPropertyTemplateDataOptions из property через приведение типов
+    /// </summary>
+    private static CSharpPropertyTemplateDataOptions? ExtractPropertyOptions(object property)
+    {
+        // Пытаемся привести к типизированному типу через object
+        try
+        {
+            var typedPropertyCast = (PropertyTemplateData<CSharpPropertyTemplateDataOptions>)(object)property;
+            return typedPropertyCast.Options;
+        }
+        catch
+        {
+            // Если не удалось привести, возвращаем null (будет создан по умолчанию)
+            return null;
+        }
+    }
+
     private void RenderOperation(StringBuilder sb, OperationTemplateData operation, int indentLevel)
     {
         // Генерируем XML комментарий для метода
         CommentGenerator.GenerateXmlComment(sb, indentLevel, operation.Summary);
         
         // Генерируем сигнатуру метода
-        var returnType = FormatType(operation.ReturnTypeInfo);
+        var returnType = operation.ReturnTypeInfo.FullTypeName;
         var parameters = BuildParameterString(operation);
         CodeFormatter.AppendLine(sb, indentLevel, $"public async {returnType} {operation.MethodName}({parameters}, CancellationToken cancellationToken = default)");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
@@ -354,8 +398,11 @@ public class CSharpCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, indentLevel, "}");
     }
 
-    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, bool generateValidationAttributes, bool generateValidationConstants, string className)
+    private void GenerateProperty(StringBuilder sb, PropertyTemplateData property, CSharpPropertyTemplateDataOptions? propertyOptions, bool generateValidationAttributes, bool generateValidationConstants, string className)
     {
+        // Используем переданные Options или создаем по умолчанию
+        propertyOptions ??= new CSharpPropertyTemplateDataOptions();
+        
         // Генерируем XML комментарий для свойства
         CommentGenerator.GenerateXmlComment(sb, 1, property.Description);
         
@@ -367,17 +414,17 @@ public class CSharpCodeRenderer : ICodeRenderer
         
         // Генерируем объявление свойства
         var requiredModifier = property.IsRequired ? "required " : string.Empty;
-        var typeString = FormatType(property.TypeInfo);
+        var typeString = property.TypeInfo.FullTypeName;
         var nullableModifier = property.IsNullable && !property.TypeInfo.IsNullable && !typeString.EndsWith("?") ? "?" : string.Empty;
-        var accessorType = GetOption<ValIO.Generators.CSharp.Models.PropertyAccessorType>(property.Options, "AccessorType", ValIO.Generators.CSharp.Models.PropertyAccessorType.Set);
-        var accessor = accessorType == ValIO.Generators.CSharp.Models.PropertyAccessorType.Init ? "init" : "set";
+        var accessorType = propertyOptions.AccessorType;
+        var accessor = accessorType == PropertyAccessorType.Init ? "init" : "set";
         
-        sb.AppendLine($"    public {requiredModifier}{typeString}{nullableModifier} {property.Name} {{ get; {accessor}; }}");
+        CodeFormatter.AppendLine(sb, 1, $"public {requiredModifier}{typeString}{nullableModifier} {property.Name} {{ get; {accessor}; }}");
     }
 
-    private void GenerateValidationConstants(StringBuilder sb, IReadOnlyList<PropertyTemplateData> properties)
+    private void GenerateValidationConstants(StringBuilder sb, IReadOnlyList<PropertyTemplateData> propertiesBase)
     {
-        foreach (var property in properties)
+        foreach (var property in propertiesBase)
         {
             var hasConstants = property.DefaultValue != null || property.Min.HasValue || property.Max.HasValue ||
                                property.ExclusiveMin.HasValue || property.ExclusiveMax.HasValue ||
@@ -427,7 +474,7 @@ public class CSharpCodeRenderer : ICodeRenderer
             if (property.DefaultValue != null)
             {
                 var defaultValueString = DefaultValueFormatter.FormatDefaultValue(property.DefaultValue, property.TypeInfo);
-                var typeString = FormatType(property.TypeInfo);
+                var typeString = property.TypeInfo.FullTypeName;
                 CodeFormatter.AppendLine(sb, 2, $"public const {typeString} DefaultValue = {defaultValueString};");
             }
             
@@ -821,7 +868,7 @@ public class CSharpCodeRenderer : ICodeRenderer
                         CodeFormatter.AppendLine(sb, indentLevel, "{");
                         if (responseInfo.ResponseTypeInfo != null)
                         {
-                            var errorResponseType = FormatType(responseInfo.ResponseTypeInfo);
+                            var errorResponseType = responseInfo.ResponseTypeInfo.FullTypeName;
                             CodeFormatter.AppendLine(sb, indentLevel + 1, "// Десериализуем ответ ошибки");
                             CodeFormatter.AppendLine(sb, indentLevel + 1, $"{errorResponseType}? errorResponse = null;");
                             CodeFormatter.AppendLine(sb, indentLevel + 1, "if (response.Content != null && response.Content.Headers.ContentLength > 0)");
@@ -853,8 +900,8 @@ public class CSharpCodeRenderer : ICodeRenderer
         
         if (operation.HasResponseType)
         {
-            var responseType = GetResponseType(operation.ReturnTypeInfo);
-            if (!string.IsNullOrEmpty(responseType) && !operation.ReturnTypeInfo.IsVoid && operation.ReturnTypeInfo.BaseType != "HttpResponseMessage")
+            var responseType = operation.ReturnTypeInfo.FullTypeName;
+            if (!string.IsNullOrEmpty(responseType) && operation.ReturnTypeInfo.BaseType != "void")
             {
                 CodeFormatter.AppendLine(sb, indentLevel, "// Обрабатываем успешный ответ (2xx)");
                 CodeFormatter.AppendLine(sb, indentLevel, "if (statusCode < 200 || statusCode >= 300)");
@@ -939,7 +986,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            var type = FormatType(param.TypeInfo);
+            var type = param.TypeInfo.FullTypeName;
             parameters.Add($"{type} {param.VariableName}");
         }
         
@@ -952,7 +999,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         {
             foreach (var param in operation.QueryParameters)
             {
-                var type = FormatType(param.TypeInfo);
+                var type = param.TypeInfo.FullTypeName;
                 var nullable = !param.IsRequired && !param.TypeInfo.IsNonNullableValueType() ? "?" : "";
                 parameters.Add($"{type}{nullable} {param.VariableName} = null");
             }
@@ -961,7 +1008,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         // Header параметры
         foreach (var param in operation.HeaderParameters)
         {
-            var type = FormatType(param.TypeInfo);
+            var type = param.TypeInfo.FullTypeName;
             var nullable = !param.IsRequired && !param.TypeInfo.IsNonNullableValueType() ? "?" : "";
             parameters.Add($"{type}{nullable} {param.VariableName} = null");
         }
@@ -969,7 +1016,7 @@ public class CSharpCodeRenderer : ICodeRenderer
         // Request body
         if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
         {
-            var type = operation.RequestBodyTypeInfo != null ? FormatType(operation.RequestBodyTypeInfo) : "object";
+            var type = operation.RequestBodyTypeInfo?.FullTypeName ?? "object";
             var nullable = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNonNullableValueType() ? "?" : "";
             parameters.Add($"{type}{nullable} {operation.RequestBodyParameter} = null");
         }
@@ -977,62 +1024,30 @@ public class CSharpCodeRenderer : ICodeRenderer
         return string.Join(", ", parameters);
     }
 
-    private string FormatType(TypeInfo typeInfo)
-    {
-        return typeInfo.FullTypeName;
-    }
-
-    private string GetResponseType(TypeInfo returnTypeInfo)
-    {
-        if (returnTypeInfo.BaseType == "Task" && returnTypeInfo.GenericArguments.Count > 0)
-        {
-            return returnTypeInfo.GenericArguments[0].FullTypeName;
-        }
-        return returnTypeInfo.FullTypeName;
-    }
-
     // Методы FormatDefaultValue, EscapeXmlComment и EscapeString теперь в ValIO.Core.Utilities
-
-    private T GetOption<T>(Dictionary<string, object> options, string key, T defaultValue)
-    {
-        if (options == null || !options.TryGetValue(key, out var value))
-            return defaultValue;
-        
-        if (value is T directValue)
-            return directValue;
-        
-        if (value is IConvertible convertible)
-        {
-            try
-            {
-                return (T)Convert.ChangeType(value, typeof(T));
-            }
-            catch
-            {
-                return defaultValue;
-            }
-        }
-        
-        return defaultValue;
-    }
 
     /// <summary>
     /// Определяет ключевое слово типа модели и флаг isRecord на основе ModelFormat и Options
     /// </summary>
-    private (string typeKeyword, bool isRecord) GetModelTypeInfo(ModelFormat format, Dictionary<string, object>? options)
+    private (string typeKeyword, bool isRecord) GetModelTypeInfo(ModelFormat format, CSharpModelTemplateDataOptions options)
     {
         // Проверяем Options для RecordStruct (который не может быть в ModelFormat)
-        if (options != null && options.TryGetValue("ModelType", out var modelTypeValue))
+        if (options.ModelType == ModelType.RecordStruct)
         {
-            // Проверяем, является ли это ModelType.RecordStruct
-            var modelTypeStr = modelTypeValue.ToString();
-            if (modelTypeStr?.Contains("RecordStruct") == true || modelTypeStr == "3")
-            {
-                return ("record struct", true);
-            }
+            return ("record struct", true);
         }
         
-        // Используем ModelFormat для основных типов
+        // Используем ModelFormat и ModelType для основных типов
+        if (options.ModelType == ModelType.Record)
+        {
+            return ("record", true);
+        }
+        else if (options.ModelType == ModelType.Struct)
+        {
+            return ("struct", false);
+        }
+        
+        // Если ModelType не установлен, используем ModelFormat
         return format switch
         {
             ModelFormat.Record => ("record", true),

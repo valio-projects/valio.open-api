@@ -50,7 +50,8 @@ public class InterfaceModelRenderer : IModelFormatRenderer
             sb.AppendLine($"export type {data.Name} = {data.BaseClassName} & {{");
             foreach (var property in data.OwnProperties)
             {
-                GenerateProperty(sb, property, indentLevel: 1);
+                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
+                GenerateProperty(sb, baseProperty, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "};");
         }
@@ -60,7 +61,8 @@ public class InterfaceModelRenderer : IModelFormatRenderer
             sb.AppendLine($"export interface {data.Name} {{");
             foreach (var property in data.Properties)
             {
-                GenerateProperty(sb, property, indentLevel: 1);
+                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
+                GenerateProperty(sb, baseProperty, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "}");
         }
@@ -75,13 +77,8 @@ public class InterfaceModelRenderer : IModelFormatRenderer
         
         // Генерируем свойство
         var optional = property.IsOptional ? "?" : "";
-        var typeString = FormatType(property.TypeInfo);
+        var typeString = property.TypeInfo.FullTypeName;
         CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
-    }
-
-    private string FormatType(TypeInfo typeInfo)
-    {
-        return typeInfo.FullTypeName;
     }
 
     // Метод EscapeJSDocComment теперь в ValIO.Core.Utilities.CodeEscapeHelper

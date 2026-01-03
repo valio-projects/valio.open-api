@@ -290,32 +290,127 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 modelTemplateData.Namespace = config.Namespace ?? "Generated";
             }
             
-            // Устанавливаем формат модели из опций конфигурации
-            if (!modelTemplateData.Options.ContainsKey("ModelType"))
+            // Создаем типизированные Options для C#
+            var modelOptions = new CSharpModelTemplateDataOptions
             {
-                modelTemplateData.Format = csharpOptions.ModelType switch
+                ModelType = csharpOptions.ModelType,
+                IsSealed = csharpOptions.UseSealed,
+                GenerateEqualityMembers = csharpOptions.GenerateEqualityMembers,
+                GenerateValidationConstants = csharpOptions.GenerateValidationConstants,
+                GenerateValidationAttributes = csharpOptions.GenerateValidationAttributes
+            };
+            
+            // Создаем типизированную версию TemplateData
+            var typedModelData = new Core.Models.TemplateData.ModelTemplateData<CSharpModelTemplateDataOptions, CSharpPropertyTemplateDataOptions>
+            {
+                Name = modelTemplateData.Name,
+                Description = modelTemplateData.Description,
+                Language = modelTemplateData.Language,
+                Format = csharpOptions.ModelType switch
                 {
                     ModelType.Record => ModelFormat.Record,
                     ModelType.Struct => ModelFormat.Struct,
                     _ => ModelFormat.Class
-                };
-                modelTemplateData.Options["ModelType"] = csharpOptions.ModelType;
-                modelTemplateData.Options["IsSealed"] = csharpOptions.UseSealed;
-                modelTemplateData.Options["GenerateEqualityMembers"] = csharpOptions.GenerateEqualityMembers;
-                modelTemplateData.Options["GenerateValidationConstants"] = csharpOptions.GenerateValidationConstants;
-                modelTemplateData.Options["GenerateValidationAttributes"] = csharpOptions.GenerateValidationAttributes;
-            }
+                },
+                Dependencies = modelTemplateData.Dependencies,
+                BaseClassName = modelTemplateData.BaseClassName,
+                Namespace = modelTemplateData.Namespace ?? config.Namespace ?? "Generated",
+                ImportPath = modelTemplateData.ImportPath,
+                Options = modelOptions,
+                Properties = modelTemplateData.Properties.Select(p => 
+                {
+                    var propertyOptions = new CSharpPropertyTemplateDataOptions
+                    {
+                        AccessorType = csharpOptions.PropertyAccessor
+                    };
+                    
+                    return new Core.Models.TemplateData.PropertyTemplateData<CSharpPropertyTemplateDataOptions>
+                    {
+                        Name = p.Name,
+                        TypeInfo = p.TypeInfo,
+                        Description = p.Description,
+                        IsRequired = p.IsRequired,
+                        IsNullable = p.IsNullable,
+                        IsOptional = p.IsOptional,
+                        DefaultValue = p.DefaultValue,
+                        Min = p.Min,
+                        Max = p.Max,
+                        MinLength = p.MinLength,
+                        MaxLength = p.MaxLength,
+                        ExclusiveMin = p.ExclusiveMin,
+                        ExclusiveMax = p.ExclusiveMax,
+                        Pattern = p.Pattern,
+                        Options = propertyOptions
+                    };
+                }).ToList(),
+                BaseClassProperties = modelTemplateData.BaseClassProperties.Select(p => 
+                {
+                    var propertyOptions = new CSharpPropertyTemplateDataOptions
+                    {
+                        AccessorType = csharpOptions.PropertyAccessor
+                    };
+                    
+                    return new Core.Models.TemplateData.PropertyTemplateData<CSharpPropertyTemplateDataOptions>
+                    {
+                        Name = p.Name,
+                        TypeInfo = p.TypeInfo,
+                        Description = p.Description,
+                        IsRequired = p.IsRequired,
+                        IsNullable = p.IsNullable,
+                        IsOptional = p.IsOptional,
+                        DefaultValue = p.DefaultValue,
+                        Min = p.Min,
+                        Max = p.Max,
+                        MinLength = p.MinLength,
+                        MaxLength = p.MaxLength,
+                        ExclusiveMin = p.ExclusiveMin,
+                        ExclusiveMax = p.ExclusiveMax,
+                        Pattern = p.Pattern,
+                        Options = propertyOptions
+                    };
+                }).ToList(),
+                OwnProperties = modelTemplateData.OwnProperties.Select(p => 
+                {
+                    var propertyOptions = new CSharpPropertyTemplateDataOptions
+                    {
+                        AccessorType = csharpOptions.PropertyAccessor
+                    };
+                    
+                    return new Core.Models.TemplateData.PropertyTemplateData<CSharpPropertyTemplateDataOptions>
+                    {
+                        Name = p.Name,
+                        TypeInfo = p.TypeInfo,
+                        Description = p.Description,
+                        IsRequired = p.IsRequired,
+                        IsNullable = p.IsNullable,
+                        IsOptional = p.IsOptional,
+                        DefaultValue = p.DefaultValue,
+                        Min = p.Min,
+                        Max = p.Max,
+                        MinLength = p.MinLength,
+                        MaxLength = p.MaxLength,
+                        ExclusiveMin = p.ExclusiveMin,
+                        ExclusiveMax = p.ExclusiveMax,
+                        Pattern = p.Pattern,
+                        Options = propertyOptions
+                    };
+                }).ToList()
+            };
+            
+            // Используем типизированную версию, но приводим к базовому типу для renderer
+            // Renderer будет работать с базовым типом, но мы используем типизированные Options
+            var modelTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)typedModelData;
             
             // Выбираем renderer на основе формата
-            IModelFormatRenderer? modelRenderer = modelTemplateData.Format switch
+            IModelFormatRenderer? modelRenderer = typedModelData.Format switch
             {
                 ModelFormat.Record => new Renderers.RecordModelRenderer(),
                 ModelFormat.Class => new Renderers.ClassModelRenderer(),
                 _ => new Renderers.ClassModelRenderer()
             };
             
-            var modelCode = modelRenderer.Render(modelTemplateData);
-            var fileName = $"{modelTemplateData.Name}.cs";
+            var modelCode = modelRenderer.Render(modelTemplateDataForRenderer);
+            var fileName = $"{typedModelData.Name}.cs";
             var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
 
             files[filePath] = modelCode;
@@ -449,26 +544,68 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         var properties = new List<PropertyTemplateData>();
         foreach (var param in parameters)
         {
-            var property = new PropertyTemplateData
+            var propertyOptions = new CSharpPropertyTemplateDataOptions
+            {
+                AccessorType = csharpOptions.PropertyAccessor
+            };
+            
+            var property = new Core.Models.TemplateData.PropertyTemplateData<CSharpPropertyTemplateDataOptions>
             {
                 Name = NamingConverter.ToPascalCase(param.Name),
                 TypeInfo = param.TypeInfo,
                 IsRequired = param.IsRequired,
                 Description = param.Description,
-                IsNullable = !param.IsRequired && !param.TypeInfo.IsNonNullableValueType()
+                IsNullable = !param.IsRequired && !param.TypeInfo.IsNonNullableValueType(),
+                Options = propertyOptions
             };
             
-            // Добавляем C# специфичные опции
-            property.Options["AccessorType"] = csharpOptions.PropertyAccessor;
-            
-            properties.Add(property);
+            properties.Add((Core.Models.TemplateData.PropertyTemplateData)(object)property);
         }
 
-        var templateData = new Core.Models.TemplateData.ModelTemplateData
+        var modelOptionsForQuery = new CSharpModelTemplateDataOptions
+        {
+            ModelType = csharpOptions.ModelType,
+            IsSealed = csharpOptions.UseSealed,
+            GenerateEqualityMembers = csharpOptions.GenerateEqualityMembers,
+            GenerateValidationConstants = csharpOptions.GenerateValidationConstants,
+            GenerateValidationAttributes = csharpOptions.GenerateValidationAttributes
+        };
+        
+        var templateData = new Core.Models.TemplateData.ModelTemplateData<CSharpModelTemplateDataOptions, CSharpPropertyTemplateDataOptions>
         {
             Name = className,
             Namespace = namespaceName,
-            Properties = properties,
+            Properties = properties.Select(p => 
+            {
+                // Пытаемся привести к типизированному типу через object
+                try
+                {
+                    var typedCast = (Core.Models.TemplateData.PropertyTemplateData<CSharpPropertyTemplateDataOptions>)(object)p;
+                    return typedCast;
+                }
+                catch
+                {
+                    // Если не удалось привести, создаем типизированную версию
+                    return new Core.Models.TemplateData.PropertyTemplateData<CSharpPropertyTemplateDataOptions>
+                    {
+                        Name = p.Name,
+                        TypeInfo = p.TypeInfo,
+                        Description = p.Description,
+                        IsRequired = p.IsRequired,
+                        IsNullable = p.IsNullable,
+                        IsOptional = p.IsOptional,
+                        DefaultValue = p.DefaultValue,
+                        Min = p.Min,
+                        Max = p.Max,
+                        MinLength = p.MinLength,
+                        MaxLength = p.MaxLength,
+                        ExclusiveMin = p.ExclusiveMin,
+                        ExclusiveMax = p.ExclusiveMax,
+                        Pattern = p.Pattern,
+                        Options = new CSharpPropertyTemplateDataOptions()
+                    };
+                }
+            }).ToList(),
             Language = GenerationLanguage.CSharp,
             Format = csharpOptions.ModelType switch
             {
@@ -476,17 +613,13 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 ModelType.Struct => ModelFormat.Struct,
                 _ => ModelFormat.Class
             },
-            Options = new Dictionary<string, object>
-            {
-                ["ModelType"] = csharpOptions.ModelType,
-                ["IsSealed"] = csharpOptions.UseSealed,
-                ["GenerateEqualityMembers"] = csharpOptions.GenerateEqualityMembers,
-                ["GenerateValidationConstants"] = csharpOptions.GenerateValidationConstants,
-                ["GenerateValidationAttributes"] = csharpOptions.GenerateValidationAttributes
-            }
+            Options = modelOptionsForQuery
         };
+        
+        // Приводим к базовому типу для дальнейшего использования
+        var baseTemplateData = (Core.Models.TemplateData.ModelTemplateData)(object)templateData;
 
-        return _codeRenderer.RenderModel(templateData);
+        return _codeRenderer.RenderModel(baseTemplateData);
     }
 
     private string GenerateExceptionCode(ExceptionTemplateData exceptionData)
@@ -684,73 +817,12 @@ public class ValioHttpRequestException : HttpRequestException
             // HttpClientLibrary используется только для TypeScript (Fetch, Axios)
             // Для C# всегда используется HttpClient из System.Net.Http
             HttpClientLibrary = HttpClientLibrary.Fetch, // Значение по умолчанию, не используется для C#
-            Options = new Dictionary<string, object>
-            {
-                ["ClientName"] = clientName,
-                ["HttpClientType"] = "HttpClient" // Указываем, что для C# используется HttpClient
-            }
+            Options = new CSharpClientTemplateDataOptions()
         };
 
         return _codeRenderer.RenderClient(templateData);
     }
-
-    // Метод CreateOperationTemplateData удален - операции теперь извлекаются в виде TemplateData напрямую из extractors
-
-    /// <summary>
-    /// Создает Task тип для C# (helper метод для C# специфичных типов)
-    /// </summary>
-    private static TypeInfo CreateTaskType(TypeInfo? resultType = null, bool isNullable = false)
-    {
-        if (resultType == null)
-        {
-            return new TypeInfo
-            {
-                BaseType = "Task",
-                IsNullable = isNullable,
-                FullTypeName = "Task",
-                Language = GenerationLanguage.CSharp,
-                Format = TypeFormat.Object
-            };
-        }
-
-        var fullTypeName = $"Task<{resultType.FullTypeName}>";
-        if (isNullable)
-        {
-            fullTypeName += "?";
-        }
-
-        return new TypeInfo
-        {
-            BaseType = "Task",
-            IsNullable = isNullable,
-            GenericArguments = new[] { resultType },
-            FullTypeName = fullTypeName,
-            Language = GenerationLanguage.CSharp,
-            Dependencies = resultType.Dependencies,
-            Format = TypeFormat.Object
-        };
-    }
-
-    /// <summary>
-    /// Создает HttpResponseMessage тип для C# (helper метод для C# специфичных типов)
-    /// </summary>
-    private static TypeInfo CreateHttpResponseMessageType(bool isNullable = false)
-    {
-        return new TypeInfo
-        {
-            BaseType = "HttpResponseMessage",
-            IsNullable = isNullable,
-            FullTypeName = isNullable ? "HttpResponseMessage?" : "HttpResponseMessage",
-            Language = GenerationLanguage.CSharp,
-            Format = TypeFormat.Object
-        };
-    }
-
-    /// <summary>
-    /// Определяет тип возврата операции через TypeInfo
-    /// </summary>
-    // Методы DetermineReturnTypeInfo, DetermineRequestBodyTypeInfo, FindSchemaInContent, MapSchemaToTypeInfo, AreSchemasSimilar удалены - маппинг теперь выполняется в extractors
-
+    
     /// <summary>
     /// Генерирует OperationId на основе пути и HTTP метода, если он не указан
     /// </summary>

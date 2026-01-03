@@ -57,8 +57,10 @@ public class RecordModelRenderer : IModelFormatRenderer
         sb.AppendLine("{");
         
         // Генерируем свойства
-        foreach (var property in data.Properties)
+        foreach (var propertyBase in data.Properties)
         {
+            // Приводим типизированное свойство к базовому типу
+            var property = propertyBase as PropertyTemplateData ?? (PropertyTemplateData)(object)propertyBase;
             GenerateProperty(sb, property, indentLevel: 1);
         }
         
@@ -74,15 +76,10 @@ public class RecordModelRenderer : IModelFormatRenderer
         
         // Генерируем свойство
         var nullable = property.IsNullable ? "?" : "";
-        var typeString = FormatType(property.TypeInfo);
+        var typeString = property.TypeInfo.FullTypeName;
         var defaultValue = property.DefaultValue != null ? $" = {DefaultValueFormatter.FormatDefaultValue(property.DefaultValue, property.TypeInfo)}" : "";
         
         CodeFormatter.AppendLine(sb, indentLevel, $"public {typeString}{nullable} {property.Name} {{ get; init; }}{defaultValue}");
-    }
-
-    private string FormatType(TypeInfo typeInfo)
-    {
-        return typeInfo.FullTypeName;
     }
 
     // Методы FormatDefaultValue и EscapeXmlComment теперь в ValIO.Core.Utilities

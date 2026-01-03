@@ -1,9 +1,12 @@
+using ValIO.Core.Models.TemplateData.Options;
+
 namespace ValIO.Core.Models.TemplateData;
 
 /// <summary>
 /// Универсальные данные для шаблона операции (метод HTTP клиента)
 /// </summary>
-public class OperationTemplateData
+/// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
+public class OperationTemplateData<TOptions> where TOptions : OperationTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя метода
@@ -143,7 +146,15 @@ public class OperationTemplateData
     /// <summary>
     /// Дополнительные опции для генерации (язык-специфичные)
     /// </summary>
-    public Dictionary<string, object> Options { get; set; } = new();
+    public TOptions Options { get; set; } = new();
+}
+
+/// <summary>
+/// Универсальные данные для шаблона операции (метод HTTP клиента)
+/// Безтипная версия для обратной совместимости
+/// </summary>
+public class OperationTemplateData : OperationTemplateData<OperationTemplateDataOptions>
+{
 }
 
 /// <summary>

@@ -322,37 +322,120 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         : ValIO.Core.Models.TemplateData.ModelFormat.Interface;
                 }
                 
-                // Устанавливаем ValidationLibrary в опциях, если не установлен
-                if (!modelTemplateData.Options.ContainsKey("ValidationLibrary"))
+                // Создаем типизированные Options для TypeScript
+                var modelOptions = new TypeScriptModelTemplateDataOptions
                 {
-                    modelTemplateData.Options["ValidationLibrary"] = options.ValidationLibrary ?? ValidationLibrary.Zod;
-                }
+                    ValidationLibrary = options.ValidationLibrary ?? ValidationLibrary.Zod
+                };
+                
+                // Создаем типизированную версию TemplateData
+                var typedModelData = new Core.Models.TemplateData.ModelTemplateData<TypeScriptModelTemplateDataOptions, TypeScriptPropertyTemplateDataOptions>
+                {
+                    Name = modelTemplateData.Name,
+                    Description = modelTemplateData.Description,
+                    Language = modelTemplateData.Language,
+                    Format = modelTemplateData.Format,
+                    Dependencies = modelTemplateData.Dependencies,
+                    BaseClassName = modelTemplateData.BaseClassName,
+                    Namespace = modelTemplateData.Namespace,
+                    ImportPath = modelTemplateData.ImportPath,
+                    Options = modelOptions,
+                    Properties = modelTemplateData.Properties.Select(p => 
+                    {
+                        return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
+                        {
+                            Name = p.Name,
+                            TypeInfo = p.TypeInfo,
+                            Description = p.Description,
+                            IsRequired = p.IsRequired,
+                            IsNullable = p.IsNullable,
+                            IsOptional = p.IsOptional,
+                            DefaultValue = p.DefaultValue,
+                            Min = p.Min,
+                            Max = p.Max,
+                            MinLength = p.MinLength,
+                            MaxLength = p.MaxLength,
+                            ExclusiveMin = p.ExclusiveMin,
+                            ExclusiveMax = p.ExclusiveMax,
+                            Pattern = p.Pattern,
+                            Options = new TypeScriptPropertyTemplateDataOptions()
+                        };
+                    }).ToList(),
+                    BaseClassProperties = modelTemplateData.BaseClassProperties.Select(p => 
+                    {
+                        return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
+                        {
+                            Name = p.Name,
+                            TypeInfo = p.TypeInfo,
+                            Description = p.Description,
+                            IsRequired = p.IsRequired,
+                            IsNullable = p.IsNullable,
+                            IsOptional = p.IsOptional,
+                            DefaultValue = p.DefaultValue,
+                            Min = p.Min,
+                            Max = p.Max,
+                            MinLength = p.MinLength,
+                            MaxLength = p.MaxLength,
+                            ExclusiveMin = p.ExclusiveMin,
+                            ExclusiveMax = p.ExclusiveMax,
+                            Pattern = p.Pattern,
+                            Options = new TypeScriptPropertyTemplateDataOptions()
+                        };
+                    }).ToList(),
+                    OwnProperties = modelTemplateData.OwnProperties.Select(p => 
+                    {
+                        return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
+                        {
+                            Name = p.Name,
+                            TypeInfo = p.TypeInfo,
+                            Description = p.Description,
+                            IsRequired = p.IsRequired,
+                            IsNullable = p.IsNullable,
+                            IsOptional = p.IsOptional,
+                            DefaultValue = p.DefaultValue,
+                            Min = p.Min,
+                            Max = p.Max,
+                            MinLength = p.MinLength,
+                            MaxLength = p.MaxLength,
+                            ExclusiveMin = p.ExclusiveMin,
+                            ExclusiveMax = p.ExclusiveMax,
+                            Pattern = p.Pattern,
+                            Options = new TypeScriptPropertyTemplateDataOptions()
+                        };
+                    }).ToList()
+                };
+                
+                // Приводим к базовому типу для renderer
+                var modelTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)typedModelData;
                 
                 // Генерируем TypeScript интерфейс
-                var modelCode = interfaceModelRenderer.Render(modelTemplateData);
+                var modelCode = interfaceModelRenderer.Render(modelTemplateDataForRenderer);
                 var modelFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.model.ts";
                 var modelFilePath = ResolveFilePath(modelFileName, config, FileCategory.Models);
                 
                 files[modelFilePath] = modelCode;
                 
                 // Генерируем Zod схему, если ValidationLibrary = Zod и renderer доступен
-                if (options.ValidationLibrary == ValidationLibrary.Zod && _zodModelRenderer != null)
+                if (modelOptions.ValidationLibrary == ValidationLibrary.Zod && _zodModelRenderer != null)
                 {
                     try
                     {
                         // Устанавливаем формат на ValidationSchema
-                        var originalFormat = modelTemplateData.Format;
-                        modelTemplateData.Format = ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema;
+                        var originalFormat = typedModelData.Format;
+                        typedModelData.Format = ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema;
+                        
+                        // Приводим к базовому типу для renderer
+                        var schemaTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)typedModelData;
                         
                         // Рендерим Zod схему через интерфейс
-                        var schemaCode = _zodModelRenderer.Render(modelTemplateData);
-                        var schemaFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.schema.ts";
+                        var schemaCode = _zodModelRenderer.Render(schemaTemplateDataForRenderer);
+                        var schemaFileName = $"{NamingConverter.ToCamelCase(typedModelData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
                         
                         files[schemaFilePath] = schemaCode;
                         
                         // Восстанавливаем оригинальный формат
-                        modelTemplateData.Format = originalFormat;
+                        typedModelData.Format = originalFormat;
                     }
                     catch (Exception ex)
                     {
@@ -385,11 +468,28 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         : ValIO.Core.Models.TemplateData.EnumFormat.Enum;
                 }
                 
-                // Устанавливаем ValidationLibrary в опциях, если не установлен
-                if (!enumTemplateData.Options.ContainsKey("ValidationLibrary"))
+                // Создаем типизированные Options для TypeScript
+                var enumOptions = new TypeScriptEnumTemplateDataOptions
                 {
-                    enumTemplateData.Options["ValidationLibrary"] = options.ValidationLibrary ?? ValidationLibrary.Zod;
-                }
+                    ValidationLibrary = options.ValidationLibrary ?? ValidationLibrary.Zod
+                };
+                
+                // Создаем типизированную версию TemplateData
+                var typedEnumData = new Core.Models.TemplateData.EnumTemplateData<TypeScriptEnumTemplateDataOptions>
+                {
+                    Name = enumTemplateData.Name,
+                    Description = enumTemplateData.Description,
+                    Language = enumTemplateData.Language,
+                    Format = enumTemplateData.Format,
+                    UnderlyingType = enumTemplateData.UnderlyingType,
+                    Namespace = enumTemplateData.Namespace,
+                    ImportPath = enumTemplateData.ImportPath,
+                    Options = enumOptions,
+                    Values = enumTemplateData.Values
+                };
+                
+                // Приводим к базовому типу для renderer
+                var enumTemplateDataForRenderer = (Core.Models.TemplateData.EnumTemplateData)(object)typedEnumData;
                 
                 // Генерируем TypeScript enum/union type
                 IEnumFormatRenderer enumRenderer = enumTemplateData.Format switch
@@ -399,33 +499,36 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 };
                 
                 var enumCode = enumRenderer.Render(enumTemplateData);
-                var enumFileName = $"{NamingConverter.ToCamelCase(enumTemplateData.Name)}.enum.ts";
+                var enumFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.enum.ts";
                 var enumFilePath = ResolveFilePath(enumFileName, config, FileCategory.Models);
                 
                 files[enumFilePath] = enumCode;
                 
                 // Генерируем Zod enum схему, если ValidationLibrary = Zod и renderer доступен
-                if (options.ValidationLibrary == ValidationLibrary.Zod && _zodEnumRenderer != null)
+                if (enumOptions.ValidationLibrary == ValidationLibrary.Zod && _zodEnumRenderer != null)
                 {
                     try
                     {
                         // Устанавливаем формат на ValidationSchema
-                        var originalFormat = enumTemplateData.Format;
-                        enumTemplateData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
+                        var originalFormat = typedEnumData.Format;
+                        typedEnumData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
+                        
+                        // Приводим к базовому типу для renderer
+                        var schemaEnumDataForRenderer = (Core.Models.TemplateData.EnumTemplateData)(object)typedEnumData;
                         
                         // Рендерим Zod enum схему через интерфейс
-                        var schemaCode = _zodEnumRenderer.Render(enumTemplateData);
-                        var schemaFileName = $"{NamingConverter.ToCamelCase(enumTemplateData.Name)}.schema.ts";
+                        var schemaCode = _zodEnumRenderer.Render(schemaEnumDataForRenderer);
+                        var schemaFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
                         
                         files[schemaFilePath] = schemaCode;
                         
                         // Восстанавливаем оригинальный формат
-                        enumTemplateData.Format = originalFormat;
+                        typedEnumData.Format = originalFormat;
                     }
                     catch (Exception ex)
                     {
-                        Logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", enumTemplateData.Name);
+                        Logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", typedEnumData.Name);
                         // Продолжаем генерацию других enum'ов
                     }
                 }
@@ -490,18 +593,27 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// </summary>
     private string GenerateQueryParametersModelCode(string interfaceName, List<Core.Models.TemplateData.ParameterTemplateData> parameters, GenerationConfiguration config, TypeScriptGenerationOptions options)
     {
-        var properties = parameters.Select(param => new Core.Models.TemplateData.PropertyTemplateData
+        var properties = parameters.Select(param => 
+        {
+            return new Core.Models.TemplateData.PropertyTemplateData<TypeScriptPropertyTemplateDataOptions>
             {
                 Name = param.VariableName, // Используем VariableName (camelCase)
                 TypeInfo = param.TypeInfo,
                 IsOptional = !param.IsRequired,
-                Description = param.Description
+                Description = param.Description,
+                Options = new TypeScriptPropertyTemplateDataOptions()
+            };
         }).ToList();
 
         // Собираем используемые типы для импортов
         var importedTypes = properties.SelectMany(p => p.TypeInfo.Dependencies).Distinct().ToList();
 
-        var templateData = new Core.Models.TemplateData.ModelTemplateData
+        var modelOptions = new TypeScriptModelTemplateDataOptions
+        {
+            ValidationLibrary = options.ValidationLibrary ?? ValidationLibrary.Zod
+        };
+
+        var templateData = new Core.Models.TemplateData.ModelTemplateData<TypeScriptModelTemplateDataOptions, TypeScriptPropertyTemplateDataOptions>
         {
             Name = interfaceName, // Используем переданное имя (уже в PascalCase)
             Description = null, // Query parameters модели обычно не имеют описания
@@ -509,15 +621,14 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             Language = GenerationLanguage.TypeScript,
             Format = ValIO.Core.Models.TemplateData.ModelFormat.Interface,
             Dependencies = importedTypes,
-            Options = new Dictionary<string, object>
-            {
-                ["UseStrictNullChecks"] = options.UseStrictNullChecks,
-                ["ValidationLibrary"] = options.ValidationLibrary ?? ValidationLibrary.Zod
-            }
+            Options = modelOptions
         };
+        
+        // Приводим к базовому типу для renderer
+        var modelTemplateDataForRenderer = (Core.Models.TemplateData.ModelTemplateData)(object)templateData;
 
         var modelRenderer = new Renderers.InterfaceModelRenderer();
-        return modelRenderer.Render(templateData);
+        return modelRenderer.Render(modelTemplateDataForRenderer);
     }
 
     // Методы GenerateModelCode, CreateApiModelFromQueryParameters, CollectModelUsedTypes и связанные вспомогательные методы удалены
@@ -660,21 +771,64 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             }
         }
         
-        var templateData = new Core.Models.TemplateData.ClientTemplateData
+        // Создаем типизированные Options для Client
+        var clientOptions = new TypeScriptClientTemplateDataOptions
+        {
+            AxiosOptions = options.Axios
+        };
+        
+        // Создаем типизированные Operations с Options
+        var typedOperations = operations.Select(op => 
+        {
+            var operationOptions = new TypeScriptOperationTemplateDataOptions();
+            return new Core.Models.TemplateData.OperationTemplateData<TypeScriptOperationTemplateDataOptions>
+            {
+                MethodName = op.MethodName,
+                HttpMethod = op.HttpMethod,
+                Path = op.Path,
+                Summary = op.Summary,
+                Description = op.Description,
+                ReturnTypeInfo = op.ReturnTypeInfo,
+                HasRequestBody = op.HasRequestBody,
+                RequestBodyParameter = op.RequestBodyParameter,
+                RequestBodyTypeInfo = op.RequestBodyTypeInfo,
+                RequestBodyContentType = op.RequestBodyContentType,
+                HasResponseType = op.HasResponseType,
+                PathParameters = op.PathParameters,
+                QueryParameters = op.QueryParameters,
+                HeaderParameters = op.HeaderParameters,
+                IsFormData = op.IsFormData,
+                FormDataProperties = op.FormDataProperties,
+                Responses = op.Responses,
+                Language = op.Language,
+                Dependencies = op.Dependencies,
+                UseQueryParametersModel = op.UseQueryParametersModel,
+                QueryParametersModelTypeName = op.QueryParametersModelTypeName,
+                QueryParametersModelImportPath = op.QueryParametersModelImportPath,
+                RequestSchemaName = op.RequestSchemaName,
+                RequestSchemaImportPath = op.RequestSchemaImportPath,
+                ResponseSchemaName = op.ResponseSchemaName,
+                ResponseSchemaImportPath = op.ResponseSchemaImportPath,
+                Tags = op.Tags,
+                Options = operationOptions
+            };
+        }).ToList();
+        
+        var templateData = new Core.Models.TemplateData.ClientTemplateData<TypeScriptClientTemplateDataOptions, TypeScriptOperationTemplateDataOptions>
         {
             Name = clientName,
-            Operations = operations,
+            Operations = typedOperations,
             Language = GenerationLanguage.TypeScript,
             HttpClientLibrary = options.HttpClientLibrary,
             Dependencies = importedTypes,
             ModelsPath = modelsImportPath,
-            Options = new Dictionary<string, object>
-            {
-                ["Axios"] = options.Axios
-            }
+            Options = clientOptions
         };
+        
+        // Приводим к базовому типу для renderer
+        var clientTemplateDataForRenderer = (Core.Models.TemplateData.ClientTemplateData)(object)templateData;
 
-        return _codeRenderer.RenderClient(templateData);
+        return _codeRenderer.RenderClient(clientTemplateDataForRenderer);
     }
 
     /// <summary>

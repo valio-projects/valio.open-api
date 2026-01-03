@@ -1,9 +1,15 @@
+using ValIO.Core.Models.TemplateData.Options;
+
 namespace ValIO.Core.Models.TemplateData;
 
 /// <summary>
 /// Универсальные данные для шаблона клиента (HTTP клиент)
 /// </summary>
-public class ClientTemplateData
+/// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
+/// <typeparam name="TOperationOptions">Тип опций операций (язык-специфичный)</typeparam>
+public class ClientTemplateData<TOptions, TOperationOptions> 
+    where TOptions : ClientTemplateDataOptions, new()
+    where TOperationOptions : OperationTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя клиента
@@ -13,7 +19,7 @@ public class ClientTemplateData
     /// <summary>
     /// Операции клиента
     /// </summary>
-    public IReadOnlyList<OperationTemplateData> Operations { get; set; } = Array.Empty<OperationTemplateData>();
+    public IReadOnlyList<OperationTemplateData<TOperationOptions>> Operations { get; set; } = Array.Empty<OperationTemplateData<TOperationOptions>>();
     
     /// <summary>
     /// Язык генерации
@@ -43,5 +49,13 @@ public class ClientTemplateData
     /// <summary>
     /// Дополнительные опции для генерации (язык-специфичные)
     /// </summary>
-    public Dictionary<string, object> Options { get; set; } = new();
+    public TOptions Options { get; set; } = new();
+}
+
+/// <summary>
+/// Универсальные данные для шаблона клиента (HTTP клиент)
+/// Безтипная версия для обратной совместимости
+/// </summary>
+public class ClientTemplateData : ClientTemplateData<ClientTemplateDataOptions, OperationTemplateDataOptions>
+{
 }

@@ -176,7 +176,7 @@ public class OperationExtractor : IOperationExtractor
 
             operationTemplateData.Responses = responses;
             operationTemplateData.ReturnTypeInfo = successResponseType ?? TypeInfo.Void(language);
-            operationTemplateData.HasResponseType = successResponseType != null && !successResponseType.IsVoid;
+            operationTemplateData.HasResponseType = successResponseType != null && successResponseType.BaseType != "void";
         }
         else
         {

@@ -1,9 +1,12 @@
+using ValIO.Core.Models.TemplateData.Options;
+
 namespace ValIO.Core.Models.TemplateData;
 
 /// <summary>
 /// Универсальные данные для шаблона enum (enum, union type, schema)
 /// </summary>
-public class EnumTemplateData
+/// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
+public class EnumTemplateData<TOptions> where TOptions : EnumTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя enum
@@ -48,7 +51,15 @@ public class EnumTemplateData
     /// <summary>
     /// Дополнительные опции для генерации (язык-специфичные)
     /// </summary>
-    public Dictionary<string, object> Options { get; set; } = new();
+    public TOptions Options { get; set; } = new();
+}
+
+/// <summary>
+/// Универсальные данные для шаблона enum (enum, union type, schema)
+/// Безтипная версия для обратной совместимости
+/// </summary>
+public class EnumTemplateData : EnumTemplateData<EnumTemplateDataOptions>
+{
 }
 
 /// <summary>

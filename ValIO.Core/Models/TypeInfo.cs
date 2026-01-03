@@ -42,10 +42,6 @@ public class TypeInfo
     /// </summary>
     public bool IsPrimitive { get; set; }
 
-    /// <summary>
-    /// Является ли тип void
-    /// </summary>
-    public bool IsVoid { get; set; }
 
     /// <summary>
     /// Аргументы типа для generic типов (например, для List<T> - [T], для Dictionary<K,V> - [K, V])
@@ -138,7 +134,6 @@ public class TypeInfo
             IsOptional = innerType.IsOptional,
             IsFile = innerType.IsFile,
             IsPrimitive = innerType.IsPrimitive,
-            IsVoid = innerType.IsVoid,
             GenericArguments = innerType.GenericArguments,
             FullTypeName = $"{innerType.FullTypeName}?",
             Language = innerType.Language,
@@ -215,7 +210,6 @@ public class TypeInfo
         return new TypeInfo
         {
             BaseType = "void",
-            IsVoid = true,
             FullTypeName = "void",
             Language = language,
             Format = TypeFormat.Object

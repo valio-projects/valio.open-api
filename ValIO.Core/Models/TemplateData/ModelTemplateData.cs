@@ -1,9 +1,15 @@
+using ValIO.Core.Models.TemplateData.Options;
+
 namespace ValIO.Core.Models.TemplateData;
 
 /// <summary>
 /// Универсальные данные для шаблона модели (класс, интерфейс, тип, схема валидации)
 /// </summary>
-public class ModelTemplateData
+/// <typeparam name="TOptions">Тип опций модели (язык-специфичный)</typeparam>
+/// <typeparam name="TPropertyOptions">Тип опций свойств (язык-специфичный)</typeparam>
+public class ModelTemplateData<TOptions, TPropertyOptions>
+    where TOptions : ModelTemplateDataOptions, new()
+    where TPropertyOptions : PropertyTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя модели (класс, интерфейс, тип)
@@ -18,7 +24,7 @@ public class ModelTemplateData
     /// <summary>
     /// Свойства модели
     /// </summary>
-    public IReadOnlyList<PropertyTemplateData> Properties { get; set; } = Array.Empty<PropertyTemplateData>();
+    public IReadOnlyList<PropertyTemplateData<TPropertyOptions>> Properties { get; set; } = Array.Empty<PropertyTemplateData<TPropertyOptions>>();
     
     /// <summary>
     /// Язык генерации
@@ -43,12 +49,12 @@ public class ModelTemplateData
     /// <summary>
     /// Свойства, которые принадлежат базовому классу (из allOf)
     /// </summary>
-    public IReadOnlyList<PropertyTemplateData> BaseClassProperties { get; set; } = Array.Empty<PropertyTemplateData>();
+    public IReadOnlyList<PropertyTemplateData<TPropertyOptions>> BaseClassProperties { get; set; } = Array.Empty<PropertyTemplateData<TPropertyOptions>>();
     
     /// <summary>
     /// Собственные свойства модели (не из базового класса)
     /// </summary>
-    public IReadOnlyList<PropertyTemplateData> OwnProperties { get; set; } = Array.Empty<PropertyTemplateData>();
+    public IReadOnlyList<PropertyTemplateData<TPropertyOptions>> OwnProperties { get; set; } = Array.Empty<PropertyTemplateData<TPropertyOptions>>();
     
     /// <summary>
     /// Namespace (для C#)
@@ -63,13 +69,22 @@ public class ModelTemplateData
     /// <summary>
     /// Дополнительные опции для генерации (язык-специфичные)
     /// </summary>
-    public Dictionary<string, object> Options { get; set; } = new();
+    public TOptions Options { get; set; } = new();
+}
+
+/// <summary>
+/// Универсальные данные для шаблона модели (класс, интерфейс, тип, схема валидации)
+/// Безтипная версия для обратной совместимости
+/// </summary>
+public class ModelTemplateData : ModelTemplateData<ModelTemplateDataOptions, PropertyTemplateDataOptions>
+{
 }
 
 /// <summary>
 /// Универсальные данные для шаблона свойства
 /// </summary>
-public class PropertyTemplateData
+/// <typeparam name="TOptions">Тип опций (язык-специфичный)</typeparam>
+public class PropertyTemplateData<TOptions> where TOptions : PropertyTemplateDataOptions, new()
 {
     /// <summary>
     /// Имя свойства
@@ -144,7 +159,15 @@ public class PropertyTemplateData
     /// <summary>
     /// Дополнительные опции для генерации (язык-специфичные)
     /// </summary>
-    public Dictionary<string, object> Options { get; set; } = new();
+    public TOptions Options { get; set; } = new();
+}
+
+/// <summary>
+/// Универсальные данные для шаблона свойства
+/// Безтипная версия для обратной совместимости
+/// </summary>
+public class PropertyTemplateData : PropertyTemplateData<PropertyTemplateDataOptions>
+{
 }
 
 /// <summary>

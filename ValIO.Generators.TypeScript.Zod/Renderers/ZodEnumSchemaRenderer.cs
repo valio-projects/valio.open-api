@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.TypeScript.Zod.Renderers;
 
@@ -33,62 +34,57 @@ public class ZodEnumSchemaRenderer : IEnumFormatRenderer
         var isStringEnum = underlyingType == "string";
         var constArrayName = $"{typeName}Values";
         
-        sb.AppendLine("import { z } from 'zod';");
-        sb.AppendLine();
+        CodeFormatter.AppendLine(sb, 0, "import { z } from 'zod';");
+        CodeFormatter.AppendEmptyLine(sb);
         
         // Генерируем массив значений enum
         if (isStringEnum)
         {
-            sb.AppendLine($"export const {constArrayName} = [");
+            CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
             for (int i = 0; i < data.Values.Count; i++)
             {
                 var value = data.Values[i];
                 var comma = i < data.Values.Count - 1 ? "," : "";
                 var valueString = FormatEnumValue(value.ValueString, underlyingType);
-                sb.AppendLine($"  {valueString}{comma}");
+                CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
             }
-            sb.AppendLine("] as const satisfies readonly string[];");
-            sb.AppendLine();
+            CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly string[];");
+            CodeFormatter.AppendEmptyLine(sb);
         }
         else
         {
-            sb.AppendLine($"export const {constArrayName} = [");
+            CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
             for (int i = 0; i < data.Values.Count; i++)
             {
                 var value = data.Values[i];
                 var comma = i < data.Values.Count - 1 ? "," : "";
                 var valueString = FormatEnumValue(value.ValueString, underlyingType);
-                sb.AppendLine($"  {valueString}{comma}");
+                CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
             }
-            sb.AppendLine("] as const satisfies readonly number[];");
-            sb.AppendLine();
+            CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly number[];");
+            CodeFormatter.AppendEmptyLine(sb);
         }
         
         // Генерируем JSDoc комментарий
-        if (!string.IsNullOrEmpty(data.Description))
-        {
-            sb.AppendLine("/**");
-            sb.AppendLine($" * {EscapeJSDocComment(data.Description)}");
-            sb.AppendLine(" */");
-        }
+        CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
         // Генерируем Zod схему enum
         if (isStringEnum)
         {
-            sb.AppendLine($"export const {schemaName} = z.enum({constArrayName});");
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.enum({constArrayName});");
         }
         else
         {
             // Числовые enum'ы в Zod требуют использования z.union с z.literal
-            sb.AppendLine($"export const {schemaName} = z.union([");
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.union([");
             for (int i = 0; i < data.Values.Count; i++)
             {
                 var value = data.Values[i];
                 var comma = i < data.Values.Count - 1 ? "," : "";
                 var valueString = FormatEnumValue(value.ValueString, underlyingType);
-                sb.AppendLine($"  z.literal({valueString}){comma}");
+                CodeFormatter.AppendLine(sb, 1, $"z.literal({valueString}){comma}");
             }
-            sb.AppendLine("]);");
+            CodeFormatter.AppendLine(sb, 0, "]);");
         }
         
         return sb.ToString();
@@ -108,13 +104,4 @@ public class ZodEnumSchemaRenderer : IEnumFormatRenderer
         return valueString;
     }
 
-    private string EscapeJSDocComment(string text)
-    {
-        if (string.IsNullOrEmpty(text))
-            return string.Empty;
-        
-        return text
-            .Replace("*/", "* /")
-            .Replace("/*", "/ *");
-    }
 }

@@ -380,6 +380,9 @@ public class CSharpTypeMapper : BaseTypeMapper
     /// </summary>
     protected override TypeInfo HandleAllOf(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable)
     {
+        if (schema.AllOf == null)
+            return CreateObjectTypeInfo(null, isNullable);
+        
         string? baseTypeName = null;
         foreach (var subSchema in schema.AllOf)
         {

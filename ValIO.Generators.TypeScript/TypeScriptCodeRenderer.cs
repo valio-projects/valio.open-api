@@ -3,6 +3,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Core.Utilities;
+using ValIO.Generators.TypeScript.Models;
 
 namespace ValIO.Generators.TypeScript;
 
@@ -23,14 +24,24 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
         var sb = new StringBuilder();
         
-        // Извлекаем TypeScript специфичные опции из Options
-        var useZodInfer = GetOption<bool>(data.Options, "UseZodInfer", false);
-        var useStrictNullChecks = GetOption<bool>(data.Options, "UseStrictNullChecks", true);
-        var validationLibrary = GetOption<ValidationLibrary?>(data.Options, "ValidationLibrary", null);
+        // Получаем типизированные Options через приведение через object
+        TypeScriptModelTemplateDataOptions typedOptions;
+        try
+        {
+            var typedData = (ModelTemplateData<TypeScriptModelTemplateDataOptions, TypeScriptPropertyTemplateDataOptions>)(object)data;
+            typedOptions = typedData.Options;
+        }
+        catch
+        {
+            typedOptions = new TypeScriptModelTemplateDataOptions();
+        }
+        
+        // Извлекаем TypeScript специфичные опции из типизированных Options
+        var validationLibrary = typedOptions.ValidationLibrary;
         var useZod = validationLibrary == ValidationLibrary.Zod;
         
         // Если используется Zod, генерируем через z.infer
-        if (useZodInfer || useZod)
+        if (useZod)
         {
             var schemaName = $"{data.Name}Schema";
             var schemaFileName = GetSchemaFileName(data.Name);
@@ -75,7 +86,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine($"export type {data.Name} = {data.BaseClassName} & {{");
             foreach (var property in data.OwnProperties)
             {
-                GenerateProperty(sb, property, indentLevel: 1);
+                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
+                GenerateProperty(sb, baseProperty, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "};");
         }
@@ -85,7 +97,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine($"export interface {data.Name} {{");
             foreach (var property in data.Properties)
             {
-                GenerateProperty(sb, property, indentLevel: 1);
+                var baseProperty = property as PropertyTemplateData ?? (PropertyTemplateData)(object)property;
+                GenerateProperty(sb, baseProperty, indentLevel: 1);
             }
             CodeFormatter.AppendLine(sb, 0, "}");
         }
@@ -103,13 +116,24 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
         var sb = new StringBuilder();
         
-        // Извлекаем TypeScript специфичные опции
-        var useZodInfer = GetOption<bool>(data.Options, "UseZodInfer", false);
-        var validationLibrary = GetOption<ValidationLibrary?>(data.Options, "ValidationLibrary", null);
+        // Получаем типизированные Options через приведение через object
+        TypeScriptEnumTemplateDataOptions typedOptions;
+        try
+        {
+            var typedData = (EnumTemplateData<TypeScriptEnumTemplateDataOptions>)(object)data;
+            typedOptions = typedData.Options;
+        }
+        catch
+        {
+            typedOptions = new TypeScriptEnumTemplateDataOptions();
+        }
+        
+        // Извлекаем TypeScript специфичные опции из типизированных Options
+        var validationLibrary = typedOptions.ValidationLibrary;
         var useZod = validationLibrary == ValidationLibrary.Zod;
         
         // Если используется Zod, генерируем через z.infer
-        if (useZodInfer || useZod)
+        if (useZod)
         {
             var schemaName = $"{data.Name}Schema";
             var schemaFileName = GetSchemaFileName(data.Name);
@@ -197,9 +221,22 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
         var sb = new StringBuilder();
         
-        // Определяем тип HTTP клиента из Options
-        var httpClientLibrary = GetOption<HttpClientLibrary?>(data.Options, "HttpClientLibrary", HttpClientLibrary.Fetch);
-        var isAxios = httpClientLibrary == HttpClientLibrary.Axios;
+        // Получаем типизированные Options через приведение через object (пока не используется, но оставляем для будущего расширения)
+        TypeScriptOperationTemplateDataOptions typedOptions;
+        try
+        {
+            var typedData = (OperationTemplateData<TypeScriptOperationTemplateDataOptions>)(object)data;
+            typedOptions = typedData.Options;
+        }
+        catch
+        {
+            typedOptions = new TypeScriptOperationTemplateDataOptions();
+        }
+        
+        // Определяем тип HTTP клиента из ClientTemplateData (операция не знает о типе клиента напрямую)
+        // Для операций тип клиента передается через параметры метода или определяется в контексте клиента
+        // Здесь используем Fetch по умолчанию, так как операции рендерятся в контексте клиента
+        var isAxios = false; // Будет определено в контексте клиента
         
         if (isAxios)
         {
@@ -275,8 +312,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
         
         // Генерируем операции
-        foreach (var operation in data.Operations)
+        foreach (var operationBase in data.Operations)
         {
+            var operation = operationBase as OperationTemplateData ?? (OperationTemplateData)(object)operationBase;
             sb.AppendLine();
             RenderFetchOperation(sb, operation);
         }
@@ -287,9 +325,21 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         // Генерируем импорты Axios
         sb.AppendLine("import { AxiosInstance, AxiosRequestConfig } from 'axios';");
         
-        // Проверяем наличие кастомного экземпляра
-        var customInstancePath = GetOption<string>(data.Options, "CustomInstancePath", null);
-        var customInstanceName = GetOption<string>(data.Options, "CustomInstanceName", null);
+        // Получаем типизированные Options через приведение через object
+        TypeScriptClientTemplateDataOptions options;
+        try
+        {
+            var typedData = (ClientTemplateData<TypeScriptClientTemplateDataOptions, TypeScriptOperationTemplateDataOptions>)(object)data;
+            options = typedData.Options;
+        }
+        catch
+        {
+            options = new TypeScriptClientTemplateDataOptions();
+        }
+        
+        // Проверяем наличие кастомного экземпляра из типизированных Options
+        var customInstancePath = options.AxiosOptions?.CustomInstancePath;
+        var customInstanceName = options.AxiosOptions?.CustomInstanceName;
         var hasCustomInstance = !string.IsNullOrEmpty(customInstancePath) && !string.IsNullOrEmpty(customInstanceName);
         
         if (hasCustomInstance)
@@ -357,8 +407,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
         
         // Генерируем операции
-        foreach (var operation in data.Operations)
+        foreach (var operationBase in data.Operations)
         {
+            var operation = operationBase as OperationTemplateData ?? (OperationTemplateData)(object)operationBase;
             sb.AppendLine();
             RenderAxiosOperation(sb, operation, hasCustomInstance, customInstanceName);
         }
@@ -367,22 +418,22 @@ public class TypeScriptCodeRenderer : ICodeRenderer
     private void RenderFetchOperation(StringBuilder sb, OperationTemplateData operation)
     {
         // Генерируем JSDoc комментарий
-        var commentParams = !string.IsNullOrEmpty(operation.Description) 
-            ? new[] { ("", operation.Description, (string?)null) } 
+        IReadOnlyList<(string Name, string? Description, string? Type)>? commentParams = !string.IsNullOrEmpty(operation.Description) 
+            ? new[] { ("", (string?)operation.Description, (string?)null) } 
             : null;
         CommentGenerator.GenerateJSDocCommentWithParams(sb, 0, operation.Summary, commentParams);
         
         // Генерируем параметры
         var parameters = BuildParameterList(operation);
-        var responseType = GetResponseType(operation.ReturnTypeInfo);
+        var responseType = operation.ReturnTypeInfo.FullTypeName;
         
-        sb.AppendLine($"export async function {operation.MethodName}(");
+        CodeFormatter.AppendLine(sb, 0, $"export async function {operation.MethodName}(");
         if (parameters.Count > 0)
         {
             var paramsStr = string.Join(",\n  ", parameters);
             CodeFormatter.AppendLine(sb, 1, paramsStr);
         }
-        sb.AppendLine($"): Promise<{responseType}> {{");
+        CodeFormatter.AppendLine(sb, 0, $"): Promise<{responseType}> {{");
         
         // Генерируем построение пути
         CodeFormatter.AppendLine(sb, 1, $"const path = `{BuildPath(operation.Path, operation.PathParameters)}`;");
@@ -435,8 +486,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
     private void RenderAxiosOperation(StringBuilder sb, OperationTemplateData operation, bool hasCustomInstance = false, string? customInstanceName = null)
     {
         // Генерируем JSDoc комментарий
-        var commentParams2 = !string.IsNullOrEmpty(operation.Description) 
-            ? new[] { ("", operation.Description, (string?)null) } 
+        IReadOnlyList<(string Name, string? Description, string? Type)>? commentParams2 = !string.IsNullOrEmpty(operation.Description) 
+            ? new[] { ("", (string?)operation.Description, (string?)null) } 
             : null;
         CommentGenerator.GenerateJSDocCommentWithParams(sb, 0, operation.Summary, commentParams2);
         
@@ -447,7 +498,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         // Path parameters всегда required
         foreach (var param in operation.PathParameters)
         {
-            requiredParams.Add($"{param.VariableName}: {FormatType(param.TypeInfo)}");
+            requiredParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query parameters
@@ -470,7 +521,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             foreach (var param in operation.QueryParameters)
             {
                 var optional = param.IsRequired ? "" : "?";
-                var paramStr = $"{param.VariableName}{optional}: {FormatType(param.TypeInfo)}";
+                var paramStr = $"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}";
                 if (param.IsRequired)
                 {
                     requiredParams.Add(paramStr);
@@ -486,7 +537,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         foreach (var param in operation.HeaderParameters)
         {
             var optional = param.IsRequired ? "" : "?";
-            var paramStr = $"{param.VariableName}{optional}: {FormatType(param.TypeInfo)}";
+                var paramStr = $"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}";
             if (param.IsRequired)
             {
                 requiredParams.Add(paramStr);
@@ -505,7 +556,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
                 if (!string.IsNullOrEmpty(operation.RequestSchemaName) && operation.RequestBodyTypeInfo != null)
                 {
                     var optional = operation.RequestBodyTypeInfo.IsNullable ? "?" : "";
-                    var paramStr = $"{operation.RequestBodyParameter}{optional}: {FormatType(operation.RequestBodyTypeInfo)}";
+                    var paramStr = $"{operation.RequestBodyParameter}{optional}: {operation.RequestBodyTypeInfo.FullTypeName}";
                     if (operation.RequestBodyTypeInfo.IsNullable)
                     {
                         optionalParams.Add(paramStr);
@@ -520,7 +571,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
                     foreach (var formProp in operation.FormDataProperties)
                     {
                         var optional = formProp.IsRequired ? "" : "?";
-                        var paramStr = $"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}";
+                        var paramStr = $"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName}";
                         if (formProp.IsRequired)
                         {
                             requiredParams.Add(paramStr);
@@ -535,7 +586,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             else
             {
                 var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
-                var typeStr = operation.RequestBodyTypeInfo != null ? FormatType(operation.RequestBodyTypeInfo) : "any";
+                var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
                 var paramStr = $"{operation.RequestBodyParameter}{optional}: {typeStr}";
                 if (operation.RequestBodyTypeInfo == null || operation.RequestBodyTypeInfo.IsNullable)
                 {
@@ -558,7 +609,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         allParams.AddRange(requiredParams);
         allParams.AddRange(optionalParams);
         
-        var responseType = GetResponseType(operation.ReturnTypeInfo);
+        var responseType = operation.ReturnTypeInfo.FullTypeName;
         
         sb.AppendLine($"export async function {operation.MethodName}(");
         if (allParams.Count > 0)
@@ -640,7 +691,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         
         // Генерируем свойство
         var optional = property.IsOptional ? "?" : "";
-        var typeString = FormatType(property.TypeInfo);
+        var typeString = property.TypeInfo.FullTypeName;
         CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
@@ -767,10 +818,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
     private void GenerateResponseHandling(StringBuilder sb, OperationTemplateData operation, int indentLevel, bool isAxios)
     {
-        var responseTypeInfo = operation.ReturnTypeInfo.BaseType == "Task" && operation.ReturnTypeInfo.GenericArguments.Count > 0
-            ? operation.ReturnTypeInfo.GenericArguments[0]
-            : operation.ReturnTypeInfo;
-        var shouldReturnData = !responseTypeInfo.IsVoid;
+        var responseTypeInfo = operation.ReturnTypeInfo;
+        var shouldReturnData = responseTypeInfo.BaseType != "void";
         
         if (!isAxios)
         {
@@ -795,7 +844,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             }
             else
             {
-                var responseType = GetResponseType(operation.ReturnTypeInfo);
+                var responseType = operation.ReturnTypeInfo.FullTypeName;
                 CodeFormatter.AppendLine(sb, indentLevel, $"return await response.json() as {responseType};");
             }
         }
@@ -815,7 +864,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         // Path parameters
         foreach (var param in operation.PathParameters)
         {
-            parameters.Add($"{param.VariableName}: {FormatType(param.TypeInfo)}");
+            parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query parameters
@@ -830,7 +879,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             foreach (var param in operation.QueryParameters)
             {
                 var optional = param.IsRequired ? "" : "?";
-                parameters.Add($"{param.VariableName}{optional}: {FormatType(param.TypeInfo)}");
+                parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
             }
         }
         
@@ -838,7 +887,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         foreach (var param in operation.HeaderParameters)
         {
             var optional = param.IsRequired ? "" : "?";
-            parameters.Add($"{param.VariableName}{optional}: {FormatType(param.TypeInfo)}");
+            parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
         }
         
         // Request body
@@ -849,13 +898,13 @@ public class TypeScriptCodeRenderer : ICodeRenderer
                 foreach (var formProp in operation.FormDataProperties)
                 {
                     var optional = formProp.IsRequired ? "" : "?";
-                    parameters.Add($"{formProp.VariableName}{optional}: {FormatType(formProp.TypeInfo)}");
+                    parameters.Add($"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName}");
                 }
             }
             else
             {
                 var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
-                var typeStr = operation.RequestBodyTypeInfo != null ? FormatType(operation.RequestBodyTypeInfo) : "any";
+                var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
                 parameters.Add($"{operation.RequestBodyParameter}{optional}: {typeStr}");
             }
         }
@@ -873,25 +922,6 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         return result;
     }
 
-    private string FormatType(TypeInfo typeInfo)
-    {
-        var typeName = typeInfo.FullTypeName;
-        // Убираем "?" из типа, если он там есть - мы добавим его к имени свойства
-        if (typeName.EndsWith("?"))
-        {
-            typeName = typeName.Substring(0, typeName.Length - 1).Trim();
-        }
-        return typeName;
-    }
-
-    private string GetResponseType(TypeInfo returnTypeInfo)
-    {
-        if (returnTypeInfo.BaseType == "Task" && returnTypeInfo.GenericArguments.Count > 0)
-        {
-            return returnTypeInfo.GenericArguments[0].FullTypeName;
-        }
-        return returnTypeInfo.FullTypeName;
-    }
 
     private string GetModelFileName(string typeName)
     {
@@ -919,28 +949,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
     // Метод EscapeJSDocComment теперь в ValIO.Core.Utilities.CodeEscapeHelper
 
-    private T GetOption<T>(Dictionary<string, object> options, string key, T defaultValue)
-    {
-        if (options == null || !options.TryGetValue(key, out var value))
-            return defaultValue;
-        
-        if (value is T directValue)
-            return directValue;
-        
-        if (value is IConvertible convertible)
-        {
-            try
-            {
-                return (T)Convert.ChangeType(value, typeof(T));
-            }
-            catch
-            {
-                return defaultValue;
-            }
-        }
-        
-        return defaultValue;
-    }
+    // Метод GetOption удален - теперь используется типизированный доступ к Options через generic TemplateData типы
 
     #endregion
 }
