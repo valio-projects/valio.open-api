@@ -62,6 +62,10 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         {
             foreach (var dependency in data.Dependencies.Distinct().OrderBy(d => d))
             {
+                // Пропускаем встроенные типы TypeScript, которые не должны импортироваться как модели
+                if (IsBuiltInTypeScriptType(dependency))
+                    continue;
+                    
                 var importFileName = GetModelFileName(dependency);
                 sb.AppendLine($"import type {{ {dependency} }} from '{data.ImportPath}/{importFileName}.model';");
             }
@@ -265,6 +269,10 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         {
             foreach (var dependency in data.Dependencies.Distinct().OrderBy(d => d))
             {
+                // Пропускаем встроенные типы TypeScript, которые не должны импортироваться как модели
+                if (IsBuiltInTypeScriptType(dependency))
+                    continue;
+                    
                 var importFileName = GetModelFileName(dependency);
                 sb.AppendLine($"import type {{ {dependency} }} from '{data.ModelsPath}/{importFileName}.model';");
             }
@@ -326,6 +334,10 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         {
             foreach (var dependency in data.Dependencies.Distinct().OrderBy(d => d))
             {
+                // Пропускаем встроенные типы TypeScript, которые не должны импортироваться как модели
+                if (IsBuiltInTypeScriptType(dependency))
+                    continue;
+                    
                 var importFileName = GetModelFileName(dependency);
                 sb.AppendLine($"import type {{ {dependency} }} from '{data.ModelsPath}/{importFileName}.model';");
             }
@@ -918,6 +930,43 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         
         // Преобразуем PascalCase в camelCase для имени файла
         return char.ToLowerInvariant(schemaName[0]) + schemaName.Substring(1);
+    }
+
+    /// <summary>
+    /// Проверяет, является ли тип встроенным типом TypeScript, который не должен импортироваться как модель
+    /// </summary>
+    private bool IsBuiltInTypeScriptType(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName))
+            return false;
+            
+        // Проверяем на встроенные типы TypeScript, которые не должны импортироваться
+        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Record<string, any>",
+            "Record<string, unknown>",
+            "any",
+            "unknown",
+            "void",
+            "null",
+            "undefined",
+            "string",
+            "number",
+            "boolean",
+            "object",
+            "Array",
+            "Promise"
+        };
+        
+        // Проверяем точное совпадение или начинается с встроенного типа
+        if (builtInTypes.Contains(typeName))
+            return true;
+            
+        // Проверяем generic типы типа Record<...>
+        if (typeName.StartsWith("Record<", StringComparison.OrdinalIgnoreCase))
+            return true;
+            
+        return false;
     }
 
     // Метод EscapeJSDocComment теперь в ValIO.Core.Utilities.CodeEscapeHelper

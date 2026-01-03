@@ -80,8 +80,9 @@ public class RecordModelRenderer : IModelFormatRenderer
         CommentGenerator.GenerateXmlComment(sb, indentLevel, property.Description);
         
         // Генерируем свойство
-        var nullable = property.IsNullable ? "?" : "";
         var typeString = property.TypeInfo.FullTypeName;
+        // Добавляем nullable только если IsNullable = true и тип не является non-nullable value type
+        var nullable = property.IsNullable && !property.TypeInfo.IsNonNullableValueType() ? "?" : "";
         var defaultValue = property.DefaultValue != null ? $" = {DefaultValueFormatter.FormatDefaultValue(property.DefaultValue, property.TypeInfo)}" : "";
         
         CodeFormatter.AppendLine(sb, indentLevel, $"public {typeString}{nullable} {property.Name} {{ get; init; }}{defaultValue}");

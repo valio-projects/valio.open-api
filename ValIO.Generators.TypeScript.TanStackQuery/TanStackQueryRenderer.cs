@@ -29,6 +29,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
 
         var sb = new StringBuilder();
         
+        // Генерируем импорты моделей
+        RenderModelImports(sb, operation, clientImportPath);
+        
         // Генерируем имя хука и функции
         var operationId = operation.MethodName;
         var hookName = GenerateHookName(operationId, isMutation: false);
@@ -66,6 +69,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         // Генерируем prefetch support
         RenderPrefetchSupport(sb, operation, functionName, queryKeyFunctionName, actualClientMethodName, options);
         
+        // Генерируем экспорты для ResultType и AwaitedResultType
+        RenderTypeExports(sb, operation);
+        
         return sb.ToString();
     }
 
@@ -75,6 +81,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             throw new ArgumentNullException(nameof(operation));
 
         var sb = new StringBuilder();
+        
+        // Генерируем импорты моделей
+        RenderModelImports(sb, operation, clientImportPath);
         
         // Генерируем имя хука и функции
         var operationId = operation.MethodName;
@@ -102,6 +111,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         // Генерируем mutation hook
         RenderMutationHookFunction(sb, operation, hookName, functionName, actualClientMethodName, options);
+        
+        // Генерируем экспорты для ResultType и AwaitedResultType
+        RenderTypeExports(sb, operation);
         
         return sb.ToString();
     }
@@ -582,6 +594,178 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         parameters.Add($"options?: UseMutationOptions<{responseType}, {errorType}, void, unknown>");
         
         return string.Join(",\n  ", parameters);
+    }
+
+    /// <summary>
+    /// Рендерит импорты моделей для операции
+    /// </summary>
+    private void RenderModelImports(StringBuilder sb, OperationTemplateData operation, string? modelsPath)
+    {
+        if (string.IsNullOrEmpty(modelsPath))
+            return;
+            
+        var dependencies = new HashSet<string>();
+        
+        // Добавляем зависимости из ReturnTypeInfo
+        if (operation.ReturnTypeInfo != null && !string.IsNullOrEmpty(operation.ReturnTypeInfo.BaseType) && 
+            operation.ReturnTypeInfo.BaseType != "void" && operation.ReturnTypeInfo.BaseType != "object")
+        {
+            // Извлекаем имя типа из FullTypeName (убираем generic параметры)
+            var responseType = operation.ReturnTypeInfo.FullTypeName;
+            var typeName = ExtractTypeName(responseType);
+            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+            {
+                dependencies.Add(typeName);
+            }
+        }
+        
+        // Добавляем зависимости из RequestBodyTypeInfo
+        if (operation.RequestBodyTypeInfo != null && !string.IsNullOrEmpty(operation.RequestBodyTypeInfo.BaseType) && 
+            operation.RequestBodyTypeInfo.BaseType != "object")
+        {
+            var requestType = operation.RequestBodyTypeInfo.FullTypeName;
+            var typeName = ExtractTypeName(requestType);
+            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+            {
+                dependencies.Add(typeName);
+            }
+        }
+        
+        // Добавляем зависимости из параметров
+        foreach (var param in operation.PathParameters)
+        {
+            var typeName = ExtractTypeName(param.TypeInfo.FullTypeName);
+            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+            {
+                dependencies.Add(typeName);
+            }
+        }
+        
+        foreach (var param in operation.QueryParameters)
+        {
+            var typeName = ExtractTypeName(param.TypeInfo.FullTypeName);
+            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+            {
+                dependencies.Add(typeName);
+            }
+        }
+        
+        foreach (var param in operation.HeaderParameters)
+        {
+            var typeName = ExtractTypeName(param.TypeInfo.FullTypeName);
+            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+            {
+                dependencies.Add(typeName);
+            }
+        }
+        
+        // Добавляем QueryParametersModelTypeName, если используется
+        if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
+        {
+            dependencies.Add(operation.QueryParametersModelTypeName);
+        }
+        
+        // Генерируем импорты
+        if (dependencies.Count > 0)
+        {
+            foreach (var dependency in dependencies.OrderBy(d => d))
+            {
+                var importFileName = GetModelFileName(dependency);
+                sb.AppendLine($"import type {{ {dependency} }} from '{modelsPath}/{importFileName}.model';");
+            }
+            sb.AppendLine();
+        }
+    }
+    
+    /// <summary>
+    /// Извлекает имя типа из полного имени типа (убирает generic параметры и массивы)
+    /// </summary>
+    private string ExtractTypeName(string fullTypeName)
+    {
+        if (string.IsNullOrEmpty(fullTypeName))
+            return string.Empty;
+            
+        // Убираем generic параметры (например, List<User> -> List, но нам нужен User)
+        // Для простоты, если есть <, берем первый generic аргумент
+        if (fullTypeName.Contains('<'))
+        {
+            var startIndex = fullTypeName.IndexOf('<');
+            var endIndex = fullTypeName.LastIndexOf('>');
+            if (startIndex > 0 && endIndex > startIndex)
+            {
+                var genericArgs = fullTypeName.Substring(startIndex + 1, endIndex - startIndex - 1);
+                // Берем первый аргумент до запятой или до конца
+                var commaIndex = genericArgs.IndexOf(',');
+                if (commaIndex > 0)
+                {
+                    genericArgs = genericArgs.Substring(0, commaIndex).Trim();
+                }
+                return genericArgs.Trim();
+            }
+        }
+        
+        // Убираем массивы (например, User[] -> User)
+        if (fullTypeName.EndsWith("[]"))
+        {
+            return fullTypeName.Substring(0, fullTypeName.Length - 2);
+        }
+        
+        return fullTypeName;
+    }
+    
+    /// <summary>
+    /// Проверяет, является ли тип встроенным типом TypeScript
+    /// </summary>
+    private bool IsBuiltInTypeScriptType(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName))
+            return false;
+            
+        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "any",
+            "unknown",
+            "void",
+            "null",
+            "undefined",
+            "string",
+            "number",
+            "boolean",
+            "object",
+            "Array",
+            "Promise",
+            "Record"
+        };
+        
+        return builtInTypes.Contains(typeName);
+    }
+    
+    /// <summary>
+    /// Получает имя файла модели из имени типа
+    /// </summary>
+    private string GetModelFileName(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName))
+            return string.Empty;
+            
+        // Преобразуем PascalCase в camelCase для имени файла
+        return char.ToLowerInvariant(typeName[0]) + typeName.Substring(1);
+    }
+    
+    /// <summary>
+    /// Рендерит экспорты для ResultType и AwaitedResultType
+    /// </summary>
+    private void RenderTypeExports(StringBuilder sb, OperationTemplateData operation)
+    {
+        var responseType = operation.ReturnTypeInfo.FullTypeName;
+        
+        // Экспортируем ResultType на основе Response model
+        CodeFormatter.AppendLine(sb, 0, $"export type ResultType = Awaited<ReturnType<typeof {_namingConverter.ToCamelCase(operation.MethodName)}>>;");
+        CodeFormatter.AppendEmptyLine(sb);
+        
+        // Экспортируем AwaitedResultType на основе ResultType
+        CodeFormatter.AppendLine(sb, 0, "export type AwaitedResultType = Awaited<ResultType>;");
+        CodeFormatter.AppendEmptyLine(sb);
     }
 
     #endregion

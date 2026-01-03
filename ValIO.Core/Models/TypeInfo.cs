@@ -135,7 +135,8 @@ public class TypeInfo
             IsFile = innerType.IsFile,
             IsPrimitive = innerType.IsPrimitive,
             GenericArguments = innerType.GenericArguments,
-            FullTypeName = $"{innerType.FullTypeName}?",
+            // FullTypeName НЕ должен содержать "?" - nullable добавляется в рендерере на основе IsNullable
+            FullTypeName = innerType.FullTypeName,
             Language = innerType.Language,
             Dependencies = innerType.Dependencies,
             Format = innerType.Format
@@ -147,16 +148,12 @@ public class TypeInfo
     /// </summary>
     public static TypeInfo Collection(string collectionType, TypeInfo itemType, bool isNullable = false, GenerationLanguage? language = null)
     {
+        // FullTypeName НЕ должен содержать "?" - nullable добавляется в рендерере на основе IsNullable
         var fullTypeName = language switch
         {
             GenerationLanguage.TypeScript => $"{itemType.FullTypeName}[]",
             _ => $"{collectionType}<{itemType.FullTypeName}>"
         };
-        
-        if (isNullable && language != GenerationLanguage.TypeScript)
-        {
-            fullTypeName += "?";
-        }
 
         return new TypeInfo
         {
@@ -177,16 +174,12 @@ public class TypeInfo
     /// </summary>
     public static TypeInfo Dictionary(string dictionaryType, TypeInfo keyType, TypeInfo valueType, bool isNullable = false, GenerationLanguage? language = null)
     {
+        // FullTypeName НЕ должен содержать "?" - nullable добавляется в рендерере на основе IsNullable
         var fullTypeName = language switch
         {
             GenerationLanguage.TypeScript => $"Record<{keyType.FullTypeName}, {valueType.FullTypeName}>",
             _ => $"{dictionaryType}<{keyType.FullTypeName}, {valueType.FullTypeName}>"
         };
-        
-        if (isNullable && language != GenerationLanguage.TypeScript)
-        {
-            fullTypeName += "?";
-        }
 
         return new TypeInfo
         {

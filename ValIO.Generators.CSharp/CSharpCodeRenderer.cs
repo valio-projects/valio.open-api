@@ -413,7 +413,8 @@ public class CSharpCodeRenderer : ICodeRenderer
         // Генерируем объявление свойства
         var requiredModifier = property.IsRequired ? "required " : string.Empty;
         var typeString = property.TypeInfo.FullTypeName;
-        var nullableModifier = property.IsNullable && !property.TypeInfo.IsNullable && !typeString.EndsWith("?") ? "?" : string.Empty;
+        // Добавляем nullable только если IsNullable = true и тип не является non-nullable value type
+        var nullableModifier = property.IsNullable && !property.TypeInfo.IsNonNullableValueType() ? "?" : string.Empty;
         var accessorType = propertyOptions.AccessorType;
         var accessor = accessorType == PropertyAccessorType.Init ? "init" : "set";
         
