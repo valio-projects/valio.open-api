@@ -1,1 +1,3 @@
-generate --schema "C:\Workspace\ValIO\\out\\swagger.json" --output C:\\Workspace\\ValIO\\out --config "C:\\Workspace\\ValIO\\valio.config.typescript.example.json"
+C:\\Workspace\\ValIO\\ValIO\\bin\\Debug\\net9.0\\ValIO.exe generate --schema "C:\Workspace\ValIO\\out\\swagger.json" --output C:\\Workspace\\ValIO\\out --config "C:\\Workspace\\ValIO\\valio.config.typescript.example.json"
+
+C:\\Workspace\\ValIO\\ValIO\\bin\\Debug\\net9.0\\ValIO.exe generate --schema "C:\Workspace\ValIO\\out\\swagger.json" --output C:\\Workspace\\ValIO\\out --config "C:\\Workspace\\ValIO\\valio.config"

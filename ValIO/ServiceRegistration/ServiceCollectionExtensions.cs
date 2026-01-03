@@ -28,8 +28,20 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<CSharpTypeMapper>();
         services.AddSingleton<ITypeMapper>(sp => sp.GetRequiredService<CSharpTypeMapper>());
         
-        // Code Generators
-        services.AddSingleton<CSharpCodeGenerator>();
+        // Code Generators (используем фабрику для явного указания CSharpTypeMapper)
+        services.AddSingleton<CSharpCodeGenerator>(sp =>
+        {
+            var typeMapper = sp.GetRequiredService<CSharpTypeMapper>();
+            var namingConverter = sp.GetRequiredService<INamingConverter>();
+            var fileWriter = sp.GetRequiredService<IFileWriter>();
+            var logger = sp.GetRequiredService<ILogger<CSharpCodeGenerator>>();
+            
+            return new CSharpCodeGenerator(
+                typeMapper,
+                namingConverter,
+                fileWriter,
+                logger);
+        });
         services.AddSingleton<ICodeGenerator>(sp => sp.GetRequiredService<CSharpCodeGenerator>());
         
         // Code Renderers
