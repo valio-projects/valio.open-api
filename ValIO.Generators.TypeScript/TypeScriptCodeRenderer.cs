@@ -116,16 +116,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         var sb = new StringBuilder();
         
         // Получаем типизированные Options через приведение через object
-        TypeScriptEnumTemplateDataOptions typedOptions;
-        try
-        {
-            var typedData = (EnumTemplateData<TypeScriptEnumTemplateDataOptions>)(object)data;
-            typedOptions = typedData.Options;
-        }
-        catch
-        {
-            typedOptions = new TypeScriptEnumTemplateDataOptions();
-        }
+        var typedData = (EnumTemplateData<TypeScriptEnumTemplateDataOptions>)(object)data;
+        var typedOptions = typedData.Options;
         
         // Извлекаем TypeScript специфичные опции из типизированных Options
         var validationLibrary = typedOptions.ValidationLibrary;
@@ -220,17 +212,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
         var sb = new StringBuilder();
         
-        // Получаем типизированные Options через приведение через object (пока не используется, но оставляем для будущего расширения)
-        TypeScriptOperationTemplateDataOptions typedOptions;
-        try
-        {
-            var typedData = (OperationTemplateData<TypeScriptOperationTemplateDataOptions>)(object)data;
-            typedOptions = typedData.Options;
-        }
-        catch
-        {
-            typedOptions = new TypeScriptOperationTemplateDataOptions();
-        }
+        // Получаем типизированные Options через приведение через object
+        var typedData = (OperationTemplateData<TypeScriptOperationTemplateDataOptions>)(object)data;
+        var typedOptions = typedData.Options;
         
         // Определяем тип HTTP клиента из ClientTemplateData (операция не знает о типе клиента напрямую)
         // Для операций тип клиента передается через параметры метода или определяется в контексте клиента
@@ -324,16 +308,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         sb.AppendLine("import { AxiosInstance, AxiosRequestConfig } from 'axios';");
         
         // Получаем типизированные Options через приведение через object
-        TypeScriptClientTemplateDataOptions options;
-        try
-        {
-            var typedData = (ClientTemplateData<TypeScriptClientTemplateDataOptions, TypeScriptOperationTemplateDataOptions>)(object)data;
-            options = typedData.Options;
-        }
-        catch
-        {
-            options = new TypeScriptClientTemplateDataOptions();
-        }
+        var typedData = (ClientTemplateData<TypeScriptClientTemplateDataOptions, TypeScriptOperationTemplateDataOptions>)(object)data;
+        var options = typedData.Options;
         
         // Проверяем наличие кастомного экземпляра из типизированных Options
         var customInstancePath = options.AxiosOptions?.CustomInstancePath;

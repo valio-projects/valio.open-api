@@ -324,6 +324,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         : ValIO.Core.Models.TemplateData.ModelFormat.Interface;
                 }
 
+                // Определяем, используем ли мы Zod (schema-first подход) или raw TypeScript interfaces
+                var useZod = options.ValidationLibrary == ValidationLibrary.Zod && _zodModelRenderer != null;
+
                 // Создаем типизированные Options для TypeScript
                 var modelOptions = new TypeScriptModelTemplateDataOptions
                 {
@@ -407,28 +410,26 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     }).ToList()
                 };
 
-                // Передаем интерфейс IModelTemplateData в renderer (без каста)
-                var modelCode = interfaceModelRenderer.Render(typedModelData);
-                var modelFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.model.ts";
-                var modelFilePath = ResolveFilePath(modelFileName, config, FileCategory.Models);
-
-                files[modelFilePath] = modelCode;
-
-                // Генерируем Zod схему, если ValidationLibrary = Zod и renderer доступен
-                if (modelOptions.ValidationLibrary == ValidationLibrary.Zod && _zodModelRenderer != null)
+                if (useZod)
                 {
+                    // Schema-first подход: генерируем Zod schema и model файл с infer типом
                     try
                     {
-                        // Устанавливаем формат на ValidationSchema
+                        // Устанавливаем формат на ValidationSchema для генерации Zod схемы
                         var originalFormat = typedModelData.Format;
                         typedModelData.Format = ValIO.Core.Models.TemplateData.ModelFormat.ValidationSchema;
 
-                        // Передаем интерфейс IModelTemplateData в renderer (без каста)
-                        var schemaCode = _zodModelRenderer.Render(typedModelData);
+                        // Генерируем Zod схему, передавая document и schemaResolver для создания правильной модели
+                        var schemaCode = _zodModelRenderer.Render(typedModelData, document, schemaResolver);
                         var schemaFileName = $"{NamingConverter.ToCamelCase(typedModelData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
-
                         files[schemaFilePath] = schemaCode;
+
+                        // Генерируем model файл с infer типом из схемы
+                        var modelCode = GenerateZodInferTypeModel(typedModelData);
+                        var modelFileName = $"{NamingConverter.ToCamelCase(typedModelData.Name)}.model.ts";
+                        var modelFilePath = ResolveFilePath(modelFileName, config, FileCategory.Models);
+                        files[modelFilePath] = modelCode;
 
                         // Восстанавливаем оригинальный формат
                         typedModelData.Format = originalFormat;
@@ -438,6 +439,14 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         Logger.LogError(ex, "Failed to generate Zod schema for model: {ModelName}", modelTemplateData.Name);
                         // Продолжаем генерацию других моделей
                     }
+                }
+                else
+                {
+                    // Raw TypeScript подход: генерируем только TypeScript interfaces
+                    var modelCode = interfaceModelRenderer.Render(typedModelData);
+                    var modelFileName = $"{NamingConverter.ToCamelCase(modelTemplateData.Name)}.model.ts";
+                    var modelFilePath = ResolveFilePath(modelFileName, config, FileCategory.Models);
+                    files[modelFilePath] = modelCode;
                 }
             }
         }
@@ -464,6 +473,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         : ValIO.Core.Models.TemplateData.EnumFormat.Enum;
                 }
 
+                // Определяем, используем ли мы Zod (schema-first подход) или raw TypeScript enums
+                var useZodEnum = options.ValidationLibrary == ValidationLibrary.Zod && _zodEnumRenderer != null;
+
                 // Создаем типизированные Options для TypeScript
                 var enumOptions = new TypeScriptEnumTemplateDataOptions
                 {
@@ -484,34 +496,26 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                     Values = enumTemplateData.Values
                 };
 
-                // Генерируем TypeScript enum/union type
-                IEnumFormatRenderer enumRenderer = typedEnumData.Format switch
+                if (useZodEnum)
                 {
-                    ValIO.Core.Models.TemplateData.EnumFormat.Union => typeScriptUnionTypeRenderer,
-                    _ => typeScriptEnumRenderer
-                };
-
-                var enumCode = enumRenderer.Render(typedEnumData);
-                var enumFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.enum.ts";
-                var enumFilePath = ResolveFilePath(enumFileName, config, FileCategory.Models);
-
-                files[enumFilePath] = enumCode;
-
-                // Генерируем Zod enum схему, если ValidationLibrary = Zod и renderer доступен
-                if (enumOptions.ValidationLibrary == ValidationLibrary.Zod && _zodEnumRenderer != null)
-                {
+                    // Schema-first подход: генерируем Zod enum schema и enum файл с infer типом
                     try
                     {
-                        // Устанавливаем формат на ValidationSchema
+                        // Устанавливаем формат на ValidationSchema для генерации Zod схемы
                         var originalFormat = typedEnumData.Format;
                         typedEnumData.Format = ValIO.Core.Models.TemplateData.EnumFormat.ValidationSchema;
 
-                        // Рендерим Zod enum схему через интерфейс
+                        // Генерируем Zod enum схему
                         var schemaCode = _zodEnumRenderer.Render(typedEnumData);
                         var schemaFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.schema.ts";
                         var schemaFilePath = ResolveFilePath(schemaFileName, config, FileCategory.Models);
-
                         files[schemaFilePath] = schemaCode;
+
+                        // Генерируем enum файл с infer типом из схемы
+                        var enumCode = GenerateZodInferTypeEnum(typedEnumData);
+                        var enumFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.enum.ts";
+                        var enumFilePath = ResolveFilePath(enumFileName, config, FileCategory.Models);
+                        files[enumFilePath] = enumCode;
 
                         // Восстанавливаем оригинальный формат
                         typedEnumData.Format = originalFormat;
@@ -521,6 +525,20 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                         Logger.LogError(ex, "Failed to generate Zod schema for enum: {EnumName}", typedEnumData.Name);
                         // Продолжаем генерацию других enum'ов
                     }
+                }
+                else
+                {
+                    // Raw TypeScript подход: генерируем только TypeScript enum/union type
+                    IEnumFormatRenderer enumRenderer = typedEnumData.Format switch
+                    {
+                        ValIO.Core.Models.TemplateData.EnumFormat.Union => typeScriptUnionTypeRenderer,
+                        _ => typeScriptEnumRenderer
+                    };
+
+                    var enumCode = enumRenderer.Render(typedEnumData);
+                    var enumFileName = $"{NamingConverter.ToCamelCase(typedEnumData.Name)}.enum.ts";
+                    var enumFilePath = ResolveFilePath(enumFileName, config, FileCategory.Models);
+                    files[enumFilePath] = enumCode;
                 }
             }
         }
@@ -557,6 +575,64 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         Logger.LogDebug("Built operation cache with {Count} entries", OperationCache.Count);
     }
 
+
+    /// <summary>
+    /// Генерирует enum файл с infer типом из Zod схемы (schema-first подход)
+    /// </summary>
+    private string GenerateZodInferTypeEnum(Core.Models.TemplateData.EnumTemplateData<TypeScriptEnumTemplateDataOptions> enumData)
+    {
+        var sb = new StringBuilder();
+        
+        // Импортируем z из zod
+        sb.AppendLine("import { z } from 'zod';");
+        
+        // Импортируем Zod enum схему
+        var schemaFileName = NamingConverter.ToCamelCase(enumData.Name);
+        sb.AppendLine($"import {{ {enumData.Name}Schema }} from './{schemaFileName}.schema';");
+        sb.AppendLine();
+        
+        // Генерируем JSDoc комментарий
+        if (!string.IsNullOrEmpty(enumData.Description))
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine($" * {enumData.Description.Replace("\n", "\n * ")}");
+            sb.AppendLine(" */");
+        }
+        
+        // Генерируем infer тип из схемы
+        sb.AppendLine($"export type {enumData.Name} = z.infer<typeof {enumData.Name}Schema>;");
+        
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Генерирует model файл с infer типом из Zod схемы (schema-first подход)
+    /// </summary>
+    private string GenerateZodInferTypeModel(Core.Models.TemplateData.ModelTemplateData<TypeScriptModelTemplateDataOptions, TypeScriptPropertyTemplateDataOptions> modelData)
+    {
+        var sb = new StringBuilder();
+        
+        // Импортируем z из zod
+        sb.AppendLine("import { z } from 'zod';");
+        
+        // Импортируем Zod схему
+        var schemaFileName = NamingConverter.ToCamelCase(modelData.Name);
+        sb.AppendLine($"import {{ {modelData.Name}Schema }} from './{schemaFileName}.schema';");
+        sb.AppendLine();
+        
+        // Генерируем JSDoc комментарий
+        if (!string.IsNullOrEmpty(modelData.Description))
+        {
+            sb.AppendLine("/**");
+            sb.AppendLine($" * {modelData.Description.Replace("\n", "\n * ")}");
+            sb.AppendLine(" */");
+        }
+        
+        // Генерируем infer тип из схемы
+        sb.AppendLine($"export type {modelData.Name} = z.infer<typeof {modelData.Name}Schema>;");
+        
+        return sb.ToString();
+    }
 
     private string GenerateOperationId(string path, HttpMethod httpMethod)
     {

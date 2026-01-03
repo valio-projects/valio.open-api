@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
@@ -65,6 +66,12 @@ public class ClassModelRenderer : IModelFormatRenderer
         sb.AppendLine("}");
         
         return sb.ToString();
+    }
+
+    public string Render(IModelTemplateData data, Microsoft.OpenApi.OpenApiDocument document, ISchemaResolver schemaResolver)
+    {
+        // Для ClassModelRenderer не нужны дополнительные параметры, используем базовый метод
+        return Render(data);
     }
 
     private void GenerateProperty(StringBuilder sb, IPropertyTemplateData property, int indentLevel)

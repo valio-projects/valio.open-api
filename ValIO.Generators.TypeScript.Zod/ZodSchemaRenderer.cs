@@ -1,4 +1,5 @@
 using System.Text;
+using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
@@ -10,7 +11,7 @@ namespace ValIO.Generators.TypeScript.Zod;
 /// <summary>
 /// Рендерер для генерации Zod схем валидации через StringBuilders
 /// </summary>
-public class ZodSchemaRenderer : IModelFormatRenderer
+public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions>
 {
     private readonly INamingConverter _namingConverter;
     private readonly ZodTypeMapper _zodTypeMapper;
@@ -27,9 +28,159 @@ public class ZodSchemaRenderer : IModelFormatRenderer
     public GenerationLanguage Language => GenerationLanguage.TypeScript;
 
     /// <summary>
-    /// Рендерит Zod схему для модели
+    /// Рендерит Zod схему для модели (базовый метод для интерфейса)
     /// </summary>
     public string Render(IModelTemplateData data)
+    {
+        throw new InvalidOperationException("Use Render(IModelTemplateData, OpenApiDocument, ISchemaResolver) method for Zod schema generation");
+    }
+
+    /// <summary>
+    /// Рендерит Zod схему для модели с дополнительными параметрами для создания правильной модели
+    /// </summary>
+    public string Render(IModelTemplateData data, Microsoft.OpenApi.OpenApiDocument document, ISchemaResolver schemaResolver)
+    {
+        if (data == null)
+            throw new ArgumentNullException(nameof(data));
+        if (document == null)
+            throw new ArgumentNullException(nameof(document));
+        if (schemaResolver == null)
+            throw new ArgumentNullException(nameof(schemaResolver));
+
+        // Создаем модель с Zod опциями, используя ZodTypeMapper для маппинга свойств
+        var zodModelData = CreateZodModelTemplateData(data, document, schemaResolver);
+        return Render(zodModelData);
+    }
+
+    /// <summary>
+    /// Создает ModelTemplateData с Zod опциями из базовой модели
+    /// </summary>
+    private ModelTemplateData<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions> CreateZodModelTemplateData(
+        IModelTemplateData data, 
+        Microsoft.OpenApi.OpenApiDocument document, 
+        ISchemaResolver schemaResolver)
+    {
+        // Получаем OpenAPI схему для модели из document
+        if (document.Components?.Schemas == null || !document.Components.Schemas.TryGetValue(data.Name, out var schema))
+        {
+            throw new InvalidOperationException($"Schema '{data.Name}' not found in OpenAPI document");
+        }
+
+        var modelSchema = schemaResolver.ResolveSchema(schema);
+
+        // Создаем свойства с Zod опциями и собираем зависимости
+        var zodProperties = new List<PropertyTemplateData<ZodPropertyTemplateDataOptions>>();
+        var allSchemaDependencies = new HashSet<string>();
+        var allEnumDependencies = new HashSet<string>();
+        var processedSchemas = new HashSet<string>();
+
+        if (modelSchema.Properties != null)
+        {
+            foreach (var property in data.Properties)
+            {
+                // Получаем схему свойства из OpenAPI схемы
+                if (!modelSchema.Properties.TryGetValue(property.Name, out var propSchema))
+                {
+                    // Если свойство не найдено в схеме, используем z.any()
+                    zodProperties.Add(CreateZodProperty(property, "z.any()"));
+                    continue;
+                }
+
+                var propertySchema = schemaResolver.ResolveSchema(propSchema);
+
+                // Маппим свойство в Zod схему с зависимостями
+                var zodMappingResult = _zodTypeMapper.MapToZodSchemaWithDependencies(
+                    propertySchema,
+                    property.Name,
+                    schemaResolver,
+                    processedSchemas,
+                    data.Name);
+
+                // Собираем зависимости
+                foreach (var dep in zodMappingResult.SchemaDependencies)
+                {
+                    allSchemaDependencies.Add(dep);
+                }
+                foreach (var dep in zodMappingResult.EnumDependencies)
+                {
+                    allEnumDependencies.Add(dep);
+                }
+
+                zodProperties.Add(CreateZodProperty(property, zodMappingResult.ZodSchema));
+            }
+        }
+        else
+        {
+            // Если схема не найдена, создаем свойства без Zod схем (будут z.any())
+            foreach (var property in data.Properties)
+            {
+                zodProperties.Add(CreateZodProperty(property, "z.any()"));
+            }
+        }
+
+        // Создаем Zod опции для модели с зависимостями
+        var zodModelOptions = new ZodModelTemplateDataOptions
+        {
+            SchemaDependencies = allSchemaDependencies.Where(s => s != data.Name).ToList(),
+            EnumDependencies = allEnumDependencies.ToList(),
+            HasCircularReference = processedSchemas.Contains(data.Name)
+        };
+
+        // Создаем базовые свойства с Zod опциями
+        var zodBaseClassProperties = data.BaseClassProperties.Select(p => CreateZodProperty(p, "z.any()")).ToList();
+
+        // Создаем собственные свойства с Zod опциями
+        var zodOwnProperties = data.OwnProperties.Select(p => CreateZodProperty(p, "z.any()")).ToList();
+
+        return new ModelTemplateData<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions>
+        {
+            Name = data.Name,
+            Description = data.Description,
+            Language = data.Language,
+            Format = data.Format,
+            Dependencies = data.Dependencies,
+            BaseClassName = data.BaseClassName,
+            Namespace = data.Namespace,
+            ImportPath = data.ImportPath,
+            Options = zodModelOptions,
+            Properties = zodProperties,
+            BaseClassProperties = zodBaseClassProperties,
+            OwnProperties = zodOwnProperties
+        };
+    }
+
+    /// <summary>
+    /// Создает PropertyTemplateData с Zod опциями из базового свойства
+    /// </summary>
+    private PropertyTemplateData<ZodPropertyTemplateDataOptions> CreateZodProperty(IPropertyTemplateData property, string zodSchema)
+    {
+        return new PropertyTemplateData<ZodPropertyTemplateDataOptions>
+        {
+            Name = property.Name,
+            TypeInfo = property.TypeInfo,
+            Description = property.Description,
+            IsRequired = property.IsRequired,
+            IsNullable = property.IsNullable,
+            IsOptional = property.IsOptional,
+            DefaultValue = property.DefaultValue,
+            Min = property.Min,
+            Max = property.Max,
+            MinLength = property.MinLength,
+            MaxLength = property.MaxLength,
+            ExclusiveMin = property.ExclusiveMin,
+            ExclusiveMax = property.ExclusiveMax,
+            Pattern = property.Pattern,
+            Options = new ZodPropertyTemplateDataOptions
+            {
+                ZodSchema = zodSchema
+            }
+        };
+    }
+
+    /// <summary>
+    /// Рендерит Zod схему для модели со строгой типизацией
+    /// </summary>
+    public string Render(ModelTemplateData<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions> data)
     {
         if (data == null)
             throw new ArgumentNullException(nameof(data));
@@ -42,17 +193,8 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         // Генерируем импорты
         sb.AppendLine("import { z } from 'zod';");
         
-        // Получаем типизированные Options через приведение через object
-        ZodModelTemplateDataOptions? zodOptions;
-        try
-        {
-            var typedData = (ModelTemplateData<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions>)(object)data;
-            zodOptions = typedData.Options;
-        }
-        catch
-        {
-            zodOptions = new ZodModelTemplateDataOptions();
-        }
+        // Получаем типизированные Options (теперь без приведения)
+        var zodOptions = data.Options;
         
         // Генерируем импорты зависимостей схем
         var schemaDependencies = zodOptions.SchemaDependencies ?? Array.Empty<string>();
@@ -94,7 +236,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
             
             sb.AppendLine("// TypeScript интерфейс для строгой типизации рекурсивной схемы");
             CodeFormatter.AppendLine(sb, 0, $"type {typeName} = {{");
-            foreach (var property in data.Properties)
+            foreach (var property in data.Properties.Cast<PropertyTemplateData<ZodPropertyTemplateDataOptions>>())
             {
                 GeneratePropertyType(sb, property, indentLevel: 1);
             }
@@ -115,7 +257,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
             CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = z.object({{");
         }
         
-        foreach (var property in data.Properties)
+        foreach (var property in data.Properties.Cast<PropertyTemplateData<ZodPropertyTemplateDataOptions>>())
         {
             GeneratePropertySchema(sb, property, indentLevel: 1);
         }
@@ -199,7 +341,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer
 
     #region Private Helper Methods
 
-    private void GeneratePropertyType(StringBuilder sb, IPropertyTemplateData property, int indentLevel)
+    private void GeneratePropertyType(StringBuilder sb, PropertyTemplateData<ZodPropertyTemplateDataOptions> property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
@@ -210,23 +352,13 @@ public class ZodSchemaRenderer : IModelFormatRenderer
         CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
-    private void GeneratePropertySchema(StringBuilder sb, IPropertyTemplateData property, int indentLevel)
+    private void GeneratePropertySchema(StringBuilder sb, PropertyTemplateData<ZodPropertyTemplateDataOptions> property, int indentLevel)
     {
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
         
-        // Генерируем Zod схему для свойства
-        // Получаем Zod схему из Options через приведение через object
-        string zodSchema;
-        try
-        {
-            var typedProperty = (PropertyTemplateData<ZodPropertyTemplateDataOptions>)(object)property;
-            zodSchema = typedProperty.Options.ZodSchema ?? "z.any()";
-        }
-        catch
-        {
-            zodSchema = "z.any()";
-        }
+        // Генерируем Zod схему для свойства (теперь без приведения)
+        var zodSchema = property.Options.ZodSchema ?? "z.any()";
         var optional = property.IsRequired ? "" : ".optional()";
         
         CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}: {zodSchema}{optional},");

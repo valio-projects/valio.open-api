@@ -8,6 +8,7 @@ using ValIO.Generators.CSharp.Renderers;
 using ValIO.Generators.TypeScript;
 using ValIO.Generators.TypeScript.Renderers;
 using ValIO.Generators.TypeScript.Zod;
+using ValIO.Generators.TypeScript.Zod.Models;
 using ValIO.Generators.TypeScript.Zod.Renderers;
 using ValIO.Generators.TypeScript.TanStackQuery;
 
