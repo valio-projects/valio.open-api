@@ -604,62 +604,27 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         if (string.IsNullOrEmpty(modelsPath))
             return;
             
+        // Используем уже собранные зависимости из операции
         var dependencies = new HashSet<string>();
         
-        // Добавляем зависимости из ReturnTypeInfo
-        if (operation.ReturnTypeInfo != null && !string.IsNullOrEmpty(operation.ReturnTypeInfo.BaseType) && 
-            operation.ReturnTypeInfo.BaseType != "void" && operation.ReturnTypeInfo.BaseType != "object")
+        // Добавляем зависимости из operation.Dependencies
+        if (operation.Dependencies != null)
         {
-            // Извлекаем имя типа из FullTypeName (убираем generic параметры)
-            var responseType = operation.ReturnTypeInfo.FullTypeName;
-            var typeName = ExtractTypeName(responseType);
-            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+            foreach (var dependency in operation.Dependencies)
             {
-                dependencies.Add(typeName);
+                if (!string.IsNullOrEmpty(dependency) && !IsBuiltInTypeScriptType(dependency))
+                {
+                    // Извлекаем имя типа из FullTypeName (убираем generic параметры)
+                    var typeName = ExtractTypeName(dependency);
+                    if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+                    {
+                        dependencies.Add(typeName);
+                    }
+                }
             }
         }
         
-        // Добавляем зависимости из RequestBodyTypeInfo
-        if (operation.RequestBodyTypeInfo != null && !string.IsNullOrEmpty(operation.RequestBodyTypeInfo.BaseType) && 
-            operation.RequestBodyTypeInfo.BaseType != "object")
-        {
-            var requestType = operation.RequestBodyTypeInfo.FullTypeName;
-            var typeName = ExtractTypeName(requestType);
-            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
-            {
-                dependencies.Add(typeName);
-            }
-        }
-        
-        // Добавляем зависимости из параметров
-        foreach (var param in operation.PathParameters)
-        {
-            var typeName = ExtractTypeName(param.TypeInfo.FullTypeName);
-            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
-            {
-                dependencies.Add(typeName);
-            }
-        }
-        
-        foreach (var param in operation.QueryParameters)
-        {
-            var typeName = ExtractTypeName(param.TypeInfo.FullTypeName);
-            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
-            {
-                dependencies.Add(typeName);
-            }
-        }
-        
-        foreach (var param in operation.HeaderParameters)
-        {
-            var typeName = ExtractTypeName(param.TypeInfo.FullTypeName);
-            if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
-            {
-                dependencies.Add(typeName);
-            }
-        }
-        
-        // Добавляем QueryParametersModelTypeName, если используется
+        // Также добавляем QueryParametersModelTypeName, если используется
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
             dependencies.Add(operation.QueryParametersModelTypeName);
