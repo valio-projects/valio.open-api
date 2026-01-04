@@ -4,6 +4,7 @@ using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Core.Services;
 
@@ -112,8 +113,16 @@ public class ModelExtractor : IModelExtractor
             Format = language == GenerationLanguage.CSharp ? ModelFormat.Class : ModelFormat.Interface,
             Properties = new List<PropertyTemplateData>(16),
             BaseClassProperties = new List<PropertyTemplateData>(8),
-            OwnProperties = new List<PropertyTemplateData>(8)
+            OwnProperties = new List<PropertyTemplateData>(8),
+            OriginalSchema = schema // Сохраняем оригинальную схему
         };
+        
+        // Создаем информацию о композиции схем (allOf, oneOf, anyOf)
+        modelTemplateData.CompositionInfo = SchemaCompositionHelper.CreateCompositionInfo(
+            schema, 
+            resolvedSchema, 
+            _schemaResolver, 
+            _namingConverter);
 
         // Обрабатываем allOf - объединяем свойства из всех схем
         if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
@@ -332,7 +341,9 @@ public class ModelExtractor : IModelExtractor
             }
             
             // Создаем PropertyTemplateData с обновленным TypeInfo
-            return CreatePropertyTemplateData(propertyName, inlineTypeInfo, resolvedPropertySchema, isRequired, isNullable, typeInfoBuilder.Language);
+            var inlinePropertyData = CreatePropertyTemplateData(propertyName, inlineTypeInfo, resolvedPropertySchema, isRequired, isNullable, typeInfoBuilder.Language);
+            inlinePropertyData.OriginalSchema = propertySchema; // Сохраняем оригинальную схему
+            return inlinePropertyData;
         }
 
         // Создаем TypeInfo для свойства (для ссылок или примитивов)
@@ -384,7 +395,9 @@ public class ModelExtractor : IModelExtractor
         // Определяем IsOptional для TypeScript
         var isOptional = !isRequired && (builderLanguage == GenerationLanguage.TypeScript);
 
-        return CreatePropertyTemplateData(propertyName, propertyTypeInfo, resolvedPropertySchema, isRequired, isNullable, builderLanguage, defaultValue, min, max, exclusiveMin, exclusiveMax, minLength, maxLength, pattern);
+        var propertyData = CreatePropertyTemplateData(propertyName, propertyTypeInfo, resolvedPropertySchema, isRequired, isNullable, builderLanguage, defaultValue, min, max, exclusiveMin, exclusiveMax, minLength, maxLength, pattern);
+        propertyData.OriginalSchema = propertySchema; // Сохраняем оригинальную схему
+        return propertyData;
     }
     
     /// <summary>

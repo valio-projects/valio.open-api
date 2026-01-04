@@ -129,9 +129,12 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         Microsoft.OpenApi.OpenApiDocument document, 
         ISchemaResolver schemaResolver)
     {
-        // ВАЖНО: schema - это уже оригинальная схема из документа (до разрешения)
-        // Разрешаем её только для проверки наличия Properties и allOf
-        var resolvedSchema = schemaResolver.ResolveSchema(schema);
+        // Используем сохраненную оригинальную схему из ModelTemplateData, если доступна
+        var originalSchema = data is ModelTemplateData modelData && modelData.OriginalSchema != null
+            ? modelData.OriginalSchema
+            : schema;
+        
+        var resolvedSchema = schemaResolver.ResolveSchema(originalSchema);
 
         // Создаем свойства с Zod опциями и собираем зависимости
         var zodProperties = new List<PropertyTemplateData<ZodPropertyTemplateDataOptions>>();
@@ -139,107 +142,33 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         var allEnumDependencies = new HashSet<string>();
         var processedSchemas = new HashSet<string>();
 
+        // Используем сохраненную информацию о композиции, если доступна
+        var compositionInfo = data is ModelTemplateData modelData2 && modelData2.CompositionInfo != null
+            ? modelData2.CompositionInfo
+            : SchemaCompositionHelper.CreateCompositionInfo(originalSchema, resolvedSchema, schemaResolver, _namingConverter);
+
         // Обрабатываем allOf - объединяем свойства из всех схем
-        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
+        if (compositionInfo != null && compositionInfo.CompositionType == SchemaCompositionType.AllOf)
         {
-            // Для allOf нужно обработать каждую под-схему
-            var allProperties = new Dictionary<string, IOpenApiSchema>();
-            var allRequired = new HashSet<string>();
-
-            foreach (var subSchema in resolvedSchema.AllOf)
-            {
-                var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
-                
-                // Определяем, является ли под-схема ссылкой на компонент
-                string? referencedSchemaName = null;
-                if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
-                {
-                    var reference = refHolder.Reference;
-                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                    {
-                        referencedSchemaName = reference.Id;
-                    }
-                }
-                
-                if (string.IsNullOrEmpty(referencedSchemaName))
-                {
-                    referencedSchemaName = schemaResolver.GetSchemaName(subSchema, string.Empty);
-                }
-
-                // ВАЖНО: для allOf мы объединяем свойства напрямую, а не используем наследование
-                // Поэтому НЕ добавляем зависимость на базовую схему - её свойства уже включены
-                // Зависимости будут добавлены только для свойств, которые ссылаются на другие схемы
-                
-                // Собираем свойства из под-схемы
-                if (resolvedSubSchema.Properties != null)
-                {
-                    foreach (var prop in resolvedSubSchema.Properties)
-                    {
-                        // Получаем оригинальную схему свойства
-                        IOpenApiSchema? originalPropSchema = null;
-                        if (subSchema is OpenApiSchema openApiSubSchema && openApiSubSchema.Properties != null)
-                        {
-                            openApiSubSchema.Properties.TryGetValue(prop.Key, out originalPropSchema);
-                        }
-                        
-                        // Если не удалось получить оригинальную, используем разрешенную
-                        if (originalPropSchema == null)
-                        {
-                            originalPropSchema = prop.Value;
-                        }
-                        
-                        allProperties[prop.Key] = originalPropSchema;
-                    }
-                }
-                
-                // Собираем required свойства
-                if (resolvedSubSchema.Required != null)
-                {
-                    foreach (var req in resolvedSubSchema.Required)
-                    {
-                        allRequired.Add(req);
-                    }
-                }
-            }
-
-            // ВАЖНО: также добавляем свойства из самой схемы (определенные после allOf)
-            // Это нужно для случаев, когда схема переопределяет или добавляет свойства
-            if (resolvedSchema.Properties != null)
-            {
-                // Получаем оригинальные свойства из оригинальной схемы
-                IDictionary<string, IOpenApiSchema>? originalSchemaProperties = null;
-                if (schema is OpenApiSchema openApiSchema && openApiSchema.Properties != null)
-                {
-                    originalSchemaProperties = openApiSchema.Properties;
-                }
-                else
-                {
-                    originalSchemaProperties = resolvedSchema.Properties;
-                }
-
-                if (originalSchemaProperties != null)
-                {
-                    foreach (var prop in originalSchemaProperties)
-                    {
-                        // Переопределяем или добавляем свойство из самой схемы
-                        allProperties[prop.Key] = prop.Value;
-                    }
-                }
-            }
-
-            // Также собираем required из самой схемы
-            if (resolvedSchema.Required != null)
-            {
-                foreach (var req in resolvedSchema.Required)
-                {
-                    allRequired.Add(req);
-                }
-            }
+            // Используем сохраненную информацию о композиции для получения всех свойств
+            var allProperties = SchemaCompositionHelper.GetAllOfProperties(compositionInfo, originalSchema, resolvedSchema);
+            var allRequired = SchemaCompositionHelper.MergeRequiredProperties(compositionInfo, resolvedSchema, schemaResolver);
 
             // Обрабатываем все свойства (из allOf и из самой схемы)
             foreach (var property in data.Properties)
             {
-                if (!allProperties.TryGetValue(property.Name, out var originalPropSchema))
+                // Используем сохраненную оригинальную схему свойства, если доступна
+                IOpenApiSchema? originalPropSchema = null;
+                if (property is PropertyTemplateData propData && propData.OriginalSchema != null)
+                {
+                    originalPropSchema = propData.OriginalSchema;
+                }
+                else if (allProperties.TryGetValue(property.Name, out var propSchema))
+                {
+                    originalPropSchema = propSchema;
+                }
+
+                if (originalPropSchema == null)
                 {
                     zodProperties.Add(CreateZodProperty(property, "z.any()"));
                     continue;
@@ -267,57 +196,51 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         else
         {
             // Обычная схема без allOf
-            // Получаем оригинальные свойства из оригинальной схемы schema
-            // Если schema - это ссылка, то schema.Properties будет null, и нужно использовать resolvedSchema
-            // Но если schema - это объект, то schema.Properties содержит оригинальные схемы со ссылками
-            IDictionary<string, IOpenApiSchema>? originalProperties = null;
-            if (schema is OpenApiSchema openApiSchema && openApiSchema.Properties != null)
-            {
-                // Это оригинальная схема-объект, используем её Properties
-                originalProperties = openApiSchema.Properties;
-            }
-            else if (resolvedSchema.Properties != null)
-            {
-                // Это ссылка или уже разрешенная схема, используем разрешенную
-                // Но это означает, что свойства уже разрешены и ссылки потеряны
-                originalProperties = resolvedSchema.Properties;
-            }
+            // Получаем оригинальные свойства из оригинальной схемы или используем сохраненные OriginalSchema
+            var originalProperties = SchemaCompositionHelper.GetOriginalProperties(originalSchema, resolvedSchema);
 
             if (originalProperties != null)
-        {
-            foreach (var property in data.Properties)
             {
-                // Получаем оригинальную схему свойства из оригинальной схемы
-                // Это важно, чтобы сохранить информацию о ссылке на компонент
-                if (!originalProperties.TryGetValue(property.Name, out var originalPropSchema))
+                foreach (var property in data.Properties)
                 {
-                    // Если свойство не найдено в схеме, используем z.any()
-                    zodProperties.Add(CreateZodProperty(property, "z.any()"));
-                    continue;
-                }
+                    // Используем сохраненную оригинальную схему свойства, если доступна
+                    IOpenApiSchema? originalPropSchema = null;
+                    if (property is PropertyTemplateData propData && propData.OriginalSchema != null)
+                    {
+                        originalPropSchema = propData.OriginalSchema;
+                    }
+                    else if (originalProperties.TryGetValue(property.Name, out var propSchema))
+                    {
+                        originalPropSchema = propSchema;
+                    }
 
-                // Маппим свойство в Zod схему с зависимостями
-                // Передаем оригинальную схему originalPropSchema, чтобы ZodTypeMapper мог определить ссылку
-                var zodMappingResult = _zodTypeMapper.MapToZodSchemaWithDependencies(
-                    originalPropSchema,  // Используем оригинальную схему свойства
-                    property.Name,
-                    schemaResolver,
-                    processedSchemas,
-                    data.Name);
+                    if (originalPropSchema == null)
+                    {
+                        zodProperties.Add(CreateZodProperty(property, "z.any()"));
+                        continue;
+                    }
 
-                // Собираем зависимости
-                foreach (var dep in zodMappingResult.SchemaDependencies)
-                {
-                    allSchemaDependencies.Add(dep);
-                }
-                foreach (var dep in zodMappingResult.EnumDependencies)
-                {
-                    allEnumDependencies.Add(dep);
-                }
+                    // Маппим свойство в Zod схему с зависимостями
+                    var zodMappingResult = _zodTypeMapper.MapToZodSchemaWithDependencies(
+                        originalPropSchema,
+                        property.Name,
+                        schemaResolver,
+                        processedSchemas,
+                        data.Name);
 
-                zodProperties.Add(CreateZodProperty(property, zodMappingResult.ZodSchema));
+                    // Собираем зависимости
+                    foreach (var dep in zodMappingResult.SchemaDependencies)
+                    {
+                        allSchemaDependencies.Add(dep);
+                    }
+                    foreach (var dep in zodMappingResult.EnumDependencies)
+                    {
+                        allEnumDependencies.Add(dep);
+                    }
+
+                    zodProperties.Add(CreateZodProperty(property, zodMappingResult.ZodSchema));
+                }
             }
-        }
             else
             {
                 // Если схема не найдена, создаем свойства без Zod схем (будут z.any())

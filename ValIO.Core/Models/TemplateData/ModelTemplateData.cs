@@ -1,3 +1,4 @@
+using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models.TemplateData.Options;
 
@@ -86,6 +87,16 @@ public class ModelTemplateData<TOptions, TPropertyOptions> : IModelTemplateData
     /// Дополнительные опции для генерации (язык-специфичные)
     /// </summary>
     public TOptions Options { get; set; } = new();
+    
+    /// <summary>
+    /// Информация о композиции схем (allOf, oneOf, anyOf)
+    /// </summary>
+    public SchemaCompositionInfo? CompositionInfo { get; set; }
+    
+    /// <summary>
+    /// Оригинальная схема (до разрешения) - для генераторов, которым нужны оригинальные ссылки
+    /// </summary>
+    public IOpenApiSchema? OriginalSchema { get; set; }
 }
 
 /// <summary>
@@ -176,6 +187,11 @@ public class PropertyTemplateData<TOptions> : IPropertyTemplateData where TOptio
     /// Дополнительные опции для генерации (язык-специфичные)
     /// </summary>
     public TOptions Options { get; set; } = new();
+    
+    /// <summary>
+    /// Оригинальная схема свойства (до разрешения) - для генераторов, которым нужны оригинальные ссылки
+    /// </summary>
+    public IOpenApiSchema? OriginalSchema { get; set; }
 }
 
 /// <summary>
