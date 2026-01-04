@@ -130,7 +130,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         ISchemaResolver schemaResolver)
     {
         // ВАЖНО: schema - это уже оригинальная схема из документа (до разрешения)
-        // Разрешаем её только для проверки наличия Properties
+        // Разрешаем её только для проверки наличия Properties и allOf
         var resolvedSchema = schemaResolver.ResolveSchema(schema);
 
         // Создаем свойства с Zod опциями и собираем зависимости
@@ -139,23 +139,121 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         var allEnumDependencies = new HashSet<string>();
         var processedSchemas = new HashSet<string>();
 
-        // Получаем оригинальные свойства из оригинальной схемы schema
-        // Если schema - это ссылка, то schema.Properties будет null, и нужно использовать resolvedSchema
-        // Но если schema - это объект, то schema.Properties содержит оригинальные схемы со ссылками
-        IDictionary<string, IOpenApiSchema>? originalProperties = null;
-        if (schema is OpenApiSchema openApiSchema && openApiSchema.Properties != null)
+        // Обрабатываем allOf - объединяем свойства из всех схем
+        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
         {
-            // Это оригинальная схема-объект, используем её Properties
-            originalProperties = openApiSchema.Properties;
-        }
-        else if (resolvedSchema.Properties != null)
-        {
-            // Это ссылка или уже разрешенная схема, используем разрешенную
-            // Но это означает, что свойства уже разрешены и ссылки потеряны
-            originalProperties = resolvedSchema.Properties;
-        }
+            // Для allOf нужно обработать каждую под-схему
+            var allProperties = new Dictionary<string, IOpenApiSchema>();
+            var allRequired = new HashSet<string>();
 
-        if (originalProperties != null)
+            foreach (var subSchema in resolvedSchema.AllOf)
+            {
+                var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
+                
+                // Если под-схема - это ссылка на компонент, добавляем её как зависимость
+                string? referencedSchemaName = null;
+                if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                {
+                    var reference = refHolder.Reference;
+                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                    {
+                        referencedSchemaName = reference.Id;
+                    }
+                }
+                
+                if (string.IsNullOrEmpty(referencedSchemaName))
+                {
+                    referencedSchemaName = schemaResolver.GetSchemaName(subSchema, string.Empty);
+                }
+
+                // Если это ссылка на компонент, добавляем зависимость
+                if (!string.IsNullOrEmpty(referencedSchemaName) && referencedSchemaName != "object")
+                {
+                    var typeName = _namingConverter.ToPascalCase(referencedSchemaName);
+                    var schemaName = $"{typeName}Schema";
+                    allSchemaDependencies.Add(schemaName);
+                }
+                
+                // Собираем свойства из под-схемы
+                if (resolvedSubSchema.Properties != null)
+                {
+                    foreach (var prop in resolvedSubSchema.Properties)
+                    {
+                        // Получаем оригинальную схему свойства
+                        IOpenApiSchema? originalPropSchema = null;
+                        if (subSchema is OpenApiSchema openApiSubSchema && openApiSubSchema.Properties != null)
+                        {
+                            openApiSubSchema.Properties.TryGetValue(prop.Key, out originalPropSchema);
+                        }
+                        
+                        // Если не удалось получить оригинальную, используем разрешенную
+                        if (originalPropSchema == null)
+                        {
+                            originalPropSchema = prop.Value;
+                        }
+                        
+                        allProperties[prop.Key] = originalPropSchema;
+                    }
+                }
+                
+                // Собираем required свойства
+                if (resolvedSubSchema.Required != null)
+                {
+                    foreach (var req in resolvedSubSchema.Required)
+                    {
+                        allRequired.Add(req);
+                    }
+                }
+            }
+
+            // Обрабатываем свойства из allOf
+            foreach (var property in data.Properties)
+            {
+                if (!allProperties.TryGetValue(property.Name, out var originalPropSchema))
+                {
+                    zodProperties.Add(CreateZodProperty(property, "z.any()"));
+                    continue;
+                }
+
+                var zodMappingResult = _zodTypeMapper.MapToZodSchemaWithDependencies(
+                    originalPropSchema,
+                    property.Name,
+                    schemaResolver,
+                    processedSchemas,
+                    data.Name);
+
+                foreach (var dep in zodMappingResult.SchemaDependencies)
+                {
+                    allSchemaDependencies.Add(dep);
+                }
+                foreach (var dep in zodMappingResult.EnumDependencies)
+                {
+                    allEnumDependencies.Add(dep);
+                }
+
+                zodProperties.Add(CreateZodProperty(property, zodMappingResult.ZodSchema));
+            }
+        }
+        else
+        {
+            // Обычная схема без allOf
+            // Получаем оригинальные свойства из оригинальной схемы schema
+            // Если schema - это ссылка, то schema.Properties будет null, и нужно использовать resolvedSchema
+            // Но если schema - это объект, то schema.Properties содержит оригинальные схемы со ссылками
+            IDictionary<string, IOpenApiSchema>? originalProperties = null;
+            if (schema is OpenApiSchema openApiSchema && openApiSchema.Properties != null)
+            {
+                // Это оригинальная схема-объект, используем её Properties
+                originalProperties = openApiSchema.Properties;
+            }
+            else if (resolvedSchema.Properties != null)
+            {
+                // Это ссылка или уже разрешенная схема, используем разрешенную
+                // Но это означает, что свойства уже разрешены и ссылки потеряны
+                originalProperties = resolvedSchema.Properties;
+            }
+
+            if (originalProperties != null)
         {
             foreach (var property in data.Properties)
             {
@@ -190,21 +288,38 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
                 zodProperties.Add(CreateZodProperty(property, zodMappingResult.ZodSchema));
             }
         }
-        else
+            else
+            {
+                // Если схема не найдена, создаем свойства без Zod схем (будут z.any())
+                foreach (var property in data.Properties)
+                {
+                    zodProperties.Add(CreateZodProperty(property, "z.any()"));
+                }
+            }
+        }
+
+        // Проверяем наличие рекурсивных ссылок (циклических зависимостей)
+        // Рекурсивная ссылка - это когда свойство ссылается на текущую схему
+        var hasCircularReference = CheckForCircularReference(data, schemaResolver, data.Name);
+        
+        // Собираем TypeScript типы для рекурсивных схем
+        var typeDependencies = new HashSet<string>();
+        if (hasCircularReference)
         {
-            // Если схема не найдена, создаем свойства без Zod схем (будут z.any())
+            // Для рекурсивных схем собираем типы из зависимостей свойств
             foreach (var property in data.Properties)
             {
-                zodProperties.Add(CreateZodProperty(property, "z.any()"));
+                CollectTypeDependencies(property.TypeInfo, typeDependencies, data.Name);
             }
         }
 
         // Создаем Zod опции для модели с зависимостями
         var zodModelOptions = new ZodModelTemplateDataOptions
         {
-            SchemaDependencies = allSchemaDependencies.Where(s => s != data.Name).ToList(),
+            SchemaDependencies = allSchemaDependencies.Where(s => !s.EndsWith($"{data.Name}Schema", StringComparison.OrdinalIgnoreCase)).ToList(),
             EnumDependencies = allEnumDependencies.ToList(),
-            HasCircularReference = processedSchemas.Contains(data.Name)
+            HasCircularReference = hasCircularReference,
+            TypeDependencies = typeDependencies.ToList()
         };
 
         // Создаем базовые свойства с Zod опциями
@@ -481,8 +596,101 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         return _namingConverter.ToCamelCase(typeName);
     }
 
+    /// <summary>
+    /// Проверяет наличие циклической ссылки (рекурсивной схемы)
+    /// </summary>
+    private bool CheckForCircularReference(IModelTemplateData data, ISchemaResolver schemaResolver, string currentSchemaName)
+    {
+        if (string.IsNullOrEmpty(currentSchemaName))
+            return false;
 
+        // Проверяем свойства на наличие ссылок на текущую схему
+        foreach (var property in data.Properties)
+        {
+            if (HasReferenceToSchema(property.TypeInfo, currentSchemaName))
+            {
+                return true;
+            }
+        }
 
+        return false;
+    }
+
+    /// <summary>
+    /// Проверяет, содержит ли TypeInfo ссылку на указанную схему
+    /// </summary>
+    private bool HasReferenceToSchema(TypeInfo typeInfo, string schemaName)
+    {
+        if (typeInfo == null)
+            return false;
+
+        // Проверяем базовый тип
+        if (typeInfo.BaseType.Equals(schemaName, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        // Проверяем generic аргументы
+        if (typeInfo.GenericArguments != null && typeInfo.GenericArguments.Count > 0)
+        {
+            foreach (var genericArg in typeInfo.GenericArguments)
+            {
+                if (HasReferenceToSchema(genericArg, schemaName))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Собирает TypeScript типы из зависимостей для рекурсивных схем
+    /// </summary>
+    private void CollectTypeDependencies(TypeInfo typeInfo, HashSet<string> typeDependencies, string currentSchemaName)
+    {
+        if (typeInfo == null)
+            return;
+
+        // Если это не примитивный тип и не текущая схема, добавляем в зависимости
+        if (!typeInfo.IsPrimitive && 
+            !string.IsNullOrEmpty(typeInfo.BaseType) &&
+            !typeInfo.BaseType.Equals(currentSchemaName, StringComparison.OrdinalIgnoreCase) &&
+            !IsBuiltInType(typeInfo.BaseType))
+        {
+            typeDependencies.Add(typeInfo.BaseType);
+        }
+
+        // Рекурсивно обрабатываем generic аргументы
+        if (typeInfo.GenericArguments != null && typeInfo.GenericArguments.Count > 0)
+        {
+            foreach (var genericArg in typeInfo.GenericArguments)
+            {
+                CollectTypeDependencies(genericArg, typeDependencies, currentSchemaName);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Проверяет, является ли тип встроенным
+    /// </summary>
+    private bool IsBuiltInType(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName))
+            return false;
+
+        var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "any", "unknown", "void", "null", "undefined",
+            "string", "number", "boolean", "object", "Array",
+            "Promise", "Record", "int", "long", "float", "double",
+            "decimal", "bool", "DateTime", "DateTimeOffset", "Guid",
+            "byte[]", "Stream", "List", "Dictionary"
+        };
+
+        return builtInTypes.Contains(typeName);
+    }
 
     #endregion
 }

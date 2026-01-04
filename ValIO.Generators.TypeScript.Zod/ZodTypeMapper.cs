@@ -98,6 +98,24 @@ public class ZodTypeMapper
 
         var resolvedSchema2 = schemaResolver.ResolveSchema(schema);
 
+        // Обрабатываем allOf - объединяем свойства из всех схем
+        if (resolvedSchema2.AllOf != null && resolvedSchema2.AllOf.Count > 0)
+        {
+            return MapAllOfToZodSchema(resolvedSchema2.AllOf, schema, schemaResolver, processedSchemas, currentSchemaName);
+        }
+
+        // Обрабатываем oneOf - union тип
+        if (resolvedSchema2.OneOf != null && resolvedSchema2.OneOf.Count > 0)
+        {
+            return MapOneOfToZodSchema(resolvedSchema2.OneOf, schemaResolver, processedSchemas, currentSchemaName);
+        }
+
+        // Обрабатываем anyOf - union тип (аналогично oneOf)
+        if (resolvedSchema2.AnyOf != null && resolvedSchema2.AnyOf.Count > 0)
+        {
+            return MapAnyOfToZodSchema(resolvedSchema2.AnyOf, schemaResolver, processedSchemas, currentSchemaName);
+        }
+
         // Обрабатываем массивы
         if (resolvedSchema2.Type.HasValue && resolvedSchema2.Type.Value.HasFlag(JsonSchemaType.Array))
         {
@@ -311,6 +329,146 @@ public class ZodTypeMapper
 
         result.ZodSchema = "z.any()";
         return result;
+    }
+
+    /// <summary>
+    /// Маппит allOf схему в Zod схему (объединение свойств из всех схем)
+    /// </summary>
+    private ZodSchemaMappingResult MapAllOfToZodSchema(
+        IList<IOpenApiSchema> allOfSchemas,
+        IOpenApiSchema originalSchema,
+        ISchemaResolver schemaResolver,
+        HashSet<string> processedSchemas,
+        string? currentSchemaName)
+    {
+        var result = new ZodSchemaMappingResult();
+        var allProperties = new Dictionary<string, string>();
+        var allRequired = new HashSet<string>();
+
+        foreach (var subSchema in allOfSchemas)
+        {
+            // Разрешаем под-схему
+            var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
+            
+            // Если под-схема - это ссылка на компонент, добавляем её как зависимость
+            string? referencedSchemaName = null;
+            if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+            {
+                var reference = refHolder.Reference;
+                if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                {
+                    referencedSchemaName = reference.Id;
+                }
+            }
+            
+            if (string.IsNullOrEmpty(referencedSchemaName))
+            {
+                referencedSchemaName = schemaResolver.GetSchemaName(subSchema, string.Empty);
+            }
+
+            // Если это ссылка на компонент, используем её схему
+            if (!string.IsNullOrEmpty(referencedSchemaName) && referencedSchemaName != "object")
+            {
+                var typeName = _namingConverter.ToPascalCase(referencedSchemaName);
+                var schemaName = $"{typeName}Schema";
+                
+                // Проверяем на циклическую ссылку
+                var isCircular = !string.IsNullOrEmpty(currentSchemaName) && 
+                                currentSchemaName.Equals(referencedSchemaName, StringComparison.OrdinalIgnoreCase);
+                
+                if (!isCircular)
+                {
+                    result.SchemaDependencies.Add(schemaName);
+                }
+            }
+            
+            // Обрабатываем свойства из под-схемы
+            if (resolvedSubSchema.Properties != null)
+            {
+                foreach (var prop in resolvedSubSchema.Properties)
+                {
+                    var propResult = MapToZodSchemaWithDependencies(
+                        prop.Value,
+                        prop.Key,
+                        schemaResolver,
+                        processedSchemas,
+                        currentSchemaName);
+                    
+                    allProperties[prop.Key] = propResult.ZodSchema;
+                    
+                    // Собираем зависимости
+                    result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
+                    result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+                }
+            }
+            
+            // Собираем required свойства
+            if (resolvedSubSchema.Required != null)
+            {
+                foreach (var req in resolvedSubSchema.Required)
+                {
+                    allRequired.Add(req);
+                }
+            }
+        }
+
+        // Генерируем Zod схему с объединенными свойствами
+        var props = new List<string>();
+        foreach (var prop in allProperties)
+        {
+            var camelCaseName = _namingConverter.ToCamelCase(prop.Key);
+            var isRequired = allRequired.Contains(prop.Key);
+            var optional = isRequired ? "" : ".optional()";
+            props.Add($"{camelCaseName}: {prop.Value}{optional}");
+        }
+        
+        result.ZodSchema = $"z.object({{{string.Join(", ", props)}}})";
+        return result;
+    }
+
+    /// <summary>
+    /// Маппит oneOf схему в Zod схему (union тип)
+    /// </summary>
+    private ZodSchemaMappingResult MapOneOfToZodSchema(
+        IList<IOpenApiSchema> oneOfSchemas,
+        ISchemaResolver schemaResolver,
+        HashSet<string> processedSchemas,
+        string? currentSchemaName)
+    {
+        var result = new ZodSchemaMappingResult();
+        var unionSchemas = new List<string>();
+
+        foreach (var subSchema in oneOfSchemas)
+        {
+            var subResult = MapToZodSchemaWithDependencies(
+                subSchema,
+                "item",
+                schemaResolver,
+                processedSchemas,
+                currentSchemaName);
+            
+            unionSchemas.Add(subResult.ZodSchema);
+            
+            // Собираем зависимости
+            result.SchemaDependencies.UnionWith(subResult.SchemaDependencies);
+            result.EnumDependencies.UnionWith(subResult.EnumDependencies);
+        }
+
+        result.ZodSchema = $"z.union([{string.Join(", ", unionSchemas)}])";
+        return result;
+    }
+
+    /// <summary>
+    /// Маппит anyOf схему в Zod схему (union тип, аналогично oneOf)
+    /// </summary>
+    private ZodSchemaMappingResult MapAnyOfToZodSchema(
+        IList<IOpenApiSchema> anyOfSchemas,
+        ISchemaResolver schemaResolver,
+        HashSet<string> processedSchemas,
+        string? currentSchemaName)
+    {
+        // anyOf обрабатывается аналогично oneOf
+        return MapOneOfToZodSchema(anyOfSchemas, schemaResolver, processedSchemas, currentSchemaName);
     }
 
     /// <summary>
