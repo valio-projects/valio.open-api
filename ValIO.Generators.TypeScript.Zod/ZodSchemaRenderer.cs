@@ -150,7 +150,7 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
             {
                 var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
                 
-                // Если под-схема - это ссылка на компонент, добавляем её как зависимость
+                // Определяем, является ли под-схема ссылкой на компонент
                 string? referencedSchemaName = null;
                 if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
                 {
@@ -166,13 +166,9 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
                     referencedSchemaName = schemaResolver.GetSchemaName(subSchema, string.Empty);
                 }
 
-                // Если это ссылка на компонент, добавляем зависимость
-                if (!string.IsNullOrEmpty(referencedSchemaName) && referencedSchemaName != "object")
-                {
-                    var typeName = _namingConverter.ToPascalCase(referencedSchemaName);
-                    var schemaName = $"{typeName}Schema";
-                    allSchemaDependencies.Add(schemaName);
-                }
+                // ВАЖНО: для allOf мы объединяем свойства напрямую, а не используем наследование
+                // Поэтому НЕ добавляем зависимость на базовую схему - её свойства уже включены
+                // Зависимости будут добавлены только для свойств, которые ссылаются на другие схемы
                 
                 // Собираем свойства из под-схемы
                 if (resolvedSubSchema.Properties != null)
@@ -206,7 +202,41 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
                 }
             }
 
-            // Обрабатываем свойства из allOf
+            // ВАЖНО: также добавляем свойства из самой схемы (определенные после allOf)
+            // Это нужно для случаев, когда схема переопределяет или добавляет свойства
+            if (resolvedSchema.Properties != null)
+            {
+                // Получаем оригинальные свойства из оригинальной схемы
+                IDictionary<string, IOpenApiSchema>? originalSchemaProperties = null;
+                if (schema is OpenApiSchema openApiSchema && openApiSchema.Properties != null)
+                {
+                    originalSchemaProperties = openApiSchema.Properties;
+                }
+                else
+                {
+                    originalSchemaProperties = resolvedSchema.Properties;
+                }
+
+                if (originalSchemaProperties != null)
+                {
+                    foreach (var prop in originalSchemaProperties)
+                    {
+                        // Переопределяем или добавляем свойство из самой схемы
+                        allProperties[prop.Key] = prop.Value;
+                    }
+                }
+            }
+
+            // Также собираем required из самой схемы
+            if (resolvedSchema.Required != null)
+            {
+                foreach (var req in resolvedSchema.Required)
+                {
+                    allRequired.Add(req);
+                }
+            }
+
+            // Обрабатываем все свойства (из allOf и из самой схемы)
             foreach (var property in data.Properties)
             {
                 if (!allProperties.TryGetValue(property.Name, out var originalPropSchema))
