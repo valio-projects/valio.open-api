@@ -722,7 +722,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
                 {
                     CodeFormatter.AppendLine(sb, indentLevel, "data: (() => {");
                     CodeFormatter.AppendLine(sb, indentLevel + 1, "// Валидация и конвертация через Zod схему");
-                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"const dto = {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"const parsedRequest = {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "const dto = parsedRequest;");
                     CodeFormatter.AppendLine(sb, indentLevel + 1, "const formData = new FormData();");
                     foreach (var formProp in operation.FormDataProperties)
                     {
@@ -780,7 +781,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
                 {
                     CodeFormatter.AppendLine(sb, indentLevel, "data: (() => {");
                     CodeFormatter.AppendLine(sb, indentLevel + 1, "// Валидация и конвертация через Zod схему");
-                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"return {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, $"const parsedRequest = {operation.RequestSchemaName}.parse({operation.RequestBodyParameter});");
+                    CodeFormatter.AppendLine(sb, indentLevel + 1, "return parsedRequest;");
                     CodeFormatter.AppendLine(sb, indentLevel, "})(),");
                 }
                 else
@@ -814,7 +816,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
                 if (deserializeWithSchemas && !string.IsNullOrEmpty(operation.ResponseSchemaName))
                 {
                     CodeFormatter.AppendLine(sb, indentLevel, "// Валидация и конвертация через Zod схему");
-                    CodeFormatter.AppendLine(sb, indentLevel, $"return {operation.ResponseSchemaName}.parse(response.data);");
+                    CodeFormatter.AppendLine(sb, indentLevel, $"const parsedResponse = {operation.ResponseSchemaName}.parse(response.data);");
+                    CodeFormatter.AppendLine(sb, indentLevel, "return parsedResponse;");
                 }
                 else
                 {
