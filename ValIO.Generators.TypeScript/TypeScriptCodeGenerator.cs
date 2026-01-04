@@ -4,7 +4,6 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Models;
-using System.Linq;
 using System.Text;
 
 namespace ValIO.Generators.TypeScript;
@@ -989,26 +988,112 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         sb.AppendLine("import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';");
         sb.AppendLine();
 
-        // Генерируем хуки для каждой операции
+        // Определяем путь к axios файлу для импорта методов клиента
+        var axiosFileName = $"{NamingConverter.ToCamelCase(groupName)}.axios";
+        var axiosFilePath = ResolveFilePath(axiosFileName, config, FileCategory.Clients);
+        // Вычисляем относительный путь от hooks файла к axios файлу (они в одной папке)
+        var clientImportPath = $"./{NamingConverter.ToCamelCase(groupName)}.axios";
+        
+        // Собираем все импорты моделей из всех операций
+        var allModelDependencies = new HashSet<string>(512);
+        var allClientMethodNames = new HashSet<string>(512);
+        var modelsPath = ExtractModelsPathFromClientImportPathInternal(clientImportPath);
+        
+        if (_queryWrapperRenderer != null)
+        {
+            foreach (var operation in operations)
+            {
+                // Собираем зависимости моделей через интерфейс
+                var modelDeps = _queryWrapperRenderer.CollectModelImports(operation, modelsPath);
+                foreach (var dep in modelDeps)
+                {
+                    allModelDependencies.Add(dep);
+                }
+                
+                // Собираем имена методов клиента через интерфейс
+                var clientMethodName = _queryWrapperRenderer.CollectClientMethodName(operation);
+                if (!string.IsNullOrEmpty(clientMethodName))
+                {
+                    allClientMethodNames.Add(clientMethodName);
+                }
+            }
+        }
+        
+        // Генерируем импорты моделей в начале файла
+        if (!string.IsNullOrEmpty(modelsPath) && allModelDependencies.Count > 0)
+        {
+            foreach (var dependency in allModelDependencies.OrderBy(d => d))
+            {
+                var importFileName = GetModelFileNameInternal(dependency);
+                sb.AppendLine($"import type {{ {dependency} }} from '{modelsPath}/{importFileName}.model';");
+            }
+            sb.AppendLine();
+        }
+        
+        // Генерируем импорты методов клиента в начале файла
+        if (!string.IsNullOrEmpty(clientImportPath) && allClientMethodNames.Count > 0)
+        {
+            var clientMethods = string.Join(", ", allClientMethodNames.OrderBy(m => m));
+            sb.AppendLine($"import {{ {clientMethods} }} from '{clientImportPath}';");
+            sb.AppendLine();
+        }
+        
+        // Генерируем хуки для каждой операции (без импортов, так как они уже сгенерированы выше)
         foreach (var operation in operations)
         {
             var isQuery = operation.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase);
 
             if (isQuery)
             {
-                var hookCode = _queryWrapperRenderer.RenderQueryHook(operation);
+                var hookCode = _queryWrapperRenderer.RenderQueryHook(operation, null, clientImportPath, skipImports: true);
                 sb.AppendLine(hookCode);
                 sb.AppendLine();
             }
             else
             {
-                var hookCode = _queryWrapperRenderer.RenderMutationHook(operation);
+                var hookCode = _queryWrapperRenderer.RenderMutationHook(operation, null, clientImportPath, skipImports: true);
                 sb.AppendLine(hookCode);
                 sb.AppendLine();
             }
         }
 
         return sb.ToString();
+    }
+    
+    /// <summary>
+    /// Извлекает путь к моделям из пути к клиенту (внутренний метод)
+    /// </summary>
+    private string? ExtractModelsPathFromClientImportPathInternal(string? clientImportPath)
+    {
+        if (string.IsNullOrEmpty(clientImportPath))
+            return null;
+        
+        // Если путь содержит '/endpoints/', заменяем на '/models'
+        if (clientImportPath.Contains("/endpoints/"))
+        {
+            return clientImportPath.Replace("/endpoints/", "/models/").Replace(".axios", "");
+        }
+        
+        // Если путь относительный, пытаемся определить путь к моделям
+        if (clientImportPath.StartsWith("./"))
+        {
+            return "../models";
+        }
+        
+        // По умолчанию используем '../models'
+        return "../models";
+    }
+    
+    /// <summary>
+    /// Получает имя файла модели из имени типа (внутренний метод)
+    /// </summary>
+    private string GetModelFileNameInternal(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName))
+            return string.Empty;
+        
+        // Преобразуем PascalCase в camelCase для имени файла
+        return char.ToLowerInvariant(typeName[0]) + typeName.Substring(1);
     }
 
     // Метод EnsureTemplatesPreloadedAsync удален - шаблоны больше не используются

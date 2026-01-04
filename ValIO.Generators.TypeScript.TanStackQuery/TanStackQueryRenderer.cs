@@ -22,15 +22,25 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     public QueryWrapperLibrary Library => QueryWrapperLibrary.TanStackQuery;
     public GenerationLanguage Language => GenerationLanguage.TypeScript;
 
-    public string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null)
+    public string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null, bool skipImports = false)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
 
         var sb = new StringBuilder();
         
-        // Генерируем импорты моделей
-        RenderModelImports(sb, operation, clientImportPath);
+        // Генерируем импорты моделей только если не пропущены
+        if (!skipImports)
+        {
+            var modelsPath = ExtractModelsPathFromClientImportPath(clientImportPath);
+            RenderModelImports(sb, operation, modelsPath);
+            
+            // Генерируем импорт методов клиента, если clientImportPath указан
+            if (!string.IsNullOrEmpty(clientImportPath))
+            {
+                RenderClientImports(sb, operation, clientImportPath);
+            }
+        }
         
         // Генерируем имя хука и функции
         var operationId = operation.MethodName;
@@ -75,15 +85,25 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         return sb.ToString();
     }
 
-    public string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null)
+    public string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null, bool skipImports = false)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
 
         var sb = new StringBuilder();
         
-        // Генерируем импорты моделей
-        RenderModelImports(sb, operation, clientImportPath);
+        // Генерируем импорты моделей только если не пропущены
+        if (!skipImports)
+        {
+            var modelsPath = ExtractModelsPathFromClientImportPath(clientImportPath);
+            RenderModelImports(sb, operation, modelsPath);
+            
+            // Генерируем импорт методов клиента, если clientImportPath указан
+            if (!string.IsNullOrEmpty(clientImportPath))
+            {
+                RenderClientImports(sb, operation, clientImportPath);
+            }
+        }
         
         // Генерируем имя хука и функции
         var operationId = operation.MethodName;
@@ -597,13 +617,87 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     }
 
     /// <summary>
+    /// Собирает все импорты моделей для операции (без рендеринга)
+    /// </summary>
+    public HashSet<string> CollectModelImports(OperationTemplateData operation, string? modelsPath)
+    {
+        var dependencies = new HashSet<string>();
+        
+        // Добавляем зависимости из operation.Dependencies
+        if (operation.Dependencies != null)
+        {
+            foreach (var dependency in operation.Dependencies)
+            {
+                if (!string.IsNullOrEmpty(dependency) && !IsBuiltInTypeScriptType(dependency))
+                {
+                    var typeName = ExtractTypeName(dependency);
+                    if (!string.IsNullOrEmpty(typeName) && !IsBuiltInTypeScriptType(typeName))
+                    {
+                        dependencies.Add(typeName);
+                    }
+                }
+            }
+        }
+        
+        // Извлекаем типы из ReturnTypeInfo (response модели)
+        if (operation.ReturnTypeInfo != null)
+        {
+            ExtractTypeNamesFromTypeInfo(operation.ReturnTypeInfo, dependencies);
+        }
+        
+        // Извлекаем типы из RequestBodyTypeInfo (request модели)
+        if (operation.RequestBodyTypeInfo != null)
+        {
+            ExtractTypeNamesFromTypeInfo(operation.RequestBodyTypeInfo, dependencies);
+        }
+        
+        // Извлекаем типы из параметров (path, query, header)
+        foreach (var param in operation.PathParameters)
+        {
+            if (param.TypeInfo != null)
+            {
+                ExtractTypeNamesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+        }
+        
+        foreach (var param in operation.QueryParameters)
+        {
+            if (param.TypeInfo != null)
+            {
+                ExtractTypeNamesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+        }
+        
+        foreach (var param in operation.HeaderParameters)
+        {
+            if (param.TypeInfo != null)
+            {
+                ExtractTypeNamesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+        }
+        
+        // Также добавляем QueryParametersModelTypeName, если используется
+        if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
+        {
+            dependencies.Add(operation.QueryParametersModelTypeName);
+        }
+        
+        return dependencies;
+    }
+    
+    /// <summary>
+    /// Собирает имена методов клиента для операции
+    /// </summary>
+    public string? CollectClientMethodName(OperationTemplateData operation)
+    {
+        return _namingConverter.ToCamelCase(operation.MethodName);
+    }
+    
+    /// <summary>
     /// Рендерит импорты моделей для операции
     /// </summary>
     private void RenderModelImports(StringBuilder sb, OperationTemplateData operation, string? modelsPath)
     {
-        if (string.IsNullOrEmpty(modelsPath))
-            return;
-            
         // Используем уже собранные зависимости из операции
         var dependencies = new HashSet<string>();
         
@@ -624,14 +718,51 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             }
         }
         
+        // Извлекаем типы из ReturnTypeInfo (response модели)
+        if (operation.ReturnTypeInfo != null)
+        {
+            ExtractTypeNamesFromTypeInfo(operation.ReturnTypeInfo, dependencies);
+        }
+        
+        // Извлекаем типы из RequestBodyTypeInfo (request модели)
+        if (operation.RequestBodyTypeInfo != null)
+        {
+            ExtractTypeNamesFromTypeInfo(operation.RequestBodyTypeInfo, dependencies);
+        }
+        
+        // Извлекаем типы из параметров (path, query, header)
+        foreach (var param in operation.PathParameters)
+        {
+            if (param.TypeInfo != null)
+            {
+                ExtractTypeNamesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+        }
+        
+        foreach (var param in operation.QueryParameters)
+        {
+            if (param.TypeInfo != null)
+            {
+                ExtractTypeNamesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+        }
+        
+        foreach (var param in operation.HeaderParameters)
+        {
+            if (param.TypeInfo != null)
+            {
+                ExtractTypeNamesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+        }
+        
         // Также добавляем QueryParametersModelTypeName, если используется
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
             dependencies.Add(operation.QueryParametersModelTypeName);
         }
         
-        // Генерируем импорты
-        if (dependencies.Count > 0)
+        // Генерируем импорты моделей
+        if (!string.IsNullOrEmpty(modelsPath) && dependencies.Count > 0)
         {
             foreach (var dependency in dependencies.OrderBy(d => d))
             {
@@ -639,6 +770,38 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
                 sb.AppendLine($"import type {{ {dependency} }} from '{modelsPath}/{importFileName}.model';");
             }
             sb.AppendLine();
+        }
+    }
+    
+    /// <summary>
+    /// Рекурсивно извлекает имена типов из TypeInfo и добавляет их в dependencies
+    /// </summary>
+    private void ExtractTypeNamesFromTypeInfo(TypeInfo typeInfo, HashSet<string> dependencies)
+    {
+        if (typeInfo == null)
+            return;
+        
+        // Если это не примитивный тип и не встроенный тип, добавляем базовый тип
+        if (!typeInfo.IsPrimitive && !IsBuiltInTypeScriptType(typeInfo.BaseType))
+        {
+            // Проверяем, что BaseType не пустой и не является встроенным типом
+            if (!string.IsNullOrEmpty(typeInfo.BaseType) && 
+                !IsBuiltInTypeScriptType(typeInfo.BaseType) &&
+                typeInfo.BaseType != "object" &&
+                typeInfo.BaseType != "any" &&
+                typeInfo.BaseType != "unknown")
+            {
+                dependencies.Add(typeInfo.BaseType);
+            }
+        }
+        
+        // Рекурсивно обрабатываем generic аргументы
+        if (typeInfo.GenericArguments != null && typeInfo.GenericArguments.Count > 0)
+        {
+            foreach (var genericArg in typeInfo.GenericArguments)
+            {
+                ExtractTypeNamesFromTypeInfo(genericArg, dependencies);
+            }
         }
     }
     
@@ -712,9 +875,51 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     {
         if (string.IsNullOrEmpty(typeName))
             return string.Empty;
-            
+        
         // Преобразуем PascalCase в camelCase для имени файла
         return char.ToLowerInvariant(typeName[0]) + typeName.Substring(1);
+    }
+    
+    /// <summary>
+    /// Рендерит импорты методов клиента из axios файла
+    /// </summary>
+    private void RenderClientImports(StringBuilder sb, OperationTemplateData operation, string clientImportPath)
+    {
+        if (string.IsNullOrEmpty(clientImportPath))
+            return;
+        
+        // Получаем имя метода клиента (camelCase от MethodName)
+        var clientMethodName = _namingConverter.ToCamelCase(operation.MethodName);
+        
+        // Генерируем импорт метода клиента
+        sb.AppendLine($"import {{ {clientMethodName} }} from '{clientImportPath}';");
+        sb.AppendLine();
+    }
+    
+    /// <summary>
+    /// Извлекает путь к моделям из пути к клиенту
+    /// Например, из '../endpoints/buildingOnProjectPlans.axios' получаем '../models'
+    /// </summary>
+    private string? ExtractModelsPathFromClientImportPath(string? clientImportPath)
+    {
+        if (string.IsNullOrEmpty(clientImportPath))
+            return null;
+        
+        // Если путь содержит '/endpoints/', заменяем на '/models'
+        if (clientImportPath.Contains("/endpoints/"))
+        {
+            return clientImportPath.Replace("/endpoints/", "/models/").Replace(".axios", "");
+        }
+        
+        // Если путь относительный, пытаемся определить путь к моделям
+        // Например, из './buildingOnProjectPlans.axios' получаем '../models'
+        if (clientImportPath.StartsWith("./"))
+        {
+            return "../models";
+        }
+        
+        // По умолчанию используем '../models'
+        return "../models";
     }
     
     /// <summary>
