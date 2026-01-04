@@ -332,12 +332,41 @@ public abstract class BaseCodeGenerator : ICodeGenerator
         var operationNamingStrategy = CreateOperationNamingStrategy();
         
         // Извлекаем данные
-        var models = modelExtractor.ExtractModelTemplateData(document, TypeMapper, typeInfoBuilder, dependencyAnalyzer);
+        var allModels = modelExtractor.ExtractModelTemplateData(document, TypeMapper, typeInfoBuilder, dependencyAnalyzer);
         var operations = operationExtractor.ExtractOperationTemplateData(document, TypeMapper, NamingConverter, typeInfoBuilder, dependencyAnalyzer, operationNamingStrategy);
         var enums = enumExtractor.ExtractEnumTemplateData(document);
 
-        Logger.LogInformation("Extracted {ModelCount} models, {OperationCount} operations, {EnumCount} enums", 
-            models.Count, operations.Count, enums.Count);
+        // Фильтруем enum схемы из списка моделей
+        // Создаем HashSet имен enum'ов для быстрого поиска
+        var enumNames = new HashSet<string>(enums.Select(e => e.Name), StringComparer.OrdinalIgnoreCase);
+        
+        // Также проверяем схемы напрямую, чтобы не пропустить enum'ы, которые не были извлечены
+        var enumSchemaNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (document.Components?.Schemas != null)
+        {
+            foreach (var schemaEntry in document.Components.Schemas)
+            {
+                var schemaName = schemaEntry.Key;
+                var schema = schemaEntry.Value;
+                var resolvedSchema = schemaResolver.ResolveSchema(schema);
+                
+                // Проверяем, является ли схема enum'ом
+                if (BaseEnumExtractor.IsEnumSchema(resolvedSchema))
+                {
+                    var sanitizedName = NamingConverter.SanitizeIdentifier(schemaName);
+                    enumSchemaNames.Add(sanitizedName);
+                }
+            }
+        }
+        
+        // Объединяем имена enum'ов из обоих источников
+        enumNames.UnionWith(enumSchemaNames);
+        
+        // Фильтруем модели, исключая те, которые являются enum'ами
+        var models = allModels.Where(m => !enumNames.Contains(m.Name)).ToList();
+
+        Logger.LogInformation("Extracted {ModelCount} models (filtered from {TotalModelCount}), {OperationCount} operations, {EnumCount} enums", 
+            models.Count, allModels.Count, operations.Count, enums.Count);
 
         return new ExtractedData
         {

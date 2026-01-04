@@ -121,7 +121,7 @@ public abstract class BaseEnumExtractor : IEnumExtractor
     /// <summary>
     /// Проверяет, является ли схема enum'ом
     /// </summary>
-    protected static bool IsEnumSchema(IOpenApiSchema schema)
+    public static bool IsEnumSchema(IOpenApiSchema schema)
     {
         return schema.Enum != null && schema.Enum.Count > 0;
     }

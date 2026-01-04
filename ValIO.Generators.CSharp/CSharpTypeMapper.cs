@@ -62,6 +62,15 @@ public class CSharpTypeMapper : BaseTypeMapper
         if (schema == null)
             return TypeInfo.Simple("object", language: Language);
 
+        // Важно: сначала проверяем ссылку на исходной схеме (до разрешения)
+        // После разрешения ссылка может потеряться
+        var typeName = ResolveSchemaReference(schema, schemaResolver);
+        if (!string.IsNullOrEmpty(typeName))
+        {
+            return CreateReferenceTypeInfo(typeName, false);
+        }
+
+        // Если ссылки нет, разрешаем схему и обрабатываем дальше
         var resolvedSchema = schemaResolver.ResolveSchema(schema);
         return MapTypeInfoInternal(resolvedSchema, schemaResolver, false);
     }
@@ -74,9 +83,20 @@ public class CSharpTypeMapper : BaseTypeMapper
         if (schema == null)
             return TypeInfo.Nullable(TypeInfo.Simple("object", language: Language));
 
-        var resolvedSchema = schemaResolver.ResolveSchema(schema);
-        var isNullable = !isRequired || IsSchemaNullable(resolvedSchema);
-        return MapTypeInfoInternal(resolvedSchema, schemaResolver, isNullable);
+        // Важно: сначала проверяем ссылку на исходной схеме (до разрешения)
+        // После разрешения ссылка может потеряться
+        var typeName = ResolveSchemaReference(schema, schemaResolver);
+        if (!string.IsNullOrEmpty(typeName))
+        {
+            var resolvedSchema = schemaResolver.ResolveSchema(schema);
+            var isNullable = !isRequired || IsSchemaNullable(resolvedSchema);
+            return CreateReferenceTypeInfo(typeName, isNullable);
+        }
+
+        // Если ссылки нет, разрешаем схему и обрабатываем дальше
+        var resolvedSchemaForNullable = schemaResolver.ResolveSchema(schema);
+        var isNullableForProperty = !isRequired || IsSchemaNullable(resolvedSchemaForNullable);
+        return MapTypeInfoInternal(resolvedSchemaForNullable, schemaResolver, isNullableForProperty);
     }
 
     /// <summary>

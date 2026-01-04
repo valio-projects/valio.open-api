@@ -356,7 +356,8 @@ public class CSharpCodeRenderer : ICodeRenderer
         CommentGenerator.GenerateXmlComment(sb, indentLevel, operation.Summary);
         
         // Генерируем сигнатуру метода
-        var returnType = operation.ReturnTypeInfo.FullTypeName;
+        // Для async методов нужно использовать Task<T> или Task на основе TypeInfo
+        var returnType = FormatAsyncReturnTypeFromTypeInfo(operation.ReturnTypeInfo);
         var parameters = BuildParameterString(operation);
         CodeFormatter.AppendLine(sb, indentLevel, $"public async {returnType} {operation.MethodName}({parameters}, CancellationToken cancellationToken = default)");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
@@ -867,7 +868,7 @@ public class CSharpCodeRenderer : ICodeRenderer
                         CodeFormatter.AppendLine(sb, indentLevel, "{");
                         if (responseInfo.ResponseTypeInfo != null)
                         {
-                            var errorResponseType = responseInfo.ResponseTypeInfo.FullTypeName;
+                            var errorResponseType = FormatTypeNameFromTypeInfo(responseInfo.ResponseTypeInfo);
                             CodeFormatter.AppendLine(sb, indentLevel + 1, "// Десериализуем ответ ошибки");
                             CodeFormatter.AppendLine(sb, indentLevel + 1, $"{errorResponseType}? errorResponse = null;");
                             CodeFormatter.AppendLine(sb, indentLevel + 1, "if (response.Content != null && response.Content.Headers.ContentLength > 0)");
@@ -899,9 +900,10 @@ public class CSharpCodeRenderer : ICodeRenderer
         
         if (operation.HasResponseType)
         {
-            var responseType = operation.ReturnTypeInfo.FullTypeName;
-            if (!string.IsNullOrEmpty(responseType) && operation.ReturnTypeInfo.BaseType != "void")
+            if (operation.ReturnTypeInfo != null && operation.ReturnTypeInfo.BaseType != "void")
             {
+                var responseType = FormatTypeNameFromTypeInfo(operation.ReturnTypeInfo);
+                
                 CodeFormatter.AppendLine(sb, indentLevel, "// Обрабатываем успешный ответ (2xx)");
                 CodeFormatter.AppendLine(sb, indentLevel, "if (statusCode < 200 || statusCode >= 300)");
                 CodeFormatter.AppendLine(sb, indentLevel, "{");
@@ -985,8 +987,8 @@ public class CSharpCodeRenderer : ICodeRenderer
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            var type = param.TypeInfo.FullTypeName;
-            parameters.Add($"{type} {param.VariableName}");
+            var typeName = FormatTypeNameFromTypeInfo(param.TypeInfo);
+            parameters.Add($"{typeName} {param.VariableName}");
         }
         
         // Query параметры
@@ -998,32 +1000,106 @@ public class CSharpCodeRenderer : ICodeRenderer
         {
             foreach (var param in operation.QueryParameters)
             {
-                var type = param.TypeInfo.FullTypeName;
-                var nullable = !param.IsRequired && !param.TypeInfo.IsNonNullableValueType() ? "?" : "";
-                parameters.Add($"{type}{nullable} {param.VariableName} = null");
+                var typeName = FormatTypeNameFromTypeInfo(param.TypeInfo);
+                // Для optional параметров добавляем = null
+                if (!param.IsRequired)
+                {
+                    parameters.Add($"{typeName} {param.VariableName} = null");
+                }
+                else
+                {
+                    parameters.Add($"{typeName} {param.VariableName}");
+                }
             }
         }
         
         // Header параметры
         foreach (var param in operation.HeaderParameters)
         {
-            var type = param.TypeInfo.FullTypeName;
-            var nullable = !param.IsRequired && !param.TypeInfo.IsNonNullableValueType() ? "?" : "";
-            parameters.Add($"{type}{nullable} {param.VariableName} = null");
+            var typeName = FormatTypeNameFromTypeInfo(param.TypeInfo);
+            // Для optional параметров добавляем = null
+            if (!param.IsRequired)
+            {
+                parameters.Add($"{typeName} {param.VariableName} = null");
+            }
+            else
+            {
+                parameters.Add($"{typeName} {param.VariableName}");
+            }
         }
         
         // Request body
         if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
         {
-            var type = operation.RequestBodyTypeInfo?.FullTypeName ?? "object";
-            var nullable = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNonNullableValueType() ? "?" : "";
-            parameters.Add($"{type}{nullable} {operation.RequestBodyParameter} = null");
+            var typeName = operation.RequestBodyTypeInfo != null 
+                ? FormatTypeNameFromTypeInfo(operation.RequestBodyTypeInfo)
+                : "object";
+            parameters.Add($"{typeName} {operation.RequestBodyParameter} = null");
         }
         
         return string.Join(", ", parameters);
     }
 
     // Методы FormatDefaultValue, EscapeXmlComment и EscapeString теперь в ValIO.Core.Utilities
+
+    /// <summary>
+    /// Форматирует return type для async методов на основе объектного представления TypeInfo
+    /// </summary>
+    private string FormatAsyncReturnTypeFromTypeInfo(TypeInfo returnTypeInfo)
+    {
+        if (returnTypeInfo == null)
+            return "Task";
+
+        // Если тип void, возвращаем Task (без generic)
+        if (returnTypeInfo.BaseType == "void")
+        {
+            return "Task";
+        }
+
+        // Формируем тип на основе объектного представления TypeInfo
+        var innerTypeName = FormatTypeNameFromTypeInfo(returnTypeInfo);
+        
+        // Оборачиваем в Task<T>
+        return $"Task<{innerTypeName}>";
+    }
+
+    /// <summary>
+    /// Форматирует имя типа на основе объектного представления TypeInfo (без оберток языка)
+    /// </summary>
+    private string FormatTypeNameFromTypeInfo(TypeInfo typeInfo)
+    {
+        if (typeInfo == null)
+            return "object";
+
+        string typeName;
+
+        // Если это коллекция, формируем List<T>
+        if (typeInfo.IsCollection && typeInfo.GenericArguments.Count > 0)
+        {
+            var itemTypeName = FormatTypeNameFromTypeInfo(typeInfo.GenericArguments[0]);
+            typeName = $"List<{itemTypeName}>";
+        }
+        // Если это словарь, формируем Dictionary<K, V>
+        else if (typeInfo.IsDictionary && typeInfo.GenericArguments.Count >= 2)
+        {
+            var keyTypeName = FormatTypeNameFromTypeInfo(typeInfo.GenericArguments[0]);
+            var valueTypeName = FormatTypeNameFromTypeInfo(typeInfo.GenericArguments[1]);
+            typeName = $"Dictionary<{keyTypeName}, {valueTypeName}>";
+        }
+        // Для простых типов используем BaseType или FullTypeName (который уже содержит правильное имя)
+        else
+        {
+            typeName = !string.IsNullOrEmpty(typeInfo.FullTypeName) ? typeInfo.FullTypeName : typeInfo.BaseType;
+        }
+        
+        // Добавляем nullable модификатор если нужно (для всех типов, включая коллекции и словари)
+        if (typeInfo.IsNullable && !typeInfo.IsNonNullableValueType())
+        {
+            return $"{typeName}?";
+        }
+
+        return typeName;
+    }
 
     /// <summary>
     /// Определяет ключевое слово типа модели и флаг isRecord на основе ModelFormat и Options

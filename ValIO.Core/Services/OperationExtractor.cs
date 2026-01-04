@@ -193,6 +193,8 @@ public class OperationExtractor : IOperationExtractor
                 if (schema != null)
                 {
                     var isNullable = false; // Responses обычно не nullable
+                    // Важно: передаем исходную schema (со ссылкой), а не разрешенную
+                    // TypeInfoBuilder сам разрешит ссылку и правильно определит тип
                     responseTypeInfo = typeInfoBuilder.BuildFromSchema(schema, isNullable);
                 }
                 else
