@@ -359,7 +359,13 @@ public class CSharpCodeRenderer : ICodeRenderer
         // Для async методов нужно использовать Task<T> или Task на основе TypeInfo
         var returnType = FormatAsyncReturnTypeFromTypeInfo(operation.ReturnTypeInfo);
         var parameters = BuildParameterString(operation);
-        CodeFormatter.AppendLine(sb, indentLevel, $"public async {returnType} {operation.MethodName}({parameters}, CancellationToken cancellationToken = default)");
+        
+        // Формируем полную строку параметров с CancellationToken
+        var allParameters = string.IsNullOrEmpty(parameters)
+            ? "CancellationToken cancellationToken = default"
+            : $"{parameters}, CancellationToken cancellationToken = default";
+        
+        CodeFormatter.AppendLine(sb, indentLevel, $"public async {returnType} {operation.MethodName}({allParameters})");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
         
         // Генерируем валидацию параметров
@@ -1034,7 +1040,22 @@ public class CSharpCodeRenderer : ICodeRenderer
             var typeName = operation.RequestBodyTypeInfo != null 
                 ? FormatTypeNameFromTypeInfo(operation.RequestBodyTypeInfo)
                 : "object";
-            parameters.Add($"{typeName} {operation.RequestBodyParameter} = null");
+            
+            // Если request body required, не делаем его nullable
+            if (operation.IsRequestBodyRequired)
+            {
+                parameters.Add($"{typeName} {operation.RequestBodyParameter}");
+            }
+            else
+            {
+                parameters.Add($"{typeName} {operation.RequestBodyParameter} = null");
+            }
+        }
+        
+        // Если нет параметров, возвращаем пустую строку (без запятой)
+        if (parameters.Count == 0)
+        {
+            return string.Empty;
         }
         
         return string.Join(", ", parameters);

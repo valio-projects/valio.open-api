@@ -167,6 +167,7 @@ public class OperationExtractor : IOperationExtractor
         {
             var requestBodyData = ExtractRequestBodyTemplateData(openApiOperation.RequestBody, typeInfoBuilder, namingConverter, namingStrategy, language);
             operationTemplateData.HasRequestBody = true;
+            operationTemplateData.IsRequestBodyRequired = openApiOperation.RequestBody.Required;
             operationTemplateData.RequestBodyParameter = "request";
             operationTemplateData.RequestBodyTypeInfo = requestBodyData.TypeInfo;
             operationTemplateData.RequestBodyContentType = requestBodyData.ContentType;

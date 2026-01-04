@@ -30,6 +30,7 @@ public interface IOperationTemplateData
     string? Description { get; set; }
     TypeInfo ReturnTypeInfo { get; set; }
     bool HasRequestBody { get; set; }
+    bool IsRequestBodyRequired { get; set; }
     string RequestBodyParameter { get; set; }
     TypeInfo? RequestBodyTypeInfo { get; set; }
     string? RequestBodyContentType { get; set; }

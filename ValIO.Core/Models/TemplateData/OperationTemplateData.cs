@@ -45,6 +45,11 @@ public class OperationTemplateData<TOptions> : IOperationTemplateData where TOpt
     public bool HasRequestBody { get; set; }
     
     /// <summary>
+    /// Является ли request body обязательным (required)
+    /// </summary>
+    public bool IsRequestBodyRequired { get; set; }
+    
+    /// <summary>
     /// Имя параметра для request body
     /// </summary>
     public string RequestBodyParameter { get; set; } = "request";
