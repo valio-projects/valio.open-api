@@ -12,4 +12,14 @@ public class TypeScriptClientTemplateDataOptions : ClientTemplateDataOptions
     /// Настройки для Axios HTTP клиента
     /// </summary>
     public AxiosOptions? AxiosOptions { get; set; }
+    
+    /// <summary>
+    /// Сериализовать/валидировать payload через схемы (только если ValidationLibrary задан)
+    /// </summary>
+    public bool SerializeWithSchemas { get; set; } = true;
+    
+    /// <summary>
+    /// Десериализовать/валидировать response через схемы (только если ValidationLibrary задан)
+    /// </summary>
+    public bool DeserializeWithSchemas { get; set; } = true;
 }

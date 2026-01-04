@@ -876,13 +876,50 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         // Создаем типизированные Options для Client
         var clientOptions = new TypeScriptClientTemplateDataOptions
         {
-            AxiosOptions = options.Axios
+            AxiosOptions = options.Axios,
+            SerializeWithSchemas = options.SerializeWithSchemas,
+            DeserializeWithSchemas = options.DeserializeWithSchemas
         };
 
+        // Определяем, используются ли схемы для валидации
+        var useValidationSchemas = options.ModelFormat == TypeScriptModelFormat.ValidationSchemas && 
+                                   options.ValidationLibrary == ValidationLibrary.Zod;
+        
         // Создаем типизированные Operations с Options
         var typedOperations = operations.Select(op =>
         {
             var operationOptions = new TypeScriptOperationTemplateDataOptions();
+            
+            // Устанавливаем RequestSchemaName и ResponseSchemaName, если используются схемы валидации
+            string? requestSchemaName = null;
+            string? responseSchemaName = null;
+            
+            if (useValidationSchemas)
+            {
+                // RequestSchemaName из RequestBodyTypeInfo.BaseType
+                if (op.HasRequestBody && op.RequestBodyTypeInfo != null && !op.RequestBodyTypeInfo.IsPrimitive && !string.IsNullOrEmpty(op.RequestBodyTypeInfo.BaseType))
+                {
+                    requestSchemaName = $"{op.RequestBodyTypeInfo.BaseType}Schema";
+                }
+                
+                // ResponseSchemaName из ReturnTypeInfo
+                if (op.ReturnTypeInfo != null && !op.ReturnTypeInfo.IsPrimitive && op.ReturnTypeInfo.BaseType != "void")
+                {
+                    var responseTypeInfo = op.ReturnTypeInfo;
+                    
+                    // Если это Task<T>, берем первый generic аргумент
+                    if (op.ReturnTypeInfo.BaseType == "Promise" && op.ReturnTypeInfo.GenericArguments.Count > 0)
+                    {
+                        responseTypeInfo = op.ReturnTypeInfo.GenericArguments[0];
+                    }
+                    
+                    if (!string.IsNullOrEmpty(responseTypeInfo.BaseType) && responseTypeInfo.BaseType != "void")
+                    {
+                        responseSchemaName = $"{responseTypeInfo.BaseType}Schema";
+                    }
+                }
+            }
+            
             return new Core.Models.TemplateData.OperationTemplateData<TypeScriptOperationTemplateDataOptions>
             {
                 MethodName = op.MethodName,
@@ -907,10 +944,10 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 UseQueryParametersModel = op.UseQueryParametersModel,
                 QueryParametersModelTypeName = op.QueryParametersModelTypeName,
                 QueryParametersModelImportPath = op.QueryParametersModelImportPath,
-                RequestSchemaName = op.RequestSchemaName,
-                RequestSchemaImportPath = op.RequestSchemaImportPath,
-                ResponseSchemaName = op.ResponseSchemaName,
-                ResponseSchemaImportPath = op.ResponseSchemaImportPath,
+                RequestSchemaName = requestSchemaName ?? op.RequestSchemaName,
+                RequestSchemaImportPath = modelsImportPath,
+                ResponseSchemaName = responseSchemaName ?? op.ResponseSchemaName,
+                ResponseSchemaImportPath = modelsImportPath,
                 Tags = op.Tags,
                 Options = operationOptions
             };

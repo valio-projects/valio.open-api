@@ -310,6 +310,8 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         // Получаем типизированные Options через приведение через object
         var typedData = (ClientTemplateData<TypeScriptClientTemplateDataOptions, TypeScriptOperationTemplateDataOptions>)(object)data;
         var options = typedData.Options;
+        var serializeWithSchemas = options.SerializeWithSchemas;
+        var deserializeWithSchemas = options.DeserializeWithSchemas;
         
         // Проверяем наличие кастомного экземпляра из типизированных Options
         var customInstancePath = options.AxiosOptions?.CustomInstancePath;
@@ -332,20 +334,24 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             sb.AppendLine();
         }
         
-        // Генерируем импорты схем (Zod)
+        // Генерируем импорты схем (Zod) - только если используются
         var schemaImports = new HashSet<(string SchemaName, string SchemaFileName)>();
         var queryParamsModelImports = new HashSet<(string TypeName, string FileName)>();
         
         foreach (var operation in data.Operations)
         {
-            if (!string.IsNullOrEmpty(operation.RequestSchemaName) && 
+            // Импортируем RequestSchema только если serializeWithSchemas = true
+            if (serializeWithSchemas && 
+                !string.IsNullOrEmpty(operation.RequestSchemaName) && 
                 !string.IsNullOrEmpty(operation.RequestSchemaImportPath) &&
                 !string.IsNullOrEmpty(data.ModelsPath))
             {
                 var fileName = GetSchemaFileName(operation.RequestSchemaName);
                 schemaImports.Add((operation.RequestSchemaName, fileName));
             }
-            if (!string.IsNullOrEmpty(operation.ResponseSchemaName) && 
+            // Импортируем ResponseSchema только если deserializeWithSchemas = true
+            if (deserializeWithSchemas && 
+                !string.IsNullOrEmpty(operation.ResponseSchemaName) && 
                 !string.IsNullOrEmpty(operation.ResponseSchemaImportPath) &&
                 !string.IsNullOrEmpty(data.ModelsPath))
             {
@@ -384,7 +390,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         foreach (var operationBase in data.Operations)
         {
             sb.AppendLine();
-            RenderAxiosOperation(sb, operationBase, hasCustomInstance, customInstanceName);
+            RenderAxiosOperation(sb, operationBase, hasCustomInstance, customInstanceName, serializeWithSchemas, deserializeWithSchemas);
         }
     }
 
@@ -456,7 +462,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, 0, "}");
     }
 
-    private void RenderAxiosOperation(StringBuilder sb, IOperationTemplateData operation, bool hasCustomInstance = false, string? customInstanceName = null)
+    private void RenderAxiosOperation(StringBuilder sb, IOperationTemplateData operation, bool hasCustomInstance = false, string? customInstanceName = null, bool serializeWithSchemas = true, bool deserializeWithSchemas = true)
     {
         // Генерируем JSDoc комментарий
         IReadOnlyList<(string Name, string? Description, string? Type)>? commentParams2 = !string.IsNullOrEmpty(operation.Description) 
@@ -638,7 +644,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, 2, "},");
         
         // Request body
-        GenerateRequestBody(sb, operation, indentLevel: 2, isAxios: true);
+        GenerateRequestBody(sb, operation, indentLevel: 2, isAxios: true, serializeWithSchemas);
         
         // Signal и timeout
         CodeFormatter.AppendLine(sb, 2, "...(signal !== undefined ? { signal } : {}),");
@@ -652,7 +658,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         CodeFormatter.AppendLine(sb, 1, $"const response = await instance.request<{responseType}>(config);");
         
         // Обработка ответа
-        GenerateResponseHandling(sb, operation, indentLevel: 1, isAxios: true);
+        GenerateResponseHandling(sb, operation, indentLevel: 1, isAxios: true, deserializeWithSchemas);
         
         CodeFormatter.AppendLine(sb, 0, "}");
     }
@@ -703,7 +709,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateRequestBody(StringBuilder sb, IOperationTemplateData operation, int indentLevel, bool isAxios)
+    private void GenerateRequestBody(StringBuilder sb, IOperationTemplateData operation, int indentLevel, bool isAxios, bool serializeWithSchemas = true)
     {
         if (!operation.HasRequestBody)
             return;
@@ -712,7 +718,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         {
             if (isAxios)
             {
-                if (!string.IsNullOrEmpty(operation.RequestSchemaName))
+                if (serializeWithSchemas && !string.IsNullOrEmpty(operation.RequestSchemaName))
                 {
                     CodeFormatter.AppendLine(sb, indentLevel, "data: (() => {");
                     CodeFormatter.AppendLine(sb, indentLevel + 1, "// Валидация и конвертация через Zod схему");
@@ -770,7 +776,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         {
             if (isAxios)
             {
-                if (!string.IsNullOrEmpty(operation.RequestSchemaName))
+                if (serializeWithSchemas && !string.IsNullOrEmpty(operation.RequestSchemaName))
                 {
                     CodeFormatter.AppendLine(sb, indentLevel, "data: (() => {");
                     CodeFormatter.AppendLine(sb, indentLevel + 1, "// Валидация и конвертация через Zod схему");
@@ -789,7 +795,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         }
     }
 
-    private void GenerateResponseHandling(StringBuilder sb, IOperationTemplateData operation, int indentLevel, bool isAxios)
+    private void GenerateResponseHandling(StringBuilder sb, IOperationTemplateData operation, int indentLevel, bool isAxios, bool deserializeWithSchemas = true)
     {
         var responseTypeInfo = operation.ReturnTypeInfo;
         var shouldReturnData = responseTypeInfo.BaseType != "void";
@@ -805,7 +811,7 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         {
             if (isAxios)
             {
-                if (!string.IsNullOrEmpty(operation.ResponseSchemaName))
+                if (deserializeWithSchemas && !string.IsNullOrEmpty(operation.ResponseSchemaName))
                 {
                     CodeFormatter.AppendLine(sb, indentLevel, "// Валидация и конвертация через Zod схему");
                     CodeFormatter.AppendLine(sb, indentLevel, $"return {operation.ResponseSchemaName}.parse(response.data);");
