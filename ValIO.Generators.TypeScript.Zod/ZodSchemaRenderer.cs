@@ -48,15 +48,17 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
             throw new ArgumentNullException(nameof(schemaResolver));
 
         // Пытаемся найти схему в документе
-        var schema = FindSchemaInDocument(data.Name, document);
-        if (schema == null)
+        // ВАЖНО: получаем оригинальную схему из документа, чтобы сохранить ссылки на компоненты
+        var originalSchema = FindSchemaInDocument(data.Name, document);
+        if (originalSchema == null)
         {
             // Если схема не найдена, создаем модель с базовыми Zod опциями (z.any() для всех свойств)
             return CreateFallbackZodModel(data);
         }
 
         // Создаем модель с Zod опциями, используя ZodTypeMapper для маппинга свойств
-        var zodModelData = CreateZodModelTemplateData(data, schema, document, schemaResolver);
+        // Передаем оригинальную схему, чтобы сохранить информацию о ссылках
+        var zodModelData = CreateZodModelTemplateData(data, originalSchema, document, schemaResolver);
         return Render(zodModelData);
     }
 
@@ -127,7 +129,9 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         Microsoft.OpenApi.OpenApiDocument document, 
         ISchemaResolver schemaResolver)
     {
-        var modelSchema = schemaResolver.ResolveSchema(schema);
+        // ВАЖНО: schema - это уже оригинальная схема из документа (до разрешения)
+        // Разрешаем её только для проверки наличия Properties
+        var resolvedSchema = schemaResolver.ResolveSchema(schema);
 
         // Создаем свойства с Zod опциями и собираем зависимости
         var zodProperties = new List<PropertyTemplateData<ZodPropertyTemplateDataOptions>>();
@@ -135,23 +139,39 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         var allEnumDependencies = new HashSet<string>();
         var processedSchemas = new HashSet<string>();
 
-        if (modelSchema.Properties != null)
+        // Получаем оригинальные свойства из оригинальной схемы schema
+        // Если schema - это ссылка, то schema.Properties будет null, и нужно использовать resolvedSchema
+        // Но если schema - это объект, то schema.Properties содержит оригинальные схемы со ссылками
+        IDictionary<string, IOpenApiSchema>? originalProperties = null;
+        if (schema is OpenApiSchema openApiSchema && openApiSchema.Properties != null)
+        {
+            // Это оригинальная схема-объект, используем её Properties
+            originalProperties = openApiSchema.Properties;
+        }
+        else if (resolvedSchema.Properties != null)
+        {
+            // Это ссылка или уже разрешенная схема, используем разрешенную
+            // Но это означает, что свойства уже разрешены и ссылки потеряны
+            originalProperties = resolvedSchema.Properties;
+        }
+
+        if (originalProperties != null)
         {
             foreach (var property in data.Properties)
             {
-                // Получаем схему свойства из OpenAPI схемы
-                if (!modelSchema.Properties.TryGetValue(property.Name, out var propSchema))
+                // Получаем оригинальную схему свойства из оригинальной схемы
+                // Это важно, чтобы сохранить информацию о ссылке на компонент
+                if (!originalProperties.TryGetValue(property.Name, out var originalPropSchema))
                 {
                     // Если свойство не найдено в схеме, используем z.any()
                     zodProperties.Add(CreateZodProperty(property, "z.any()"));
                     continue;
                 }
 
-                var propertySchema = schemaResolver.ResolveSchema(propSchema);
-
                 // Маппим свойство в Zod схему с зависимостями
+                // Передаем оригинальную схему originalPropSchema, чтобы ZodTypeMapper мог определить ссылку
                 var zodMappingResult = _zodTypeMapper.MapToZodSchemaWithDependencies(
-                    propertySchema,
+                    originalPropSchema,  // Используем оригинальную схему свойства
                     property.Name,
                     schemaResolver,
                     processedSchemas,

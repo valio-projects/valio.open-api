@@ -32,6 +32,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         // Генерируем импорты моделей только если не пропущены
         if (!skipImports)
         {
+            // Генерируем импорты TanStack Query типов
+            RenderTanStackQueryImports(sb);
+            
             var modelsPath = ExtractModelsPathFromClientImportPath(clientImportPath);
             RenderModelImports(sb, operation, modelsPath);
             
@@ -80,7 +83,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         RenderPrefetchSupport(sb, operation, functionName, queryKeyFunctionName, actualClientMethodName, options);
         
         // Генерируем экспорты для ResultType и AwaitedResultType
-        RenderTypeExports(sb, operation);
+        RenderTypeExports(sb, operation, actualClientMethodName);
         
         return sb.ToString();
     }
@@ -95,6 +98,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         // Генерируем импорты моделей только если не пропущены
         if (!skipImports)
         {
+            // Генерируем импорты TanStack Query типов
+            RenderTanStackQueryImports(sb);
+            
             var modelsPath = ExtractModelsPathFromClientImportPath(clientImportPath);
             RenderModelImports(sb, operation, modelsPath);
             
@@ -133,7 +139,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         RenderMutationHookFunction(sb, operation, hookName, functionName, actualClientMethodName, options);
         
         // Генерируем экспорты для ResultType и AwaitedResultType
-        RenderTypeExports(sb, operation);
+        RenderTypeExports(sb, operation, actualClientMethodName);
         
         return sb.ToString();
     }
@@ -251,8 +257,12 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         var responseType = operation.ReturnTypeInfo.FullTypeName;
         var errorType = "Error";
         
+        // Генерируем имена типов на основе имени функции клиента
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
         // Собираем параметры функции
-        var functionParams = BuildQueryHookParameters(operation);
+        var functionParams = BuildQueryHookParameters(operation, awaitedReturnTypeName);
         
         // Генерируем query key вызов
         var queryKeyParams = BuildQueryKeyParameters(operation);
@@ -263,14 +273,14 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         // Генерируем query function
         var queryFnParams = BuildClientMethodParameters(operation, clientMethodName);
         
-        CodeFormatter.AppendLine(sb, 0, $"export function {hookName}<TData = {responseType}, TError = {errorType}>(");
+        CodeFormatter.AppendLine(sb, 0, $"export function {hookName}<TData = {awaitedReturnTypeName}, TError = {errorType}>(");
         CodeFormatter.AppendLine(sb, 1, functionParams);
         CodeFormatter.AppendLine(sb, 0, $") : UseQueryResult<TData, TError> {{");
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyCall};");
-        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<TData> = () => {clientMethodName}({queryFnParams});");
+        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}> = () => {clientMethodName}({queryFnParams});");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"return useQuery<TData, TError>({{");
+        CodeFormatter.AppendLine(sb, 1, $"return useQuery<{awaitedReturnTypeName}, TError, TData>({{");
         CodeFormatter.AppendLine(sb, 2, "queryKey,");
         CodeFormatter.AppendLine(sb, 2, "queryFn,");
         CodeFormatter.AppendLine(sb, 2, "...options");
@@ -284,11 +294,14 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private void RenderQueryOptionsHelper(StringBuilder sb, OperationTemplateData operation, string functionName, string queryKeyFunctionName, string clientMethodName, TypeScriptGenerationOptions options)
     {
-        var responseType = operation.ReturnTypeInfo.FullTypeName;
         var errorType = "Error";
         var helperName = $"get{_namingConverter.ToPascalCase(functionName)}QueryOptions";
         
-        var functionParams = BuildQueryHookParameters(operation);
+        // Генерируем имена типов на основе имени функции клиента
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
+        var functionParams = BuildQueryHookParameters(operation, awaitedReturnTypeName);
         var queryKeyParams = BuildQueryKeyParameters(operation);
         var queryKeyCall = queryKeyParams.Count > 0 
             ? $"{queryKeyFunctionName}({string.Join(", ", queryKeyParams)})"
@@ -296,16 +309,17 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         var queryFnParams = BuildClientMethodParameters(operation, clientMethodName);
         
-        CodeFormatter.AppendLine(sb, 0, $"export const {helperName} = <TData = {responseType}, TError = {errorType}>(");
+        CodeFormatter.AppendLine(sb, 0, $"export const {helperName} = <TData = {awaitedReturnTypeName}, TError = {errorType}>(");
         CodeFormatter.AppendLine(sb, 1, functionParams);
-        CodeFormatter.AppendLine(sb, 0, $") : UseQueryOptions<TData, TError> => {{");
+        CodeFormatter.AppendLine(sb, 0, $") : UseQueryOptions<{awaitedReturnTypeName}, TError, TData> & {{ queryKey: QueryKey }} => {{");
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyCall};");
-        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<TData> = () => {clientMethodName}({queryFnParams});");
+        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}> = () => {clientMethodName}({queryFnParams});");
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, "return {");
         CodeFormatter.AppendLine(sb, 2, "queryKey,");
         CodeFormatter.AppendLine(sb, 2, "queryFn,");
+        CodeFormatter.AppendLine(sb, 2, "enabled: true,");
         CodeFormatter.AppendLine(sb, 2, "...options");
         CodeFormatter.AppendLine(sb, 1, "};");
         CodeFormatter.AppendLine(sb, 0, "};");
@@ -317,26 +331,30 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private void RenderInfiniteQuerySupport(StringBuilder sb, OperationTemplateData operation, string functionName, string clientMethodName, TypeScriptGenerationOptions options)
     {
-        var responseType = operation.ReturnTypeInfo.FullTypeName;
         var errorType = "Error";
         var infiniteHookName = $"use{_namingConverter.ToPascalCase(functionName)}Infinite";
         var queryKeyFunctionName = $"get{_namingConverter.ToPascalCase(functionName)}QueryKey";
         
-        var functionParams = BuildQueryHookParameters(operation);
+        // Генерируем имена типов на основе имени функции клиента
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
+        var functionParams = BuildQueryHookParameters(operation, awaitedReturnTypeName);
         var queryKeyParamsStr = string.Join(", ", BuildQueryKeyParameters(operation));
         var infiniteQueryFnParams = BuildInfiniteQueryFnParams(operation, clientMethodName);
         var clientMethodParams = BuildClientMethodParameters(operation, clientMethodName);
         
-        CodeFormatter.AppendLine(sb, 0, $"export function {infiniteHookName}<TData = InfiniteData<{responseType}>, TError = {errorType}>(");
+        CodeFormatter.AppendLine(sb, 0, $"export function {infiniteHookName}<TData = InfiniteData<{awaitedReturnTypeName}, unknown>, TError = {errorType}>(");
         CodeFormatter.AppendLine(sb, 1, functionParams);
         CodeFormatter.AppendLine(sb, 0, $") : UseInfiniteQueryResult<TData, TError> {{");
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyFunctionName}({queryKeyParamsStr});");
-        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<TData> = ({infiniteQueryFnParams}) => {clientMethodName}({clientMethodParams});");
+        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}, QueryKey, unknown> = ({{ signal }}) => {clientMethodName}({clientMethodParams});");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"return useInfiniteQuery<TData, TError>({{");
+        CodeFormatter.AppendLine(sb, 1, $"return useInfiniteQuery<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>({{");
         CodeFormatter.AppendLine(sb, 2, "queryKey,");
         CodeFormatter.AppendLine(sb, 2, "queryFn,");
+        CodeFormatter.AppendLine(sb, 2, "enabled: true,");
         CodeFormatter.AppendLine(sb, 2, "...options");
         CodeFormatter.AppendLine(sb, 1, "});");
         CodeFormatter.AppendLine(sb, 0, "}");
@@ -349,7 +367,12 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     private void RenderPrefetchSupport(StringBuilder sb, OperationTemplateData operation, string functionName, string queryKeyFunctionName, string clientMethodName, TypeScriptGenerationOptions options)
     {
         var prefetchFunctionName = $"prefetch{_namingConverter.ToPascalCase(functionName)}";
-        var functionParams = BuildQueryHookParameters(operation);
+        
+        // Генерируем имена типов на основе имени функции клиента
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
+        var functionParams = BuildQueryHookParameters(operation, awaitedReturnTypeName);
         var queryKeyParams = BuildQueryKeyParameters(operation);
         var queryKeyCall = queryKeyParams.Count > 0 
             ? $"{queryKeyFunctionName}({string.Join(", ", queryKeyParams)})"
@@ -357,18 +380,22 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         var queryFnParams = BuildClientMethodParameters(operation, clientMethodName);
         
-        CodeFormatter.AppendLine(sb, 0, $"export const {prefetchFunctionName} = async (");
-        CodeFormatter.AppendLine(sb, 1, "queryClient: QueryClient,");
+        CodeFormatter.AppendLine(sb, 0, $"export const {prefetchFunctionName} = async <");
+        CodeFormatter.AppendLine(sb, 1, $"  TData = {awaitedReturnTypeName},");
+        CodeFormatter.AppendLine(sb, 1, "  TError = Error,");
+        CodeFormatter.AppendLine(sb, 0, ">(");
+        CodeFormatter.AppendLine(sb, 1, "  queryClient: QueryClient,");
         CodeFormatter.AppendLine(sb, 1, functionParams);
-        CodeFormatter.AppendLine(sb, 0, $") : Promise<void> => {{");
+        CodeFormatter.AppendLine(sb, 0, $") : Promise<QueryClient> => {{");
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyCall};");
-        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction = () => {clientMethodName}({queryFnParams});");
+        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}> = () => {clientMethodName}({queryFnParams});");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"await queryClient.prefetchQuery({{");
+        CodeFormatter.AppendLine(sb, 1, $"await queryClient.prefetchQuery<{awaitedReturnTypeName}, TError>({{");
         CodeFormatter.AppendLine(sb, 2, "queryKey,");
         CodeFormatter.AppendLine(sb, 2, "queryFn");
         CodeFormatter.AppendLine(sb, 1, "});");
+        CodeFormatter.AppendLine(sb, 1, "return queryClient;");
         CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
     }
@@ -378,18 +405,21 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private void RenderMutationOptionsHelper(StringBuilder sb, OperationTemplateData operation, string functionName, string clientMethodName, TypeScriptGenerationOptions options)
     {
-        var responseType = operation.ReturnTypeInfo.FullTypeName;
         var errorType = "Error";
         var helperName = $"get{_namingConverter.ToPascalCase(functionName)}MutationOptions";
         
-        var mutationParams = BuildMutationHookParameters(operation);
+        // Генерируем имена типов на основе имени функции клиента
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
+        var mutationParams = BuildMutationHookParameters(operation, awaitedReturnTypeName);
         var clientMethodParams = BuildClientMethodParameters(operation, clientMethodName);
         
         CodeFormatter.AppendLine(sb, 0, $"export const {helperName} = <TError = {errorType}, TContext = unknown>(");
         CodeFormatter.AppendLine(sb, 1, mutationParams);
-        CodeFormatter.AppendLine(sb, 0, $") : UseMutationOptions<{responseType}, TError, void, TContext> => {{");
+        CodeFormatter.AppendLine(sb, 0, $") : UseMutationOptions<{awaitedReturnTypeName}, TError, {{\n    // variables\n  }}, TContext> => {{");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"const mutationFn: MutationFunction<{responseType}, void> = () => {{");
+        CodeFormatter.AppendLine(sb, 1, $"const mutationFn: MutationFunction<{awaitedReturnTypeName}, {{\n    // variables\n  }}> = (variables) => {{");
         CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({clientMethodParams});");
         CodeFormatter.AppendLine(sb, 1, "};");
         CodeFormatter.AppendEmptyLine(sb);
@@ -406,21 +436,24 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private void RenderMutationHookFunction(StringBuilder sb, OperationTemplateData operation, string hookName, string functionName, string clientMethodName, TypeScriptGenerationOptions options)
     {
-        var responseType = operation.ReturnTypeInfo.FullTypeName;
         var errorType = "Error";
         
-        var mutationParams = BuildMutationHookParameters(operation);
+        // Генерируем имена типов на основе имени функции клиента
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
+        var mutationParams = BuildMutationHookParameters(operation, awaitedReturnTypeName);
         var clientMethodParams = BuildClientMethodParameters(operation, clientMethodName);
         
         CodeFormatter.AppendLine(sb, 0, $"export function {hookName}<TError = {errorType}, TContext = unknown>(");
         CodeFormatter.AppendLine(sb, 1, mutationParams);
-        CodeFormatter.AppendLine(sb, 0, $") : UseMutationResult<{responseType}, TError, void, TContext> {{");
+        CodeFormatter.AppendLine(sb, 0, $") : UseMutationResult<{awaitedReturnTypeName}, TError, {{\n    // variables\n  }}, TContext> {{");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"const mutationFn: MutationFunction<{responseType}, void> = () => {{");
+        CodeFormatter.AppendLine(sb, 1, $"const mutationFn: MutationFunction<{awaitedReturnTypeName}, {{\n    // variables\n  }}> = (variables) => {{");
         CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({clientMethodParams});");
         CodeFormatter.AppendLine(sb, 1, "};");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"return useMutation<{responseType}, TError, void, TContext>({{");
+        CodeFormatter.AppendLine(sb, 1, $"return useMutation<{awaitedReturnTypeName}, TError, {{\n    // variables\n  }}, TContext>({{");
         CodeFormatter.AppendLine(sb, 2, "mutationFn,");
         CodeFormatter.AppendLine(sb, 2, "...options");
         CodeFormatter.AppendLine(sb, 1, "});");
@@ -434,7 +467,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// <summary>
     /// Строит параметры для query hook
     /// </summary>
-    private string BuildQueryHookParameters(OperationTemplateData operation)
+    private string BuildQueryHookParameters(OperationTemplateData operation, string awaitedReturnTypeName)
     {
         var parameters = new List<string>();
         
@@ -461,9 +494,8 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Query options
-        var responseType = operation.ReturnTypeInfo.FullTypeName;
         var errorType = "Error";
-        parameters.Add($"options?: UseQueryOptions<{responseType}, {errorType}>");
+        parameters.Add($"options?: {{\n    query?: UseQueryOptions<{awaitedReturnTypeName}, {errorType}>;\n  }}");
         
         return string.Join(",\n  ", parameters);
     }
@@ -559,7 +591,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// <summary>
     /// Строит параметры для mutation hook
     /// </summary>
-    private string BuildMutationHookParameters(OperationTemplateData operation)
+    private string BuildMutationHookParameters(OperationTemplateData operation, string awaitedReturnTypeName)
     {
         var parameters = new List<string>();
         
@@ -609,9 +641,8 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Mutation options
-        var responseType = operation.ReturnTypeInfo.FullTypeName;
         var errorType = "Error";
-        parameters.Add($"options?: UseMutationOptions<{responseType}, {errorType}, void, unknown>");
+        parameters.Add($"options?: {{\n    mutation?: UseMutationOptions<{awaitedReturnTypeName}, {errorType}, {{\n      // variables\n    }}, unknown>;\n  }}");
         
         return string.Join(",\n  ", parameters);
     }
@@ -693,6 +724,30 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         return _namingConverter.ToCamelCase(operation.MethodName);
     }
     
+    /// <summary>
+    /// Рендерит импорты TanStack Query типов
+    /// </summary>
+    private void RenderTanStackQueryImports(StringBuilder sb)
+    {
+        sb.AppendLine("import {");
+        sb.AppendLine("  useQuery,");
+        sb.AppendLine("  useInfiniteQuery,");
+        sb.AppendLine("  useMutation,");
+        sb.AppendLine("  type UseQueryResult,");
+        sb.AppendLine("  type UseQueryOptions,");
+        sb.AppendLine("  type QueryFunction,");
+        sb.AppendLine("  type UseInfiniteQueryResult,");
+        sb.AppendLine("  type UseInfiniteQueryOptions,");
+        sb.AppendLine("  type UseMutationResult,");
+        sb.AppendLine("  type UseMutationOptions,");
+        sb.AppendLine("  type MutationFunction,");
+        sb.AppendLine("  type QueryClient,");
+        sb.AppendLine("  type QueryKey,");
+        sb.AppendLine("  type InfiniteData,");
+        sb.AppendLine("} from '@tanstack/react-query';");
+        sb.AppendLine();
+    }
+
     /// <summary>
     /// Рендерит импорты моделей для операции
     /// </summary>
@@ -925,16 +980,22 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// <summary>
     /// Рендерит экспорты для ResultType и AwaitedResultType
     /// </summary>
-    private void RenderTypeExports(StringBuilder sb, OperationTemplateData operation)
+    private void RenderTypeExports(StringBuilder sb, OperationTemplateData operation, string clientMethodName)
     {
-        var responseType = operation.ReturnTypeInfo.FullTypeName;
+        // Используем имя функции клиента для генерации типов
+        var functionName = _namingConverter.ToCamelCase(clientMethodName);
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
         
-        // Экспортируем ResultType на основе Response model
-        CodeFormatter.AppendLine(sb, 0, $"export type ResultType = Awaited<ReturnType<typeof {_namingConverter.ToCamelCase(operation.MethodName)}>>;");
+        // Генерируем имена типов на основе имени функции клиента
+        var returnTypeName = $"{functionNamePascal}ReturnType";
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
+        // Экспортируем ResultType на основе функции клиента
+        CodeFormatter.AppendLine(sb, 0, $"export type {returnTypeName} = ReturnType<typeof {functionName}>;");
         CodeFormatter.AppendEmptyLine(sb);
         
         // Экспортируем AwaitedResultType на основе ResultType
-        CodeFormatter.AppendLine(sb, 0, "export type AwaitedResultType = Awaited<ResultType>;");
+        CodeFormatter.AppendLine(sb, 0, $"export type {awaitedReturnTypeName} = Awaited<{returnTypeName}>;");
         CodeFormatter.AppendEmptyLine(sb);
     }
 

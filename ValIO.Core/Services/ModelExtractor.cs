@@ -62,19 +62,27 @@ public class ModelExtractor : IModelExtractor
     public IReadOnlyList<ModelTemplateData> ExtractModelTemplateData(OpenApiDocument document, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, IDependencyAnalyzer dependencyAnalyzer)
     {
         var models = new List<ModelTemplateData>(16);
+        var inlineModels = new Dictionary<string, ModelTemplateData>(16);
 
         if (document.Components?.Schemas == null)
             return models;
 
         var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
 
+        // Первый проход: извлекаем основные модели и собираем информацию о вложенных схемах
         foreach (var schemaEntry in document.Components.Schemas)
         {
             var schemaName = schemaEntry.Key;
             var schema = schemaEntry.Value;
 
-            var modelTemplateData = ExtractModelTemplateData(schema, schemaName, typeMapper, typeInfoBuilder, dependencyCollector);
+            var modelTemplateData = ExtractModelTemplateData(schema, schemaName, typeMapper, typeInfoBuilder, dependencyCollector, inlineModels);
             models.Add(modelTemplateData);
+        }
+
+        // Второй проход: добавляем inline модели, которые были обнаружены
+        foreach (var inlineModel in inlineModels.Values)
+        {
+            models.Add(inlineModel);
         }
 
         return models;
@@ -83,10 +91,11 @@ public class ModelExtractor : IModelExtractor
     public ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, IDependencyAnalyzer dependencyAnalyzer)
     {
         var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
-        return ExtractModelTemplateData(schema, modelName, typeMapper, typeInfoBuilder, dependencyCollector);
+        var inlineModels = new Dictionary<string, ModelTemplateData>(16);
+        return ExtractModelTemplateData(schema, modelName, typeMapper, typeInfoBuilder, dependencyCollector, inlineModels);
     }
 
-    private ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, DependencyCollector dependencyCollector)
+    private ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, DependencyCollector dependencyCollector, Dictionary<string, ModelTemplateData> inlineModels)
     {
 
         var resolvedSchema = _schemaResolver.ResolveSchema(schema);
@@ -120,6 +129,9 @@ public class ModelExtractor : IModelExtractor
                 // Проверяем, является ли под-схема ссылкой на другую модель (базовый класс)
                 string? referencedSchemaName = null;
                 bool isBaseClass = false;
+                bool isInlineSchema = false;
+                string? inlineSchemaModelName = null;
+                
                 if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
                 {
                     var reference = refHolder.Reference;
@@ -134,15 +146,54 @@ public class ModelExtractor : IModelExtractor
                 
                 // Разрешаем схему для извлечения свойств
                 var resolvedSubSchema = _schemaResolver.ResolveSchema(subSchema);
-
-                // Объединяем свойства из этой схемы
-                if (resolvedSubSchema.Properties != null)
+                
+                // Проверяем, является ли это inline схемой (без $ref, но с Properties)
+                if (!isBaseClass && IsInlineObjectSchema(subSchema, resolvedSubSchema))
                 {
+                    // Создаем имя для inline модели в allOf
+                    inlineSchemaModelName = $"{_namingConverter.ToPascalCase(modelName)}Inline";
+                    isInlineSchema = true;
+                    
+                    // Создаем отдельную модель для inline схемы в allOf
+                    if (inlineModels != null && !inlineModels.ContainsKey(inlineSchemaModelName))
+                    {
+                        var simpleAnalyzer = new SimpleDependencyAnalyzer();
+                        var inlineModel = CreateInlineModel(resolvedSubSchema, inlineSchemaModelName, typeInfoBuilder, simpleAnalyzer);
+                        inlineModels[inlineSchemaModelName] = inlineModel;
+                    }
+                }
+
+                // Если это inline схема в allOf, используем созданную модель как базовый класс
+                if (isInlineSchema && !string.IsNullOrEmpty(inlineSchemaModelName))
+                {
+                    // Для inline схемы в allOf создаем intersection type (TypeScript) или наследование (C#)
+                    // Используем имя созданной модели как базовый класс
+                    if (string.IsNullOrEmpty(baseClassName))
+                    {
+                        baseClassName = _namingConverter.ToPascalCase(inlineSchemaModelName);
+                    }
+                    
+                    // Извлекаем свойства из inline схемы
+                    if (resolvedSubSchema.Properties != null)
+                    {
+                        foreach (var propertyEntry in resolvedSubSchema.Properties)
+                        {
+                            var propertyName = propertyEntry.Key;
+                            var propertySchema = propertyEntry.Value;
+                            var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder, modelName, inlineModels);
+                            allProperties[propertyName] = propertyTemplateData;
+                            ownProperties.Add(propertyTemplateData);
+                        }
+                    }
+                }
+                else if (resolvedSubSchema.Properties != null)
+                {
+                    // Объединяем свойства из этой схемы
                     foreach (var propertyEntry in resolvedSubSchema.Properties)
                     {
                         var propertyName = propertyEntry.Key;
                         var propertySchema = propertyEntry.Value;
-                        var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder);
+                        var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder, modelName, inlineModels);
                         allProperties[propertyName] = propertyTemplateData;
                         
                         // Если это базовый класс, добавляем в baseClassProperties
@@ -174,7 +225,7 @@ public class ModelExtractor : IModelExtractor
                 {
                     var propertyName = propertyEntry.Key;
                     var propertySchema = propertyEntry.Value;
-                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder);
+                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, modelName, inlineModels);
                     allProperties[propertyName] = propertyTemplateData;
                     ownProperties.Add(propertyTemplateData);
                 }
@@ -212,7 +263,7 @@ public class ModelExtractor : IModelExtractor
                 {
                     var propertyName = propertyEntry.Key;
                     var propertySchema = propertyEntry.Value;
-                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder);
+                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, modelName, inlineModels);
                     propertyTemplateData.IsRequired = required.Contains(propertyName);
                     properties.Add(propertyTemplateData);
                 }
@@ -237,14 +288,55 @@ public class ModelExtractor : IModelExtractor
         return modelTemplateData;
     }
 
-    private PropertyTemplateData ExtractPropertyTemplateData(string propertyName, IOpenApiSchema propertySchema, IOpenApiSchema parentSchema, ITypeInfoBuilder typeInfoBuilder)
+    private PropertyTemplateData ExtractPropertyTemplateData(string propertyName, IOpenApiSchema propertySchema, IOpenApiSchema parentSchema, ITypeInfoBuilder typeInfoBuilder, string? parentModelName = null, Dictionary<string, ModelTemplateData>? inlineModels = null)
     {
         var resolvedPropertySchema = _schemaResolver.ResolveSchema(propertySchema);
         var isRequired = parentSchema.Required?.Contains(propertyName) ?? false;
         var isNullable = IsSchemaNullable(resolvedPropertySchema);
+        
+        // Сначала проверяем, является ли это ссылкой на компонент схемы
+        // Если это ссылка, НЕ создаем inline модель - используем ссылку
+        bool isComponentReference = false;
+        if (propertySchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+        {
+            var reference = refHolder.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id) && reference.Type == ReferenceType.Schema)
+            {
+                isComponentReference = true; // Это ссылка на компонент, не создаем inline модель
+            }
+        }
+        
+        // Проверяем, является ли схема свойства inline объектной схемой (без $ref, но с Properties)
+        // Inline схема - это схема, которая определена прямо в свойстве, а не через ссылку на компонент
+        if (!isComponentReference && inlineModels != null && IsInlineObjectSchema(propertySchema, resolvedPropertySchema))
+        {
+            // Создаем имя для inline модели на основе родительской модели и имени свойства
+            var inlineModelName = GenerateInlineModelName(parentModelName, propertyName);
+            
+            // Проверяем, не создали ли мы уже такую модель
+            if (!inlineModels.ContainsKey(inlineModelName))
+            {
+                // Создаем отдельную модель для inline схемы
+                // Используем простой анализатор зависимостей для inline моделей
+                var simpleAnalyzer = new SimpleDependencyAnalyzer();
+                var inlineModel = CreateInlineModel(resolvedPropertySchema, inlineModelName, typeInfoBuilder, simpleAnalyzer);
+                inlineModels[inlineModelName] = inlineModel;
+            }
+            
+            // Обновляем TypeInfo свойства, чтобы оно ссылалось на созданную модель
+            var inlineModelNamePascal = _namingConverter.ToPascalCase(inlineModelName);
+            var inlineTypeInfo = TypeInfo.Simple(inlineModelNamePascal, isPrimitive: false, language: typeInfoBuilder.Language);
+            if (isNullable)
+            {
+                inlineTypeInfo = TypeInfo.Nullable(inlineTypeInfo);
+            }
+            
+            // Создаем PropertyTemplateData с обновленным TypeInfo
+            return CreatePropertyTemplateData(propertyName, inlineTypeInfo, resolvedPropertySchema, isRequired, isNullable, typeInfoBuilder.Language);
+        }
 
-        // Создаем TypeInfo для свойства
-        var typeInfo = typeInfoBuilder.BuildFromSchema(propertySchema, isNullable);
+        // Создаем TypeInfo для свойства (для ссылок или примитивов)
+        var propertyTypeInfo = typeInfoBuilder.BuildFromSchema(propertySchema, isNullable);
         
         // Определяем язык из TypeInfoBuilder
         var builderLanguage = typeInfoBuilder.Language;
@@ -292,6 +384,30 @@ public class ModelExtractor : IModelExtractor
         // Определяем IsOptional для TypeScript
         var isOptional = !isRequired && (builderLanguage == GenerationLanguage.TypeScript);
 
+        return CreatePropertyTemplateData(propertyName, propertyTypeInfo, resolvedPropertySchema, isRequired, isNullable, builderLanguage, defaultValue, min, max, exclusiveMin, exclusiveMax, minLength, maxLength, pattern);
+    }
+    
+    /// <summary>
+    /// Создает PropertyTemplateData с заданными параметрами
+    /// </summary>
+    private PropertyTemplateData CreatePropertyTemplateData(
+        string propertyName,
+        TypeInfo typeInfo,
+        IOpenApiSchema resolvedPropertySchema,
+        bool isRequired,
+        bool isNullable,
+        GenerationLanguage language,
+        object? defaultValue = null,
+        decimal? min = null,
+        decimal? max = null,
+        decimal? exclusiveMin = null,
+        decimal? exclusiveMax = null,
+        int? minLength = null,
+        int? maxLength = null,
+        string? pattern = null)
+    {
+        var isOptional = !isRequired && (language == GenerationLanguage.TypeScript);
+        
         return new PropertyTemplateData
         {
             Name = propertyName,
@@ -309,6 +425,348 @@ public class ModelExtractor : IModelExtractor
             MaxLength = maxLength,
             Pattern = pattern
         };
+    }
+    
+    /// <summary>
+    /// Проверяет, является ли схема inline объектной схемой (без $ref, но с Properties)
+    /// Inline схема - это схема, которая определена прямо в свойстве, а не через ссылку на компонент
+    /// </summary>
+    private bool IsInlineObjectSchema(IOpenApiSchema originalSchema, IOpenApiSchema resolvedSchema)
+    {
+        // Проверяем, что это не ссылка на компонент схемы
+        if (originalSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+        {
+            var reference = refHolder.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+            {
+                // Проверяем, что это ссылка на компонент схемы (начинается с #/components/schemas/)
+                if (reference.Type == ReferenceType.Schema)
+                {
+                    return false; // Это ссылка на компонент, не inline схема
+                }
+            }
+        }
+        
+        // Проверяем, что это объект с Properties и нет ссылки на компонент
+        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object))
+        {
+            if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
+            {
+                // Дополнительная проверка: если resolvedSchema имеет Reference, это не inline
+                if (resolvedSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> resolvedRefHolder)
+                {
+                    var resolvedRef = resolvedRefHolder.Reference;
+                    if (resolvedRef != null && !string.IsNullOrEmpty(resolvedRef.Id) && resolvedRef.Type == ReferenceType.Schema)
+                    {
+                        return false; // Это ссылка на компонент
+                    }
+                }
+                
+                return true; // Это inline объектная схема
+            }
+        }
+        
+        return false;
+    }
+    
+    /// <summary>
+    /// Генерирует имя для inline модели на основе родительской модели и имени свойства
+    /// </summary>
+    private string GenerateInlineModelName(string? parentModelName, string propertyName)
+    {
+        var propertyNamePascal = _namingConverter.ToPascalCase(propertyName);
+        
+        if (!string.IsNullOrEmpty(parentModelName))
+        {
+            var parentNamePascal = _namingConverter.ToPascalCase(parentModelName);
+            return $"{parentNamePascal}{propertyNamePascal}";
+        }
+        
+        return propertyNamePascal;
+    }
+    
+    /// <summary>
+    /// Создает модель для inline схемы
+    /// </summary>
+    private ModelTemplateData CreateInlineModel(IOpenApiSchema schema, string modelName, ITypeInfoBuilder typeInfoBuilder, IDependencyAnalyzer dependencyAnalyzer)
+    {
+        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
+        var sanitizedName = _namingConverter.SanitizeIdentifier(modelName);
+        var language = typeInfoBuilder.Language;
+        var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
+        
+        var model = new ModelTemplateData
+        {
+            Name = sanitizedName,
+            Description = resolvedSchema.Description,
+            Language = language,
+            Format = language == GenerationLanguage.CSharp ? ModelFormat.Class : ModelFormat.Interface,
+            Properties = new List<PropertyTemplateData>(16),
+            BaseClassProperties = new List<PropertyTemplateData>(8),
+            OwnProperties = new List<PropertyTemplateData>(8)
+        };
+        
+        // Обрабатываем allOf для inline схемы
+        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
+        {
+            var allProperties = new Dictionary<string, PropertyTemplateData>(32);
+            var baseClassProperties = new List<PropertyTemplateData>(32);
+            var ownProperties = new List<PropertyTemplateData>(32);
+            var allRequired = new HashSet<string>(32);
+            string? baseClassName = null;
+            
+            foreach (var subSchema in resolvedSchema.AllOf)
+            {
+                // Проверяем, является ли под-схема ссылкой
+                bool isBaseClass = false;
+                if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                {
+                    var reference = refHolder.Reference;
+                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                    {
+                        baseClassName = _namingConverter.ToPascalCase(reference.Id);
+                        isBaseClass = true;
+                    }
+                }
+                
+                var resolvedSubSchema = _schemaResolver.ResolveSchema(subSchema);
+                
+                if (resolvedSubSchema.Properties != null)
+                {
+                    foreach (var propertyEntry in resolvedSubSchema.Properties)
+                    {
+                        var propertyName = propertyEntry.Key;
+                        var propertySchema = propertyEntry.Value;
+                        // Не передаем inlineModels, чтобы избежать рекурсии для вложенных inline схем
+                        var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder, null, null);
+                        allProperties[propertyName] = propertyTemplateData;
+                        
+                        if (isBaseClass)
+                        {
+                            baseClassProperties.Add(propertyTemplateData);
+                        }
+                        else
+                        {
+                            ownProperties.Add(propertyTemplateData);
+                        }
+                    }
+                }
+                
+                if (resolvedSubSchema.Required != null)
+                {
+                    foreach (var requiredProp in resolvedSubSchema.Required)
+                    {
+                        allRequired.Add(requiredProp);
+                    }
+                }
+            }
+            
+            if (resolvedSchema.Properties != null)
+            {
+                foreach (var propertyEntry in resolvedSchema.Properties)
+                {
+                    var propertyName = propertyEntry.Key;
+                    var propertySchema = propertyEntry.Value;
+                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, null, null);
+                    allProperties[propertyName] = propertyTemplateData;
+                    ownProperties.Add(propertyTemplateData);
+                }
+            }
+            
+            if (resolvedSchema.Required != null)
+            {
+                foreach (var requiredProp in resolvedSchema.Required)
+                {
+                    allRequired.Add(requiredProp);
+                }
+            }
+            
+            foreach (var property in allProperties.Values)
+            {
+                property.IsRequired = allRequired.Contains(property.Name);
+            }
+            
+            model.Properties = allProperties.Values.ToList();
+            model.BaseClassProperties = baseClassProperties;
+            model.OwnProperties = ownProperties;
+            model.BaseClassName = baseClassName;
+        }
+        else
+        {
+            // Обычная схема без allOf
+            if (resolvedSchema.Properties != null)
+            {
+                var properties = new List<PropertyTemplateData>(32);
+                var required = resolvedSchema.Required?.ToHashSet() ?? new HashSet<string>();
+                
+                foreach (var propertyEntry in resolvedSchema.Properties)
+                {
+                    var propertyName = propertyEntry.Key;
+                    var propertySchema = propertyEntry.Value;
+                    // Не передаем inlineModels, чтобы избежать рекурсии
+                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, null, null);
+                    propertyTemplateData.IsRequired = required.Contains(propertyName);
+                    properties.Add(propertyTemplateData);
+                }
+                
+                model.Properties = properties;
+                model.OwnProperties = properties;
+            }
+        }
+        
+        // Собираем зависимости
+        var allDependencies = new HashSet<string>(32);
+        foreach (var property in model.Properties)
+        {
+            var propertyDependencies = dependencyCollector.CollectFromTypeInfo(property.TypeInfo);
+            foreach (var dep in propertyDependencies)
+            {
+                allDependencies.Add(dep);
+            }
+        }
+        model.Dependencies = allDependencies.ToList();
+        
+        return model;
+    }
+    
+    /// <summary>
+    /// Простой анализатор зависимостей для inline моделей
+    /// </summary>
+    private class SimpleDependencyAnalyzer : IDependencyAnalyzer
+    {
+        public IReadOnlyList<string> AnalyzeModelDependencies(ModelTemplateData model)
+        {
+            return CollectAllDependencies(model);
+        }
+        
+        public IReadOnlyList<string> AnalyzeOperationDependencies(OperationTemplateData operation)
+        {
+            return CollectAllDependencies(operation);
+        }
+        
+        public void CollectDependenciesFromTypeInfo(TypeInfo typeInfo, HashSet<string> dependencies)
+        {
+            if (typeInfo == null)
+                return;
+            
+            // Если это не примитивный тип и не встроенный тип, добавляем базовый тип
+            if (!typeInfo.IsPrimitive && !IsBuiltInType(typeInfo.BaseType))
+            {
+                if (!string.IsNullOrEmpty(typeInfo.BaseType) && 
+                    !IsBuiltInType(typeInfo.BaseType) &&
+                    typeInfo.BaseType != "object" &&
+                    typeInfo.BaseType != "any" &&
+                    typeInfo.BaseType != "unknown")
+                {
+                    dependencies.Add(typeInfo.BaseType);
+                }
+            }
+            
+            // Рекурсивно обрабатываем generic аргументы
+            if (typeInfo.GenericArguments != null && typeInfo.GenericArguments.Count > 0)
+            {
+                foreach (var genericArg in typeInfo.GenericArguments)
+                {
+                    CollectDependenciesFromTypeInfo(genericArg, dependencies);
+                }
+            }
+        }
+        
+        public IReadOnlyList<string> CollectAllDependencies(ModelTemplateData model)
+        {
+            var dependencies = new HashSet<string>();
+            foreach (var property in model.Properties)
+            {
+                CollectDependenciesFromTypeInfo(property.TypeInfo, dependencies);
+            }
+            return dependencies.ToList();
+        }
+        
+        public IReadOnlyList<string> CollectAllDependencies(OperationTemplateData operation)
+        {
+            var dependencies = new HashSet<string>();
+            if (operation.ReturnTypeInfo != null)
+            {
+                CollectDependenciesFromTypeInfo(operation.ReturnTypeInfo, dependencies);
+            }
+            if (operation.RequestBodyTypeInfo != null)
+            {
+                CollectDependenciesFromTypeInfo(operation.RequestBodyTypeInfo, dependencies);
+            }
+            foreach (var param in operation.PathParameters)
+            {
+                CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+            foreach (var param in operation.QueryParameters)
+            {
+                CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+            foreach (var param in operation.HeaderParameters)
+            {
+                CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
+            }
+            return dependencies.ToList();
+        }
+        
+        public IReadOnlyList<string> CollectAllDependencies(ClientTemplateData client)
+        {
+            var dependencies = new HashSet<string>();
+            // ClientTemplateData.Operations возвращает типизированные операции
+            // Используем интерфейс IClientTemplateData для доступа к операциям
+            var clientInterface = (IClientTemplateData)client;
+            foreach (var operation in clientInterface.Operations)
+            {
+                // Работаем через интерфейс IOperationTemplateData
+                if (operation.ReturnTypeInfo != null)
+                {
+                    CollectDependenciesFromTypeInfo(operation.ReturnTypeInfo, dependencies);
+                }
+                if (operation.RequestBodyTypeInfo != null)
+                {
+                    CollectDependenciesFromTypeInfo(operation.RequestBodyTypeInfo, dependencies);
+                }
+                foreach (var param in operation.PathParameters)
+                {
+                    CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
+                }
+                foreach (var param in operation.QueryParameters)
+                {
+                    CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
+                }
+                foreach (var param in operation.HeaderParameters)
+                {
+                    CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
+                }
+            }
+            return dependencies.ToList();
+        }
+        
+        public Dictionary<string, string> ResolveImportPaths(IReadOnlyList<string> dependencies, string? modelsPath = null, string? schemasPath = null)
+        {
+            var result = new Dictionary<string, string>();
+            foreach (var dep in dependencies)
+            {
+                result[dep] = modelsPath ?? "./models";
+            }
+            return result;
+        }
+        
+        private bool IsBuiltInType(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName))
+                return false;
+            
+            var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            {
+                "any", "unknown", "void", "null", "undefined",
+                "string", "number", "boolean", "object", "Array",
+                "Promise", "Record", "int", "long", "float", "double",
+                "decimal", "bool", "DateTime", "DateTimeOffset", "Guid",
+                "byte[]", "Stream", "List", "Dictionary"
+            };
+            
+            return builtInTypes.Contains(typeName);
+        }
     }
 }
 
