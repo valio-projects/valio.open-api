@@ -11,6 +11,7 @@ public static class SchemaCompositionHelper
 {
     /// <summary>
     /// Получает имя схемы из ссылки или из resolver
+    /// Унифицированный метод для разрешения ссылок на схемы
     /// </summary>
     public static string? GetSchemaName(
         IOpenApiSchema schema, 
@@ -37,6 +38,17 @@ public static class SchemaCompositionHelper
         }
         
         return null;
+    }
+    
+    /// <summary>
+    /// Получает имя схемы без применения naming converter (возвращает оригинальное имя)
+    /// Используется когда нужно получить исходное имя схемы из ссылки
+    /// </summary>
+    public static string? GetSchemaNameRaw(
+        IOpenApiSchema schema, 
+        ISchemaResolver schemaResolver)
+    {
+        return GetSchemaName(schema, schemaResolver, namingConverter: null);
     }
     
     /// <summary>

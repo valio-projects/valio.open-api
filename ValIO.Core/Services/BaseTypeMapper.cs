@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Core.Services;
 
@@ -70,26 +71,11 @@ public abstract class BaseTypeMapper : ITypeMapper
 
     /// <summary>
     /// Разрешает ссылку на схему и возвращает имя типа
+    /// Использует SchemaCompositionHelper для унификации логики
     /// </summary>
     protected string? ResolveSchemaReference(IOpenApiSchema schema, ISchemaResolver schemaResolver)
     {
-        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
-        {
-            var reference = referenceHolder.Reference;
-            if (reference != null && !string.IsNullOrEmpty(reference.Id))
-            {
-                return NamingConverter.ToPascalCase(reference.Id);
-            }
-        }
-
-        // Также проверяем через GetSchemaName для случаев, когда ссылка может быть в другом формате
-        var schemaName = schemaResolver.GetSchemaName(schema, string.Empty);
-        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
-        {
-            return NamingConverter.ToPascalCase(schemaName);
-        }
-
-        return null;
+        return Utilities.SchemaCompositionHelper.GetSchemaName(schema, schemaResolver, NamingConverter);
     }
 
     /// <summary>
@@ -226,4 +212,16 @@ public abstract class BaseTypeMapper : ITypeMapper
     /// Обрабатывает oneOf/anyOf (union)
     /// </summary>
     protected abstract TypeInfo HandleOneOfAnyOf(IOpenApiSchema schema, ISchemaResolver schemaResolver, bool isNullable);
+    
+    /// <summary>
+    /// Получает информацию о композиции схем (allOf, oneOf, anyOf)
+    /// Используется наследниками для унифицированной обработки композиции
+    /// </summary>
+    protected SchemaCompositionInfo? GetCompositionInfo(
+        IOpenApiSchema schema,
+        IOpenApiSchema resolvedSchema,
+        ISchemaResolver schemaResolver)
+    {
+        return SchemaCompositionHelper.CreateCompositionInfo(schema, resolvedSchema, schemaResolver, NamingConverter);
+    }
 }

@@ -136,21 +136,16 @@ public class ModelExtractor : IModelExtractor
             foreach (var subSchema in resolvedSchema.AllOf)
             {
                 // Проверяем, является ли под-схема ссылкой на другую модель (базовый класс)
-                string? referencedSchemaName = null;
-                bool isBaseClass = false;
+                // Используем унифицированный метод из SchemaCompositionHelper
+                var referencedSchemaName = SchemaCompositionHelper.GetSchemaNameRaw(subSchema, _schemaResolver);
+                bool isBaseClass = !string.IsNullOrEmpty(referencedSchemaName);
                 bool isInlineSchema = false;
                 string? inlineSchemaModelName = null;
                 
-                if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                if (isBaseClass && !string.IsNullOrEmpty(referencedSchemaName))
                 {
-                    var reference = refHolder.Reference;
-                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                    {
-                        // Это базовый класс - сохраняем его имя
-                        referencedSchemaName = reference.Id;
-                        baseClassName = _namingConverter.ToPascalCase(reference.Id);
-                        isBaseClass = true;
-                    }
+                    // Это базовый класс - сохраняем его имя
+                    baseClassName = _namingConverter.ToPascalCase(referencedSchemaName);
                 }
                 
                 // Разрешаем схему для извлечения свойств
@@ -531,15 +526,13 @@ public class ModelExtractor : IModelExtractor
             foreach (var subSchema in resolvedSchema.AllOf)
             {
                 // Проверяем, является ли под-схема ссылкой
-                bool isBaseClass = false;
-                if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+                // Используем унифицированный метод из SchemaCompositionHelper
+                var referencedSchemaName = SchemaCompositionHelper.GetSchemaNameRaw(subSchema, _schemaResolver);
+                bool isBaseClass = !string.IsNullOrEmpty(referencedSchemaName);
+                
+                if (isBaseClass && !string.IsNullOrEmpty(referencedSchemaName))
                 {
-                    var reference = refHolder.Reference;
-                    if (reference != null && !string.IsNullOrEmpty(reference.Id))
-                    {
-                        baseClassName = _namingConverter.ToPascalCase(reference.Id);
-                        isBaseClass = true;
-                    }
+                    baseClassName = _namingConverter.ToPascalCase(referencedSchemaName);
                 }
                 
                 var resolvedSubSchema = _schemaResolver.ResolveSchema(subSchema);

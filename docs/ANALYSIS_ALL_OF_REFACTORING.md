@@ -338,7 +338,34 @@ foreach (var subSchemaInfo in allOfSubSchemas)
 
 ## Следующие шаги
 
-1. Создать `ValIO.Core/Utilities/SchemaHelper.cs`
-2. Заменить дублирование в генераторах на использование `SchemaHelper`
-3. Протестировать изменения
-4. Рассмотреть создание `AllOfHelper` при необходимости
+1. ✅ Создать `ValIO.Core/Utilities/SchemaCompositionHelper.cs` (уже создан)
+2. ✅ Заменить дублирование в генераторах на использование `SchemaCompositionHelper`
+3. ✅ Унифицировать логику разрешения ссылок через `BaseTypeMapper.ResolveSchemaReference`
+4. ✅ Расширить `BaseTypeMapper` для поддержки композиции через `GetCompositionInfo`
+5. ⏳ Протестировать изменения
+6. ⏳ Рассмотреть дальнейшие улучшения при необходимости
+
+## Выполненные изменения
+
+### 1. Унификация логики разрешения ссылок
+- ✅ `BaseTypeMapper.ResolveSchemaReference` теперь использует `SchemaCompositionHelper.GetSchemaName`
+- ✅ `ZodTypeMapper` использует `SchemaCompositionHelper.GetSchemaNameRaw` вместо дублирования логики
+- ✅ `ModelExtractor` использует `SchemaCompositionHelper.GetSchemaNameRaw` вместо ручной проверки ссылок
+
+### 2. Унификация получения оригинальных Properties
+- ✅ `ZodTypeMapper.MapAllOfToZodSchema` использует `SchemaCompositionHelper.GetOriginalProperties`
+- ✅ `ZodSchemaRenderer` уже использует `SchemaCompositionHelper.GetOriginalProperties`
+
+### 3. Улучшение обработки allOf в ZodTypeMapper
+- ✅ `ZodTypeMapper.MapAllOfToZodSchema` теперь использует `SchemaCompositionHelper.CreateCompositionInfo` для получения структурированной информации о композиции
+- ✅ Используется `SchemaCompositionHelper.MergeRequiredProperties` для объединения required свойств
+
+### 4. Расширение BaseTypeMapper
+- ✅ Добавлен метод `GetCompositionInfo` в `BaseTypeMapper` для унифицированного доступа к информации о композиции
+- ✅ Все наследники `BaseTypeMapper` теперь могут использовать этот метод
+
+## Оставшиеся задачи
+
+1. Протестировать все изменения на реальных схемах
+2. Убедиться, что нет регрессий в генерации кода
+3. Проверить производительность после рефакторинга

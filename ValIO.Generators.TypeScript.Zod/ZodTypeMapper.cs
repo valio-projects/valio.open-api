@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
+using ValIO.Core.Models;
+using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Zod.Models;
 
 namespace ValIO.Generators.TypeScript.Zod;
@@ -45,21 +47,8 @@ public class ZodTypeMapper
         }
 
         // Проверяем на ссылку на схему ДО разрешения
-        string? referencedSchemaName = null;
-        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
-        {
-            var reference = referenceHolder.Reference;
-            if (reference != null && !string.IsNullOrEmpty(reference.Id))
-            {
-                referencedSchemaName = reference.Id;
-            }
-        }
-
-        // Также проверяем через GetSchemaName
-        if (string.IsNullOrEmpty(referencedSchemaName))
-        {
-            referencedSchemaName = schemaResolver.GetSchemaName(schema, string.Empty);
-        }
+        // Используем унифицированный метод из SchemaCompositionHelper
+        var referencedSchemaName = SchemaCompositionHelper.GetSchemaNameRaw(schema, schemaResolver);
 
         // Если есть ссылка на схему, используем её как зависимость
         if (!string.IsNullOrEmpty(referencedSchemaName) && referencedSchemaName != "object")
@@ -99,6 +88,7 @@ public class ZodTypeMapper
         var resolvedSchema2 = schemaResolver.ResolveSchema(schema);
 
         // Обрабатываем allOf - объединяем свойства из всех схем
+        // Используем SchemaCompositionHelper для получения информации о композиции
         if (resolvedSchema2.AllOf != null && resolvedSchema2.AllOf.Count > 0)
         {
             return MapAllOfToZodSchema(resolvedSchema2.AllOf, schema, schemaResolver, processedSchemas, currentSchemaName);
@@ -139,20 +129,8 @@ public class ZodTypeMapper
         {
             // Проверяем, есть ли у объекта ссылка на схему (проверяем оригинальную схему ДО разрешения)
             // Это важно для вложенных объектов, которые должны быть отдельными схемами
-            string? objectSchemaName = null;
-            if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> objectRefHolder)
-            {
-                var objectRef = objectRefHolder.Reference;
-                if (objectRef != null && !string.IsNullOrEmpty(objectRef.Id))
-                {
-                    objectSchemaName = objectRef.Id;
-                }
-            }
-            
-            if (string.IsNullOrEmpty(objectSchemaName))
-            {
-                objectSchemaName = schemaResolver.GetSchemaName(schema, string.Empty);
-            }
+            // Используем унифицированный метод из SchemaCompositionHelper
+            var objectSchemaName = SchemaCompositionHelper.GetSchemaNameRaw(schema, schemaResolver);
             
             // Если у объекта есть имя схемы и это не просто "object", создаем ссылку на схему
             if (!string.IsNullOrEmpty(objectSchemaName) && objectSchemaName != "object")
@@ -333,6 +311,7 @@ public class ZodTypeMapper
 
     /// <summary>
     /// Маппит allOf схему в Zod схему (объединение свойств из всех схем)
+    /// Использует SchemaCompositionHelper для унификации логики
     /// </summary>
     private ZodSchemaMappingResult MapAllOfToZodSchema(
         IList<IOpenApiSchema> allOfSchemas,
@@ -345,69 +324,122 @@ public class ZodTypeMapper
         var allProperties = new Dictionary<string, string>();
         var allRequired = new HashSet<string>();
 
-        foreach (var subSchema in allOfSchemas)
+        // Разрешаем оригинальную схему для получения resolved версии
+        var resolvedSchema = schemaResolver.ResolveSchema(originalSchema);
+        
+        // Создаем информацию о композиции для использования унифицированных методов
+        var compositionInfo = SchemaCompositionHelper.CreateCompositionInfo(
+            originalSchema, 
+            resolvedSchema, 
+            schemaResolver, 
+            _namingConverter);
+        
+        if (compositionInfo != null && compositionInfo.CompositionType == SchemaCompositionType.AllOf)
         {
-            // Разрешаем под-схему
-            var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
-            
-            // Если под-схема - это ссылка на компонент, добавляем её как зависимость
-            string? referencedSchemaName = null;
-            if (subSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+            // Используем информацию о композиции для обработки под-схем
+            foreach (var subSchemaInfo in compositionInfo.SubSchemaInfos)
             {
-                var reference = refHolder.Reference;
-                if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                // Если под-схема - это ссылка на компонент, добавляем её как зависимость
+                if (subSchemaInfo.IsComponentReference && !string.IsNullOrEmpty(subSchemaInfo.ReferencedSchemaName))
                 {
-                    referencedSchemaName = reference.Id;
+                    var typeName = _namingConverter.ToPascalCase(subSchemaInfo.ReferencedSchemaName);
+                    var schemaName = $"{typeName}Schema";
+                    
+                    // Проверяем на циклическую ссылку
+                    var isCircular = !string.IsNullOrEmpty(currentSchemaName) && 
+                                    currentSchemaName.Equals(subSchemaInfo.ReferencedSchemaName, StringComparison.OrdinalIgnoreCase);
+                    
+                    if (!isCircular)
+                    {
+                        result.SchemaDependencies.Add(schemaName);
+                    }
+                }
+                
+                // Обрабатываем свойства из под-схемы
+                // Используем оригинальные свойства (до разрешения) для сохранения ссылок
+                if (subSchemaInfo.OriginalProperties != null)
+                {
+                    foreach (var prop in subSchemaInfo.OriginalProperties)
+                    {
+                        var propResult = MapToZodSchemaWithDependencies(
+                            prop.Value,
+                            prop.Key,
+                            schemaResolver,
+                            processedSchemas,
+                            currentSchemaName);
+                        
+                        allProperties[prop.Key] = propResult.ZodSchema;
+                        
+                        // Собираем зависимости
+                        result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
+                        result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+                    }
+                }
+                
+                // Собираем required свойства
+                if (subSchemaInfo.ResolvedSchema.Required != null)
+                {
+                    foreach (var req in subSchemaInfo.ResolvedSchema.Required)
+                    {
+                        allRequired.Add(req);
+                    }
                 }
             }
             
-            if (string.IsNullOrEmpty(referencedSchemaName))
+            // Добавляем required из самой схемы
+            var mergedRequired = SchemaCompositionHelper.MergeRequiredProperties(compositionInfo, resolvedSchema, schemaResolver);
+            foreach (var req in mergedRequired)
             {
-                referencedSchemaName = schemaResolver.GetSchemaName(subSchema, string.Empty);
+                allRequired.Add(req);
             }
+        }
+        else
+        {
+            // Fallback на старую логику, если не удалось создать CompositionInfo
+            foreach (var subSchema in allOfSchemas)
+            {
+                var resolvedSubSchema = schemaResolver.ResolveSchema(subSchema);
+                var referencedSchemaName = SchemaCompositionHelper.GetSchemaNameRaw(subSchema, schemaResolver);
 
-            // Если это ссылка на компонент, используем её схему
-            if (!string.IsNullOrEmpty(referencedSchemaName) && referencedSchemaName != "object")
-            {
-                var typeName = _namingConverter.ToPascalCase(referencedSchemaName);
-                var schemaName = $"{typeName}Schema";
-                
-                // Проверяем на циклическую ссылку
-                var isCircular = !string.IsNullOrEmpty(currentSchemaName) && 
-                                currentSchemaName.Equals(referencedSchemaName, StringComparison.OrdinalIgnoreCase);
-                
-                if (!isCircular)
+                if (!string.IsNullOrEmpty(referencedSchemaName) && referencedSchemaName != "object")
                 {
-                    result.SchemaDependencies.Add(schemaName);
-                }
-            }
-            
-            // Обрабатываем свойства из под-схемы
-            if (resolvedSubSchema.Properties != null)
-            {
-                foreach (var prop in resolvedSubSchema.Properties)
-                {
-                    var propResult = MapToZodSchemaWithDependencies(
-                        prop.Value,
-                        prop.Key,
-                        schemaResolver,
-                        processedSchemas,
-                        currentSchemaName);
+                    var typeName = _namingConverter.ToPascalCase(referencedSchemaName);
+                    var schemaName = $"{typeName}Schema";
                     
-                    allProperties[prop.Key] = propResult.ZodSchema;
+                    var isCircular = !string.IsNullOrEmpty(currentSchemaName) && 
+                                    currentSchemaName.Equals(referencedSchemaName, StringComparison.OrdinalIgnoreCase);
                     
-                    // Собираем зависимости
-                    result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
-                    result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+                    if (!isCircular)
+                    {
+                        result.SchemaDependencies.Add(schemaName);
+                    }
                 }
-            }
-            
-            // Собираем required свойства
-            if (resolvedSubSchema.Required != null)
-            {
-                foreach (var req in resolvedSubSchema.Required)
+                
+                var originalSubSchemaProperties = SchemaCompositionHelper.GetOriginalProperties(subSchema, resolvedSubSchema);
+                if (originalSubSchemaProperties != null)
                 {
-                    allRequired.Add(req);
+                    foreach (var prop in originalSubSchemaProperties)
+                    {
+                        var propResult = MapToZodSchemaWithDependencies(
+                            prop.Value,
+                            prop.Key,
+                            schemaResolver,
+                            processedSchemas,
+                            currentSchemaName);
+                        
+                        allProperties[prop.Key] = propResult.ZodSchema;
+                        
+                        result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
+                        result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+                    }
+                }
+                
+                if (resolvedSubSchema.Required != null)
+                {
+                    foreach (var req in resolvedSubSchema.Required)
+                    {
+                        allRequired.Add(req);
+                    }
                 }
             }
         }
