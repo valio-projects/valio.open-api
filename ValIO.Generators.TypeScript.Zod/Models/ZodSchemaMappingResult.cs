@@ -6,9 +6,9 @@ namespace ValIO.Generators.TypeScript.Zod.Models;
 public class ZodSchemaMappingResult
 {
     /// <summary>
-    /// Zod схема (строка)
+    /// Zod схема (структурированное представление)
     /// </summary>
-    public string ZodSchema { get; set; } = string.Empty;
+    public ZodSchemaExpression Expression { get; set; } = null!;
     
     /// <summary>
     /// Список зависимостей - схем, которые нужно импортировать

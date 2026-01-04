@@ -190,7 +190,8 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
                     allEnumDependencies.Add(dep);
                 }
 
-                zodProperties.Add(CreateZodProperty(property, zodMappingResult.ZodSchema));
+                var zodSchemaString = RenderExpression(zodMappingResult.Expression);
+                zodProperties.Add(CreateZodProperty(property, zodSchemaString));
             }
         }
         else
@@ -238,7 +239,8 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
                         allEnumDependencies.Add(dep);
                     }
 
-                    zodProperties.Add(CreateZodProperty(property, zodMappingResult.ZodSchema));
+                    var zodSchemaString = RenderExpression(zodMappingResult.Expression);
+                    zodProperties.Add(CreateZodProperty(property, zodSchemaString));
                 }
             }
             else
@@ -643,6 +645,170 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         };
 
         return builtInTypes.Contains(typeName);
+    }
+
+    /// <summary>
+    /// Рендерит ZodSchemaExpression в строку TypeScript кода
+    /// </summary>
+    private string RenderExpression(ZodSchemaExpression expression)
+    {
+        return expression switch
+        {
+            ZodReferenceExpression refExpr => refExpr.SchemaName,
+            
+            ZodLazyExpression lazyExpr => $"z.lazy(() => {lazyExpr.SchemaName})",
+            
+            ZodPrimitiveExpression primExpr => RenderPrimitiveExpression(primExpr),
+            
+            ZodObjectExpression objExpr => RenderObjectExpression(objExpr),
+            
+            ZodArrayExpression arrExpr => $"z.array({RenderExpression(arrExpr.ItemExpression)})",
+            
+            ZodUnionExpression unionExpr => RenderUnionExpression(unionExpr),
+            
+            ZodIntersectionExpression interExpr => RenderIntersectionExpression(interExpr),
+            
+            ZodRecordExpression recordExpr => $"z.record(z.string(), {RenderExpression(recordExpr.ValueExpression)})",
+            
+            ZodEnumExpression enumExpr => RenderEnumExpression(enumExpr),
+            
+            _ => "z.any()"
+        };
+    }
+
+    /// <summary>
+    /// Рендерит примитивное выражение
+    /// </summary>
+    private string RenderPrimitiveExpression(ZodPrimitiveExpression expr)
+    {
+        var baseType = expr.Type switch
+        {
+            ZodPrimitiveType.Any => "z.any()",
+            ZodPrimitiveType.Boolean => "z.boolean()",
+            ZodPrimitiveType.Number => "z.number()",
+            ZodPrimitiveType.String => "z.string()",
+            ZodPrimitiveType.InstanceOf => "z.instanceof(Blob)",
+            _ => "z.any()"
+        };
+
+        // Применяем формат для строк
+        if (expr.Type == ZodPrimitiveType.String && !string.IsNullOrEmpty(expr.Format))
+        {
+            baseType = expr.Format switch
+            {
+                "date" => "z.string().date()",
+                "date-time" => "z.string().datetime()",
+                "uuid" => "z.string().uuid()",
+                "uri" => "z.string().url()",
+                "email" => "z.string().email()",
+                _ => baseType
+            };
+        }
+        
+        // Применяем формат для number (int32, int64 -> .int())
+        if (expr.Type == ZodPrimitiveType.Number && !string.IsNullOrEmpty(expr.Format))
+        {
+            if (expr.Format == "int32" || expr.Format == "int64")
+            {
+                baseType = "z.number().int()";
+            }
+        }
+
+        // Применяем валидации
+        if (expr.Validations != null)
+        {
+            if (!string.IsNullOrEmpty(expr.Validations.Minimum))
+            {
+                baseType += $".min({expr.Validations.Minimum})";
+            }
+            if (!string.IsNullOrEmpty(expr.Validations.Maximum))
+            {
+                baseType += $".max({expr.Validations.Maximum})";
+            }
+            if (expr.Validations.MinLength.HasValue)
+            {
+                baseType += $".min({expr.Validations.MinLength})";
+            }
+            if (expr.Validations.MaxLength.HasValue)
+            {
+                baseType += $".max({expr.Validations.MaxLength})";
+            }
+            if (!string.IsNullOrEmpty(expr.Validations.Pattern))
+            {
+                baseType += $".regex(/{expr.Validations.Pattern}/)";
+            }
+        }
+
+        return baseType;
+    }
+
+    /// <summary>
+    /// Рендерит объектное выражение
+    /// </summary>
+    private string RenderObjectExpression(ZodObjectExpression expr)
+    {
+        var props = new List<string>();
+        foreach (var prop in expr.Properties)
+        {
+            var camelCaseName = _namingConverter.ToCamelCase(prop.Key);
+            var zodSchema = RenderExpression(prop.Value.Expression);
+            var optional = prop.Value.IsRequired ? "" : ".optional()";
+            props.Add($"{camelCaseName}: {zodSchema}{optional}");
+        }
+        
+        return $"z.object({{{string.Join(", ", props)}}})";
+    }
+
+    /// <summary>
+    /// Рендерит union выражение
+    /// </summary>
+    private string RenderUnionExpression(ZodUnionExpression expr)
+    {
+        var schemas = expr.Expressions.Select(RenderExpression).ToList();
+        return $"z.union([{string.Join(", ", schemas)}])";
+    }
+
+    /// <summary>
+    /// Рендерит intersection выражение (для allOf)
+    /// </summary>
+    private string RenderIntersectionExpression(ZodIntersectionExpression expr)
+    {
+        // Для allOf в Zod мы объединяем свойства объектов, поэтому это должно быть z.object
+        // Но если это не объекты, используем intersection
+        // Пока упрощаем - для allOf всегда создаем объект с объединенными свойствами
+        // Это уже обрабатывается в MapAllOfToZodSchema, который создает ZodObjectExpression
+        var schemas = expr.Expressions.Select(RenderExpression).ToList();
+        return $"z.intersection({string.Join(", ", schemas)})";
+    }
+
+    /// <summary>
+    /// Рендерит enum выражение
+    /// </summary>
+    private string RenderEnumExpression(ZodEnumExpression expr)
+    {
+        // Если это ссылка на enum схему
+        if (!string.IsNullOrEmpty(expr.SchemaName))
+        {
+            return expr.SchemaName;
+        }
+
+        // Если это inline enum
+        if (expr.Values != null && expr.Values.Count > 0)
+        {
+            if (expr.UnderlyingType == "string")
+            {
+                var values = expr.Values.Select(v => v.ValueString).ToList();
+                return $"z.enum([{string.Join(", ", values)}])";
+            }
+            else
+            {
+                // Для числовых enum используем z.union с z.literal
+                var literals = expr.Values.Select(v => $"z.literal({v.ValueString})").ToList();
+                return $"z.union([{string.Join(", ", literals)}])";
+            }
+        }
+
+        return "z.any()";
     }
 
     #endregion

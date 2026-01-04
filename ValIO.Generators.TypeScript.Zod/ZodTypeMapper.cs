@@ -19,14 +19,6 @@ public class ZodTypeMapper
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
     }
 
-    /// <summary>
-    /// Маппит схему OpenAPI в Zod схему (старый метод для обратной совместимости)
-    /// </summary>
-    public string MapToZodSchema(IOpenApiSchema schema, string propertyName, ISchemaResolver schemaResolver)
-    {
-        var result = MapToZodSchemaWithDependencies(schema, propertyName, schemaResolver, new HashSet<string>(), null);
-        return result.ZodSchema;
-    }
 
     /// <summary>
     /// Маппит схему OpenAPI в Zod схему с зависимостями
@@ -42,7 +34,7 @@ public class ZodTypeMapper
         
         if (schema == null)
         {
-            result.ZodSchema = "z.any()";
+            result.Expression = CreateAnyExpression();
             return result;
         }
 
@@ -63,16 +55,18 @@ public class ZodTypeMapper
             if (isCircular)
             {
                 // Используем z.lazy() для циклических ссылок
-                result.ZodSchema = $"z.lazy(() => {schemaName})";
+                result.Expression = CreateLazyExpression(schemaName);
                 // Не добавляем в зависимости, так как это та же схема
             }
             else
             {
-                result.ZodSchema = schemaName;
-                
                 // Проверяем, является ли это enum (через resolved schema)
                 var resolvedSchema = schemaResolver.ResolveSchema(schema);
-                if (resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0)
+                var isEnum = resolvedSchema.Enum != null && resolvedSchema.Enum.Count > 0;
+                
+                result.Expression = CreateReferenceExpression(schemaName, isEnum);
+                
+                if (isEnum)
                 {
                     result.EnumDependencies.Add(schemaName);
                 }
@@ -112,14 +106,14 @@ public class ZodTypeMapper
             if (resolvedSchema2.Items != null)
             {
                 var itemResult = MapToZodSchemaWithDependencies(resolvedSchema2.Items, propertyName, schemaResolver, processedSchemas, currentSchemaName);
-                result.ZodSchema = $"z.array({itemResult.ZodSchema})";
+                result.Expression = CreateArrayExpression(itemResult.Expression);
                 result.SchemaDependencies.UnionWith(itemResult.SchemaDependencies);
                 result.EnumDependencies.UnionWith(itemResult.EnumDependencies);
                 result.NestedSchemas.AddRange(itemResult.NestedSchemas);
             }
             else
             {
-                result.ZodSchema = "z.array(z.any())";
+                result.Expression = CreateArrayExpression(CreateAnyExpression());
             }
             return result;
         }
@@ -145,15 +139,16 @@ public class ZodTypeMapper
                 if (isCircular)
                 {
                     // Используем z.lazy() для циклических ссылок
-                    result.ZodSchema = $"z.lazy(() => {schemaName})";
+                    result.Expression = CreateLazyExpression(schemaName);
                     // Не добавляем в зависимости, так как это та же схема
                 }
                 else
                 {
-                    result.ZodSchema = schemaName;
-                    
                     // Проверяем, является ли это enum
-                    if (resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0)
+                    var isEnum = resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0;
+                    result.Expression = CreateReferenceExpression(schemaName, isEnum);
+                    
+                    if (isEnum)
                     {
                         result.EnumDependencies.Add(schemaName);
                     }
@@ -169,30 +164,37 @@ public class ZodTypeMapper
             // Если нет ссылки на схему, создаем inline схему
             if (resolvedSchema2.Properties != null && resolvedSchema2.Properties.Count > 0)
             {
-                var props = new List<string>();
+                var properties = new Dictionary<string, ZodPropertyExpression>();
                 foreach (var prop in resolvedSchema2.Properties)
                 {
                     var propResult = MapToZodSchemaWithDependencies(prop.Value, prop.Key, schemaResolver, processedSchemas, currentSchemaName);
-                    props.Add($"{_namingConverter.ToCamelCase(prop.Key)}: {propResult.ZodSchema}");
+                    
+                    var isRequired = resolvedSchema2.Required != null && resolvedSchema2.Required.Contains(prop.Key);
+                    properties[prop.Key] = new ZodPropertyExpression
+                    {
+                        Expression = propResult.Expression,
+                        IsRequired = isRequired
+                    };
                     
                     // Собираем зависимости
                     result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
                     result.EnumDependencies.UnionWith(propResult.EnumDependencies);
                     result.NestedSchemas.AddRange(propResult.NestedSchemas);
                 }
-                result.ZodSchema = $"z.object({{{string.Join(", ", props)}}})";
+                
+                result.Expression = CreateObjectExpression(properties);
             }
             else if (resolvedSchema2.AdditionalProperties != null)
             {
                 var valueResult = MapToZodSchemaWithDependencies(resolvedSchema2.AdditionalProperties, propertyName, schemaResolver, processedSchemas, currentSchemaName);
-                result.ZodSchema = $"z.record(z.string(), {valueResult.ZodSchema})";
+                result.Expression = CreateRecordExpression(valueResult.Expression);
                 result.SchemaDependencies.UnionWith(valueResult.SchemaDependencies);
                 result.EnumDependencies.UnionWith(valueResult.EnumDependencies);
                 result.NestedSchemas.AddRange(valueResult.NestedSchemas);
             }
             else
             {
-                result.ZodSchema = "z.record(z.string(), z.any())";
+                result.Expression = CreateRecordExpression(CreateAnyExpression());
             }
             return result;
         }
@@ -204,45 +206,6 @@ public class ZodTypeMapper
             var format = resolvedSchema2.Format?.ToLowerInvariant();
             var baseType = type & ~JsonSchemaType.Null;
 
-            var zodType = (baseType, format) switch
-            {
-                (JsonSchemaType.Boolean, _) => "z.boolean()",
-                (JsonSchemaType.Integer, _) => "z.number().int()",
-                (JsonSchemaType.Number, _) => "z.number()",
-                (JsonSchemaType.String, "date") => "z.string().date()",
-                (JsonSchemaType.String, "date-time") => "z.string().datetime()",
-                (JsonSchemaType.String, "uuid") => "z.string().uuid()",
-                (JsonSchemaType.String, "uri") => "z.string().url()",
-                (JsonSchemaType.String, "email") => "z.string().email()",
-                (JsonSchemaType.String, "binary") => "z.instanceof(Blob)",
-                (JsonSchemaType.String, _) => "z.string()",
-                _ => "z.any()"
-            };
-
-            // Добавляем валидацию на основе ограничений из схемы
-            // Minimum и Maximum имеют тип string? в OpenAPI схеме
-            if (!string.IsNullOrEmpty(resolvedSchema2.Minimum))
-            {
-                zodType += $".min({resolvedSchema2.Minimum})";
-            }
-            if (!string.IsNullOrEmpty(resolvedSchema2.Maximum))
-            {
-                zodType += $".max({resolvedSchema2.Maximum})";
-            }
-            // MinLength и MaxLength имеют тип int? в OpenAPI схеме
-            if (resolvedSchema2.MinLength.HasValue)
-            {
-                zodType += $".min({resolvedSchema2.MinLength})";
-            }
-            if (resolvedSchema2.MaxLength.HasValue)
-            {
-                zodType += $".max({resolvedSchema2.MaxLength})";
-            }
-            if (!string.IsNullOrEmpty(resolvedSchema2.Pattern))
-            {
-                zodType += $".regex(/{resolvedSchema2.Pattern}/)";
-            }
-            
             // Если есть enum значения, создаем отдельную enum схему
             if (resolvedSchema2.Enum != null && resolvedSchema2.Enum.Count > 0)
             {
@@ -258,36 +221,44 @@ public class ZodTypeMapper
                     // Обрабатываем JsonNode
                     if (value is JsonNode jsonNode)
                     {
-                        return jsonNode.GetValueKind() switch
+                        return new ZodEnumValue
                         {
-                            System.Text.Json.JsonValueKind.String => $"\"{jsonNode.GetValue<string>()}\"",
-                            System.Text.Json.JsonValueKind.Number => jsonNode.GetValue<decimal>().ToString(),
-                            System.Text.Json.JsonValueKind.True => "true",
-                            System.Text.Json.JsonValueKind.False => "false",
-                            _ => "null"
+                            ValueString = jsonNode.GetValueKind() switch
+                            {
+                                System.Text.Json.JsonValueKind.String => $"\"{jsonNode.GetValue<string>()}\"",
+                                System.Text.Json.JsonValueKind.Number => jsonNode.GetValue<decimal>().ToString(),
+                                System.Text.Json.JsonValueKind.True => "true",
+                                System.Text.Json.JsonValueKind.False => "false",
+                                _ => "null"
+                            }
                         };
                     }
                     
                     // Обрабатываем примитивные типы (не JsonNode)
                     if (value is string str)
-                        return $"\"{str}\"";
+                        return new ZodEnumValue { ValueString = $"\"{str}\"" };
                     if (value is int i)
-                        return i.ToString();
+                        return new ZodEnumValue { ValueString = i.ToString() };
                     if (value is long l)
-                        return l.ToString();
+                        return new ZodEnumValue { ValueString = l.ToString() };
                     if (value is decimal d)
-                        return d.ToString();
+                        return new ZodEnumValue { ValueString = d.ToString() };
                     if (value is double db)
-                        return db.ToString();
+                        return new ZodEnumValue { ValueString = db.ToString() };
                     if (value is float f)
-                        return f.ToString();
+                        return new ZodEnumValue { ValueString = f.ToString() };
                     if (value is bool b)
-                        return b ? "true" : "false";
+                        return new ZodEnumValue { ValueString = b ? "true" : "false" };
                     
-                    return value?.ToString() ?? "null";
+                    return new ZodEnumValue { ValueString = value?.ToString() ?? "null" };
                 }).ToList();
                 
-                zodType = $"{enumSchemaNameFull}";
+                // Определяем базовый тип enum
+                var underlyingType = baseType == JsonSchemaType.Integer || baseType == JsonSchemaType.Number 
+                    ? "number" 
+                    : "string";
+                
+                result.Expression = CreateEnumExpression(enumSchemaNameFull, enumValues, underlyingType);
                 result.EnumDependencies.Add(enumSchemaNameFull);
                 
                 // Сохраняем информацию о вложенной enum схеме
@@ -299,13 +270,32 @@ public class ZodTypeMapper
                     Schema = resolvedSchema2,
                     Properties = new List<ZodPropertySchemaTemplateData>() // Enum не имеет свойств
                 });
+                
+                return result;
             }
 
-            result.ZodSchema = zodType;
+            // Создаем примитивное выражение
+            var primitiveType = (baseType, format) switch
+            {
+                (JsonSchemaType.Boolean, _) => ZodPrimitiveType.Boolean,
+                (JsonSchemaType.Integer, _) => ZodPrimitiveType.Number,
+                (JsonSchemaType.Number, _) => ZodPrimitiveType.Number,
+                (JsonSchemaType.String, "binary") => ZodPrimitiveType.InstanceOf,
+                (JsonSchemaType.String, _) => ZodPrimitiveType.String,
+                _ => ZodPrimitiveType.Any
+            };
+
+            // Для integer сохраняем формат (int32, int64) для правильного рендеринга
+            var formatForExpression = baseType == JsonSchemaType.Integer ? format : format;
+            
+            // Создаем ограничения валидации
+            var validations = CreateValidationConstraints(resolvedSchema2);
+            
+            result.Expression = CreatePrimitiveExpression(primitiveType, formatForExpression, validations);
             return result;
         }
 
-        result.ZodSchema = "z.any()";
+        result.Expression = CreateAnyExpression();
         return result;
     }
 
@@ -321,7 +311,7 @@ public class ZodTypeMapper
         string? currentSchemaName)
     {
         var result = new ZodSchemaMappingResult();
-        var allProperties = new Dictionary<string, string>();
+        var allProperties = new Dictionary<string, IOpenApiSchema>();
         var allRequired = new HashSet<string>();
 
         // Разрешаем оригинальную схему для получения resolved версии
@@ -361,18 +351,7 @@ public class ZodTypeMapper
                 {
                     foreach (var prop in subSchemaInfo.OriginalProperties)
                     {
-                        var propResult = MapToZodSchemaWithDependencies(
-                            prop.Value,
-                            prop.Key,
-                            schemaResolver,
-                            processedSchemas,
-                            currentSchemaName);
-                        
-                        allProperties[prop.Key] = propResult.ZodSchema;
-                        
-                        // Собираем зависимости
-                        result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
-                        result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+                        allProperties[prop.Key] = prop.Value;
                     }
                 }
                 
@@ -420,17 +399,7 @@ public class ZodTypeMapper
                 {
                     foreach (var prop in originalSubSchemaProperties)
                     {
-                        var propResult = MapToZodSchemaWithDependencies(
-                            prop.Value,
-                            prop.Key,
-                            schemaResolver,
-                            processedSchemas,
-                            currentSchemaName);
-                        
-                        allProperties[prop.Key] = propResult.ZodSchema;
-                        
-                        result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
-                        result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+                        allProperties[prop.Key] = prop.Value;
                     }
                 }
                 
@@ -444,17 +413,31 @@ public class ZodTypeMapper
             }
         }
 
-        // Генерируем Zod схему с объединенными свойствами
-        var props = new List<string>();
+        // Создаем объект с объединенными свойствами
+        var properties = new Dictionary<string, ZodPropertyExpression>();
         foreach (var prop in allProperties)
         {
-            var camelCaseName = _namingConverter.ToCamelCase(prop.Key);
+            var propResult = MapToZodSchemaWithDependencies(
+                prop.Value,
+                prop.Key,
+                schemaResolver,
+                processedSchemas,
+                currentSchemaName);
+            
             var isRequired = allRequired.Contains(prop.Key);
-            var optional = isRequired ? "" : ".optional()";
-            props.Add($"{camelCaseName}: {prop.Value}{optional}");
+            properties[prop.Key] = new ZodPropertyExpression
+            {
+                Expression = propResult.Expression,
+                IsRequired = isRequired
+            };
+            
+            // Собираем зависимости
+            result.SchemaDependencies.UnionWith(propResult.SchemaDependencies);
+            result.EnumDependencies.UnionWith(propResult.EnumDependencies);
+            result.NestedSchemas.AddRange(propResult.NestedSchemas);
         }
         
-        result.ZodSchema = $"z.object({{{string.Join(", ", props)}}})";
+        result.Expression = CreateObjectExpression(properties);
         return result;
     }
 
@@ -468,7 +451,7 @@ public class ZodTypeMapper
         string? currentSchemaName)
     {
         var result = new ZodSchemaMappingResult();
-        var unionSchemas = new List<string>();
+        var unionExpressions = new List<ZodSchemaExpression>();
 
         foreach (var subSchema in oneOfSchemas)
         {
@@ -479,14 +462,15 @@ public class ZodTypeMapper
                 processedSchemas,
                 currentSchemaName);
             
-            unionSchemas.Add(subResult.ZodSchema);
+            unionExpressions.Add(subResult.Expression);
             
             // Собираем зависимости
             result.SchemaDependencies.UnionWith(subResult.SchemaDependencies);
             result.EnumDependencies.UnionWith(subResult.EnumDependencies);
+            result.NestedSchemas.AddRange(subResult.NestedSchemas);
         }
 
-        result.ZodSchema = $"z.union([{string.Join(", ", unionSchemas)}])";
+        result.Expression = CreateUnionExpression(unionExpressions);
         return result;
     }
 
@@ -518,4 +502,124 @@ public class ZodTypeMapper
         // Если имя не найдено, генерируем на основе имени свойства
         return $"{propertyName}Enum";
     }
+
+    #region Helper Methods for Creating Expressions
+
+    /// <summary>
+    /// Создает выражение для z.any()
+    /// </summary>
+    private ZodSchemaExpression CreateAnyExpression()
+    {
+        return new ZodPrimitiveExpression { Type = ZodPrimitiveType.Any };
+    }
+
+    /// <summary>
+    /// Создает выражение для ссылки на схему
+    /// </summary>
+    private ZodSchemaExpression CreateReferenceExpression(string schemaName, bool isEnum)
+    {
+        return new ZodReferenceExpression
+        {
+            SchemaName = schemaName,
+            IsEnum = isEnum
+        };
+    }
+
+    /// <summary>
+    /// Создает выражение для z.lazy()
+    /// </summary>
+    private ZodSchemaExpression CreateLazyExpression(string schemaName)
+    {
+        return new ZodLazyExpression { SchemaName = schemaName };
+    }
+
+    /// <summary>
+    /// Создает выражение для примитивного типа
+    /// </summary>
+    private ZodSchemaExpression CreatePrimitiveExpression(
+        ZodPrimitiveType type, 
+        string? format = null,
+        ZodValidationConstraints? validations = null)
+    {
+        return new ZodPrimitiveExpression
+        {
+            Type = type,
+            Format = format,
+            Validations = validations
+        };
+    }
+
+    /// <summary>
+    /// Создает выражение для z.object({...})
+    /// </summary>
+    private ZodSchemaExpression CreateObjectExpression(Dictionary<string, ZodPropertyExpression> properties)
+    {
+        return new ZodObjectExpression { Properties = properties };
+    }
+
+    /// <summary>
+    /// Создает выражение для z.array(...)
+    /// </summary>
+    private ZodSchemaExpression CreateArrayExpression(ZodSchemaExpression itemExpression)
+    {
+        return new ZodArrayExpression { ItemExpression = itemExpression };
+    }
+
+    /// <summary>
+    /// Создает выражение для z.union([...])
+    /// </summary>
+    private ZodSchemaExpression CreateUnionExpression(List<ZodSchemaExpression> expressions)
+    {
+        return new ZodUnionExpression { Expressions = expressions };
+    }
+
+    /// <summary>
+    /// Создает выражение для z.record(z.string(), ...)
+    /// </summary>
+    private ZodSchemaExpression CreateRecordExpression(ZodSchemaExpression valueExpression)
+    {
+        return new ZodRecordExpression { ValueExpression = valueExpression };
+    }
+
+    /// <summary>
+    /// Создает выражение для enum
+    /// </summary>
+    private ZodSchemaExpression CreateEnumExpression(
+        string? schemaName,
+        List<ZodEnumValue>? values,
+        string underlyingType)
+    {
+        return new ZodEnumExpression
+        {
+            SchemaName = schemaName,
+            Values = values,
+            UnderlyingType = underlyingType
+        };
+    }
+
+    /// <summary>
+    /// Создает ограничения валидации из OpenAPI схемы
+    /// </summary>
+    private ZodValidationConstraints? CreateValidationConstraints(IOpenApiSchema schema)
+    {
+        var hasConstraints = !string.IsNullOrEmpty(schema.Minimum) ||
+                            !string.IsNullOrEmpty(schema.Maximum) ||
+                            schema.MinLength.HasValue ||
+                            schema.MaxLength.HasValue ||
+                            !string.IsNullOrEmpty(schema.Pattern);
+
+        if (!hasConstraints)
+            return null;
+
+        return new ZodValidationConstraints
+        {
+            Minimum = schema.Minimum,
+            Maximum = schema.Maximum,
+            MinLength = schema.MinLength,
+            MaxLength = schema.MaxLength,
+            Pattern = schema.Pattern
+        };
+    }
+
+    #endregion
 }
