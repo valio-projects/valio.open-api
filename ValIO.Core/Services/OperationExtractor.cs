@@ -128,7 +128,9 @@ public class OperationExtractor : IOperationExtractor
             PathParameters = new List<ParameterTemplateData>(8),
             QueryParameters = new List<ParameterTemplateData>(8),
             HeaderParameters = new List<ParameterTemplateData>(8),
-            Responses = new List<ResponseTemplateData>(8)
+            Responses = new List<ResponseTemplateData>(8),
+            HasRequestBody = false,
+            IsRequestBodyRequired = false // Инициализируем явно, будет установлено ниже если есть request body
         };
 
         // Извлекаем параметры
@@ -167,7 +169,21 @@ public class OperationExtractor : IOperationExtractor
         {
             var requestBodyData = ExtractRequestBodyTemplateData(openApiOperation.RequestBody, typeInfoBuilder, namingConverter, namingStrategy, language);
             operationTemplateData.HasRequestBody = true;
-            operationTemplateData.IsRequestBodyRequired = openApiOperation.RequestBody.Required;
+            
+            // Определяем, является ли request body обязательным
+            // Если явно указано Required = true, используем это значение
+            // Если не указано (Required = false по умолчанию), но есть request body,
+            // то для POST/PUT/PATCH операций считаем request body обязательным
+            var isExplicitlyRequired = openApiOperation.RequestBody.Required;
+            
+            // Проверяем HTTP метод через Method property для корректного сравнения
+            var httpMethod = operationType.Method.ToUpperInvariant();
+            var isImplicitlyRequired = !isExplicitlyRequired && 
+                                       (httpMethod == "POST" || 
+                                        httpMethod == "PUT" || 
+                                        httpMethod == "PATCH");
+            
+            operationTemplateData.IsRequestBodyRequired = isExplicitlyRequired || isImplicitlyRequired;
             operationTemplateData.RequestBodyParameter = "request";
             operationTemplateData.RequestBodyTypeInfo = requestBodyData.TypeInfo;
             operationTemplateData.RequestBodyContentType = requestBodyData.ContentType;

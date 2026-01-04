@@ -1041,8 +1041,12 @@ public class CSharpCodeRenderer : ICodeRenderer
                 ? FormatTypeNameFromTypeInfo(operation.RequestBodyTypeInfo)
                 : "object";
             
+            // Определяем, является ли request body обязательным
+            // Проверяем через интерфейс, так как operation может быть IOperationTemplateData
+            var isRequired = operation.IsRequestBodyRequired;
+            
             // Если request body required, не делаем его nullable
-            if (operation.IsRequestBodyRequired)
+            if (isRequired)
             {
                 parameters.Add($"{typeName} {operation.RequestBodyParameter}");
             }
