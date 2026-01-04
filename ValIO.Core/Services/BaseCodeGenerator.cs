@@ -451,7 +451,7 @@ public abstract class BaseCodeGenerator : ICodeGenerator
     }
 
     /// <summary>
-    /// Валидирует операции TemplateData на дублирующиеся operationId
+    /// Валидирует операции TemplateData на дублирующиеся operationId и дублирующиеся параметры
     /// </summary>
     protected virtual void ValidateOperationTemplateData(IReadOnlyList<OperationTemplateData> operations, GenerationResult result)
     {
@@ -474,9 +474,47 @@ public abstract class BaseCodeGenerator : ICodeGenerator
                 operationIds[operationId] = new List<string>();
             }
             operationIds[operationId].Add(location);
+            
+            // Проверяем дубликаты параметров
+            var parameterNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var duplicateParams = new List<string>();
+            
+            // Проверяем path parameters
+            foreach (var param in operation.PathParameters)
+            {
+                if (!parameterNames.Add(param.VariableName))
+                {
+                    duplicateParams.Add($"path parameter '{param.VariableName}'");
+                }
+            }
+            
+            // Проверяем query parameters
+            foreach (var param in operation.QueryParameters)
+            {
+                if (!parameterNames.Add(param.VariableName))
+                {
+                    duplicateParams.Add($"query parameter '{param.VariableName}'");
+                }
+            }
+            
+            // Проверяем header parameters
+            foreach (var param in operation.HeaderParameters)
+            {
+                if (!parameterNames.Add(param.VariableName))
+                {
+                    duplicateParams.Add($"header parameter '{param.VariableName}'");
+                }
+            }
+            
+            if (duplicateParams.Count > 0)
+            {
+                var warning = $"Operation '{operationId}' ({location}) has duplicate parameter names: {string.Join(", ", duplicateParams)}";
+                warnings.Add(warning);
+                Logger.LogWarning(warning);
+            }
         }
 
-        // Проверяем дубликаты
+        // Проверяем дубликаты operationId
         foreach (var kvp in operationIds)
         {
             if (kvp.Value.Count > 1)

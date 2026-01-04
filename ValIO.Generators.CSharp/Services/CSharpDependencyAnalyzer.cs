@@ -33,7 +33,7 @@ public class CSharpDependencyAnalyzer : BaseDependencyAnalyzer
     /// <summary>
     /// Проверяет, является ли тип встроенным типом C#
     /// </summary>
-    protected override bool IsBuiltInType(string typeName, GenerationLanguage language)
+    public override bool IsBuiltInType(string typeName, GenerationLanguage language)
     {
         if (string.IsNullOrEmpty(typeName))
             return true;

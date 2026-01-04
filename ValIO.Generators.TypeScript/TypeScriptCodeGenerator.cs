@@ -897,9 +897,16 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             if (useValidationSchemas)
             {
                 // RequestSchemaName из RequestBodyTypeInfo.BaseType
+                // Не устанавливаем схему для встроенных типов и примитивов
                 if (op.HasRequestBody && op.RequestBodyTypeInfo != null && !op.RequestBodyTypeInfo.IsPrimitive && !string.IsNullOrEmpty(op.RequestBodyTypeInfo.BaseType))
                 {
-                    requestSchemaName = $"{op.RequestBodyTypeInfo.BaseType}Schema";
+                    var baseType = op.RequestBodyTypeInfo.BaseType;
+                    // Используем DependencyAnalyzer для проверки, является ли тип встроенным
+                    var dependencyAnalyzer = CreateDependencyAnalyzer();
+                    if (!dependencyAnalyzer.IsBuiltInType(baseType, GenerationLanguage.TypeScript))
+                    {
+                        requestSchemaName = $"{baseType}Schema";
+                    }
                 }
                 
                 // ResponseSchemaName из ReturnTypeInfo

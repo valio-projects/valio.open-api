@@ -258,7 +258,7 @@ public abstract class BaseDependencyAnalyzer : IDependencyAnalyzer
         string? schemasPath = null);
 
     /// <summary>
-    /// Проверяет, является ли тип встроенным типом языка (язык-специфичная реализация)
+    /// Проверяет, является ли тип встроенным типом языка
     /// </summary>
-    protected abstract bool IsBuiltInType(string typeName, GenerationLanguage language);
+    public abstract bool IsBuiltInType(string typeName, GenerationLanguage language);
 }

@@ -76,7 +76,7 @@ public class ModelExtractor : IModelExtractor
             var schemaName = schemaEntry.Key;
             var schema = schemaEntry.Value;
 
-            var modelTemplateData = ExtractModelTemplateData(schema, schemaName, typeMapper, typeInfoBuilder, dependencyCollector, inlineModels);
+            var modelTemplateData = ExtractModelTemplateData(schema, schemaName, typeMapper, typeInfoBuilder, dependencyCollector, inlineModels, dependencyAnalyzer);
             models.Add(modelTemplateData);
         }
 
@@ -93,10 +93,10 @@ public class ModelExtractor : IModelExtractor
     {
         var dependencyCollector = new DependencyCollector(dependencyAnalyzer);
         var inlineModels = new Dictionary<string, ModelTemplateData>(16);
-        return ExtractModelTemplateData(schema, modelName, typeMapper, typeInfoBuilder, dependencyCollector, inlineModels);
+        return ExtractModelTemplateData(schema, modelName, typeMapper, typeInfoBuilder, dependencyCollector, inlineModels, dependencyAnalyzer);
     }
 
-    private ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, DependencyCollector dependencyCollector, Dictionary<string, ModelTemplateData> inlineModels)
+    private ModelTemplateData ExtractModelTemplateData(IOpenApiSchema schema, string modelName, ITypeMapper typeMapper, ITypeInfoBuilder typeInfoBuilder, DependencyCollector dependencyCollector, Dictionary<string, ModelTemplateData> inlineModels, IDependencyAnalyzer dependencyAnalyzer)
     {
 
         var resolvedSchema = _schemaResolver.ResolveSchema(schema);
@@ -161,8 +161,7 @@ public class ModelExtractor : IModelExtractor
                     // Создаем отдельную модель для inline схемы в allOf
                     if (inlineModels != null && !inlineModels.ContainsKey(inlineSchemaModelName))
                     {
-                        var simpleAnalyzer = new SimpleDependencyAnalyzer();
-                        var inlineModel = CreateInlineModel(resolvedSubSchema, inlineSchemaModelName, typeInfoBuilder, simpleAnalyzer);
+                        var inlineModel = CreateInlineModel(resolvedSubSchema, inlineSchemaModelName, typeInfoBuilder, dependencyAnalyzer);
                         inlineModels[inlineSchemaModelName] = inlineModel;
                     }
                 }
@@ -184,7 +183,7 @@ public class ModelExtractor : IModelExtractor
                         {
                             var propertyName = propertyEntry.Key;
                             var propertySchema = propertyEntry.Value;
-                            var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder, modelName, inlineModels);
+                            var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder, modelName, inlineModels, dependencyAnalyzer);
                             allProperties[propertyName] = propertyTemplateData;
                             ownProperties.Add(propertyTemplateData);
                         }
@@ -197,7 +196,7 @@ public class ModelExtractor : IModelExtractor
                     {
                         var propertyName = propertyEntry.Key;
                         var propertySchema = propertyEntry.Value;
-                        var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder, modelName, inlineModels);
+                        var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSubSchema, typeInfoBuilder, modelName, inlineModels, dependencyAnalyzer);
                         allProperties[propertyName] = propertyTemplateData;
                         
                         // Если это базовый класс, добавляем в baseClassProperties
@@ -229,7 +228,7 @@ public class ModelExtractor : IModelExtractor
                 {
                     var propertyName = propertyEntry.Key;
                     var propertySchema = propertyEntry.Value;
-                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, modelName, inlineModels);
+                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, modelName, inlineModels, dependencyAnalyzer);
                     allProperties[propertyName] = propertyTemplateData;
                     ownProperties.Add(propertyTemplateData);
                 }
@@ -267,7 +266,7 @@ public class ModelExtractor : IModelExtractor
                 {
                     var propertyName = propertyEntry.Key;
                     var propertySchema = propertyEntry.Value;
-                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, modelName, inlineModels);
+                    var propertyTemplateData = ExtractPropertyTemplateData(propertyName, propertySchema, resolvedSchema, typeInfoBuilder, modelName, inlineModels, dependencyAnalyzer);
                     propertyTemplateData.IsRequired = required.Contains(propertyName);
                     properties.Add(propertyTemplateData);
                 }
@@ -292,7 +291,7 @@ public class ModelExtractor : IModelExtractor
         return modelTemplateData;
     }
 
-    private PropertyTemplateData ExtractPropertyTemplateData(string propertyName, IOpenApiSchema propertySchema, IOpenApiSchema parentSchema, ITypeInfoBuilder typeInfoBuilder, string? parentModelName = null, Dictionary<string, ModelTemplateData>? inlineModels = null)
+    private PropertyTemplateData ExtractPropertyTemplateData(string propertyName, IOpenApiSchema propertySchema, IOpenApiSchema parentSchema, ITypeInfoBuilder typeInfoBuilder, string? parentModelName = null, Dictionary<string, ModelTemplateData>? inlineModels = null, IDependencyAnalyzer? dependencyAnalyzer = null)
     {
         var resolvedPropertySchema = _schemaResolver.ResolveSchema(propertySchema);
         var isRequired = parentSchema.Required?.Contains(propertyName) ?? false;
@@ -321,9 +320,7 @@ public class ModelExtractor : IModelExtractor
             if (!inlineModels.ContainsKey(inlineModelName))
             {
                 // Создаем отдельную модель для inline схемы
-                // Используем простой анализатор зависимостей для inline моделей
-                var simpleAnalyzer = new SimpleDependencyAnalyzer();
-                var inlineModel = CreateInlineModel(resolvedPropertySchema, inlineModelName, typeInfoBuilder, simpleAnalyzer);
+                var inlineModel = CreateInlineModel(resolvedPropertySchema, inlineModelName, typeInfoBuilder, dependencyAnalyzer);
                 inlineModels[inlineModelName] = inlineModel;
             }
             
@@ -633,146 +630,6 @@ public class ModelExtractor : IModelExtractor
         model.Dependencies = allDependencies.ToList();
         
         return model;
-    }
-    
-    /// <summary>
-    /// Простой анализатор зависимостей для inline моделей
-    /// </summary>
-    private class SimpleDependencyAnalyzer : IDependencyAnalyzer
-    {
-        public IReadOnlyList<string> AnalyzeModelDependencies(ModelTemplateData model)
-        {
-            return CollectAllDependencies(model);
-        }
-        
-        public IReadOnlyList<string> AnalyzeOperationDependencies(OperationTemplateData operation)
-        {
-            return CollectAllDependencies(operation);
-        }
-        
-        public void CollectDependenciesFromTypeInfo(TypeInfo typeInfo, HashSet<string> dependencies)
-        {
-            if (typeInfo == null)
-                return;
-            
-            // Если это не примитивный тип и не встроенный тип, добавляем базовый тип
-            if (!typeInfo.IsPrimitive && !IsBuiltInType(typeInfo.BaseType))
-            {
-                if (!string.IsNullOrEmpty(typeInfo.BaseType) && 
-                    !IsBuiltInType(typeInfo.BaseType) &&
-                    typeInfo.BaseType != "object" &&
-                    typeInfo.BaseType != "any" &&
-                    typeInfo.BaseType != "unknown")
-                {
-                    dependencies.Add(typeInfo.BaseType);
-                }
-            }
-            
-            // Рекурсивно обрабатываем generic аргументы
-            if (typeInfo.GenericArguments != null && typeInfo.GenericArguments.Count > 0)
-            {
-                foreach (var genericArg in typeInfo.GenericArguments)
-                {
-                    CollectDependenciesFromTypeInfo(genericArg, dependencies);
-                }
-            }
-        }
-        
-        public IReadOnlyList<string> CollectAllDependencies(ModelTemplateData model)
-        {
-            var dependencies = new HashSet<string>();
-            foreach (var property in model.Properties)
-            {
-                CollectDependenciesFromTypeInfo(property.TypeInfo, dependencies);
-            }
-            return dependencies.ToList();
-        }
-        
-        public IReadOnlyList<string> CollectAllDependencies(OperationTemplateData operation)
-        {
-            var dependencies = new HashSet<string>();
-            if (operation.ReturnTypeInfo != null)
-            {
-                CollectDependenciesFromTypeInfo(operation.ReturnTypeInfo, dependencies);
-            }
-            if (operation.RequestBodyTypeInfo != null)
-            {
-                CollectDependenciesFromTypeInfo(operation.RequestBodyTypeInfo, dependencies);
-            }
-            foreach (var param in operation.PathParameters)
-            {
-                CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
-            }
-            foreach (var param in operation.QueryParameters)
-            {
-                CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
-            }
-            foreach (var param in operation.HeaderParameters)
-            {
-                CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
-            }
-            return dependencies.ToList();
-        }
-        
-        public IReadOnlyList<string> CollectAllDependencies(ClientTemplateData client)
-        {
-            var dependencies = new HashSet<string>();
-            // ClientTemplateData.Operations возвращает типизированные операции
-            // Используем интерфейс IClientTemplateData для доступа к операциям
-            var clientInterface = (IClientTemplateData)client;
-            foreach (var operation in clientInterface.Operations)
-            {
-                // Работаем через интерфейс IOperationTemplateData
-                if (operation.ReturnTypeInfo != null)
-                {
-                    CollectDependenciesFromTypeInfo(operation.ReturnTypeInfo, dependencies);
-                }
-                if (operation.RequestBodyTypeInfo != null)
-                {
-                    CollectDependenciesFromTypeInfo(operation.RequestBodyTypeInfo, dependencies);
-                }
-                foreach (var param in operation.PathParameters)
-                {
-                    CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
-                }
-                foreach (var param in operation.QueryParameters)
-                {
-                    CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
-                }
-                foreach (var param in operation.HeaderParameters)
-                {
-                    CollectDependenciesFromTypeInfo(param.TypeInfo, dependencies);
-                }
-            }
-            return dependencies.ToList();
-        }
-        
-        public Dictionary<string, string> ResolveImportPaths(IReadOnlyList<string> dependencies, string? modelsPath = null, string? schemasPath = null)
-        {
-            var result = new Dictionary<string, string>();
-            foreach (var dep in dependencies)
-            {
-                result[dep] = modelsPath ?? "./models";
-            }
-            return result;
-        }
-        
-        private bool IsBuiltInType(string typeName)
-        {
-            if (string.IsNullOrEmpty(typeName))
-                return false;
-            
-            var builtInTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            {
-                "any", "unknown", "void", "null", "undefined",
-                "string", "number", "boolean", "object", "Array",
-                "Promise", "Record", "int", "long", "float", "double",
-                "decimal", "bool", "DateTime", "DateTimeOffset", "Guid",
-                "byte[]", "Stream", "List", "Dictionary"
-            };
-            
-            return builtInTypes.Contains(typeName);
-        }
     }
 }
 

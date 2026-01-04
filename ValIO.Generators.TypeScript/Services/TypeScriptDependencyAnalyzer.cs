@@ -43,7 +43,7 @@ public class TypeScriptDependencyAnalyzer : BaseDependencyAnalyzer
     /// <summary>
     /// Проверяет, является ли тип встроенным типом TypeScript
     /// </summary>
-    protected override bool IsBuiltInType(string typeName, GenerationLanguage language)
+    public override bool IsBuiltInType(string typeName, GenerationLanguage language)
     {
         if (string.IsNullOrEmpty(typeName))
             return true;

@@ -45,4 +45,9 @@ public interface IDependencyAnalyzer
         IReadOnlyList<string> dependencies,
         string? modelsPath = null,
         string? schemasPath = null);
+    
+    /// <summary>
+    /// Проверяет, является ли тип встроенным типом языка
+    /// </summary>
+    bool IsBuiltInType(string typeName, GenerationLanguage language);
 }
