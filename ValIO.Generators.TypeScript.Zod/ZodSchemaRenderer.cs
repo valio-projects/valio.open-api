@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
@@ -395,6 +396,9 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
             CodeFormatter.AppendEmptyLine(sb);
         }
         
+        // Генерируем константы валидации ПЕРЕД схемой
+        var constantsName = GenerateValidationConstants(sb, data);
+        
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, 0, data.Description);
         
@@ -410,12 +414,137 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         
         foreach (var property in data.Properties.Cast<PropertyTemplateData<ZodPropertyTemplateDataOptions>>())
         {
-            GeneratePropertySchema(sb, property, indentLevel: 1);
+            GeneratePropertySchema(sb, property, indentLevel: 1, constantsName);
         }
         
         CodeFormatter.AppendLine(sb, 0, "});");
         
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Генерирует константы валидации для свойств схемы
+    /// Возвращает имя констант или null если константы не были сгенерированы
+    /// </summary>
+    private string? GenerateValidationConstants(StringBuilder sb, ModelTemplateData<ZodModelTemplateDataOptions, ZodPropertyTemplateDataOptions> data)
+    {
+        var constantsName = $"{data.Name}SchemaConstants";
+        var hasAnyConstants = false;
+        
+        // Собираем константы для каждого свойства
+        var propertiesConstants = new Dictionary<string, Dictionary<string, string>>();
+        
+        foreach (var property in data.Properties.Cast<PropertyTemplateData<ZodPropertyTemplateDataOptions>>())
+        {
+            var propertyConstants = new Dictionary<string, string>();
+            
+            // Добавляем только те константы, которые имеют значения
+            if (property.Min.HasValue)
+            {
+                propertyConstants["min"] = FormatNumberValue(property.Min.Value);
+            }
+            
+            if (property.Max.HasValue)
+            {
+                propertyConstants["max"] = FormatNumberValue(property.Max.Value);
+            }
+            
+            if (property.MinLength.HasValue)
+            {
+                propertyConstants["minLength"] = property.MinLength.Value.ToString();
+            }
+            
+            if (property.MaxLength.HasValue)
+            {
+                propertyConstants["maxLength"] = property.MaxLength.Value.ToString();
+            }
+            
+            if (!string.IsNullOrEmpty(property.Pattern))
+            {
+                propertyConstants["pattern"] = $"\"{property.Pattern.Replace("\"", "\\\"")}\"";
+            }
+            
+            if (property.DefaultValue != null)
+            {
+                propertyConstants["default"] = FormatDefaultValue(property.DefaultValue);
+            }
+            
+            if (property.ExclusiveMin.HasValue)
+            {
+                propertyConstants["exclusiveMin"] = FormatNumberValue(property.ExclusiveMin.Value);
+            }
+            
+            if (property.ExclusiveMax.HasValue)
+            {
+                propertyConstants["exclusiveMax"] = FormatNumberValue(property.ExclusiveMax.Value);
+            }
+            
+            if (propertyConstants.Count > 0)
+            {
+                propertiesConstants[property.Name] = propertyConstants;
+                hasAnyConstants = true;
+            }
+        }
+        
+        // Генерируем константы только если есть хотя бы одно свойство с константами
+        if (!hasAnyConstants)
+            return null;
+        
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 0, $"export const {constantsName} = {{");
+        
+        var propertiesList = propertiesConstants.ToList();
+        for (int i = 0; i < propertiesList.Count; i++)
+        {
+            var prop = propertiesList[i];
+            var camelCaseName = _namingConverter.ToCamelCase(prop.Key);
+            var isLast = i == propertiesList.Count - 1;
+            
+            CodeFormatter.AppendLine(sb, 1, $"{camelCaseName}: {{");
+            
+            var constantsList = prop.Value.ToList();
+            for (int j = 0; j < constantsList.Count; j++)
+            {
+                var constant = constantsList[j];
+                var isLastConstant = j == constantsList.Count - 1;
+                var comma = isLastConstant ? "" : ",";
+                CodeFormatter.AppendLine(sb, 2, $"{constant.Key}: {constant.Value}{comma}");
+            }
+            
+            var closingComma = isLast ? "" : ",";
+            CodeFormatter.AppendLine(sb, 1, $"}}{closingComma}");
+        }
+        
+        CodeFormatter.AppendLine(sb, 0, "} as const;");
+        
+        return constantsName;
+    }
+    
+    /// <summary>
+    /// Форматирует числовое значение для константы
+    /// </summary>
+    private string FormatNumberValue(decimal value)
+    {
+        // Если значение целое, выводим без десятичной точки
+        if (value == Math.Truncate(value))
+        {
+            return ((long)value).ToString();
+        }
+        return value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+    }
+    
+    /// <summary>
+    /// Форматирует значение по умолчанию для константы
+    /// </summary>
+    private string FormatDefaultValue(object value)
+    {
+        return value switch
+        {
+            string str => $"\"{str.Replace("\"", "\\\"")}\"",
+            bool b => b ? "true" : "false",
+            null => "null",
+            _ => value.ToString() ?? "null"
+        };
     }
 
     /// <summary>
@@ -503,16 +632,81 @@ public class ZodSchemaRenderer : IModelFormatRenderer<ZodModelTemplateDataOption
         CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}{optional}: {typeString};");
     }
 
-    private void GeneratePropertySchema(StringBuilder sb, PropertyTemplateData<ZodPropertyTemplateDataOptions> property, int indentLevel)
+    private void GeneratePropertySchema(StringBuilder sb, PropertyTemplateData<ZodPropertyTemplateDataOptions> property, int indentLevel, string? constantsName = null)
     {
         // Генерируем JSDoc комментарий
         CommentGenerator.GenerateJSDocComment(sb, indentLevel, property.Description);
         
-        // Генерируем Zod схему для свойства (теперь без приведения)
+        // Генерируем Zod схему для свойства
         var zodSchema = property.Options.ZodSchema ?? "z.any()";
-        var optional = property.IsRequired ? "" : ".optional()";
         
-        CodeFormatter.AppendLine(sb, indentLevel, $"{property.Name}: {zodSchema}{optional},");
+        // Если есть константы, пытаемся заменить жестко закодированные значения на ссылки на константы
+        if (!string.IsNullOrEmpty(constantsName))
+        {
+            zodSchema = ReplaceValidationConstants(zodSchema, property, constantsName);
+        }
+        
+        var optional = property.IsRequired ? "" : ".optional()";
+        var camelCaseName = _namingConverter.ToCamelCase(property.Name);
+        
+        CodeFormatter.AppendLine(sb, indentLevel, $"{camelCaseName}: {zodSchema}{optional},");
+    }
+    
+    /// <summary>
+    /// Заменяет жестко закодированные значения валидации на ссылки на константы
+    /// </summary>
+    private string ReplaceValidationConstants(string zodSchema, PropertyTemplateData<ZodPropertyTemplateDataOptions> property, string constantsName)
+    {
+        var camelCasePropertyName = _namingConverter.ToCamelCase(property.Name);
+        var result = zodSchema;
+        
+        // Заменяем min/max/minLength/maxLength/pattern/default если они есть
+        if (property.Min.HasValue)
+        {
+            var value = FormatNumberValue(property.Min.Value);
+            result = Regex.Replace(
+                result, 
+                $@"\.min\({Regex.Escape(value)}\)",
+                $".min({constantsName}.{camelCasePropertyName}.min)");
+        }
+        
+        if (property.Max.HasValue)
+        {
+            var value = FormatNumberValue(property.Max.Value);
+            result = Regex.Replace(
+                result, 
+                $@"\.max\({Regex.Escape(value)}\)",
+                $".max({constantsName}.{camelCasePropertyName}.max)");
+        }
+        
+        if (property.MinLength.HasValue)
+        {
+            var value = property.MinLength.Value.ToString();
+            result = Regex.Replace(
+                result, 
+                $@"\.min\({Regex.Escape(value)}\)",
+                $".min({constantsName}.{camelCasePropertyName}.minLength)");
+        }
+        
+        if (property.MaxLength.HasValue)
+        {
+            var value = property.MaxLength.Value.ToString();
+            result = Regex.Replace(
+                result, 
+                $@"\.max\({Regex.Escape(value)}\)",
+                $".max({constantsName}.{camelCasePropertyName}.maxLength)");
+        }
+        
+        if (!string.IsNullOrEmpty(property.Pattern))
+        {
+            var escapedPattern = Regex.Escape(property.Pattern);
+            result = Regex.Replace(
+                result, 
+                $@"\.regex\(/{escapedPattern}/\)",
+                $".regex(/{constantsName}.{camelCasePropertyName}.pattern/)");
+        }
+        
+        return result;
     }
 
 
