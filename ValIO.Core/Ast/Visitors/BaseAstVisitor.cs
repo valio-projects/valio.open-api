@@ -22,6 +22,10 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     /// <summary>
     /// Посещает объявление
     /// </summary>
+    /// <remarks>
+    /// EnumDeclaration и InterfaceDeclaration обрабатываются через IAstVisitor.VisitEnumDeclaration и IAstVisitor.VisitInterfaceDeclaration
+    /// в языковых visitor'ах, так как BaseAstVisitor не реализует IAstVisitor.
+    /// </remarks>
     public virtual TResult VisitDeclaration(DeclarationNode node)
     {
         return node.Kind switch
@@ -31,8 +35,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.MethodDeclaration => VisitMethodDeclaration((MethodDeclarationNode)node),
             AstNodeKind.ParameterDeclaration => VisitParameterDeclaration((ParameterDeclarationNode)node),
             AstNodeKind.EnumMemberDeclaration => VisitEnumMemberDeclaration((EnumMemberDeclarationNode)node),
-            AstNodeKind.EnumDeclaration => VisitEnumDeclaration((EnumDeclarationNode)node),
-            AstNodeKind.InterfaceDeclaration => VisitInterfaceDeclaration((InterfaceDeclarationNode)node),
+            // EnumDeclaration и InterfaceDeclaration обрабатываются через IAstVisitor в языковых visitor'ах
             _ => VisitDefault(node)
         };
     }
