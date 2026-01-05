@@ -9,6 +9,9 @@ namespace ValIO.Generators.TypeScript.Ast.Visitors;
 /// </summary>
 public interface ITypeScriptAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
+    // Enum (общий для C# и TypeScript)
+    TResult VisitEnumDeclaration(EnumDeclarationNode node);
+    
     // TypeScript специфичные узлы
     TResult VisitSourceFile(SourceFileNode node);
     TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);

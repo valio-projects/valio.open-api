@@ -13,7 +13,8 @@ namespace ValIO.Core.Ast.Visitors;
 /// </summary>
 /// <remarks>
 /// Наследует все базовые методы из IBaseAstVisitor.
-/// Добавляет только методы для диспетчеризации и специфичные узлы.
+/// Добавляет только методы для диспетчеризации и общие специфичные узлы.
+/// Языково-специфичные узлы (C#, TypeScript) должны быть в соответствующих интерфейсах (ICSharpAstVisitor, ITypeScriptAstVisitor).
 /// </remarks>
 public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
@@ -37,19 +38,10 @@ public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
     /// </summary>
     TResult VisitStatement(StatementNode node);
     
-    // C# специфичные узлы
-    TResult VisitCompilationUnit(CompilationUnitNode node);
-    TResult VisitNamespaceDeclaration(NamespaceDeclarationNode node);
-    TResult VisitUsingDirective(UsingDirectiveNode node);
-    TResult VisitClassDeclaration(ClassDeclarationNode node);
-    TResult VisitRecordDeclaration(RecordDeclarationNode node);
-    TResult VisitStructDeclaration(StructDeclarationNode node);
-    TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
+    // Enum (общий для C# и TypeScript)
     TResult VisitEnumDeclaration(EnumDeclarationNode node);
-    TResult VisitFieldDeclaration(FieldDeclarationNode node);
-    TResult VisitConstructorDeclaration(ConstructorDeclarationNode node);
     
-    // TypeScript специфичные узлы
+    // TypeScript специфичные узлы (пока остаются здесь, будут перемещены позже)
     TResult VisitSourceFile(SourceFileNode node);
     TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);
     TResult VisitFunctionDeclaration(FunctionDeclarationNode node);

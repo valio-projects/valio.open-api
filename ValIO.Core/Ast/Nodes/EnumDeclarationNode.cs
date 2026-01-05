@@ -1,18 +1,18 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
-using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.CSharp.Ast.Visitors;
+using ValIO.Generators.TypeScript.Ast.Visitors;
 
-namespace ValIO.Generators.CSharp.Ast.Nodes;
+namespace ValIO.Core.Ast.Nodes;
 
 /// <summary>
-/// Узел объявления enum (C#)
+/// Узел объявления enum (общий для C# и TypeScript)
 /// </summary>
 public sealed class EnumDeclarationNode : TypeDeclarationNode
 {
     /// <summary>
-    /// Базовый тип enum (например, int, byte)
+    /// Базовый тип enum (например, int, byte) - используется в C#
     /// </summary>
     public TypeNode? UnderlyingType { get; }
     
@@ -51,11 +51,17 @@ public sealed class EnumDeclarationNode : TypeDeclarationNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
+        // Enum используется и в C#, и в TypeScript
+        // Проверяем, какой visitor используется
         if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
         {
             return csharpVisitor.VisitEnumDeclaration(this);
         }
-        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit EnumDeclarationNode");
+        if (visitor is ITypeScriptAstVisitor<TResult> typescriptVisitor)
+        {
+            return typescriptVisitor.VisitEnumDeclaration(this);
+        }
+        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> or ITypeScriptAstVisitor<TResult> to visit EnumDeclarationNode");
     }
     
     public override AstNode Clone()
