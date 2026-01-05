@@ -7,8 +7,9 @@ using ValIO.Core.Ast.Nodes.Types;
 namespace ValIO.Core.Ast.Visitors;
 
 /// <summary>
-/// Базовый интерфейс посетителя AST (Visitor Pattern)
-/// Объединяет все интерфейсы визиторов для обратной совместимости
+/// Интерфейс посетителя AST (Visitor Pattern)
+/// Объединяет все интерфейсы визиторов для поддержки всех типов узлов
+/// Используется узлами AST в методе Accept для диспетчеризации
 /// </summary>
 public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
