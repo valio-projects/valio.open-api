@@ -708,11 +708,13 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
             CodeFormatter.AppendLine(sb, 1, "const { mutation: mutationOptions");
-            CodeFormatter.AppendLine(sb, 1, ", axiosInstance: requestOptions } = options");
+            CodeFormatter.AppendLine(sb, 1, ", axiosInstance: requestOptions");
+            CodeFormatter.AppendLine(sb, 1, ", timeout } = options");
         }
         else
         {
-            CodeFormatter.AppendLine(sb, 1, "const { mutation: mutationOptions } = options");
+            CodeFormatter.AppendLine(sb, 1, "const { mutation: mutationOptions");
+            CodeFormatter.AppendLine(sb, 1, ", timeout } = options");
         }
         CodeFormatter.AppendLine(sb, 1, "");
         CodeFormatter.AppendLine(sb, 1, "? options.mutation &&");
@@ -728,11 +730,13 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
             CodeFormatter.AppendLine(sb, 1, ": { mutation: { mutationKey }");
-            CodeFormatter.AppendLine(sb, 1, ", axiosInstance: undefined };");
+            CodeFormatter.AppendLine(sb, 1, ", axiosInstance: undefined");
+            CodeFormatter.AppendLine(sb, 1, ", timeout: undefined };");
         }
         else
         {
-            CodeFormatter.AppendLine(sb, 1, ": { mutation: { mutationKey } };");
+            CodeFormatter.AppendLine(sb, 1, ": { mutation: { mutationKey }");
+            CodeFormatter.AppendLine(sb, 1, ", timeout: undefined };");
         }
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, $"const mutationFn: MutationFunction<");
@@ -759,7 +763,8 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         CodeFormatter.AppendEmptyLine(sb);
         
         // Собираем аргументы для вызова клиентского метода
-        // В старой версии используется только requestOptions (axiosInstance), без signal и timeout
+        // Порядок должен соответствовать сигнатуре axios метода:
+        // path params, query params, header params, request body (или FormData properties), axiosInstance, signal, timeout
         var methodArgs = new List<string>();
         if (!string.IsNullOrEmpty(clientMethodParams))
         {
@@ -769,6 +774,10 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         {
             methodArgs.Add("requestOptions");
         }
+        // Для mutations signal обычно не используется, но если axios метод его принимает, можно передать undefined
+        // timeout передаем из options
+        methodArgs.Add("undefined"); // signal - не используется в mutations
+        methodArgs.Add("timeout");
         var methodArgsStr = string.Join(", ", methodArgs);
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({methodArgsStr});");
@@ -929,17 +938,17 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Request body
-        if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
+        // Для FormData передаем отдельные параметры (не объект), так как в axios методе они передаются отдельно
+        if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
-            parameters.Add(operation.RequestBodyParameter);
-        }
-        else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
-        {
-            // Для form-data передаем отдельные параметры (не объект), так как в axios методе они передаются отдельно
             foreach (var formProp in operation.FormDataProperties)
             {
                 parameters.Add(formProp.VariableName);
             }
+        }
+        else if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
+        {
+            parameters.Add(operation.RequestBodyParameter);
         }
         
         return string.Join(", ", parameters);
@@ -979,17 +988,17 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Request body
-        if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
+        // Для FormData передаем отдельные параметры (не объект), так как в axios методе они передаются отдельно
+        if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
-            parameters.Add(operation.RequestBodyParameter);
-        }
-        else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
-        {
-            // Для form-data передаем отдельные параметры (не объект), так как в axios методе они передаются отдельно
             foreach (var formProp in operation.FormDataProperties)
             {
                 parameters.Add(formProp.VariableName);
             }
+        }
+        else if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
+        {
+            parameters.Add(operation.RequestBodyParameter);
         }
         
         // Добавляем axiosInstance, signal, timeout (опциональные)
@@ -1043,19 +1052,20 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Request body
-        if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
-        {
-            var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
-            var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
-            variables.Add($"{operation.RequestBodyParameter}{optional}: {typeStr};");
-        }
-        else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
+        // Для FormData генерируем отдельные свойства, а не объект request
+        if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
             foreach (var formProp in operation.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
                 variables.Add($"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName};");
             }
+        }
+        else if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
+        {
+            var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
+            var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
+            variables.Add($"{operation.RequestBodyParameter}{optional}: {typeStr};");
         }
         
         return variables.Count > 0 ? string.Join("\n", variables) : "";
@@ -1095,16 +1105,17 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Request body
-        if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
-        {
-            properties.Add(operation.RequestBodyParameter);
-        }
-        else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
+        // Для FormData деструктурируем отдельные свойства, а не объект request
+        if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
             foreach (var formProp in operation.FormDataProperties)
             {
                 properties.Add(formProp.VariableName);
             }
+        }
+        else if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
+        {
+            properties.Add(operation.RequestBodyParameter);
         }
         
         return properties.Count > 0 ? string.Join(", ", properties) : "";
