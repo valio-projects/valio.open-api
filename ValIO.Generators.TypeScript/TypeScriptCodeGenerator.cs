@@ -1165,11 +1165,35 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
     // Метод EnsureTemplatesPreloadedAsync удален - шаблоны больше не используются
     
+    // ============================================================================
     // Новые методы с использованием IR → AST → Code pipeline
+    // ============================================================================
+    // Эти методы используют новую архитектуру:
+    // 1. OpenAPI Document → IrBuilder → IR (Language-agnostic Intermediate Representation)
+    // 2. IR → AstBuilder → AST (Language-specific Abstract Syntax Tree)
+    // 3. AST → AstRenderer → Code (String)
+    //
+    // Преимущества нового подхода:
+    // - Полное разделение ответственности (IR, AST, Rendering)
+    // - Возможность трансформаций AST перед рендерингом
+    // - Легкое добавление новых языков и стеков
+    // - Строгая типизация вместо работы со строками
+    // ============================================================================
     
     /// <summary>
     /// Генерирует код используя новый IR → AST → Code pipeline
     /// </summary>
+    /// <param name="document">OpenAPI документ</param>
+    /// <param name="config">Конфигурация генерации</param>
+    /// <returns>Словарь с путями к файлам и их содержимым</returns>
+    /// <remarks>
+    /// Этот метод использует новую архитектуру генерации кода:
+    /// 1. OpenAPI → IR (IrBuilder) - создает language-agnostic представление
+    /// 2. IR → AST (TypeScriptAstBuilder) - создает TypeScript специфичное AST
+    /// 3. AST → Code (TypeScriptAstRenderer) - рендерит AST в строку кода
+    /// 
+    /// В будущем этот метод должен заменить старый подход с TemplateData
+    /// </remarks>
     private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config)
     {
         var files = new Dictionary<string, string>();
@@ -1203,6 +1227,12 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// <summary>
     /// Определяет имя файла на основе SourceFile
     /// </summary>
+    /// <param name="sourceFile">AST узел SourceFile</param>
+    /// <param name="config">Конфигурация генерации</param>
+    /// <returns>Имя файла с расширением .ts</returns>
+    /// <remarks>
+    /// Ищет первую декларацию (интерфейс, type alias или функцию) для определения имени файла
+    /// </remarks>
     private string DetermineFileName(SourceFileNode sourceFile, GenerationConfiguration config)
     {
         // Ищем первую декларацию для определения имени файла
