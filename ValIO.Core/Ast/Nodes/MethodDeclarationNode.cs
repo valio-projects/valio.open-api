@@ -1,0 +1,97 @@
+using System.Collections.Immutable;
+using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.Ast.Visitors;
+
+namespace ValIO.Core.Ast.Nodes;
+
+/// <summary>
+/// Узел объявления метода
+/// </summary>
+public sealed class MethodDeclarationNode : DeclarationNode
+{
+    /// <summary>
+    /// Возвращаемый тип
+    /// </summary>
+    public TypeNode? ReturnType { get; }
+    
+    /// <summary>
+    /// Параметры метода
+    /// </summary>
+    public IReadOnlyList<ParameterDeclarationNode> Parameters { get; }
+    
+    /// <summary>
+    /// Тело метода
+    /// </summary>
+    public BlockNode? Body { get; }
+    
+    /// <summary>
+    /// Является ли метод async
+    /// </summary>
+    public bool IsAsync { get; }
+    
+    /// <summary>
+    /// Модификатор доступа
+    /// </summary>
+    public AccessModifier AccessModifier { get; }
+    
+    public override AstNodeKind Kind => AstNodeKind.MethodDeclaration;
+    
+    public override IReadOnlyList<AstNode> Children
+    {
+        get
+        {
+            var children = new List<AstNode> { Name };
+            if (Documentation != null)
+                children.Add(Documentation);
+            children.AddRange(Attributes);
+            if (ReturnType != null)
+                children.Add(ReturnType);
+            children.AddRange(Parameters);
+            if (Body != null)
+                children.Add(Body);
+            return children;
+        }
+    }
+    
+    /// <summary>
+    /// Конструктор
+    /// </summary>
+    public MethodDeclarationNode(
+        IdentifierNode name,
+        TypeNode? returnType = null,
+        IReadOnlyList<ParameterDeclarationNode>? parameters = null,
+        BlockNode? body = null,
+        bool isAsync = false,
+        AccessModifier accessModifier = AccessModifier.Public,
+        CommentNode? documentation = null,
+        IReadOnlyList<AttributeNode>? attributes = null,
+        IReadOnlyDictionary<string, object>? metadata = null)
+        : base(name, documentation, attributes, metadata)
+    {
+        ReturnType = returnType;
+        Parameters = parameters?.ToImmutableList() ?? ImmutableList<ParameterDeclarationNode>.Empty;
+        Body = body;
+        IsAsync = isAsync;
+        AccessModifier = accessModifier;
+    }
+    
+    public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
+    {
+        return visitor.VisitMethodDeclaration(this);
+    }
+    
+    public override AstNode Clone()
+    {
+        return new MethodDeclarationNode(
+            (IdentifierNode)Name.Clone(),
+            ReturnType != null ? (TypeNode)ReturnType.Clone() : null,
+            Parameters.Select(p => (ParameterDeclarationNode)p.Clone()).ToImmutableList(),
+            Body != null ? (BlockNode)Body.Clone() : null,
+            IsAsync,
+            AccessModifier,
+            Documentation != null ? (CommentNode)Documentation.Clone() : null,
+            Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
+            Metadata.ToImmutableDictionary());
+    }
+}

@@ -1,0 +1,60 @@
+using System.Collections.Immutable;
+using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Visitors;
+
+namespace ValIO.Core.Ast.Nodes;
+
+/// <summary>
+/// Узел using директивы (C#)
+/// </summary>
+public sealed class UsingDirectiveNode : AstNode
+{
+    /// <summary>
+    /// Namespace
+    /// </summary>
+    public IdentifierNode Namespace { get; }
+    
+    /// <summary>
+    /// Алиас (опционально)
+    /// </summary>
+    public IdentifierNode? Alias { get; }
+    
+    public override AstNodeKind Kind => AstNodeKind.UsingDirective;
+    
+    public override IReadOnlyList<AstNode> Children
+    {
+        get
+        {
+            var children = new List<AstNode> { Namespace };
+            if (Alias != null)
+                children.Add(Alias);
+            return children;
+        }
+    }
+    
+    /// <summary>
+    /// Конструктор
+    /// </summary>
+    public UsingDirectiveNode(
+        IdentifierNode @namespace,
+        IdentifierNode? alias = null,
+        IReadOnlyDictionary<string, object>? metadata = null)
+        : base(metadata)
+    {
+        Namespace = @namespace ?? throw new ArgumentNullException(nameof(@namespace));
+        Alias = alias;
+    }
+    
+    public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
+    {
+        return visitor.VisitUsingDirective(this);
+    }
+    
+    public override AstNode Clone()
+    {
+        return new UsingDirectiveNode(
+            (IdentifierNode)Namespace.Clone(),
+            Alias != null ? (IdentifierNode)Alias.Clone() : null,
+            Metadata.ToImmutableDictionary());
+    }
+}
