@@ -1,4 +1,5 @@
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
@@ -25,7 +26,7 @@ public interface ICSharpAstBuilder
     /// <summary>
     /// Строит Literal Expression
     /// </summary>
-    Expressions.LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo);
+    LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo);
     
     // IR → AST методы
     
