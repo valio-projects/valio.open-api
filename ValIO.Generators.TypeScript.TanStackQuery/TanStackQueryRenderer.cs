@@ -341,9 +341,10 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Query options с Partial<UseInfiniteQueryOptions>
+        // Используем generic тип TError вместо жестко заданного Error
         var optionsParamBuilder = new StringBuilder();
         CodeFormatter.AppendLine(optionsParamBuilder, 0, "options?: {");
-        CodeFormatter.AppendLine(optionsParamBuilder, 1, $"query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, {errorType}, TData, QueryKey, unknown>>;");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, $"query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>>;");
         CodeFormatter.AppendLine(optionsParamBuilder, 1, "timeout?: number;");
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
@@ -484,9 +485,10 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         
         // Query options с Partial<UseInfiniteQueryOptions>
+        // Используем generic тип TError вместо жестко заданного Error
         var optionsParamBuilder = new StringBuilder();
         CodeFormatter.AppendLine(optionsParamBuilder, 0, "options?: {");
-        CodeFormatter.AppendLine(optionsParamBuilder, 1, $"query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, {errorType}, TData, QueryKey, unknown>>;");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, $"query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>>;");
         CodeFormatter.AppendLine(optionsParamBuilder, 1, "timeout?: number;");
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
