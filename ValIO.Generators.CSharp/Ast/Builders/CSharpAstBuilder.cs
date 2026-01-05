@@ -525,10 +525,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         if (successResponse?.Type != null)
         {
-            return BuildType(successResponse.Type);
+            // Для async методов оборачиваем тип в Task<T>
+            var responseType = BuildType(successResponse.Type);
+            return new GenericTypeNode(
+                name: new IdentifierNode("Task"),
+                typeArguments: new[] { responseType }.ToImmutableList(),
+                isNullable: false);
         }
         
-        // Если нет успешного ответа, возвращаем Task (для async методов)
+        // Если нет успешного ответа, возвращаем Task (для async методов без возвращаемого значения)
         return new SimpleTypeNode(
             name: new IdentifierNode("Task"),
             isPrimitive: false,
