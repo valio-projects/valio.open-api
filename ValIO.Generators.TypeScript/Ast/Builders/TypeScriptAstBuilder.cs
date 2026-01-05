@@ -7,6 +7,9 @@ using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
+using ValIO.Core.IR;
+using ValIO.Core.IR.Enums;
+using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Generators.TypeScript.Models;
@@ -353,5 +356,282 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private SimpleTypeNode BuildSimpleType(string typeName)
     {
         return new SimpleTypeNode(new IdentifierNode(typeName), isPrimitive: false);
+    }
+    
+    // IR → AST методы
+    
+    /// <summary>
+    /// Строит TypeNode из IrType
+    /// </summary>
+    public TypeNode BuildType(IrType irType)
+    {
+        return irType.Kind switch
+        {
+            IrTypeKind.Primitive => BuildPrimitiveType((IrPrimitiveType)irType),
+            IrTypeKind.ModelReference => BuildModelReference((IrModelReference)irType),
+            IrTypeKind.Array => BuildArrayType((IrArrayType)irType),
+            IrTypeKind.Dictionary => BuildDictionaryType((IrDictionaryType)irType),
+            IrTypeKind.Union => BuildUnionType((IrUnionType)irType),
+            IrTypeKind.Intersection => BuildIntersectionType((IrIntersectionType)irType),
+            IrTypeKind.Nullable => BuildNullableType((IrNullableType)irType),
+            IrTypeKind.Optional => BuildOptionalType((IrOptionalType)irType),
+            _ => throw new NotSupportedException($"IrTypeKind {irType.Kind} is not supported")
+        };
+    }
+    
+    /// <summary>
+    /// Строит SourceFile из IrModel
+    /// </summary>
+    public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null)
+    {
+        var imports = BuildImports(ExtractDependencies(model), importPath);
+        var declarations = new[] { (DeclarationNode)BuildInterface(model) };
+        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+        
+        return new SourceFileNode(
+            imports: imports,
+            exports: exports,
+            declarations: declarations);
+    }
+    
+    /// <summary>
+    /// Строит InterfaceDeclarationNode из IrModel
+    /// </summary>
+    public InterfaceDeclarationNode BuildInterface(IrModel model)
+    {
+        var name = new IdentifierNode(model.Name);
+        var comment = !string.IsNullOrEmpty(model.Description)
+            ? new CommentNode(model.Description, CommentKind.JSDoc)
+            : null;
+        
+        var properties = model.Properties.Select(BuildProperty).ToList<DeclarationNode>();
+        
+        var baseTypes = ImmutableList<TypeNode>.Empty;
+        if (model.Composition?.Kind == IrCompositionKind.AllOf && model.Composition.Types.Count > 0)
+        {
+            // AllOf в TypeScript - это intersection типов
+            baseTypes = model.Composition.Types
+                .Where(t => t is IrModelReference)
+                .Select(t => BuildType(t))
+                .ToImmutableList();
+        }
+        
+        return new InterfaceDeclarationNode(
+            name: name,
+            accessModifier: AccessModifier.Public,
+            baseTypes: baseTypes,
+            members: properties.ToImmutableList(),
+            documentation: comment);
+    }
+    
+    /// <summary>
+    /// Строит PropertyDeclarationNode из IrProperty
+    /// </summary>
+    public PropertyDeclarationNode BuildProperty(IrProperty property)
+    {
+        var name = new IdentifierNode(property.Name);
+        var type = BuildType(property.Type);
+        var comment = !string.IsNullOrEmpty(property.Description)
+            ? new CommentNode(property.Description, CommentKind.JSDoc)
+            : null;
+        
+        var defaultValue = property.Constraints?.DefaultValue != null
+            ? BuildLiteral(property.Constraints.DefaultValue, InferTypeInfo(property.Type))
+            : null;
+        
+        return new PropertyDeclarationNode(
+            name: name,
+            type: type,
+            isRequired: property.IsRequired,
+            accessor: PropertyAccessorKind.Get,
+            defaultValue: defaultValue,
+            documentation: comment);
+    }
+    
+    /// <summary>
+    /// Строит SourceFile из IrEnum
+    /// </summary>
+    public SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null)
+    {
+        var imports = BuildImports(Array.Empty<string>(), importPath);
+        var declarations = BuildEnumDeclaration(enumModel);
+        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+        
+        return new SourceFileNode(
+            imports: imports,
+            exports: exports,
+            declarations: declarations);
+    }
+    
+    /// <summary>
+    /// Строит DeclarationNode из IrEnum (может быть TypeAlias для union или enum)
+    /// </summary>
+    private IReadOnlyList<DeclarationNode> BuildEnumDeclaration(IrEnum enumModel)
+    {
+        // Для TypeScript enum может быть либо union type, либо enum
+        // Используем union type для строковых enum'ов
+        if (enumModel.BaseType == IrEnumBaseType.String)
+        {
+            var unionType = BuildEnumUnionType(enumModel);
+            return new[] { (DeclarationNode)BuildTypeAlias(enumModel.Name, unionType) };
+        }
+        
+        // TODO: Реализовать построение TypeScript enum для числовых значений
+        // Пока возвращаем union type
+        var numericUnionType = BuildEnumUnionType(enumModel);
+        return new[] { (DeclarationNode)BuildTypeAlias(enumModel.Name, numericUnionType) };
+    }
+    
+    private UnionTypeNode BuildEnumUnionType(IrEnum enumModel)
+    {
+        var types = enumModel.Values.Select(v =>
+        {
+            if (v.Value is string strValue)
+                return new SimpleTypeNode(new IdentifierNode($"\"{strValue}\""), isPrimitive: true) as TypeNode;
+            if (v.Value is int or long or short or byte)
+                return new SimpleTypeNode(new IdentifierNode(v.Value.ToString() ?? "0"), isPrimitive: true) as TypeNode;
+            return BuildSimpleType("string");
+        }).ToImmutableList();
+        
+        return new UnionTypeNode(types);
+    }
+    
+    // Приватные вспомогательные методы для IR
+    
+    private TypeNode BuildPrimitiveType(IrPrimitiveType primitiveType)
+    {
+        var typeName = MapPrimitiveToTypeScript(primitiveType.PrimitiveKind);
+        return new SimpleTypeNode(
+            name: new IdentifierNode(typeName),
+            isPrimitive: true,
+            isNullable: false,
+            isOptional: false);
+    }
+    
+    private TypeNode BuildModelReference(IrModelReference modelReference)
+    {
+        return new SimpleTypeNode(
+            name: new IdentifierNode(modelReference.ModelName),
+            isPrimitive: false,
+            isNullable: false,
+            isOptional: false);
+    }
+    
+    private TypeNode BuildArrayType(IrArrayType arrayType)
+    {
+        var elementType = BuildType(arrayType.ElementType);
+        return new ArrayTypeNode(elementType, isNullable: false, isOptional: false);
+    }
+    
+    private TypeNode BuildDictionaryType(IrDictionaryType dictionaryType)
+    {
+        var keyType = BuildType(dictionaryType.KeyType);
+        var valueType = BuildType(dictionaryType.ValueType);
+        return new DictionaryTypeNode(keyType, valueType, isNullable: false, isOptional: false);
+    }
+    
+    private TypeNode BuildUnionType(IrUnionType unionType)
+    {
+        var types = unionType.Types.Select(BuildType).ToImmutableList();
+        return new UnionTypeNode(types);
+    }
+    
+    private TypeNode BuildIntersectionType(IrIntersectionType intersectionType)
+    {
+        var types = intersectionType.Types.Select(BuildType).ToImmutableList();
+        return new IntersectionTypeNode(types);
+    }
+    
+    private TypeNode BuildNullableType(IrNullableType nullableType)
+    {
+        var innerType = BuildType(nullableType.InnerType);
+        return new NullableTypeNode(innerType);
+    }
+    
+    private TypeNode BuildOptionalType(IrOptionalType optionalType)
+    {
+        var innerType = BuildType(optionalType.InnerType);
+        return new OptionalTypeNode(innerType);
+    }
+    
+    private string MapPrimitiveToTypeScript(IrPrimitiveKind primitiveKind)
+    {
+        return primitiveKind switch
+        {
+            IrPrimitiveKind.String => "string",
+            IrPrimitiveKind.Number => "number",
+            IrPrimitiveKind.Integer => "number",
+            IrPrimitiveKind.Boolean => "boolean",
+            IrPrimitiveKind.DateTime => "string", // ISO string в TypeScript
+            IrPrimitiveKind.Date => "string",
+            IrPrimitiveKind.Time => "string",
+            IrPrimitiveKind.Binary => "Blob",
+            IrPrimitiveKind.ByteArray => "Uint8Array",
+            IrPrimitiveKind.Uuid => "string",
+            _ => "unknown"
+        };
+    }
+    
+    private IReadOnlyList<string> ExtractDependencies(IrModel model)
+    {
+        var dependencies = new HashSet<string>();
+        
+        foreach (var property in model.Properties)
+        {
+            ExtractDependenciesFromType(property.Type, dependencies);
+        }
+        
+        if (model.Composition != null)
+        {
+            foreach (var type in model.Composition.Types)
+            {
+                ExtractDependenciesFromType(type, dependencies);
+            }
+        }
+        
+        return dependencies.ToList();
+    }
+    
+    private void ExtractDependenciesFromType(IrType type, HashSet<string> dependencies)
+    {
+        switch (type)
+        {
+            case IrModelReference modelRef:
+                dependencies.Add(modelRef.ModelName);
+                break;
+            case IrArrayType arrayType:
+                ExtractDependenciesFromType(arrayType.ElementType, dependencies);
+                break;
+            case IrDictionaryType dictType:
+                ExtractDependenciesFromType(dictType.KeyType, dependencies);
+                ExtractDependenciesFromType(dictType.ValueType, dependencies);
+                break;
+            case IrUnionType unionType:
+                foreach (var t in unionType.Types)
+                    ExtractDependenciesFromType(t, dependencies);
+                break;
+            case IrIntersectionType intersectionType:
+                foreach (var t in intersectionType.Types)
+                    ExtractDependenciesFromType(t, dependencies);
+                break;
+            case IrNullableType nullableType:
+                ExtractDependenciesFromType(nullableType.InnerType, dependencies);
+                break;
+            case IrOptionalType optionalType:
+                ExtractDependenciesFromType(optionalType.InnerType, dependencies);
+                break;
+        }
+    }
+    
+    private TypeInfo InferTypeInfo(IrType irType)
+    {
+        // Простая реализация для определения TypeInfo из IrType
+        // Используется только для BuildLiteral
+        return irType.Kind switch
+        {
+            IrTypeKind.Primitive => TypeInfo.Simple(MapPrimitiveToTypeScript(((IrPrimitiveType)irType).PrimitiveKind), isPrimitive: true, language: GenerationLanguage.TypeScript),
+            IrTypeKind.ModelReference => TypeInfo.Simple(((IrModelReference)irType).ModelName, language: GenerationLanguage.TypeScript),
+            _ => TypeInfo.Simple("unknown", language: GenerationLanguage.TypeScript)
+        };
     }
 }

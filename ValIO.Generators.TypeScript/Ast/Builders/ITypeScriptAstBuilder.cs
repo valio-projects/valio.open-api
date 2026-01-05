@@ -1,6 +1,8 @@
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Interfaces;
+using ValIO.Core.IR;
+using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Generators.TypeScript.Models;
@@ -81,4 +83,31 @@ public interface ITypeScriptAstBuilder
     /// Строит список HeaderParameterNode из OperationTemplateData
     /// </summary>
     IReadOnlyList<HeaderParameterNode> BuildHeaderParameters(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data);
+    
+    // IR → AST методы
+    
+    /// <summary>
+    /// Строит TypeNode из IrType
+    /// </summary>
+    TypeNode BuildType(IrType irType);
+    
+    /// <summary>
+    /// Строит SourceFile из IrModel
+    /// </summary>
+    SourceFileNode BuildSourceFile(IrModel model, string? importPath = null);
+    
+    /// <summary>
+    /// Строит InterfaceDeclarationNode из IrModel
+    /// </summary>
+    InterfaceDeclarationNode BuildInterface(IrModel model);
+    
+    /// <summary>
+    /// Строит PropertyDeclarationNode из IrProperty
+    /// </summary>
+    PropertyDeclarationNode BuildProperty(IrProperty property);
+    
+    /// <summary>
+    /// Строит SourceFile из IrEnum
+    /// </summary>
+    SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null);
 }
