@@ -53,7 +53,11 @@ public sealed class RequestBodyNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitRequestBody(this);
+        if (visitor is IHttpAstVisitor<TResult> httpVisitor)
+        {
+            return httpVisitor.VisitRequestBody(this);
+        }
+        throw new NotSupportedException($"Visitor must implement IHttpAstVisitor<TResult> to visit RequestBodyNode");
     }
     
     public override AstNode Clone()

@@ -1,7 +1,6 @@
 using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes.Expressions;
-using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.TanStackQuery.Ast.Nodes;
 using ValIO.Generators.TypeScript.TanStackQuery.Ast.Visitors;
@@ -11,7 +10,7 @@ namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Renderers;
 /// <summary>
 /// Рендерер AST для генерации TanStack Query кода
 /// </summary>
-public class TanStackQueryAstRenderer : AstVisitorBase<string>, ITanStackQueryAstVisitor<string>, ITanStackQueryAstRenderer
+public class TanStackQueryAstRenderer : TanStackQueryAstVisitorBase<string>, ITanStackQueryAstVisitor<string>, ITanStackQueryAstRenderer
 {
     private readonly StringBuilder _sb = new();
     private int _indentLevel = 0;

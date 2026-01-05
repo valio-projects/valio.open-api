@@ -1,7 +1,6 @@
 using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes.Expressions;
-using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
@@ -12,7 +11,7 @@ namespace ValIO.Generators.TypeScript.Zod.Ast.Renderers;
 /// <summary>
 /// Рендерер AST для генерации Zod схем
 /// </summary>
-public class ZodAstRenderer : AstVisitorBase<string>, IZodAstVisitor<string>, IZodAstRenderer
+public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>, IZodAstRenderer
 {
     private readonly StringBuilder _sb = new();
     private int _indentLevel = 0;

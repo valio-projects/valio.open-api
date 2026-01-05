@@ -7,13 +7,15 @@ using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
+using ValIO.Generators.TypeScript.Ast.Visitors;
 
 namespace ValIO.Generators.TypeScript.Ast.Renderers;
 
 /// <summary>
 /// Рендерер AST для генерации TypeScript кода
+/// Реализует ITypeScriptAstVisitor и IHttpAstVisitor для поддержки HTTP клиентов
 /// </summary>
-public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRenderer
+public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScriptAstRenderer, IHttpAstVisitor<string>
 {
     private readonly StringBuilder _sb = new();
     private int _indentLevel = 0;
@@ -418,51 +420,6 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
     public override string VisitTypeDeclaration(TypeDeclarationNode node)
     {
         throw new NotSupportedException("TypeDeclaration is not supported in TypeScript renderer. Use specific declaration types instead.");
-    }
-
-    public override string VisitMethodDeclaration(MethodDeclarationNode node)
-    {
-        throw new NotSupportedException("MethodDeclaration is not supported in TypeScript renderer. Use FunctionDeclaration instead.");
-    }
-
-    public override string VisitCompilationUnit(CompilationUnitNode node)
-    {
-        throw new NotSupportedException("CompilationUnit is not supported in TypeScript renderer. Use SourceFile instead.");
-    }
-
-    public override string VisitNamespaceDeclaration(NamespaceDeclarationNode node)
-    {
-        throw new NotSupportedException("NamespaceDeclaration is not supported in TypeScript renderer.");
-    }
-
-    public override string VisitUsingDirective(UsingDirectiveNode node)
-    {
-        throw new NotSupportedException("UsingDirective is not supported in TypeScript renderer. Use Import instead.");
-    }
-
-    public override string VisitClassDeclaration(ClassDeclarationNode node)
-    {
-        throw new NotSupportedException("ClassDeclaration is not supported in TypeScript renderer. Use InterfaceDeclaration or TypeAliasDeclaration instead.");
-    }
-
-    public override string VisitRecordDeclaration(RecordDeclarationNode node)
-    {
-        throw new NotSupportedException("RecordDeclaration is not supported in TypeScript renderer. Use InterfaceDeclaration or TypeAliasDeclaration instead.");
-    }
-
-    public override string VisitStructDeclaration(StructDeclarationNode node)
-    {
-        throw new NotSupportedException("StructDeclaration is not supported in TypeScript renderer. Use InterfaceDeclaration or TypeAliasDeclaration instead.");
-    }
-
-    public override string VisitFieldDeclaration(FieldDeclarationNode node)
-    {
-        throw new NotSupportedException("FieldDeclaration is not supported in TypeScript renderer. Use PropertyDeclaration or VariableDeclaration instead.");
-    }
-
-    public override string VisitConstructorDeclaration(ConstructorDeclarationNode node)
-    {
-        throw new NotSupportedException("ConstructorDeclaration is not supported in TypeScript renderer.");
     }
 
     public override string VisitGenericParameter(GenericParameterNode node)

@@ -1,3 +1,4 @@
+using ValIO.Generators.TypeScript.Ast.Visitors;
 using ValIO.Generators.TypeScript.TanStackQuery.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Visitors;
@@ -5,7 +6,7 @@ namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Visitors;
 /// <summary>
 /// Интерфейс посетителя для TanStack Query специфичных AST узлов
 /// </summary>
-public interface ITanStackQueryAstVisitor<TResult>
+public interface ITanStackQueryAstVisitor<TResult> : ITypeScriptAstVisitor<TResult>
 {
     /// <summary>
     /// Посещает query key

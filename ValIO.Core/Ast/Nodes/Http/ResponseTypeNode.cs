@@ -46,7 +46,11 @@ public sealed class ResponseTypeNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitResponseType(this);
+        if (visitor is IHttpAstVisitor<TResult> httpVisitor)
+        {
+            return httpVisitor.VisitResponseType(this);
+        }
+        throw new NotSupportedException($"Visitor must implement IHttpAstVisitor<TResult> to visit ResponseTypeNode");
     }
     
     public override AstNode Clone()

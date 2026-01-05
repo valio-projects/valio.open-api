@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Generators.CSharp.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
 
@@ -68,7 +69,11 @@ public sealed class ConstructorDeclarationNode : DeclarationNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitConstructorDeclaration(this);
+        if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
+        {
+            return csharpVisitor.VisitConstructorDeclaration(this);
+        }
+        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit ConstructorDeclarationNode");
     }
     
     public override AstNode Clone()

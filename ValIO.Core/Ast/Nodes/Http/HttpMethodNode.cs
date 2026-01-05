@@ -31,7 +31,11 @@ public sealed class HttpMethodNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitHttpMethod(this);
+        if (visitor is IHttpAstVisitor<TResult> httpVisitor)
+        {
+            return httpVisitor.VisitHttpMethod(this);
+        }
+        throw new NotSupportedException($"Visitor must implement IHttpAstVisitor<TResult> to visit HttpMethodNode");
     }
     
     public override AstNode Clone()

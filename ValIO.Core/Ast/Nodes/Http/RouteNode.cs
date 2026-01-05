@@ -38,7 +38,11 @@ public sealed class RouteNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitRoute(this);
+        if (visitor is IHttpAstVisitor<TResult> httpVisitor)
+        {
+            return httpVisitor.VisitRoute(this);
+        }
+        throw new NotSupportedException($"Visitor must implement IHttpAstVisitor<TResult> to visit RouteNode");
     }
     
     public override AstNode Clone()

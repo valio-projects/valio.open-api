@@ -9,21 +9,14 @@ namespace ValIO.Core.Ast.Visitors;
 
 /// <summary>
 /// Базовый абстрактный класс Visitor для AST (базовая диспетчеризация)
+/// Наследуется от BaseAstVisitor и реализует IAstVisitor для обратной совместимости
 /// </summary>
-public abstract class AstVisitorBase<TResult> : IAstVisitor<TResult>
+public abstract class AstVisitorBase<TResult> : BaseAstVisitor<TResult>, IAstVisitor<TResult>
 {
     /// <summary>
-    /// Посещает узел (диспетчеризация по типу)
+    /// Посещает объявление (расширенная версия с поддержкой всех типов объявлений)
     /// </summary>
-    public virtual TResult Visit(AstNode node)
-    {
-        return node.Accept(this);
-    }
-    
-    /// <summary>
-    /// Посещает объявление
-    /// </summary>
-    public virtual TResult VisitDeclaration(DeclarationNode node)
+    public override TResult VisitDeclaration(DeclarationNode node)
     {
         return node.Kind switch
         {
@@ -49,28 +42,9 @@ public abstract class AstVisitorBase<TResult> : IAstVisitor<TResult>
     }
     
     /// <summary>
-    /// Посещает тип
+    /// Посещает выражение (расширенная версия с поддержкой всех типов выражений)
     /// </summary>
-    public virtual TResult VisitType(TypeNode node)
-    {
-        return node.Kind switch
-        {
-            AstNodeKind.SimpleType => VisitSimpleType((SimpleTypeNode)node),
-            AstNodeKind.GenericType => VisitGenericType((GenericTypeNode)node),
-            AstNodeKind.NullableType => VisitNullableType((NullableTypeNode)node),
-            AstNodeKind.OptionalType => VisitOptionalType((OptionalTypeNode)node),
-            AstNodeKind.ArrayType => VisitArrayType((ArrayTypeNode)node),
-            AstNodeKind.UnionType => VisitUnionType((UnionTypeNode)node),
-            AstNodeKind.IntersectionType => VisitIntersectionType((IntersectionTypeNode)node),
-            AstNodeKind.DictionaryType => VisitDictionaryType((DictionaryTypeNode)node),
-            _ => VisitDefault(node)
-        };
-    }
-    
-    /// <summary>
-    /// Посещает выражение
-    /// </summary>
-    public virtual TResult VisitExpression(ExpressionNode node)
+    public override TResult VisitExpression(ExpressionNode node)
     {
         return node.Kind switch
         {
@@ -86,91 +60,128 @@ public abstract class AstVisitorBase<TResult> : IAstVisitor<TResult>
         };
     }
     
-    /// <summary>
-    /// Посещает statement
-    /// </summary>
-    public virtual TResult VisitStatement(StatementNode node)
+    // C# специфичные узлы (default implementations выбрасывают NotSupportedException)
+    public virtual TResult VisitCompilationUnit(CompilationUnitNode node)
     {
-        return node.Kind switch
-        {
-            AstNodeKind.ReturnStatement => VisitReturnStatement((ReturnStatementNode)node),
-            AstNodeKind.IfStatement => VisitIfStatement((IfStatementNode)node),
-            AstNodeKind.ForEachStatement => VisitForEachStatement((ForEachStatementNode)node),
-            AstNodeKind.ExpressionStatement => VisitExpressionStatement((ExpressionStatementNode)node),
-            _ => VisitDefault(node)
-        };
+        throw new NotSupportedException("CompilationUnit is not supported by this visitor. Use ICSharpAstVisitor instead.");
     }
     
-    // Базовые узлы
-    public abstract TResult VisitIdentifier(IdentifierNode node);
-    public abstract TResult VisitComment(CommentNode node);
-    public abstract TResult VisitAttribute(AttributeNode node);
-    public abstract TResult VisitBlock(BlockNode node);
-    public abstract TResult VisitImport(ImportNode node);
-    public abstract TResult VisitExport(ExportNode node);
+    public virtual TResult VisitNamespaceDeclaration(NamespaceDeclarationNode node)
+    {
+        throw new NotSupportedException("NamespaceDeclaration is not supported by this visitor. Use ICSharpAstVisitor instead.");
+    }
     
-    // Типы
-    public abstract TResult VisitSimpleType(SimpleTypeNode node);
-    public abstract TResult VisitGenericType(GenericTypeNode node);
-    public abstract TResult VisitNullableType(NullableTypeNode node);
-    public abstract TResult VisitOptionalType(OptionalTypeNode node);
-    public abstract TResult VisitArrayType(ArrayTypeNode node);
-    public abstract TResult VisitUnionType(UnionTypeNode node);
-    public abstract TResult VisitIntersectionType(IntersectionTypeNode node);
-    public abstract TResult VisitDictionaryType(DictionaryTypeNode node);
+    public virtual TResult VisitUsingDirective(UsingDirectiveNode node)
+    {
+        throw new NotSupportedException("UsingDirective is not supported by this visitor. Use ICSharpAstVisitor instead.");
+    }
     
-    // Выражения
-    public abstract TResult VisitLiteralExpression(LiteralExpressionNode node);
-    public abstract TResult VisitIdentifierExpression(IdentifierExpressionNode node);
-    public abstract TResult VisitCallExpression(CallExpressionNode node);
-    public abstract TResult VisitMemberAccessExpression(MemberAccessExpressionNode node);
-    public abstract TResult VisitBinaryExpression(BinaryExpressionNode node);
-    public abstract TResult VisitConditionalExpression(ConditionalExpressionNode node);
+    public virtual TResult VisitClassDeclaration(ClassDeclarationNode node)
+    {
+        throw new NotSupportedException("ClassDeclaration is not supported by this visitor. Use ICSharpAstVisitor instead.");
+    }
     
-    // Statements
-    public abstract TResult VisitReturnStatement(ReturnStatementNode node);
-    public abstract TResult VisitIfStatement(IfStatementNode node);
-    public abstract TResult VisitForEachStatement(ForEachStatementNode node);
-    public abstract TResult VisitExpressionStatement(ExpressionStatementNode node);
+    public virtual TResult VisitRecordDeclaration(RecordDeclarationNode node)
+    {
+        throw new NotSupportedException("RecordDeclaration is not supported by this visitor. Use ICSharpAstVisitor instead.");
+    }
     
-    // Объявления
-    public abstract TResult VisitTypeDeclaration(TypeDeclarationNode node);
-    public abstract TResult VisitPropertyDeclaration(PropertyDeclarationNode node);
-    public abstract TResult VisitMethodDeclaration(MethodDeclarationNode node);
-    public abstract TResult VisitParameterDeclaration(ParameterDeclarationNode node);
-    public abstract TResult VisitEnumMemberDeclaration(EnumMemberDeclarationNode node);
+    public virtual TResult VisitStructDeclaration(StructDeclarationNode node)
+    {
+        throw new NotSupportedException("StructDeclaration is not supported by this visitor. Use ICSharpAstVisitor instead.");
+    }
     
-    // C# специфичные узлы
-    public abstract TResult VisitCompilationUnit(CompilationUnitNode node);
-    public abstract TResult VisitNamespaceDeclaration(NamespaceDeclarationNode node);
-    public abstract TResult VisitUsingDirective(UsingDirectiveNode node);
-    public abstract TResult VisitClassDeclaration(ClassDeclarationNode node);
-    public abstract TResult VisitRecordDeclaration(RecordDeclarationNode node);
-    public abstract TResult VisitStructDeclaration(StructDeclarationNode node);
-    public abstract TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
-    public abstract TResult VisitEnumDeclaration(EnumDeclarationNode node);
-    public abstract TResult VisitFieldDeclaration(FieldDeclarationNode node);
-    public abstract TResult VisitConstructorDeclaration(ConstructorDeclarationNode node);
+    public virtual TResult VisitFieldDeclaration(FieldDeclarationNode node)
+    {
+        throw new NotSupportedException("FieldDeclaration is not supported by this visitor. Use ICSharpAstVisitor instead.");
+    }
     
-    // TypeScript специфичные узлы
-    public abstract TResult VisitSourceFile(SourceFileNode node);
-    public abstract TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);
-    public abstract TResult VisitFunctionDeclaration(FunctionDeclarationNode node);
-    public abstract TResult VisitVariableDeclaration(VariableDeclarationNode node);
-    public abstract TResult VisitObjectLiteralExpression(ObjectLiteralExpressionNode node);
-    public abstract TResult VisitPropertyAssignment(PropertyAssignmentNode node);
-    public abstract TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node);
-    public abstract TResult VisitGenericParameter(GenericParameterNode node);
-    public abstract TResult VisitPropertySignature(PropertySignatureNode node);
+    public virtual TResult VisitConstructorDeclaration(ConstructorDeclarationNode node)
+    {
+        throw new NotSupportedException("ConstructorDeclaration is not supported by this visitor. Use ICSharpAstVisitor instead.");
+    }
     
-    // HTTP специфичные узлы
-    public abstract TResult VisitHttpMethod(HttpMethodNode node);
-    public abstract TResult VisitRoute(RouteNode node);
-    public abstract TResult VisitPathParameter(PathParameterNode node);
-    public abstract TResult VisitQueryParameter(QueryParameterNode node);
-    public abstract TResult VisitHeaderParameter(HeaderParameterNode node);
-    public abstract TResult VisitRequestBody(RequestBodyNode node);
-    public abstract TResult VisitResponseType(ResponseTypeNode node);
+    // TypeScript специфичные узлы (default implementations выбрасывают NotSupportedException)
+    public virtual TResult VisitSourceFile(SourceFileNode node)
+    {
+        throw new NotSupportedException("SourceFile is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node)
+    {
+        throw new NotSupportedException("TypeAliasDeclaration is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitFunctionDeclaration(FunctionDeclarationNode node)
+    {
+        throw new NotSupportedException("FunctionDeclaration is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitVariableDeclaration(VariableDeclarationNode node)
+    {
+        throw new NotSupportedException("VariableDeclaration is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
+    {
+        throw new NotSupportedException("ObjectLiteralExpression is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitPropertyAssignment(PropertyAssignmentNode node)
+    {
+        throw new NotSupportedException("PropertyAssignment is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node)
+    {
+        throw new NotSupportedException("TemplateLiteralExpression is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitGenericParameter(GenericParameterNode node)
+    {
+        throw new NotSupportedException("GenericParameter is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitPropertySignature(PropertySignatureNode node)
+    {
+        throw new NotSupportedException("PropertySignature is not supported by this visitor. Use ITypeScriptAstVisitor instead.");
+    }
+    
+    // HTTP специфичные узлы (default implementations выбрасывают NotSupportedException)
+    public virtual TResult VisitHttpMethod(HttpMethodNode node)
+    {
+        throw new NotSupportedException("HttpMethod is not supported by this visitor. Use IHttpAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitRoute(RouteNode node)
+    {
+        throw new NotSupportedException("Route is not supported by this visitor. Use IHttpAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitPathParameter(PathParameterNode node)
+    {
+        throw new NotSupportedException("PathParameter is not supported by this visitor. Use IHttpAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitQueryParameter(QueryParameterNode node)
+    {
+        throw new NotSupportedException("QueryParameter is not supported by this visitor. Use IHttpAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitHeaderParameter(HeaderParameterNode node)
+    {
+        throw new NotSupportedException("HeaderParameter is not supported by this visitor. Use IHttpAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitRequestBody(RequestBodyNode node)
+    {
+        throw new NotSupportedException("RequestBody is not supported by this visitor. Use IHttpAstVisitor instead.");
+    }
+    
+    public virtual TResult VisitResponseType(ResponseTypeNode node)
+    {
+        throw new NotSupportedException("ResponseType is not supported by this visitor. Use IHttpAstVisitor instead.");
+    }
     
     /// <summary>
     /// Метод по умолчанию для неизвестных узлов

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Generators.TypeScript.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
 
@@ -62,7 +63,11 @@ public sealed class VariableDeclarationNode : DeclarationNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitVariableDeclaration(this);
+        if (visitor is ITypeScriptAstVisitor<TResult> typescriptVisitor)
+        {
+            return typescriptVisitor.VisitVariableDeclaration(this);
+        }
+        throw new NotSupportedException($"Visitor must implement ITypeScriptAstVisitor<TResult> to visit VariableDeclarationNode");
     }
     
     public override AstNode Clone()

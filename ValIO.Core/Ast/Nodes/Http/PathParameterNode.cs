@@ -39,7 +39,11 @@ public sealed class PathParameterNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitPathParameter(this);
+        if (visitor is IHttpAstVisitor<TResult> httpVisitor)
+        {
+            return httpVisitor.VisitPathParameter(this);
+        }
+        throw new NotSupportedException($"Visitor must implement IHttpAstVisitor<TResult> to visit PathParameterNode");
     }
     
     public override AstNode Clone()

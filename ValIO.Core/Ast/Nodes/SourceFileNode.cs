@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Generators.TypeScript.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
 
@@ -55,7 +56,11 @@ public sealed class SourceFileNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitSourceFile(this);
+        if (visitor is ITypeScriptAstVisitor<TResult> typescriptVisitor)
+        {
+            return typescriptVisitor.VisitSourceFile(this);
+        }
+        throw new NotSupportedException($"Visitor must implement ITypeScriptAstVisitor<TResult> to visit SourceFileNode");
     }
     
     public override AstNode Clone()

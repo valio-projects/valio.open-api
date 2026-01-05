@@ -7,13 +7,15 @@ using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
+using ValIO.Generators.CSharp.Ast.Visitors;
 
 namespace ValIO.Generators.CSharp.Ast.Renderers;
 
 /// <summary>
 /// Рендерер AST для генерации C# кода
+/// Реализует ICSharpAstVisitor и IHttpAstVisitor для поддержки HTTP клиентов
 /// </summary>
-public class CSharpAstRenderer : AstVisitorBase<string>, ICSharpAstRenderer
+public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRenderer, IHttpAstVisitor<string>
 {
     private readonly StringBuilder _sb = new();
     private int _indentLevel = 0;
@@ -813,19 +815,6 @@ public class CSharpAstRenderer : AstVisitorBase<string>, ICSharpAstRenderer
             LiteralKind.Character => $"'{CodeEscapeHelper.EscapeString(node.Value?.ToString())}'",
             _ => node.Value?.ToString() ?? "null"
         };
-    }
-
-    public override string VisitGenericParameter(GenericParameterNode node)
-    {
-        var constraint = node.Constraint != null ? $" where {node.Name.Name} : {RenderType(node.Constraint)}" : "";
-        var defaultValue = node.Default != null ? $" = {RenderType(node.Default)}" : "";
-        return $"{node.Name.Name}{defaultValue}{constraint}";
-    }
-
-    public override string VisitPropertySignature(PropertySignatureNode node)
-    {
-        // PropertySignature используется только в TypeScript, для C# это не поддерживается
-        throw new NotSupportedException("PropertySignature is not supported in C# renderer. Use PropertyDeclaration instead.");
     }
 
     // HTTP специфичные методы (для C# не используются напрямую, но требуются интерфейсом)

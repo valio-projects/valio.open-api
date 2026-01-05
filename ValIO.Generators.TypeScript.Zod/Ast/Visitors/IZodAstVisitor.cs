@@ -1,3 +1,4 @@
+using ValIO.Generators.TypeScript.Ast.Visitors;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.Zod.Ast.Visitors;
@@ -5,7 +6,7 @@ namespace ValIO.Generators.TypeScript.Zod.Ast.Visitors;
 /// <summary>
 /// Интерфейс посетителя для Zod специфичных AST узлов
 /// </summary>
-public interface IZodAstVisitor<TResult>
+public interface IZodAstVisitor<TResult> : ITypeScriptAstVisitor<TResult>
 {
     /// <summary>
     /// Посещает Zod схему (базовый метод)

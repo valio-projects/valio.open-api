@@ -8,8 +8,9 @@ namespace ValIO.Core.Ast.Visitors;
 
 /// <summary>
 /// Базовый интерфейс посетителя AST (Visitor Pattern)
+/// Объединяет все интерфейсы визиторов для обратной совместимости
 /// </summary>
-public interface IAstVisitor<TResult>
+public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
     /// <summary>
     /// Посещает узел (диспетчеризация по типу)

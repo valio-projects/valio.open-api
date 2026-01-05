@@ -1,7 +1,6 @@
 using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes.Expressions;
-using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Axios.Ast.Nodes;
 using ValIO.Generators.TypeScript.Axios.Ast.Visitors;
@@ -11,7 +10,7 @@ namespace ValIO.Generators.TypeScript.Axios.Ast.Renderers;
 /// <summary>
 /// Рендерер AST для генерации Axios кода
 /// </summary>
-public class AxiosAstRenderer : AstVisitorBase<string>, IAxiosAstVisitor<string>, IAxiosAstRenderer
+public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<string>, IAxiosAstRenderer
 {
     private readonly StringBuilder _sb = new();
     private int _indentLevel = 0;

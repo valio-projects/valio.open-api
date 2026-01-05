@@ -46,7 +46,11 @@ public sealed class HeaderParameterNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitHeaderParameter(this);
+        if (visitor is IHttpAstVisitor<TResult> httpVisitor)
+        {
+            return httpVisitor.VisitHeaderParameter(this);
+        }
+        throw new NotSupportedException($"Visitor must implement IHttpAstVisitor<TResult> to visit HeaderParameterNode");
     }
     
     public override AstNode Clone()

@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Generators.CSharp.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
 
@@ -55,7 +56,11 @@ public sealed class CompilationUnitNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitCompilationUnit(this);
+        if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
+        {
+            return csharpVisitor.VisitCompilationUnit(this);
+        }
+        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit CompilationUnitNode");
     }
     
     public override AstNode Clone()

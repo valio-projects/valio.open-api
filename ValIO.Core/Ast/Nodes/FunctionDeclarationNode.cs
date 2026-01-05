@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Generators.TypeScript.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
 
@@ -77,7 +78,11 @@ public sealed class FunctionDeclarationNode : DeclarationNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitFunctionDeclaration(this);
+        if (visitor is ITypeScriptAstVisitor<TResult> typescriptVisitor)
+        {
+            return typescriptVisitor.VisitFunctionDeclaration(this);
+        }
+        throw new NotSupportedException($"Visitor must implement ITypeScriptAstVisitor<TResult> to visit FunctionDeclarationNode");
     }
     
     public override AstNode Clone()

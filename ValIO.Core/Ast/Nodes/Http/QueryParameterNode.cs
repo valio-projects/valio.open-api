@@ -46,7 +46,11 @@ public sealed class QueryParameterNode : AstNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitQueryParameter(this);
+        if (visitor is IHttpAstVisitor<TResult> httpVisitor)
+        {
+            return httpVisitor.VisitQueryParameter(this);
+        }
+        throw new NotSupportedException($"Visitor must implement IHttpAstVisitor<TResult> to visit QueryParameterNode");
     }
     
     public override AstNode Clone()

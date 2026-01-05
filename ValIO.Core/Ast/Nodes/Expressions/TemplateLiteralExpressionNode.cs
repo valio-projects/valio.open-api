@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Generators.TypeScript.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes.Expressions;
 
@@ -89,7 +90,11 @@ public sealed class TemplateLiteralExpressionNode : ExpressionNode
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        return visitor.VisitTemplateLiteralExpression(this);
+        if (visitor is ITypeScriptAstVisitor<TResult> typescriptVisitor)
+        {
+            return typescriptVisitor.VisitTemplateLiteralExpression(this);
+        }
+        throw new NotSupportedException($"Visitor must implement ITypeScriptAstVisitor<TResult> to visit TemplateLiteralExpressionNode");
     }
     
     public override AstNode Clone()
