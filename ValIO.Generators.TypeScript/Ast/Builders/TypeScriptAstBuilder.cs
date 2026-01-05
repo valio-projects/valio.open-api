@@ -1,7 +1,10 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Http;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
@@ -17,11 +20,13 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     private readonly ITypeMapper _typeMapper;
+    private readonly HttpAstBuilder _httpBuilder;
     
     public TypeScriptAstBuilder(INamingConverter namingConverter, ITypeMapper typeMapper)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
+        _httpBuilder = new HttpAstBuilder(namingConverter, typeMapper);
     }
     
     public SourceFileNode BuildSourceFile(ModelTemplateData<TypeScriptModelTemplateDataOptions, TypeScriptPropertyTemplateDataOptions> data)
@@ -256,9 +261,83 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     private BlockNode? BuildFunctionBody(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data)
     {
-        // TODO: Реализовать построение тела функции
+        // TODO: Полная реализация построения тела функции с использованием HTTP узлов
         // Пока возвращаем null для type-only функции
+        // 
+        // В будущем здесь будет построение тела функции с использованием:
+        // - HttpMethodNode - для определения HTTP метода
+        // - RouteNode - для построения пути с path параметрами
+        // - PathParameterNode, QueryParameterNode, HeaderParameterNode - для параметров
+        // - RequestBodyNode - для тела запроса
+        // - ResponseTypeNode - для обработки ответа
+        //
+        // Структура тела функции:
+        // 1. Построение пути (const path = `...`)
+        // 2. Построение query параметров (const queryParams = ...)
+        // 3. Построение headers (const headers = {...})
+        // 4. Построение body (если есть)
+        // 5. Fetch/Axios вызов
+        // 6. Обработка ответа и return
+        //
+        // Для полной реализации потребуется:
+        // - Создание VariableDeclarationNode для промежуточных переменных
+        // - Создание ExpressionStatementNode для вызовов
+        // - Создание ReturnStatementNode для возврата результата
+        // - Использование TemplateLiteralExpressionNode для путей
+        // - Использование ObjectLiteralExpressionNode для headers, body
+        // - Использование CallExpressionNode для fetch/axios вызовов
         return null;
+    }
+    
+    /// <summary>
+    /// Строит HTTP метод из OperationTemplateData
+    /// </summary>
+    public HttpMethodNode BuildHttpMethod(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data)
+    {
+        return _httpBuilder.BuildHttpMethod(data.HttpMethod);
+    }
+    
+    /// <summary>
+    /// Строит Route из OperationTemplateData
+    /// </summary>
+    public RouteNode BuildRoute(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data)
+    {
+        return _httpBuilder.BuildRoute(data.Path, data.PathParameters, _typeMapper);
+    }
+    
+    /// <summary>
+    /// Строит RequestBody из OperationTemplateData
+    /// </summary>
+    public RequestBodyNode? BuildRequestBody(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data)
+    {
+        if (!data.HasRequestBody || data.RequestBodyTypeInfo == null)
+            return null;
+        
+        return _httpBuilder.BuildRequestBody(
+            data.RequestBodyTypeInfo,
+            data.RequestBodyContentType,
+            data.IsRequestBodyRequired,
+            _typeMapper);
+    }
+    
+    /// <summary>
+    /// Строит список QueryParameterNode из OperationTemplateData
+    /// </summary>
+    public IReadOnlyList<QueryParameterNode> BuildQueryParameters(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data)
+    {
+        return data.QueryParameters
+            .Select(p => _httpBuilder.BuildQueryParameter(p, _typeMapper))
+            .ToImmutableList();
+    }
+    
+    /// <summary>
+    /// Строит список HeaderParameterNode из OperationTemplateData
+    /// </summary>
+    public IReadOnlyList<HeaderParameterNode> BuildHeaderParameters(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data)
+    {
+        return data.HeaderParameters
+            .Select(p => _httpBuilder.BuildHeaderParameter(p, _typeMapper))
+            .ToImmutableList();
     }
     
     private TypeNode BuildTypeFromBaseType(TypeInfo typeInfo)

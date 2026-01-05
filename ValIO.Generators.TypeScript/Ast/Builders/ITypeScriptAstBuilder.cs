@@ -1,4 +1,5 @@
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
@@ -55,4 +56,29 @@ public interface ITypeScriptAstBuilder
     /// Строит Literal Expression
     /// </summary>
     Expressions.LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo);
+    
+    /// <summary>
+    /// Строит HttpMethodNode из OperationTemplateData
+    /// </summary>
+    HttpMethodNode BuildHttpMethod(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data);
+    
+    /// <summary>
+    /// Строит RouteNode из OperationTemplateData
+    /// </summary>
+    RouteNode BuildRoute(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data);
+    
+    /// <summary>
+    /// Строит RequestBodyNode из OperationTemplateData
+    /// </summary>
+    RequestBodyNode? BuildRequestBody(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data);
+    
+    /// <summary>
+    /// Строит список QueryParameterNode из OperationTemplateData
+    /// </summary>
+    IReadOnlyList<QueryParameterNode> BuildQueryParameters(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data);
+    
+    /// <summary>
+    /// Строит список HeaderParameterNode из OperationTemplateData
+    /// </summary>
+    IReadOnlyList<HeaderParameterNode> BuildHeaderParameters(OperationTemplateData<TypeScriptOperationTemplateDataOptions> data);
 }

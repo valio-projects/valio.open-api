@@ -76,4 +76,26 @@ public enum AstNodeKind
     HeaderParameter,
     RequestBody,
     ResponseType,
+    
+    // Axios специфичные узлы
+    AxiosCallExpression,
+    AxiosConfig,
+    
+    // Zod специфичные узлы
+    ZodSchema,
+    ZodObject,
+    ZodArray,
+    ZodUnion,
+    ZodIntersection,
+    ZodEnum,
+    ZodEnumValue,
+    ZodProperty,
+    ZodEffects,
+    
+    // TanStack Query специфичные узлы
+    QueryKey,
+    UseQuery,
+    UseMutation,
+    QueryOptions,
+    MutationOptions,
 }
