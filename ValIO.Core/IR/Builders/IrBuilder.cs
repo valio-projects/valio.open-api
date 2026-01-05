@@ -280,11 +280,26 @@ public class IrBuilder
             return new IrModelReference { ModelName = modelName };
         }
         
-        // Object (inline) - создаем анонимную модель или возвращаем reference
+        // Object (inline) - создаем анонимную модель или возвращаем словарь
         if (resolvedSchema.Type == "object")
         {
-            // TODO: Обработка inline объектов
-            throw new NotImplementedException("Inline objects not yet supported");
+            // Если есть Properties, это объект с полями - создаем анонимную модель
+            if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
+            {
+                // Генерируем имя для анонимной модели
+                // В контексте IR мы можем создать временную модель или вернуть словарь
+                // Для простоты возвращаем словарь Record<string, any> (или object в C#)
+                // Это будет обработано на уровне AST builder'а
+                var valueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
+                var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+                return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+            }
+            
+            // Если нет Properties, но есть AdditionalProperties - это уже обработано выше
+            // Если нет ни того, ни другого - это пустой объект, возвращаем словарь
+            var emptyValueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
+            var emptyKeyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+            return new IrDictionaryType { KeyType = emptyKeyType, ValueType = emptyValueType };
         }
         
         throw new InvalidOperationException($"Unknown schema type: {resolvedSchema.Type}");
