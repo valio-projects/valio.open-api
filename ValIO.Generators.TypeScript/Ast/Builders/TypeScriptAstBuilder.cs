@@ -668,6 +668,49 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
+    /// Строит список SourceFile из IrDocument (все модели, enum'ы и клиенты)
+    /// </summary>
+    public IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null)
+    {
+        var sourceFiles = new List<SourceFileNode>();
+        
+        // Генерируем модели в топологическом порядке
+        var orderedModelNames = document.TypeDependencies.TopologicalOrder;
+        var modelsByName = document.Models.ToDictionary(m => m.Name);
+        
+        foreach (var modelName in orderedModelNames)
+        {
+            if (modelsByName.TryGetValue(modelName, out var model))
+            {
+                sourceFiles.Add(BuildSourceFile(model, importPath));
+            }
+        }
+        
+        // Добавляем модели, которые не были в топологическом порядке
+        foreach (var model in document.Models)
+        {
+            if (!orderedModelNames.Contains(model.Name))
+            {
+                sourceFiles.Add(BuildSourceFile(model, importPath));
+            }
+        }
+        
+        // Генерируем enum'ы
+        foreach (var enumModel in document.Enums)
+        {
+            sourceFiles.Add(BuildSourceFile(enumModel, importPath));
+        }
+        
+        // Генерируем клиенты
+        foreach (var client in document.Clients)
+        {
+            sourceFiles.Add(BuildSourceFile(client, importPath));
+        }
+        
+        return sourceFiles;
+    }
+    
+    /// <summary>
     /// Строит SourceFile из IrClient
     /// </summary>
     public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null)

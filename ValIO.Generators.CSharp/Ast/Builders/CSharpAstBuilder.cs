@@ -633,6 +633,49 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     }
     
     /// <summary>
+    /// Строит CompilationUnit из IrDocument (все модели)
+    /// </summary>
+    public IReadOnlyList<CompilationUnitNode> BuildCompilationUnits(IrDocument document, string? @namespace = null)
+    {
+        var compilationUnits = new List<CompilationUnitNode>();
+        
+        // Генерируем модели в топологическом порядке
+        var orderedModelNames = document.TypeDependencies.TopologicalOrder;
+        var modelsByName = document.Models.ToDictionary(m => m.Name);
+        
+        foreach (var modelName in orderedModelNames)
+        {
+            if (modelsByName.TryGetValue(modelName, out var model))
+            {
+                compilationUnits.Add(BuildCompilationUnit(model, @namespace));
+            }
+        }
+        
+        // Добавляем модели, которые не были в топологическом порядке
+        foreach (var model in document.Models)
+        {
+            if (!orderedModelNames.Contains(model.Name))
+            {
+                compilationUnits.Add(BuildCompilationUnit(model, @namespace));
+            }
+        }
+        
+        // Генерируем enum'ы
+        foreach (var enumModel in document.Enums)
+        {
+            compilationUnits.Add(BuildCompilationUnit(enumModel, @namespace));
+        }
+        
+        // Генерируем клиенты
+        foreach (var client in document.Clients)
+        {
+            compilationUnits.Add(BuildCompilationUnit(client, @namespace));
+        }
+        
+        return compilationUnits;
+    }
+    
+    /// <summary>
     /// Строит CompilationUnit из IrClient
     /// </summary>
     public CompilationUnitNode BuildCompilationUnit(IrClient client, string? @namespace = null)

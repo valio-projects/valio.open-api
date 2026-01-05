@@ -109,4 +109,9 @@ public interface ICSharpAstBuilder
     /// Строит CompilationUnit из IrClient
     /// </summary>
     CompilationUnitNode BuildCompilationUnit(IrClient client, string? @namespace = null);
+    
+    /// <summary>
+    /// Строит список CompilationUnit из IrDocument (все модели, enum'ы и клиенты)
+    /// </summary>
+    IReadOnlyList<CompilationUnitNode> BuildCompilationUnits(IrDocument document, string? @namespace = null);
 }

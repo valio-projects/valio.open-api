@@ -120,4 +120,9 @@ public interface ITypeScriptAstBuilder
     /// Строит SourceFile из IrClient
     /// </summary>
     SourceFileNode BuildSourceFile(IrClient client, string? importPath = null);
+    
+    /// <summary>
+    /// Строит список SourceFile из IrDocument (все модели, enum'ы и клиенты)
+    /// </summary>
+    IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null);
 }
