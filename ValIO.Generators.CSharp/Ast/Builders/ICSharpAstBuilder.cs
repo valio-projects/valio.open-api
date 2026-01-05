@@ -3,8 +3,6 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
-using ValIO.Core.Models.TemplateData;
-using ValIO.Generators.CSharp.Models;
 
 namespace ValIO.Generators.CSharp.Ast.Builders;
 
@@ -14,49 +12,9 @@ namespace ValIO.Generators.CSharp.Ast.Builders;
 public interface ICSharpAstBuilder
 {
     /// <summary>
-    /// Строит CompilationUnit из ModelTemplateData
-    /// </summary>
-    CompilationUnitNode BuildCompilationUnit(ModelTemplateData<CSharpModelTemplateDataOptions, CSharpPropertyTemplateDataOptions> data);
-    
-    /// <summary>
-    /// Строит CompilationUnit из ClientTemplateData
-    /// </summary>
-    CompilationUnitNode BuildCompilationUnit(ClientTemplateData<CSharpClientTemplateDataOptions, CSharpOperationTemplateDataOptions> data);
-    
-    /// <summary>
-    /// Строит CompilationUnit из EnumTemplateData
-    /// </summary>
-    CompilationUnitNode BuildCompilationUnit(EnumTemplateData<CSharpEnumTemplateDataOptions> data);
-    
-    /// <summary>
     /// Строит Namespace
     /// </summary>
     NamespaceDeclarationNode BuildNamespace(string name, IReadOnlyList<DeclarationNode> declarations);
-    
-    /// <summary>
-    /// Строит Class
-    /// </summary>
-    ClassDeclarationNode BuildClass(ModelTemplateData<CSharpModelTemplateDataOptions, CSharpPropertyTemplateDataOptions> data);
-    
-    /// <summary>
-    /// Строит Record
-    /// </summary>
-    RecordDeclarationNode BuildRecord(ModelTemplateData<CSharpModelTemplateDataOptions, CSharpPropertyTemplateDataOptions> data);
-    
-    /// <summary>
-    /// Строит Struct
-    /// </summary>
-    StructDeclarationNode BuildStruct(ModelTemplateData<CSharpModelTemplateDataOptions, CSharpPropertyTemplateDataOptions> data);
-    
-    /// <summary>
-    /// Строит Property
-    /// </summary>
-    PropertyDeclarationNode BuildProperty(PropertyTemplateData<CSharpPropertyTemplateDataOptions> data);
-    
-    /// <summary>
-    /// Строит Method
-    /// </summary>
-    MethodDeclarationNode BuildMethod(OperationTemplateData<CSharpOperationTemplateDataOptions> data);
     
     /// <summary>
     /// Строит Type из TypeInfo
