@@ -138,41 +138,31 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private void RenderQueryKeyFunction(StringBuilder sb, OperationTemplateData operation, string queryKeyFunctionName)
     {
-        // Используем BuildQueryKeyParameters для получения уникальных параметров
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var queryKeyParams = BuildQueryKeyParameters(operation);
         
         // Собираем параметры для query key функции (с типами)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var keyParams = new List<string>();
         
         // Path параметры всегда включены в query key
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                keyParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
-            }
+            keyParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query параметры также включены в query key
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
-                var optional = hasRequiredParam ? "" : "?";
-                keyParams.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
-            }
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            keyParams.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    var optional = param.IsRequired ? "" : "?";
-                    keyParams.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
-                }
+                var optional = param.IsRequired ? "" : "?";
+                keyParams.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
             }
         }
         
@@ -405,41 +395,31 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private void RenderInfiniteQueryKeyFunction(StringBuilder sb, OperationTemplateData operation, string infiniteQueryKeyFunctionName, string queryKeyFunctionName)
     {
-        // Используем BuildQueryKeyParameters для получения уникальных параметров
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var queryKeyParams = BuildQueryKeyParameters(operation);
         
         // Собираем параметры для query key функции (с типами)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var keyParams = new List<string>();
         
         // Path параметры всегда включены в query key
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                keyParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
-            }
+            keyParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query параметры также включены в query key
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
-                var optional = hasRequiredParam ? "" : "?";
-                keyParams.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
-            }
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            keyParams.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    var optional = param.IsRequired ? "" : "?";
-                    keyParams.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
-                }
+                var optional = param.IsRequired ? "" : "?";
+                keyParams.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
             }
         }
         
@@ -478,38 +458,28 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
         
         // Строим параметры с Partial<UseInfiniteQueryOptions>
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var parameters = new List<string>();
         
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
-            }
+            parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query параметры
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
-                var optional = hasRequiredParam ? "" : "?";
-                parameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
-            }
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            parameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    var optional = param.IsRequired ? "" : "?";
-                    parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
-                }
+                var optional = param.IsRequired ? "" : "?";
+                parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
             }
         }
         
@@ -847,38 +817,28 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private string BuildQueryHookParameters(OperationTemplateData operation, string awaitedReturnTypeName, TypeScriptGenerationOptions options)
     {
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var parameters = new List<string>();
         
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
-            }
+            parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query параметры
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
-                var optional = hasRequiredParam ? "" : "?";
-                parameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
-            }
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            parameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    var optional = param.IsRequired ? "" : "?";
-                    parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
-                }
+                var optional = param.IsRequired ? "" : "?";
+                parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
             }
         }
         
@@ -910,35 +870,25 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private List<string> BuildQueryKeyParameters(OperationTemplateData operation)
     {
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var parameters = new List<string>();
         
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add(param.VariableName);
-            }
+            parameters.Add(param.VariableName);
         }
         
         // Query параметры
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                parameters.Add("params");
-            }
+            parameters.Add("params");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    parameters.Add(param.VariableName);
-                }
+                parameters.Add(param.VariableName);
             }
         }
         
@@ -950,64 +900,45 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private string BuildClientMethodParameters(OperationTemplateData operation, string clientMethodName, TypeScriptGenerationOptions options)
     {
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var parameters = new List<string>();
         
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add(param.VariableName);
-            }
+            parameters.Add(param.VariableName);
         }
         
         // Query параметры
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                parameters.Add("params");
-            }
+            parameters.Add("params");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    parameters.Add(param.VariableName);
-                }
+                parameters.Add(param.VariableName);
             }
         }
         
         // Header параметры
         foreach (var param in operation.HeaderParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add(param.VariableName);
-            }
+            parameters.Add(param.VariableName);
         }
         
         // Request body
         if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
         {
-            if (seenParamNames.Add(operation.RequestBodyParameter))
-            {
-                parameters.Add(operation.RequestBodyParameter);
-            }
+            parameters.Add(operation.RequestBodyParameter);
         }
         else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
             // Для form-data передаем отдельные параметры (не объект), так как в axios методе они передаются отдельно
             foreach (var formProp in operation.FormDataProperties)
             {
-                if (seenParamNames.Add(formProp.VariableName))
-                {
-                    parameters.Add(formProp.VariableName);
-                }
+                parameters.Add(formProp.VariableName);
             }
         }
         
@@ -1019,64 +950,45 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private string BuildQueryFnClientMethodParameters(OperationTemplateData operation, string clientMethodName, TypeScriptGenerationOptions options)
     {
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var parameters = new List<string>();
         
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add(param.VariableName);
-            }
+            parameters.Add(param.VariableName);
         }
         
         // Query параметры
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                parameters.Add("params");
-            }
+            parameters.Add("params");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    parameters.Add(param.VariableName);
-                }
+                parameters.Add(param.VariableName);
             }
         }
         
         // Header параметры
         foreach (var param in operation.HeaderParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add(param.VariableName);
-            }
+            parameters.Add(param.VariableName);
         }
         
         // Request body
         if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
         {
-            if (seenParamNames.Add(operation.RequestBodyParameter))
-            {
-                parameters.Add(operation.RequestBodyParameter);
-            }
+            parameters.Add(operation.RequestBodyParameter);
         }
         else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
             // Для form-data передаем отдельные параметры (не объект), так как в axios методе они передаются отдельно
             foreach (var formProp in operation.FormDataProperties)
             {
-                if (seenParamNames.Add(formProp.VariableName))
-                {
-                    parameters.Add(formProp.VariableName);
-                }
+                parameters.Add(formProp.VariableName);
             }
         }
         
@@ -1098,70 +1010,51 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private string BuildMutationVariablesType(OperationTemplateData operation)
     {
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var variables = new List<string>();
         
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                variables.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName};");
-            }
+            variables.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName};");
         }
         
         // Query параметры
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
-                var optional = hasRequiredParam ? "" : "?";
-                variables.Add($"params{optional}: {operation.QueryParametersModelTypeName};");
-            }
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            variables.Add($"params{optional}: {operation.QueryParametersModelTypeName};");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
-            {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    var optional = param.IsRequired ? "" : "?";
-                    variables.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName};");
-                }
-            }
-        }
-        
-        // Header параметры
-        foreach (var param in operation.HeaderParameters)
-        {
-            if (seenParamNames.Add(param.VariableName))
             {
                 var optional = param.IsRequired ? "" : "?";
                 variables.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName};");
             }
         }
         
+        // Header параметры
+        foreach (var param in operation.HeaderParameters)
+        {
+            var optional = param.IsRequired ? "" : "?";
+            variables.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName};");
+        }
+        
         // Request body
         if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
         {
-            if (seenParamNames.Add(operation.RequestBodyParameter))
-            {
-                var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
-                var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
-                variables.Add($"{operation.RequestBodyParameter}{optional}: {typeStr};");
-            }
+            var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
+            var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
+            variables.Add($"{operation.RequestBodyParameter}{optional}: {typeStr};");
         }
         else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
             foreach (var formProp in operation.FormDataProperties)
             {
-                if (seenParamNames.Add(formProp.VariableName))
-                {
-                    var optional = formProp.IsRequired ? "" : "?";
-                    variables.Add($"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName};");
-                }
+                var optional = formProp.IsRequired ? "" : "?";
+                variables.Add($"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName};");
             }
         }
         
@@ -1173,63 +1066,44 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// </summary>
     private string BuildMutationVariablesDestructuring(OperationTemplateData operation)
     {
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var properties = new List<string>();
         
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                properties.Add(param.VariableName);
-            }
+            properties.Add(param.VariableName);
         }
         
         // Query параметры
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                properties.Add("params");
-            }
+            properties.Add("params");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    properties.Add(param.VariableName);
-                }
+                properties.Add(param.VariableName);
             }
         }
         
         // Header параметры
         foreach (var param in operation.HeaderParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                properties.Add(param.VariableName);
-            }
+            properties.Add(param.VariableName);
         }
         
         // Request body
         if (operation.HasRequestBody && !string.IsNullOrEmpty(operation.RequestBodyParameter))
         {
-            if (seenParamNames.Add(operation.RequestBodyParameter))
-            {
-                properties.Add(operation.RequestBodyParameter);
-            }
+            properties.Add(operation.RequestBodyParameter);
         }
         else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
             foreach (var formProp in operation.FormDataProperties)
             {
-                if (seenParamNames.Add(formProp.VariableName))
-                {
-                    properties.Add(formProp.VariableName);
-                }
+                properties.Add(formProp.VariableName);
             }
         }
         

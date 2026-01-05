@@ -4,6 +4,7 @@ using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Models;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Generators.TypeScript;
 
@@ -481,62 +482,34 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         CommentGenerator.GenerateJSDocCommentWithParams(sb, 0, operation.Summary, commentParams2);
         
         // Разделяем параметры на required и optional
-        // Используем Dictionary для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var requiredParams = new List<string>();
         var optionalParams = new List<string>();
         
         // Path parameters всегда required
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                requiredParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
-            }
+            requiredParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query parameters
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            var paramStr = $"params{optional}: {operation.QueryParametersModelTypeName}";
+            if (hasRequiredParam)
             {
-                var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
-                var optional = hasRequiredParam ? "" : "?";
-                var paramStr = $"params{optional}: {operation.QueryParametersModelTypeName}";
-                if (hasRequiredParam)
-                {
-                    requiredParams.Add(paramStr);
-                }
-                else
-                {
-                    optionalParams.Add(paramStr);
-                }
+                requiredParams.Add(paramStr);
+            }
+            else
+            {
+                optionalParams.Add(paramStr);
             }
         }
         else
         {
             foreach (var param in operation.QueryParameters)
-            {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    var optional = param.IsRequired ? "" : "?";
-                    var paramStr = $"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}";
-                    if (param.IsRequired)
-                    {
-                        requiredParams.Add(paramStr);
-                    }
-                    else
-                    {
-                        optionalParams.Add(paramStr);
-                    }
-                }
-            }
-        }
-        
-        // Header parameters
-        foreach (var param in operation.HeaderParameters)
-        {
-            if (seenParamNames.Add(param.VariableName))
             {
                 var optional = param.IsRequired ? "" : "?";
                 var paramStr = $"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}";
@@ -551,6 +524,21 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             }
         }
         
+        // Header parameters
+        foreach (var param in operation.HeaderParameters)
+        {
+            var optional = param.IsRequired ? "" : "?";
+            var paramStr = $"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}";
+            if (param.IsRequired)
+            {
+                requiredParams.Add(paramStr);
+            }
+            else
+            {
+                optionalParams.Add(paramStr);
+            }
+        }
+        
         // Request body
         if (operation.HasRequestBody)
         {
@@ -558,48 +546,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             {
                 if (!string.IsNullOrEmpty(operation.RequestSchemaName) && operation.RequestBodyTypeInfo != null)
                 {
-                    if (seenParamNames.Add(operation.RequestBodyParameter))
-                    {
-                        var optional = operation.RequestBodyTypeInfo.IsNullable ? "?" : "";
-                        var paramStr = $"{operation.RequestBodyParameter}{optional}: {operation.RequestBodyTypeInfo.FullTypeName}";
-                        if (operation.RequestBodyTypeInfo.IsNullable)
-                        {
-                            optionalParams.Add(paramStr);
-                        }
-                        else
-                        {
-                            requiredParams.Add(paramStr);
-                        }
-                    }
-                }
-                else
-                {
-                    foreach (var formProp in operation.FormDataProperties)
-                    {
-                        if (seenParamNames.Add(formProp.VariableName))
-                        {
-                            var optional = formProp.IsRequired ? "" : "?";
-                            var paramStr = $"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName}";
-                            if (formProp.IsRequired)
-                            {
-                                requiredParams.Add(paramStr);
-                            }
-                            else
-                            {
-                                optionalParams.Add(paramStr);
-                            }
-                        }
-                    }
-                }
-            }
-            else
-            {
-                if (seenParamNames.Add(operation.RequestBodyParameter))
-                {
-                    var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
-                    var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
-                    var paramStr = $"{operation.RequestBodyParameter}{optional}: {typeStr}";
-                    if (operation.RequestBodyTypeInfo == null || operation.RequestBodyTypeInfo.IsNullable)
+                    var optional = operation.RequestBodyTypeInfo.IsNullable ? "?" : "";
+                    var paramStr = $"{operation.RequestBodyParameter}{optional}: {operation.RequestBodyTypeInfo.FullTypeName}";
+                    if (operation.RequestBodyTypeInfo.IsNullable)
                     {
                         optionalParams.Add(paramStr);
                     }
@@ -607,6 +556,36 @@ public class TypeScriptCodeRenderer : ICodeRenderer
                     {
                         requiredParams.Add(paramStr);
                     }
+                }
+                else
+                {
+                    foreach (var formProp in operation.FormDataProperties)
+                    {
+                        var optional = formProp.IsRequired ? "" : "?";
+                        var paramStr = $"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName}";
+                        if (formProp.IsRequired)
+                        {
+                            requiredParams.Add(paramStr);
+                        }
+                        else
+                        {
+                            optionalParams.Add(paramStr);
+                        }
+                    }
+                }
+            }
+            else
+            {
+                var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
+                var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
+                var paramStr = $"{operation.RequestBodyParameter}{optional}: {typeStr}";
+                if (operation.RequestBodyTypeInfo == null || operation.RequestBodyTypeInfo.IsNullable)
+                {
+                    optionalParams.Add(paramStr);
+                }
+                else
+                {
+                    requiredParams.Add(paramStr);
                 }
             }
         }
@@ -876,49 +855,36 @@ public class TypeScriptCodeRenderer : ICodeRenderer
 
     private List<string> BuildParameterList(IOperationTemplateData operation)
     {
-        // Используем HashSet для отслеживания уже добавленных параметров по VariableName (избегаем дублирования)
-        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // Параметры уже дедуплицированы на этапе извлечения в OperationExtractor
         var parameters = new List<string>();
         
         // Path parameters
         foreach (var param in operation.PathParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
-            }
+            parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
         }
         
         // Query parameters
         if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
         {
-            if (seenParamNames.Add("params"))
-            {
-                var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
-                var optional = hasRequiredParam ? "" : "?";
-                parameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
-            }
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            parameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
-                if (seenParamNames.Add(param.VariableName))
-                {
-                    var optional = param.IsRequired ? "" : "?";
-                    parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
-                }
+                var optional = param.IsRequired ? "" : "?";
+                parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
             }
         }
         
         // Header parameters
         foreach (var param in operation.HeaderParameters)
         {
-            if (seenParamNames.Add(param.VariableName))
-            {
-                var optional = param.IsRequired ? "" : "?";
-                parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
-            }
+            var optional = param.IsRequired ? "" : "?";
+            parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
         }
         
         // Request body
@@ -928,21 +894,15 @@ public class TypeScriptCodeRenderer : ICodeRenderer
             {
                 foreach (var formProp in operation.FormDataProperties)
                 {
-                    if (seenParamNames.Add(formProp.VariableName))
-                    {
-                        var optional = formProp.IsRequired ? "" : "?";
-                        parameters.Add($"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName}");
-                    }
+                    var optional = formProp.IsRequired ? "" : "?";
+                    parameters.Add($"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName}");
                 }
             }
             else
             {
-                if (seenParamNames.Add(operation.RequestBodyParameter))
-                {
-                    var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
-                    var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
-                    parameters.Add($"{operation.RequestBodyParameter}{optional}: {typeStr}");
-                }
+                var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
+                var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
+                parameters.Add($"{operation.RequestBodyParameter}{optional}: {typeStr}");
             }
         }
         

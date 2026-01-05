@@ -133,17 +133,26 @@ public class OperationExtractor : IOperationExtractor
             IsRequestBodyRequired = false // Инициализируем явно, будет установлено ниже если есть request body
         };
 
-        // Извлекаем параметры
+        // Извлекаем параметры с дедупликацией по VariableName (без учета регистра)
+        // Приоритет: Path > Query > Header (первый встреченный параметр с таким VariableName сохраняется)
+        var seenParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pathParams = new List<ParameterTemplateData>(8);
+        var queryParams = new List<ParameterTemplateData>(8);
+        var headerParams = new List<ParameterTemplateData>(8);
+
         if (openApiOperation.Parameters != null)
         {
-            var pathParams = new List<ParameterTemplateData>(8);
-            var queryParams = new List<ParameterTemplateData>(8);
-            var headerParams = new List<ParameterTemplateData>(8);
-
             foreach (var parameter in openApiOperation.Parameters)
             {
                 var paramTemplateData = ExtractParameterTemplateData(parameter, typeInfoBuilder, namingConverter, namingStrategy, language);
                 var location = parameter.In ?? Microsoft.OpenApi.ParameterLocation.Query;
+                
+                // Дедуплицируем по VariableName (без учета регистра)
+                if (!seenParamNames.Add(paramTemplateData.VariableName))
+                {
+                    // Параметр с таким VariableName уже был добавлен - пропускаем
+                    continue;
+                }
                 
                 switch (location)
                 {
@@ -158,13 +167,13 @@ public class OperationExtractor : IOperationExtractor
                         break;
                 }
             }
-
-            operationTemplateData.PathParameters = pathParams;
-            operationTemplateData.QueryParameters = queryParams;
-            operationTemplateData.HeaderParameters = headerParams;
         }
 
-        // Извлекаем request body
+        operationTemplateData.PathParameters = pathParams;
+        operationTemplateData.QueryParameters = queryParams;
+        operationTemplateData.HeaderParameters = headerParams;
+
+        // Извлекаем request body с дедупликацией параметров
         if (openApiOperation.RequestBody != null)
         {
             var requestBodyData = ExtractRequestBodyTemplateData(openApiOperation.RequestBody, typeInfoBuilder, namingConverter, namingStrategy, language);
@@ -188,7 +197,39 @@ public class OperationExtractor : IOperationExtractor
             operationTemplateData.RequestBodyTypeInfo = requestBodyData.TypeInfo;
             operationTemplateData.RequestBodyContentType = requestBodyData.ContentType;
             operationTemplateData.IsFormData = requestBodyData.IsFormData;
-            operationTemplateData.FormDataProperties = requestBodyData.FormDataProperties;
+            
+            // Дедуплицируем FormData properties по VariableName (без учета регистра)
+            if (requestBodyData.FormDataProperties != null && requestBodyData.FormDataProperties.Count > 0)
+            {
+                var uniqueFormDataProperties = new List<FormDataPropertyTemplateData>();
+                foreach (var formProp in requestBodyData.FormDataProperties)
+                {
+                    if (seenParamNames.Add(formProp.VariableName))
+                    {
+                        uniqueFormDataProperties.Add(formProp);
+                    }
+                }
+                operationTemplateData.FormDataProperties = uniqueFormDataProperties;
+            }
+            else
+            {
+                operationTemplateData.FormDataProperties = requestBodyData.FormDataProperties;
+            }
+            
+            // Проверяем, не конфликтует ли RequestBodyParameter с уже существующими параметрами
+            if (!seenParamNames.Add(operationTemplateData.RequestBodyParameter))
+            {
+                // Если "request" уже используется, генерируем уникальное имя
+                var baseName = operationTemplateData.RequestBodyParameter;
+                var counter = 1;
+                var uniqueName = $"{baseName}{counter}";
+                while (!seenParamNames.Add(uniqueName))
+                {
+                    counter++;
+                    uniqueName = $"{baseName}{counter}";
+                }
+                operationTemplateData.RequestBodyParameter = uniqueName;
+            }
         }
 
         // Извлекаем responses
