@@ -17,7 +17,7 @@ public sealed class CommentNode : AstNode
     /// <summary>
     /// Тип комментария
     /// </summary>
-    public CommentKind Kind { get; }
+    public CommentKind CommentKind { get; }
     
     public override AstNodeKind Kind => AstNodeKind.Comment;
     
@@ -30,7 +30,7 @@ public sealed class CommentNode : AstNode
         : base(metadata)
     {
         Text = text ?? throw new ArgumentNullException(nameof(text));
-        Kind = kind;
+        CommentKind = kind;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -40,6 +40,6 @@ public sealed class CommentNode : AstNode
     
     public override AstNode Clone()
     {
-        return new CommentNode(Text, CommentType, Metadata.ToImmutableDictionary());
+        return new CommentNode(Text, CommentKind, Metadata.ToImmutableDictionary());
     }
 }

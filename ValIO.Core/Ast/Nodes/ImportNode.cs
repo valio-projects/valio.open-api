@@ -22,7 +22,7 @@ public sealed class ImportNode : AstNode
     /// <summary>
     /// Тип импорта
     /// </summary>
-    public ImportKind Kind { get; }
+    public ImportKind ImportKind { get; }
     
     public override AstNodeKind Kind => AstNodeKind.Import;
     
@@ -40,7 +40,7 @@ public sealed class ImportNode : AstNode
     {
         Items = items?.ToImmutableList() ?? throw new ArgumentNullException(nameof(items));
         From = from;
-        Kind = kind;
+        ImportKind = kind;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -53,7 +53,7 @@ public sealed class ImportNode : AstNode
         return new ImportNode(
             Items.Select(i => (IdentifierNode)i.Clone()).ToImmutableList(),
             From,
-            ImportType,
+            ImportKind,
             Metadata.ToImmutableDictionary());
     }
 }
