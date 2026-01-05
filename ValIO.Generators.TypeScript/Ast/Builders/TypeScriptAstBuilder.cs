@@ -568,6 +568,9 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             IrPrimitiveKind.Binary => "Blob",
             IrPrimitiveKind.ByteArray => "Uint8Array",
             IrPrimitiveKind.Uuid => "string",
+            IrPrimitiveKind.Any => "any",
+            IrPrimitiveKind.Void => "void",
+            IrPrimitiveKind.File => "Blob",
             _ => "unknown"
         };
     }
