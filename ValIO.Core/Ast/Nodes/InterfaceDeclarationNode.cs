@@ -1,8 +1,6 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
-using ValIO.Generators.CSharp.Ast.Visitors;
-using ValIO.Generators.TypeScript.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
 
@@ -31,16 +29,8 @@ public sealed class InterfaceDeclarationNode : TypeDeclarationNode
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
         // Interface используется и в C#, и в TypeScript
-        // Проверяем, какой visitor используется
-        if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
-        {
-            return csharpVisitor.VisitInterfaceDeclaration(this);
-        }
-        if (visitor is ITypeScriptAstVisitor<TResult> typescriptVisitor)
-        {
-            return typescriptVisitor.VisitInterfaceDeclaration(this);
-        }
-        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> or ITypeScriptAstVisitor<TResult> to visit InterfaceDeclarationNode");
+        // Используем метод из IAstVisitor напрямую
+        return visitor.VisitInterfaceDeclaration(this);
     }
     
     public override AstNode Clone()

@@ -16,8 +16,11 @@ public abstract class CSharpAstVisitorBase<TResult> : BaseAstVisitor<TResult>, I
     public abstract TResult VisitClassDeclaration(ClassDeclarationNode node);
     public abstract TResult VisitRecordDeclaration(RecordDeclarationNode node);
     public abstract TResult VisitStructDeclaration(StructDeclarationNode node);
-    public abstract TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
-    public abstract TResult VisitEnumDeclaration(EnumDeclarationNode node);
     public abstract TResult VisitFieldDeclaration(FieldDeclarationNode node);
     public abstract TResult VisitConstructorDeclaration(ConstructorDeclarationNode node);
+    
+    // Enum и Interface (общие для C# и TypeScript, определены в IAstVisitor)
+    // Реализуем их здесь, так как они используются в C#
+    public abstract TResult VisitEnumDeclaration(EnumDeclarationNode node);
+    public abstract TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
 }

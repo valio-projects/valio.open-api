@@ -8,15 +8,10 @@ namespace ValIO.Generators.TypeScript.Ast.Visitors;
 
 /// <summary>
 /// Интерфейс посетителя для TypeScript специфичных AST узлов
+/// Наследуется от IAstVisitor для поддержки общих узлов (Enum, Interface)
 /// </summary>
-public interface ITypeScriptAstVisitor<TResult> : IBaseAstVisitor<TResult>
+public interface ITypeScriptAstVisitor<TResult> : IAstVisitor<TResult>
 {
-    // Enum (общий для C# и TypeScript)
-    TResult VisitEnumDeclaration(EnumDeclarationNode node);
-    
-    // Interface (общий для C# и TypeScript)
-    TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
-    
     // TypeScript специфичные узлы
     TResult VisitSourceFile(SourceFileNode node);
     TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);

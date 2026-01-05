@@ -6,8 +6,9 @@ namespace ValIO.Generators.CSharp.Ast.Visitors;
 
 /// <summary>
 /// Интерфейс посетителя для C# специфичных AST узлов
+/// Наследуется от IAstVisitor для поддержки общих узлов (Enum, Interface)
 /// </summary>
-public interface ICSharpAstVisitor<TResult> : IBaseAstVisitor<TResult>
+public interface ICSharpAstVisitor<TResult> : IAstVisitor<TResult>
 {
     // C# специфичные узлы
     TResult VisitCompilationUnit(CompilationUnitNode node);
@@ -16,8 +17,6 @@ public interface ICSharpAstVisitor<TResult> : IBaseAstVisitor<TResult>
     TResult VisitClassDeclaration(ClassDeclarationNode node);
     TResult VisitRecordDeclaration(RecordDeclarationNode node);
     TResult VisitStructDeclaration(StructDeclarationNode node);
-    TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
-    TResult VisitEnumDeclaration(EnumDeclarationNode node);
     TResult VisitFieldDeclaration(FieldDeclarationNode node);
     TResult VisitConstructorDeclaration(ConstructorDeclarationNode node);
 }

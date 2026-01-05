@@ -31,6 +31,8 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.MethodDeclaration => VisitMethodDeclaration((MethodDeclarationNode)node),
             AstNodeKind.ParameterDeclaration => VisitParameterDeclaration((ParameterDeclarationNode)node),
             AstNodeKind.EnumMemberDeclaration => VisitEnumMemberDeclaration((EnumMemberDeclarationNode)node),
+            AstNodeKind.EnumDeclaration => VisitEnumDeclaration((EnumDeclarationNode)node),
+            AstNodeKind.InterfaceDeclaration => VisitInterfaceDeclaration((InterfaceDeclarationNode)node),
             _ => VisitDefault(node)
         };
     }
