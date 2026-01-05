@@ -41,6 +41,9 @@ public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
     // Enum (общий для C# и TypeScript)
     TResult VisitEnumDeclaration(EnumDeclarationNode node);
     
+    // Interface (общий для C# и TypeScript)
+    TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
+    
     // HTTP специфичные узлы
     TResult VisitHttpMethod(HttpMethodNode node);
     TResult VisitRoute(RouteNode node);

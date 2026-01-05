@@ -14,6 +14,9 @@ public interface ITypeScriptAstVisitor<TResult> : IBaseAstVisitor<TResult>
     // Enum (общий для C# и TypeScript)
     TResult VisitEnumDeclaration(EnumDeclarationNode node);
     
+    // Interface (общий для C# и TypeScript)
+    TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);
+    
     // TypeScript специфичные узлы
     TResult VisitSourceFile(SourceFileNode node);
     TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);
