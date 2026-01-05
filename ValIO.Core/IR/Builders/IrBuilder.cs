@@ -1,7 +1,6 @@
 using System.Collections.Immutable;
 using System.Net.Http;
 using Microsoft.OpenApi;
-using Microsoft.OpenApi.Models;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;

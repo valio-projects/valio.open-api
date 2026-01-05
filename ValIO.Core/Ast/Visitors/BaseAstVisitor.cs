@@ -72,6 +72,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.MemberAccessExpression => VisitMemberAccessExpression((MemberAccessExpressionNode)node),
             AstNodeKind.BinaryExpression => VisitBinaryExpression((BinaryExpressionNode)node),
             AstNodeKind.ConditionalExpression => VisitConditionalExpression((ConditionalExpressionNode)node),
+            AstNodeKind.AwaitExpression => VisitAwaitExpression((AwaitExpressionNode)node),
             _ => VisitDefault(node)
         };
     }
@@ -87,6 +88,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.IfStatement => VisitIfStatement((IfStatementNode)node),
             AstNodeKind.ForEachStatement => VisitForEachStatement((ForEachStatementNode)node),
             AstNodeKind.ExpressionStatement => VisitExpressionStatement((ExpressionStatementNode)node),
+            AstNodeKind.VariableDeclarationStatement => VisitVariableDeclarationStatement((VariableDeclarationStatementNode)node),
             _ => VisitDefault(node)
         };
     }
@@ -116,12 +118,14 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitMemberAccessExpression(MemberAccessExpressionNode node);
     public abstract TResult VisitBinaryExpression(BinaryExpressionNode node);
     public abstract TResult VisitConditionalExpression(ConditionalExpressionNode node);
+    public abstract TResult VisitAwaitExpression(AwaitExpressionNode node);
     
     // Statements
     public abstract TResult VisitReturnStatement(ReturnStatementNode node);
     public abstract TResult VisitIfStatement(IfStatementNode node);
     public abstract TResult VisitForEachStatement(ForEachStatementNode node);
     public abstract TResult VisitExpressionStatement(ExpressionStatementNode node);
+    public abstract TResult VisitVariableDeclarationStatement(VariableDeclarationStatementNode node);
     
     // Объявления
     public abstract TResult VisitTypeDeclaration(TypeDeclarationNode node);

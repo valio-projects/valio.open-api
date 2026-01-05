@@ -3,6 +3,7 @@ using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Types;
 
 namespace ValIO.Core.Ast.Builders;
 

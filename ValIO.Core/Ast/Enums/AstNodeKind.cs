@@ -30,12 +30,14 @@ public enum AstNodeKind
     MemberAccessExpression,
     BinaryExpression,
     ConditionalExpression,
+    AwaitExpression,
     
     // Statements
     ReturnStatement,
     IfStatement,
     ForEachStatement,
     ExpressionStatement,
+    VariableDeclarationStatement,
     
     // Объявления
     Declaration,

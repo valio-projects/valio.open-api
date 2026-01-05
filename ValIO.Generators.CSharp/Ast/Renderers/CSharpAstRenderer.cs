@@ -332,11 +332,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitReturnStatement(ReturnStatementNode node)
     {
-        if (node.Expression == null)
+        if (node.Value == null)
         {
             return "return;";
         }
-        var expr = Visit(node.Expression);
+        var expr = Visit(node.Value);
         return $"return {expr};";
     }
 
@@ -344,6 +344,19 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var expr = Visit(node.Expression);
         return $"{expr};";
+    }
+
+    public override string VisitVariableDeclarationStatement(VariableDeclarationStatementNode node)
+    {
+        var type = node.Type != null ? $"{RenderType(node.Type)} " : "var ";
+        var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
+        return $"{type}{node.Name.Name}{initializer};";
+    }
+
+    public override string VisitAwaitExpression(AwaitExpressionNode node)
+    {
+        var expr = Visit(node.Expression);
+        return $"await {expr}";
     }
 
     public override string VisitIfStatement(IfStatementNode node)

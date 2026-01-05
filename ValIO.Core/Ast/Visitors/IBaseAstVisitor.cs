@@ -40,12 +40,14 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitMemberAccessExpression(MemberAccessExpressionNode node);
     TResult VisitBinaryExpression(BinaryExpressionNode node);
     TResult VisitConditionalExpression(ConditionalExpressionNode node);
+    TResult VisitAwaitExpression(AwaitExpressionNode node);
     
     // Statements (общие)
     TResult VisitReturnStatement(ReturnStatementNode node);
     TResult VisitIfStatement(IfStatementNode node);
     TResult VisitForEachStatement(ForEachStatementNode node);
     TResult VisitExpressionStatement(ExpressionStatementNode node);
+    TResult VisitVariableDeclarationStatement(VariableDeclarationStatementNode node);
     
     // Объявления (общие)
     TResult VisitTypeDeclaration(TypeDeclarationNode node);

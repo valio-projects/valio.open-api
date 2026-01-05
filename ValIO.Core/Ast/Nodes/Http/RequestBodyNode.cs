@@ -28,7 +28,7 @@ public sealed class RequestBodyNode : AstNode
     /// <summary>
     /// Тип request body
     /// </summary>
-    public RequestBodyKind Kind { get; }
+    public RequestBodyKind RequestBodyKind { get; }
     
     public override AstNodeKind Kind => AstNodeKind.RequestBody;
     
@@ -46,7 +46,7 @@ public sealed class RequestBodyNode : AstNode
         : base(metadata)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
-        Kind = kind;
+        RequestBodyKind = kind;
         ContentType = contentType;
         IsRequired = isRequired;
     }
@@ -64,7 +64,7 @@ public sealed class RequestBodyNode : AstNode
     {
         return new RequestBodyNode(
             (TypeNode)Type.Clone(),
-            Kind,
+            RequestBodyKind,
             ContentType,
             IsRequired,
             Metadata.ToImmutableDictionary());
