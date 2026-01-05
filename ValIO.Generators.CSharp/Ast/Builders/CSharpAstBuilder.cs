@@ -532,6 +532,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             IrPrimitiveKind.Binary => "byte[]",
             IrPrimitiveKind.ByteArray => "byte[]",
             IrPrimitiveKind.Uuid => "Guid",
+            IrPrimitiveKind.Any => "object",
+            IrPrimitiveKind.Void => "void",
+            IrPrimitiveKind.File => "IFormFile",
             _ => "object"
         };
     }
