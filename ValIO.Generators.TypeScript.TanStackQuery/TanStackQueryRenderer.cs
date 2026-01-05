@@ -51,6 +51,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             RenderClientFunction(sb, operation, functionName, typeScriptOptions);
         }
         
+        // Генерируем экспорты для ResultType и AwaitedResultType (до хуков)
+        RenderTypeExports(sb, operation, actualClientMethodName);
+        
         // Генерируем query key функцию
         RenderQueryKeyFunction(sb, operation, queryKeyFunctionName);
         
@@ -65,9 +68,6 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         // Генерируем prefetch support
         RenderPrefetchSupport(sb, operation, functionName, queryKeyFunctionName, actualClientMethodName, typeScriptOptions);
-        
-        // Генерируем экспорты для ResultType и AwaitedResultType
-        RenderTypeExports(sb, operation, actualClientMethodName);
         
         return sb.ToString();
     }
@@ -100,14 +100,14 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             RenderClientFunction(sb, operation, functionName, typeScriptOptions);
         }
         
+        // Генерируем экспорты для ResultType и AwaitedResultType (до хуков)
+        RenderTypeExports(sb, operation, actualClientMethodName);
+        
         // Генерируем mutation options helper
         RenderMutationOptionsHelper(sb, operation, functionName, actualClientMethodName, typeScriptOptions);
         
         // Генерируем mutation hook
         RenderMutationHookFunction(sb, operation, hookName, functionName, actualClientMethodName, typeScriptOptions);
-        
-        // Генерируем экспорты для ResultType и AwaitedResultType
-        RenderTypeExports(sb, operation, actualClientMethodName);
         
         return sb.ToString();
     }
@@ -291,7 +291,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         CodeFormatter.AppendLine(sb, 2, "queryKey,");
         CodeFormatter.AppendLine(sb, 2, "queryFn,");
         CodeFormatter.AppendLine(sb, 2, "enabled: true,");
-        CodeFormatter.AppendLine(sb, 2, "...options");
+        CodeFormatter.AppendLine(sb, 2, "...queryOptions");
         CodeFormatter.AppendLine(sb, 1, "};");
         CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
@@ -531,7 +531,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         // Query options
         var errorType = "Error";
-        var optionsLines = new List<string> { $"    query?: UseQueryOptions<{awaitedReturnTypeName}, {errorType}>;" };
+        var optionsLines = new List<string> { $"    query?: UseQueryOptions<{awaitedReturnTypeName}, {errorType}, TData>;" };
         optionsLines.Add("    timeout?: number;");
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
