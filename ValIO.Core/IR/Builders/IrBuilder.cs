@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Net.Http;
 using Microsoft.OpenApi;
 using Microsoft.OpenApi.Models;
 using ValIO.Core.Interfaces;
@@ -380,9 +381,219 @@ public class IrBuilder
     /// </summary>
     private IReadOnlyList<IrClient> ExtractClients(OpenApiDocument document)
     {
-        // TODO: Реализовать извлечение операций из путей
-        // Пока возвращаем пустой список
-        return Array.Empty<IrClient>();
+        var operations = new List<IrOperation>();
+        
+        if (document.Paths == null)
+            return Array.Empty<IrClient>();
+        
+        foreach (var pathEntry in document.Paths)
+        {
+            var path = pathEntry.Key;
+            var pathItem = pathEntry.Value;
+            
+            if (pathItem.Operations == null)
+                continue;
+            
+            foreach (var operationEntry in pathItem.Operations)
+            {
+                var httpMethod = operationEntry.Key;
+                var openApiOperation = operationEntry.Value;
+                
+                if (openApiOperation == null)
+                    continue;
+                
+                var operation = BuildOperation(path, httpMethod, openApiOperation, document);
+                operations.Add(operation);
+            }
+        }
+        
+        // Группируем операции по тегам (если есть) или создаем один клиент
+        if (operations.Count == 0)
+            return Array.Empty<IrClient>();
+        
+        var clients = new List<IrClient>();
+        var operationsByTag = operations
+            .Where(op => op.Tags != null && op.Tags.Count > 0)
+            .GroupBy(op => op.Tags!.First())
+            .ToList();
+        
+        // Клиенты по тегам
+        foreach (var tagGroup in operationsByTag)
+        {
+            var clientName = _namingConverter.SanitizeIdentifier(tagGroup.Key);
+            clients.Add(new IrClient
+            {
+                Name = clientName,
+                Operations = tagGroup.ToList()
+            });
+        }
+        
+        // Операции без тегов или с пустыми тегами
+        var operationsWithoutTags = operations
+            .Where(op => op.Tags == null || op.Tags.Count == 0)
+            .ToList();
+        
+        if (operationsWithoutTags.Count > 0)
+        {
+            clients.Add(new IrClient
+            {
+                Name = "ApiClient",
+                Operations = operationsWithoutTags
+            });
+        }
+        
+        // Если все операции были сгруппированы по тегам, возвращаем клиенты по тегам
+        // Иначе возвращаем один клиент со всеми операциями
+        if (clients.Count == 0 && operations.Count > 0)
+        {
+            clients.Add(new IrClient
+            {
+                Name = "ApiClient",
+                Operations = operations
+            });
+        }
+        
+        return clients;
+    }
+    
+    /// <summary>
+    /// Строит IrOperation из OpenAPI операции
+    /// </summary>
+    private IrOperation BuildOperation(
+        string path,
+        HttpMethod httpMethod,
+        OpenApiOperation openApiOperation,
+        OpenApiDocument document)
+    {
+        var operationId = openApiOperation.OperationId ?? 
+            $"{httpMethod.Method.ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
+        var methodName = _namingConverter.SanitizeIdentifier(operationId);
+        
+        // Извлекаем параметры
+        var pathParameters = new List<IrParameter>();
+        var queryParameters = new List<IrParameter>();
+        var headerParameters = new List<IrParameter>();
+        
+        if (openApiOperation.Parameters != null)
+        {
+            foreach (var parameter in openApiOperation.Parameters)
+            {
+                var irParameter = BuildParameter(parameter, document);
+                
+                switch (parameter.In)
+                {
+                    case ParameterLocation.Path:
+                        pathParameters.Add(irParameter);
+                        break;
+                    case ParameterLocation.Query:
+                        queryParameters.Add(irParameter);
+                        break;
+                    case ParameterLocation.Header:
+                        headerParameters.Add(irParameter);
+                        break;
+                }
+            }
+        }
+        
+        // Извлекаем request body
+        IrRequestBody? requestBody = null;
+        if (openApiOperation.RequestBody != null)
+        {
+            requestBody = BuildRequestBody(openApiOperation.RequestBody, document);
+        }
+        
+        // Извлекаем responses
+        var responses = new List<IrResponse>();
+        if (openApiOperation.Responses != null)
+        {
+            foreach (var responseEntry in openApiOperation.Responses)
+            {
+                var statusCode = responseEntry.Key;
+                var response = responseEntry.Value;
+                
+                var responseType = ExtractResponseType(response, document);
+                
+                responses.Add(new IrResponse
+                {
+                    StatusCode = statusCode,
+                    Type = responseType,
+                    Description = response.Description
+                });
+            }
+        }
+        
+        return new IrOperation
+        {
+            MethodName = methodName,
+            HttpMethod = httpMethod.Method.ToUpperInvariant(),
+            Path = path,
+            Summary = openApiOperation.Summary,
+            Description = openApiOperation.Description,
+            PathParameters = pathParameters,
+            QueryParameters = queryParameters,
+            HeaderParameters = headerParameters,
+            RequestBody = requestBody,
+            Responses = responses,
+            Tags = openApiOperation.Tags?.Select(t => t.Name).Where(n => n != null).ToList()
+        };
+    }
+    
+    /// <summary>
+    /// Строит IrParameter из OpenAPI параметра
+    /// </summary>
+    private IrParameter BuildParameter(OpenApiParameter parameter, OpenApiDocument document)
+    {
+        var name = _namingConverter.SanitizeIdentifier(parameter.Name);
+        var type = BuildType(parameter.Schema ?? new OpenApiSchema { Type = "string" }, document);
+        var isRequired = parameter.Required;
+        
+        return new IrParameter
+        {
+            Name = name,
+            Type = type,
+            IsRequired = isRequired,
+            Description = parameter.Description
+        };
+    }
+    
+    /// <summary>
+    /// Строит IrRequestBody из OpenAPI request body
+    /// </summary>
+    private IrRequestBody BuildRequestBody(OpenApiRequestBody requestBody, OpenApiDocument document)
+    {
+        // Берем первый content type (обычно application/json)
+        var contentType = requestBody.Content?.Keys.FirstOrDefault();
+        var content = contentType != null && requestBody.Content != null
+            ? requestBody.Content[contentType]
+            : null;
+        
+        var schema = content?.Schema;
+        var type = schema != null
+            ? BuildType(schema, document)
+            : new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+        
+        return new IrRequestBody
+        {
+            Type = type,
+            IsRequired = requestBody.Required,
+            ContentType = contentType,
+            Description = requestBody.Description
+        };
+    }
+    
+    /// <summary>
+    /// Извлекает тип ответа из OpenAPI response
+    /// </summary>
+    private IrType? ExtractResponseType(OpenApiResponse response, OpenApiDocument document)
+    {
+        // Берем первый content type
+        var content = response.Content?.FirstOrDefault();
+        var schema = content.HasValue ? content.Value.Value?.Schema : null;
+        
+        if (schema == null)
+            return null;
+        
+        return BuildType(schema, document);
     }
     
     /// <summary>
@@ -393,12 +604,194 @@ public class IrBuilder
         IReadOnlyList<IrEnum> enums,
         IReadOnlyList<IrClient> clients)
     {
-        // TODO: Реализовать построение графа зависимостей
-        // Пока возвращаем пустой граф
+        var dependencies = new Dictionary<string, HashSet<string>>();
+        var allTypeNames = new HashSet<string>();
+        
+        // Добавляем все типы в граф
+        foreach (var model in models)
+        {
+            allTypeNames.Add(model.Name);
+            dependencies[model.Name] = new HashSet<string>();
+        }
+        
+        foreach (var enumModel in enums)
+        {
+            allTypeNames.Add(enumModel.Name);
+            dependencies[enumModel.Name] = new HashSet<string>();
+        }
+        
+        // Собираем зависимости из моделей
+        foreach (var model in models)
+        {
+            var modelDependencies = ExtractDependenciesFromModel(model);
+            dependencies[model.Name] = modelDependencies;
+        }
+        
+        // Собираем зависимости из операций клиентов
+        foreach (var client in clients)
+        {
+            foreach (var operation in client.Operations)
+            {
+                // Зависимости из параметров
+                foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+                {
+                    var paramDeps = ExtractDependenciesFromType(param.Type);
+                    foreach (var dep in paramDeps)
+                    {
+                        if (allTypeNames.Contains(dep))
+                        {
+                            // Зависимость от другого типа в IR
+                            // Можно добавить в зависимости клиента, но пока просто собираем
+                        }
+                    }
+                }
+                
+                // Зависимости из request body
+                if (operation.RequestBody != null)
+                {
+                    var bodyDeps = ExtractDependenciesFromType(operation.RequestBody.Type);
+                    // Аналогично
+                }
+                
+                // Зависимости из responses
+                foreach (var response in operation.Responses)
+                {
+                    if (response.Type != null)
+                    {
+                        var responseDeps = ExtractDependenciesFromType(response.Type);
+                        // Аналогично
+                    }
+                }
+            }
+        }
+        
+        // Топологическая сортировка
+        var topologicalOrder = TopologicalSort(dependencies, allTypeNames);
+        
+        // Преобразуем в ImmutableDictionary
+        var immutableDependencies = dependencies.ToDictionary(
+            kvp => kvp.Key,
+            kvp => (IReadOnlyList<string>)kvp.Value.ToList()
+        );
+        
         return new IrTypeDependencyGraph
         {
-            Dependencies = ImmutableDictionary<string, IReadOnlyList<string>>.Empty,
-            TopologicalOrder = Array.Empty<string>()
+            Dependencies = immutableDependencies.ToImmutableDictionary(),
+            TopologicalOrder = topologicalOrder
         };
+    }
+    
+    /// <summary>
+    /// Извлекает зависимости из модели
+    /// </summary>
+    private HashSet<string> ExtractDependenciesFromModel(IrModel model)
+    {
+        var dependencies = new HashSet<string>();
+        
+        foreach (var property in model.Properties)
+        {
+            var deps = ExtractDependenciesFromType(property.Type);
+            dependencies.UnionWith(deps);
+        }
+        
+        if (model.Composition != null)
+        {
+            foreach (var type in model.Composition.Types)
+            {
+                var deps = ExtractDependenciesFromType(type);
+                dependencies.UnionWith(deps);
+            }
+        }
+        
+        return dependencies;
+    }
+    
+    /// <summary>
+    /// Извлекает зависимости из типа
+    /// </summary>
+    private HashSet<string> ExtractDependenciesFromType(IrType type)
+    {
+        var dependencies = new HashSet<string>();
+        
+        switch (type)
+        {
+            case IrModelReference modelRef:
+                dependencies.Add(modelRef.ModelName);
+                break;
+            case IrArrayType arrayType:
+                dependencies.UnionWith(ExtractDependenciesFromType(arrayType.ElementType));
+                break;
+            case IrDictionaryType dictType:
+                dependencies.UnionWith(ExtractDependenciesFromType(dictType.KeyType));
+                dependencies.UnionWith(ExtractDependenciesFromType(dictType.ValueType));
+                break;
+            case IrUnionType unionType:
+                foreach (var t in unionType.Types)
+                    dependencies.UnionWith(ExtractDependenciesFromType(t));
+                break;
+            case IrIntersectionType intersectionType:
+                foreach (var t in intersectionType.Types)
+                    dependencies.UnionWith(ExtractDependenciesFromType(t));
+                break;
+            case IrNullableType nullableType:
+                dependencies.UnionWith(ExtractDependenciesFromType(nullableType.InnerType));
+                break;
+            case IrOptionalType optionalType:
+                dependencies.UnionWith(ExtractDependenciesFromType(optionalType.InnerType));
+                break;
+        }
+        
+        return dependencies;
+    }
+    
+    /// <summary>
+    /// Топологическая сортировка графа зависимостей
+    /// </summary>
+    private IReadOnlyList<string> TopologicalSort(
+        Dictionary<string, HashSet<string>> dependencies,
+        HashSet<string> allTypeNames)
+    {
+        var result = new List<string>();
+        var visited = new HashSet<string>();
+        var visiting = new HashSet<string>();
+        
+        void Visit(string typeName)
+        {
+            if (visiting.Contains(typeName))
+            {
+                // Циклическая зависимость - просто добавляем в конец
+                return;
+            }
+            
+            if (visited.Contains(typeName))
+                return;
+            
+            visiting.Add(typeName);
+            
+            if (dependencies.TryGetValue(typeName, out var deps))
+            {
+                foreach (var dep in deps)
+                {
+                    if (allTypeNames.Contains(dep))
+                    {
+                        Visit(dep);
+                    }
+                }
+            }
+            
+            visiting.Remove(typeName);
+            visited.Add(typeName);
+            result.Add(typeName);
+        }
+        
+        foreach (var typeName in allTypeNames)
+        {
+            if (!visited.Contains(typeName))
+            {
+                Visit(typeName);
+            }
+        }
+        
+        return result;
     }
 }
