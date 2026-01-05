@@ -1,5 +1,3 @@
-using Microsoft.OpenApi.Models;
-
 namespace ValIO.Core.IR;
 
 /// <summary>

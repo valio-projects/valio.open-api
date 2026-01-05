@@ -11,6 +11,7 @@ using ValIO.Core.IR.Builders;
 using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.Renderers;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript;
 

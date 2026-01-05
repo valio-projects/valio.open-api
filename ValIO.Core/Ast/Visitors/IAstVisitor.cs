@@ -41,17 +41,6 @@ public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
     // Enum (общий для C# и TypeScript)
     TResult VisitEnumDeclaration(EnumDeclarationNode node);
     
-    // TypeScript специфичные узлы (пока остаются здесь, будут перемещены позже)
-    TResult VisitSourceFile(SourceFileNode node);
-    TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);
-    TResult VisitFunctionDeclaration(FunctionDeclarationNode node);
-    TResult VisitVariableDeclaration(VariableDeclarationNode node);
-    TResult VisitObjectLiteralExpression(ObjectLiteralExpressionNode node);
-    TResult VisitPropertyAssignment(PropertyAssignmentNode node);
-    TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node);
-    TResult VisitGenericParameter(GenericParameterNode node);
-    TResult VisitPropertySignature(PropertySignatureNode node);
-    
     // HTTP специфичные узлы
     TResult VisitHttpMethod(HttpMethodNode node);
     TResult VisitRoute(RouteNode node);

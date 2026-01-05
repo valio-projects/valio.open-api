@@ -4,6 +4,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 

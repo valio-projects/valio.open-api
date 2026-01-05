@@ -11,6 +11,8 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.Nodes;
+using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
