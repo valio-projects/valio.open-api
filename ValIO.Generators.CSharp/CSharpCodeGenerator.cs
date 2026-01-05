@@ -98,7 +98,10 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 return result;
             }
 
-            // Шаблоны больше не используются - используется CSharpCodeRenderer
+            // TODO: Миграция на новый IR → AST → Code pipeline
+            // Сейчас используется старый подход с TemplateData и CSharpCodeRenderer
+            // В будущем нужно заменить на GenerateCodeFromIr(document, config)
+            // См. метод GenerateCodeFromIr для примера использования нового pipeline
 
             Logger.LogInformation("Starting C# code generation");
 

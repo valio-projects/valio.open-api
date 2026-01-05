@@ -111,7 +111,10 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 return result;
             }
 
-            // Шаблоны больше не используются - используется TypeScriptCodeRenderer
+            // TODO: Миграция на новый IR → AST → Code pipeline
+            // Сейчас используется старый подход с TemplateData и TypeScriptCodeRenderer
+            // В будущем нужно заменить на GenerateCodeFromIr(document, config)
+            // См. метод GenerateCodeFromIr для примера использования нового pipeline
 
             Logger.LogInformation("Starting TypeScript code generation");
 
