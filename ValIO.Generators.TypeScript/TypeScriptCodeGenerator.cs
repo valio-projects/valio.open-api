@@ -1026,9 +1026,20 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
         var sb = new StringBuilder();
 
-        // Импорты для TanStack Query
-        sb.AppendLine("import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';");
-        sb.AppendLine();
+        // Определяем, какие типы операций есть (query или mutation)
+        var hasQueryOperations = operations.Any(op => op.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase));
+        var hasMutationOperations = operations.Any(op => !op.HttpMethod.Equals("GET", StringComparison.OrdinalIgnoreCase));
+
+        // Генерируем импорты TanStack Query в начале файла
+        if (hasQueryOperations)
+        {
+            sb.Append(_queryWrapperRenderer.RenderQueryImports());
+        }
+        
+        if (hasMutationOperations)
+        {
+            sb.Append(_queryWrapperRenderer.RenderMutationImports());
+        }
 
         // Определяем путь к axios файлу для импорта методов клиента
         var axiosFileName = $"{NamingConverter.ToCamelCase(groupName)}.axios";
@@ -1087,13 +1098,13 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
             if (isQuery)
             {
-                var hookCode = _queryWrapperRenderer.RenderQueryHook(operation, null, clientImportPath, skipImports: true);
+                var hookCode = _queryWrapperRenderer.RenderQueryHook(operation, null);
                 sb.AppendLine(hookCode);
                 sb.AppendLine();
             }
             else
             {
-                var hookCode = _queryWrapperRenderer.RenderMutationHook(operation, null, clientImportPath, skipImports: true);
+                var hookCode = _queryWrapperRenderer.RenderMutationHook(operation, null);
                 sb.AppendLine(hookCode);
                 sb.AppendLine();
             }

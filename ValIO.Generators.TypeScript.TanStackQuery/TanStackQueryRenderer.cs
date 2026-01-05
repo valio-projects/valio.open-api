@@ -22,28 +22,12 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     public QueryWrapperLibrary Library => QueryWrapperLibrary.TanStackQuery;
     public GenerationLanguage Language => GenerationLanguage.TypeScript;
 
-    public string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null, bool skipImports = false)
+    public string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
 
         var sb = new StringBuilder();
-        
-        // Генерируем импорты моделей только если не пропущены
-        if (!skipImports)
-        {
-            // Генерируем импорты TanStack Query типов
-            RenderTanStackQueryImports(sb);
-            
-            var modelsPath = ExtractModelsPathFromClientImportPath(clientImportPath);
-            RenderModelImports(sb, operation, modelsPath);
-            
-            // Генерируем импорт методов клиента, если clientImportPath указан
-            if (!string.IsNullOrEmpty(clientImportPath))
-            {
-                RenderClientImports(sb, operation, clientImportPath);
-            }
-        }
         
         // Генерируем имя хука и функции
         var operationId = operation.MethodName;
@@ -88,28 +72,12 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         return sb.ToString();
     }
 
-    public string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null, bool skipImports = false)
+    public string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
 
         var sb = new StringBuilder();
-        
-        // Генерируем импорты моделей только если не пропущены
-        if (!skipImports)
-        {
-            // Генерируем импорты TanStack Query типов
-            RenderTanStackQueryImports(sb);
-            
-            var modelsPath = ExtractModelsPathFromClientImportPath(clientImportPath);
-            RenderModelImports(sb, operation, modelsPath);
-            
-            // Генерируем импорт методов клиента, если clientImportPath указан
-            if (!string.IsNullOrEmpty(clientImportPath))
-            {
-                RenderClientImports(sb, operation, clientImportPath);
-            }
-        }
         
         // Генерируем имя хука и функции
         var operationId = operation.MethodName;
@@ -725,27 +693,43 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     }
     
     /// <summary>
-    /// Рендерит импорты TanStack Query типов
+    /// Рендерит импорты TanStack Query типов для queries
     /// </summary>
-    private void RenderTanStackQueryImports(StringBuilder sb)
+    /// <returns>Строка с импортами для query операций</returns>
+    public string RenderQueryImports()
     {
-        sb.AppendLine("import {");
-        sb.AppendLine("  useQuery,");
-        sb.AppendLine("  useInfiniteQuery,");
-        sb.AppendLine("  useMutation,");
-        sb.AppendLine("  type UseQueryResult,");
-        sb.AppendLine("  type UseQueryOptions,");
-        sb.AppendLine("  type QueryFunction,");
-        sb.AppendLine("  type UseInfiniteQueryResult,");
-        sb.AppendLine("  type UseInfiniteQueryOptions,");
-        sb.AppendLine("  type UseMutationResult,");
-        sb.AppendLine("  type UseMutationOptions,");
-        sb.AppendLine("  type MutationFunction,");
-        sb.AppendLine("  type QueryClient,");
-        sb.AppendLine("  type QueryKey,");
-        sb.AppendLine("  type InfiniteData,");
-        sb.AppendLine("} from '@tanstack/react-query';");
-        sb.AppendLine();
+        var sb = new StringBuilder();
+        CodeFormatter.AppendLine(sb, 0, "import {");
+        CodeFormatter.AppendLine(sb, 1, "useQuery,");
+        CodeFormatter.AppendLine(sb, 1, "useInfiniteQuery,");
+        CodeFormatter.AppendLine(sb, 1, "useQueryClient,");
+        CodeFormatter.AppendLine(sb, 1, "type UseQueryOptions,");
+        CodeFormatter.AppendLine(sb, 1, "type UseQueryResult,");
+        CodeFormatter.AppendLine(sb, 1, "type QueryFunction,");
+        CodeFormatter.AppendLine(sb, 1, "type QueryKey,");
+        CodeFormatter.AppendLine(sb, 1, "type InfiniteData,");
+        CodeFormatter.AppendLine(sb, 1, "type UseInfiniteQueryResult,");
+        CodeFormatter.AppendLine(sb, 1, "type QueryClient,");
+        CodeFormatter.AppendLine(sb, 0, "} from '@tanstack/react-query';");
+        CodeFormatter.AppendEmptyLine(sb);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Рендерит импорты TanStack Query типов для mutations
+    /// </summary>
+    /// <returns>Строка с импортами для mutation операций</returns>
+    public string RenderMutationImports()
+    {
+        var sb = new StringBuilder();
+        CodeFormatter.AppendLine(sb, 0, "import {");
+        CodeFormatter.AppendLine(sb, 1, "useMutation,");
+        CodeFormatter.AppendLine(sb, 1, "type UseMutationOptions,");
+        CodeFormatter.AppendLine(sb, 1, "type UseMutationResult,");
+        CodeFormatter.AppendLine(sb, 1, "type MutationFunction,");
+        CodeFormatter.AppendLine(sb, 0, "} from '@tanstack/react-query';");
+        CodeFormatter.AppendEmptyLine(sb);
+        return sb.ToString();
     }
 
     /// <summary>
@@ -822,9 +806,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             foreach (var dependency in dependencies.OrderBy(d => d))
             {
                 var importFileName = GetModelFileName(dependency);
-                sb.AppendLine($"import type {{ {dependency} }} from '{modelsPath}/{importFileName}.model';");
+                CodeFormatter.AppendLine(sb, 0, $"import type {{ {dependency} }} from '{modelsPath}/{importFileName}.model';");
             }
-            sb.AppendLine();
+            CodeFormatter.AppendEmptyLine(sb);
         }
     }
     
@@ -947,8 +931,8 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         var clientMethodName = _namingConverter.ToCamelCase(operation.MethodName);
         
         // Генерируем импорт метода клиента
-        sb.AppendLine($"import {{ {clientMethodName} }} from '{clientImportPath}';");
-        sb.AppendLine();
+        CodeFormatter.AppendLine(sb, 0, $"import {{ {clientMethodName} }} from '{clientImportPath}';");
+        CodeFormatter.AppendEmptyLine(sb);
     }
     
     /// <summary>

@@ -23,18 +23,14 @@ public interface IQueryWrapperRenderer
     /// </summary>
     /// <param name="operation">Операция для рендеринга</param>
     /// <param name="clientMethodName">Имя метода клиента (если null, генерируется автоматически)</param>
-    /// <param name="clientImportPath">Путь для импорта клиента</param>
-    /// <param name="skipImports">Пропустить генерацию импортов (импорты генерируются отдельно)</param>
-    string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null, bool skipImports = false);
+    string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null);
     
     /// <summary>
     /// Рендерит mutation hook для POST, PUT, DELETE, PATCH операций
     /// </summary>
     /// <param name="operation">Операция для рендеринга</param>
     /// <param name="clientMethodName">Имя метода клиента (если null, генерируется автоматически)</param>
-    /// <param name="clientImportPath">Путь для импорта клиента</param>
-    /// <param name="skipImports">Пропустить генерацию импортов (импорты генерируются отдельно)</param>
-    string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null, string? clientImportPath = null, bool skipImports = false);
+    string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null);
     
     /// <summary>
     /// Собирает все импорты моделей для операции (без рендеринга)
@@ -50,4 +46,16 @@ public interface IQueryWrapperRenderer
     /// <param name="operation">Операция</param>
     /// <returns>Имя метода клиента в camelCase</returns>
     string? CollectClientMethodName(OperationTemplateData operation);
+    
+    /// <summary>
+    /// Рендерит импорты TanStack Query типов для queries
+    /// </summary>
+    /// <returns>Строка с импортами для query операций</returns>
+    string RenderQueryImports();
+    
+    /// <summary>
+    /// Рендерит импорты TanStack Query типов для mutations
+    /// </summary>
+    /// <returns>Строка с импортами для mutation операций</returns>
+    string RenderMutationImports();
 }
