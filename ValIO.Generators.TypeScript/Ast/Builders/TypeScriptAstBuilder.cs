@@ -29,7 +29,8 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
-        _httpBuilder = new HttpAstBuilder(namingConverter, typeMapper);
+        // TODO: Обновить на IR-based API после миграции TypeScript на IR
+        _httpBuilder = new HttpAstBuilder();
     }
     
     public TypeAliasDeclarationNode BuildTypeAlias(string name, TypeNode type)

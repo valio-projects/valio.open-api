@@ -1,27 +1,16 @@
+using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Http;
-using ValIO.Core.Ast.Nodes.Types;
-using ValIO.Core.Interfaces;
-using ValIO.Core.Models;
-using ValIO.Core.Models.TemplateData;
+using ValIO.Core.IR;
 
 namespace ValIO.Core.Ast.Builders;
 
 /// <summary>
-/// Построитель AST для HTTP специфичных узлов (language-agnostic)
+/// Построитель AST для HTTP специфичных узлов (language-agnostic, IR-based)
 /// </summary>
 public class HttpAstBuilder
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly ITypeMapper _typeMapper;
-    
-    public HttpAstBuilder(INamingConverter namingConverter, ITypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
-    }
-    
     /// <summary>
     /// Строит HttpMethodNode из строки HTTP метода
     /// </summary>
@@ -43,97 +32,71 @@ public class HttpAstBuilder
     }
     
     /// <summary>
-    /// Строит RouteNode из пути и параметров
+    /// Строит RouteNode из пути и path параметров
     /// </summary>
-    public RouteNode BuildRoute(string path, IReadOnlyList<ParameterTemplateData> pathParameters, ITypeMapper typeMapper)
+    public RouteNode BuildRoute(string path, IReadOnlyList<IrParameter> pathParameters, Func<IrType, TypeNode> buildType)
     {
-        var pathParams = pathParameters.Select(p => BuildPathParameter(p, typeMapper)).ToImmutableList();
+        var pathParams = pathParameters.Select(p => BuildPathParameter(p, buildType)).ToImmutableList();
         return new RouteNode(path, pathParams);
     }
     
     /// <summary>
-    /// Строит PathParameterNode
+    /// Строит PathParameterNode из IrParameter
     /// </summary>
-    public PathParameterNode BuildPathParameter(ParameterTemplateData param, ITypeMapper typeMapper)
+    public PathParameterNode BuildPathParameter(IrParameter param, Func<IrType, TypeNode> buildType)
     {
-        var name = new IdentifierNode(param.VariableName);
-        var type = BuildTypeFromTypeInfo(param.TypeInfo, typeMapper);
+        var name = new IdentifierNode(param.Name);
+        var type = buildType(param.Type);
         return new PathParameterNode(name, type);
     }
     
     /// <summary>
-    /// Строит QueryParameterNode
+    /// Строит QueryParameterNode из IrParameter
     /// </summary>
-    public QueryParameterNode BuildQueryParameter(ParameterTemplateData param, ITypeMapper typeMapper)
+    public QueryParameterNode BuildQueryParameter(IrParameter param, Func<IrType, TypeNode> buildType)
     {
-        var name = new IdentifierNode(param.VariableName);
-        var type = BuildTypeFromTypeInfo(param.TypeInfo, typeMapper);
+        var name = new IdentifierNode(param.Name);
+        var type = buildType(param.Type);
         return new QueryParameterNode(name, type, param.IsRequired);
     }
     
     /// <summary>
-    /// Строит HeaderParameterNode
+    /// Строит HeaderParameterNode из IrParameter
     /// </summary>
-    public HeaderParameterNode BuildHeaderParameter(ParameterTemplateData param, ITypeMapper typeMapper)
+    public HeaderParameterNode BuildHeaderParameter(IrParameter param, Func<IrType, TypeNode> buildType)
     {
-        var name = new IdentifierNode(param.VariableName);
-        var type = BuildTypeFromTypeInfo(param.TypeInfo, typeMapper);
+        var name = new IdentifierNode(param.Name);
+        var type = buildType(param.Type);
         return new HeaderParameterNode(name, type, param.IsRequired);
     }
     
     /// <summary>
-    /// Строит RequestBodyNode
+    /// Строит RequestBodyNode из IrRequestBody
     /// </summary>
-    public RequestBodyNode BuildRequestBody(TypeInfo? typeInfo, string? contentType, bool isRequired, ITypeMapper typeMapper)
+    public RequestBodyNode BuildRequestBody(IrRequestBody requestBody, Func<IrType, TypeNode> buildType)
     {
-        if (typeInfo == null)
-            throw new ArgumentNullException(nameof(typeInfo));
+        var type = buildType(requestBody.Type);
+        var kind = DetermineRequestBodyKind(requestBody.ContentType);
         
-        var type = BuildTypeFromTypeInfo(typeInfo, typeMapper);
-        var kind = DetermineRequestBodyKind(contentType);
-        
-        return new RequestBodyNode(type, kind, contentType, isRequired);
+        return new RequestBodyNode(type, kind, requestBody.ContentType, requestBody.IsRequired);
     }
     
     /// <summary>
-    /// Строит ResponseTypeNode
+    /// Строит ResponseTypeNode из IrResponse
     /// </summary>
-    public ResponseTypeNode BuildResponseType(TypeInfo typeInfo, int statusCode, ITypeMapper typeMapper)
+    public ResponseTypeNode BuildResponseType(IrResponse response, Func<IrType, TypeNode> buildType)
     {
-        var type = BuildTypeFromTypeInfo(typeInfo, typeMapper);
+        if (response.Type == null)
+            throw new ArgumentException("Response must have a type", nameof(response));
+        
+        var type = buildType(response.Type);
+        var statusCode = int.TryParse(response.StatusCode, out var code) ? code : 200;
         var isSuccess = statusCode >= 200 && statusCode < 300;
+        
         return new ResponseTypeNode(type, statusCode, isSuccess);
     }
     
     // Приватные вспомогательные методы
-    
-    private TypeNode BuildTypeFromTypeInfo(TypeInfo typeInfo, ITypeMapper typeMapper)
-    {
-        // TODO: Использовать TypeMapper для построения типа
-        // Пока используем упрощенную версию
-        if (typeInfo.IsCollection)
-        {
-            var elementType = typeInfo.GenericArguments.FirstOrDefault() ?? TypeInfo.Simple(typeInfo.BaseType);
-            var elementTypeNode = BuildSimpleType(elementType.BaseType);
-            return new ArrayTypeNode(elementTypeNode, isNullable: typeInfo.IsNullable, isOptional: typeInfo.IsOptional);
-        }
-        
-        if (typeInfo.IsDictionary)
-        {
-            var keyType = BuildSimpleType("string");
-            var valueType = typeInfo.GenericArguments.ElementAtOrDefault(1) != null
-                ? BuildSimpleType(typeInfo.GenericArguments[1].BaseType)
-                : BuildSimpleType("any");
-            return new DictionaryTypeNode(keyType, valueType, isNullable: typeInfo.IsNullable, isOptional: typeInfo.IsOptional);
-        }
-        
-        return BuildSimpleType(typeInfo.BaseType);
-    }
-    
-    private SimpleTypeNode BuildSimpleType(string typeName)
-    {
-        return new SimpleTypeNode(new IdentifierNode(typeName), isPrimitive: false);
-    }
     
     private static RequestBodyKind DetermineRequestBodyKind(string? contentType)
     {

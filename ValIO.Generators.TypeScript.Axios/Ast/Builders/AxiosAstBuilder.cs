@@ -24,7 +24,8 @@ public class AxiosAstBuilder
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
-        _httpBuilder = new HttpAstBuilder(namingConverter, typeMapper);
+        // TODO: Обновить на IR-based API после миграции Axios на IR
+        _httpBuilder = new HttpAstBuilder();
     }
     
     /// <summary>

@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -18,10 +20,12 @@ namespace ValIO.Generators.CSharp.Ast.Builders;
 public class CSharpAstBuilder : ICSharpAstBuilder
 {
     private readonly INamingConverter _namingConverter;
+    private readonly HttpAstBuilder _httpBuilder;
     
     public CSharpAstBuilder(INamingConverter namingConverter)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        _httpBuilder = new HttpAstBuilder();
     }
     
     public NamespaceDeclarationNode BuildNamespace(string name, IReadOnlyList<DeclarationNode> declarations)
@@ -509,8 +513,35 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     private BlockNode? BuildMethodBody(IrOperation operation)
     {
         // TODO: Полная реализация построения тела метода с использованием HTTP узлов
+        // Для полной реализации нужны узлы для:
+        // - VariableDeclarationNode (для объявления переменных)
+        // - AwaitExpressionNode (для await выражений)
         // Пока возвращаем null для type-only метода
+        // HTTP узлы уже построены и доступны через BuildMethodParameters и ExtractReturnType
         return null;
+    }
+    
+    /// <summary>
+    /// Строит HTTP узлы из IrOperation (для использования в других местах)
+    /// </summary>
+    private (HttpMethodNode Method, RouteNode Route, RequestBodyNode? Body, IReadOnlyList<QueryParameterNode> QueryParams, IReadOnlyList<HeaderParameterNode> HeaderParams) BuildHttpNodes(IrOperation operation)
+    {
+        var method = _httpBuilder.BuildHttpMethod(operation.HttpMethod);
+        var route = _httpBuilder.BuildRoute(operation.Path, operation.PathParameters, BuildType);
+        
+        var queryParams = operation.QueryParameters
+            .Select(p => _httpBuilder.BuildQueryParameter(p, BuildType))
+            .ToImmutableList();
+        
+        var headerParams = operation.HeaderParameters
+            .Select(p => _httpBuilder.BuildHeaderParameter(p, BuildType))
+            .ToImmutableList();
+        
+        var body = operation.RequestBody != null
+            ? _httpBuilder.BuildRequestBody(operation.RequestBody, BuildType)
+            : null;
+        
+        return (method, route, body, queryParams, headerParams);
     }
     
     private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
