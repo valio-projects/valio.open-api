@@ -583,16 +583,23 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         CodeFormatter.AppendLine(sb, 1, "mutation?: UseMutationOptions<");
         CodeFormatter.AppendLine(sb, 2, $"{awaitedReturnTypeName},");
         CodeFormatter.AppendLine(sb, 2, "TError,");
-        CodeFormatter.AppendLine(sb, 2, "{");
-        // Добавляем переменные с правильным отступом
-        if (variablesType.Properties.Count > 0)
+        
+        // Если properties пустой, генерируем просто {}
+        if (variablesType.Properties.Count == 0)
         {
+            CodeFormatter.AppendLine(sb, 2, "{},");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, 2, "{");
+            // Добавляем переменные с правильным отступом
             foreach (var prop in variablesType.Properties)
             {
                 CodeFormatter.AppendLine(sb, 2, prop.Format(0).TrimStart());
             }
+            CodeFormatter.AppendLine(sb, 2, "},");
         }
-        CodeFormatter.AppendLine(sb, 2, "},");
+        
         CodeFormatter.AppendLine(sb, 2, "TContext");
         CodeFormatter.AppendLine(sb, 1, ">;");
         CodeFormatter.AppendLine(sb, 1, "timeout?: number;");
@@ -603,16 +610,23 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         CodeFormatter.AppendLine(sb, 0, "}): UseMutationOptions<");
         CodeFormatter.AppendLine(sb, 1, $"{awaitedReturnTypeName},");
         CodeFormatter.AppendLine(sb, 1, "TError,");
-        CodeFormatter.AppendLine(sb, 1, "{");
-        // Добавляем переменные с правильным отступом
-        if (variablesType.Properties.Count > 0)
+        
+        // Если properties пустой, генерируем просто {}
+        if (variablesType.Properties.Count == 0)
         {
+            CodeFormatter.AppendLine(sb, 1, "{},");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, 1, "{");
+            // Добавляем переменные с правильным отступом
             foreach (var prop in variablesType.Properties)
             {
                 CodeFormatter.AppendLine(sb, 2, prop.Format(0).TrimStart());
             }
+            CodeFormatter.AppendLine(sb, 1, "},");
         }
-        CodeFormatter.AppendLine(sb, 1, "},");
+        
         CodeFormatter.AppendLine(sb, 1, "TContext");
         CodeFormatter.AppendLine(sb, 0, "> => {");
         CodeFormatter.AppendEmptyLine(sb);
@@ -656,18 +670,25 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         CodeFormatter.AppendLine(sb, 1, "");
         CodeFormatter.AppendLine(sb, 2, $"{awaitedReturnTypeName},");
         CodeFormatter.AppendLine(sb, 1, "");
-        CodeFormatter.AppendLine(sb, 2, "{");
-        CodeFormatter.AppendLine(sb, 1, "");
-        // Добавляем переменные с правильным отступом
-        if (variablesType.Properties.Count > 0)
+        
+        // Если properties пустой, генерируем просто {}
+        if (variablesType.Properties.Count == 0)
         {
+            CodeFormatter.AppendLine(sb, 2, "{}");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, 2, "{");
+            CodeFormatter.AppendLine(sb, 1, "");
+            // Добавляем переменные с правильным отступом
             foreach (var prop in variablesType.Properties)
             {
                 CodeFormatter.AppendLine(sb, 2, prop.Format(0).TrimStart());
             }
+            CodeFormatter.AppendLine(sb, 1, "");
+            CodeFormatter.AppendLine(sb, 2, "}");
         }
-        CodeFormatter.AppendLine(sb, 1, "");
-        CodeFormatter.AppendLine(sb, 2, "}");
+        
         CodeFormatter.AppendLine(sb, 1, "");
         CodeFormatter.AppendLine(sb, 1, "> = (props) => {");
         CodeFormatter.AppendLine(sb, 1, "");
@@ -726,7 +747,11 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         {
             CodeFormatter.AppendLine(sb, 1, mutationParamsStr);
         }
-        CodeFormatter.AppendLine(sb, 0, $") : UseMutationResult<{awaitedReturnTypeName}, TError, {{\n{variablesTypeStr}\n  }}, TContext> {{");
+        // Форматируем тип возвращаемого значения
+        var returnTypeVariables = variablesType.Properties.Count == 0 
+            ? "{}" 
+            : $"{{\n{variablesTypeStr}\n  }}";
+        CodeFormatter.AppendLine(sb, 0, $") : UseMutationResult<{awaitedReturnTypeName}, TError, {returnTypeVariables}, TContext> {{");
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, $"const mutationOptions = {helperName}(options);");
         CodeFormatter.AppendEmptyLine(sb);
@@ -1004,7 +1029,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     private string FormatTypeObjectDefinition(TypeObjectDefinition typeObject, int indentLevel = 0)
     {
         if (typeObject.Properties.Count == 0)
-            return "{}";
+            return "";
         
         var lines = new List<string>();
         foreach (var property in typeObject.Properties)
@@ -1111,14 +1136,22 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
                 CodeFormatter.AppendLine(sb, indentLevel + 1, "mutation?: UseMutationOptions<");
                 CodeFormatter.AppendLine(sb, indentLevel + 2, $"{awaitedReturnTypeName},");
                 CodeFormatter.AppendLine(sb, indentLevel + 2, "TError,");
-                CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
                 
-                foreach (var prop in variablesType.Properties)
+                // Если properties пустой, генерируем просто {}
+                if (variablesType.Properties.Count == 0)
                 {
-                    CodeFormatter.AppendLine(sb, indentLevel + 2, prop.Format(0).TrimStart());
+                    CodeFormatter.AppendLine(sb, indentLevel + 2, "{},");
+                }
+                else
+                {
+                    CodeFormatter.AppendLine(sb, indentLevel + 2, "{");
+                    foreach (var prop in variablesType.Properties)
+                    {
+                        CodeFormatter.AppendLine(sb, indentLevel + 2, prop.Format(0).TrimStart());
+                    }
+                    CodeFormatter.AppendLine(sb, indentLevel + 2, "},");
                 }
                 
-                CodeFormatter.AppendLine(sb, indentLevel + 2, "},");
                 CodeFormatter.AppendLine(sb, indentLevel + 2, "TContext");
                 CodeFormatter.AppendLine(sb, indentLevel + 1, ">;");
                 CodeFormatter.AppendLine(sb, indentLevel + 1, "timeout?: number;");
