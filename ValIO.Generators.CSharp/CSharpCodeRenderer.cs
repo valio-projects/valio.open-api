@@ -10,6 +10,11 @@ namespace ValIO.Generators.CSharp;
 /// <summary>
 /// Рендерер для генерации C# кода через StringBuilders
 /// </summary>
+/// <remarks>
+/// УСТАРЕЛО: Используйте CSharpAstBuilder + CSharpAstRenderer вместо этого класса.
+/// Этот класс будет удален в будущих версиях.
+/// </remarks>
+[Obsolete("Используйте CSharpAstBuilder + CSharpAstRenderer вместо этого класса. Будет удален в будущих версиях.")]
 public class CSharpCodeRenderer : ICodeRenderer
 {
     public GenerationLanguage Language => GenerationLanguage.CSharp;

@@ -44,9 +44,9 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<ICodeGenerator>(sp => sp.GetRequiredService<CSharpCodeGenerator>());
         
-        // Code Renderers
-        services.AddSingleton<CSharpCodeRenderer>();
-        services.AddSingleton<ICodeRenderer>(sp => sp.GetRequiredService<CSharpCodeRenderer>());
+        // Code Renderers (Obsolete - будут удалены)
+        // services.AddSingleton<CSharpCodeRenderer>();
+        // services.AddSingleton<ICodeRenderer>(sp => sp.GetRequiredService<CSharpCodeRenderer>());
         
         // Model Format Renderers
         services.AddSingleton<ClassModelRenderer>();
@@ -98,9 +98,9 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<ICodeGenerator>(sp => sp.GetRequiredService<TypeScriptCodeGenerator>());
         
-        // Code Renderers
-        services.AddSingleton<TypeScriptCodeRenderer>();
-        services.AddSingleton<ICodeRenderer>(sp => sp.GetRequiredService<TypeScriptCodeRenderer>());
+        // Code Renderers (Obsolete - будут удалены)
+        // services.AddSingleton<TypeScriptCodeRenderer>();
+        // services.AddSingleton<ICodeRenderer>(sp => sp.GetRequiredService<TypeScriptCodeRenderer>());
         
         // Model Format Renderers
         services.AddSingleton<InterfaceModelRenderer>();

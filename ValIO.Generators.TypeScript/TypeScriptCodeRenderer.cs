@@ -11,6 +11,11 @@ namespace ValIO.Generators.TypeScript;
 /// <summary>
 /// Рендерер для генерации TypeScript кода через StringBuilders
 /// </summary>
+/// <remarks>
+/// УСТАРЕЛО: Используйте TypeScriptAstBuilder + TypeScriptAstRenderer вместо этого класса.
+/// Этот класс будет удален в будущих версиях.
+/// </remarks>
+[Obsolete("Используйте TypeScriptAstBuilder + TypeScriptAstRenderer вместо этого класса. Будет удален в будущих версиях.")]
 public class TypeScriptCodeRenderer : ICodeRenderer
 {
     private readonly INamingConverter _namingConverter;
