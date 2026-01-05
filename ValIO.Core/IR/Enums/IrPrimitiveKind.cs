@@ -53,5 +53,20 @@ public enum IrPrimitiveKind
     /// <summary>
     /// UUID/GUID
     /// </summary>
-    Uuid
+    Uuid,
+    
+    /// <summary>
+    /// Любой тип (any/object)
+    /// </summary>
+    Any,
+    
+    /// <summary>
+    /// Пустой тип (void)
+    /// </summary>
+    Void,
+    
+    /// <summary>
+    /// Файл
+    /// </summary>
+    File
 }
