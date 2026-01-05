@@ -23,14 +23,16 @@ public interface IQueryWrapperRenderer
     /// </summary>
     /// <param name="operation">Операция для рендеринга</param>
     /// <param name="clientMethodName">Имя метода клиента (если null, генерируется автоматически)</param>
-    string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null);
+    /// <param name="options">Опции генерации (язык-специфичные)</param>
+    string RenderQueryHook(OperationTemplateData operation, string? clientMethodName = null, object? options = null);
     
     /// <summary>
     /// Рендерит mutation hook для POST, PUT, DELETE, PATCH операций
     /// </summary>
     /// <param name="operation">Операция для рендеринга</param>
     /// <param name="clientMethodName">Имя метода клиента (если null, генерируется автоматически)</param>
-    string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null);
+    /// <param name="options">Опции генерации (язык-специфичные)</param>
+    string RenderMutationHook(OperationTemplateData operation, string? clientMethodName = null, object? options = null);
     
     /// <summary>
     /// Собирает все импорты моделей для операции (без рендеринга)

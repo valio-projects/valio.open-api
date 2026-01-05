@@ -32,7 +32,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.TypeScript)
     {
         _typescriptTypeMapper = typeMapper as TypeScriptTypeMapper ?? throw new InvalidOperationException("TypeMapper must be TypeScriptTypeMapper");
-        _codeRenderer = new TypeScriptCodeRenderer();
+        _codeRenderer = new TypeScriptCodeRenderer(namingConverter);
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _queryWrapperRenderer = queryWrapperRenderer;
         _zodModelRenderer = zodModelRenderer;
@@ -1098,13 +1098,13 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
             if (isQuery)
             {
-                var hookCode = _queryWrapperRenderer.RenderQueryHook(operation, null);
+                var hookCode = _queryWrapperRenderer.RenderQueryHook(operation, null, options);
                 sb.AppendLine(hookCode);
                 sb.AppendLine();
             }
             else
             {
-                var hookCode = _queryWrapperRenderer.RenderMutationHook(operation, null);
+                var hookCode = _queryWrapperRenderer.RenderMutationHook(operation, null, options);
                 sb.AppendLine(hookCode);
                 sb.AppendLine();
             }

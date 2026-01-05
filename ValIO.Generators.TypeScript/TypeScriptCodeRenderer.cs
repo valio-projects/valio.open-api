@@ -12,6 +12,13 @@ namespace ValIO.Generators.TypeScript;
 /// </summary>
 public class TypeScriptCodeRenderer : ICodeRenderer
 {
+    private readonly INamingConverter _namingConverter;
+
+    public TypeScriptCodeRenderer(INamingConverter? namingConverter = null)
+    {
+        _namingConverter = namingConverter ?? new Core.Services.NamingConverter();
+    }
+
     public GenerationLanguage Language => GenerationLanguage.TypeScript;
 
     /// <summary>
@@ -406,7 +413,10 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         var parameters = BuildParameterList(operation);
         var responseType = operation.ReturnTypeInfo.FullTypeName;
         
-        CodeFormatter.AppendLine(sb, 0, $"export async function {operation.MethodName}(");
+        // Имя метода в camelCase для соответствия TypeScript конвенции
+        var methodName = _namingConverter.ToCamelCase(operation.MethodName);
+        
+        CodeFormatter.AppendLine(sb, 0, $"export async function {methodName}(");
         if (parameters.Count > 0)
         {
             var paramsStr = string.Join(",\n  ", parameters);
@@ -590,7 +600,9 @@ public class TypeScriptCodeRenderer : ICodeRenderer
         
         var responseType = operation.ReturnTypeInfo.FullTypeName;
         
-        sb.AppendLine($"export async function {operation.MethodName}(");
+        // Имя метода в camelCase для соответствия TypeScript конвенции
+        var methodName = _namingConverter.ToCamelCase(operation.MethodName);
+        sb.AppendLine($"export async function {methodName}(");
         if (allParams.Count > 0)
         {
             var paramsStr = string.Join(",\n  ", allParams);
