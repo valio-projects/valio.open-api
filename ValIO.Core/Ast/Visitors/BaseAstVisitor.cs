@@ -14,9 +14,15 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     /// <summary>
     /// Посещает узел (диспетчеризация по типу)
     /// </summary>
+    /// <remarks>
+    /// BaseAstVisitor реализует только IBaseAstVisitor, но Accept требует IAstVisitor.
+    /// Поэтому этот метод должен быть переопределен в классах, которые реализуют IAstVisitor.
+    /// </remarks>
     public virtual TResult Visit(AstNode node)
     {
-        return node.Accept(this);
+        // BaseAstVisitor не реализует IAstVisitor, поэтому не может напрямую вызвать Accept
+        // Этот метод должен быть переопределен в классах, которые реализуют IAstVisitor
+        throw new NotSupportedException("BaseAstVisitor.Visit must be overridden in classes that implement IAstVisitor");
     }
     
     /// <summary>

@@ -28,7 +28,7 @@ public sealed record IrEnum
     /// <summary>
     /// Оригинальная OpenAPI схема (для отладки)
     /// </summary>
-    public OpenApiSchema? OriginalSchema { get; init; }
+    public IOpenApiSchema? OriginalSchema { get; init; }
 }
 
 /// <summary>

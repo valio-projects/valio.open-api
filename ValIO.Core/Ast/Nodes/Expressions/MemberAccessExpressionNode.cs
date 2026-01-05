@@ -22,7 +22,7 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
     
     public override AstNodeKind Kind => AstNodeKind.MemberAccessExpression;
     
-    public override IReadOnlyList<AstNode> Children => new[] { Object, Member };
+    public override IReadOnlyList<AstNode> Children => new AstNode[] { Object, Member };
     
     /// <summary>
     /// Конструктор

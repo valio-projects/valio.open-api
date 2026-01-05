@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
 using System.Net.Http;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR.Constraints;
@@ -72,7 +74,7 @@ public class IrBuilder
         foreach (var (schemaName, schema) in document.Components.Schemas)
         {
             // Пропускаем enum схемы (они будут обработаны в ExtractEnums)
-            if (schema.Enum?.Count > 0 && schema.Type == "string")
+            if (schema.Enum?.Count > 0 && schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.String))
                 continue;
             
             var sanitizedName = _namingConverter.SanitizeIdentifier(schemaName);
@@ -86,7 +88,7 @@ public class IrBuilder
     /// <summary>
     /// Строит модель из схемы
     /// </summary>
-    private IrModel BuildModel(string name, OpenApiSchema schema, OpenApiDocument document)
+    private IrModel BuildModel(string name, IOpenApiSchema schema, OpenApiDocument document)
     {
         var properties = ExtractProperties(schema, document);
         var composition = ExtractComposition(schema, document);
@@ -104,7 +106,7 @@ public class IrBuilder
     /// <summary>
     /// Извлекает свойства из схемы
     /// </summary>
-    private IReadOnlyList<IrProperty> ExtractProperties(OpenApiSchema schema, OpenApiDocument document)
+    private IReadOnlyList<IrProperty> ExtractProperties(IOpenApiSchema schema, OpenApiDocument document)
     {
         var properties = new List<IrProperty>();
         
@@ -134,7 +136,7 @@ public class IrBuilder
     /// <summary>
     /// Извлекает ограничения из схемы
     /// </summary>
-    private IrPropertyConstraints? ExtractConstraints(OpenApiSchema schema)
+    private IrPropertyConstraints? ExtractConstraints(IOpenApiSchema schema)
     {
         var hasConstraints = !string.IsNullOrEmpty(schema.Minimum) ||
                             !string.IsNullOrEmpty(schema.Maximum) ||
@@ -176,19 +178,25 @@ public class IrBuilder
     /// <summary>
     /// Извлекает значение по умолчанию
     /// </summary>
-    private object? ExtractDefaultValue(IOpenApiAny? defaultValue)
+    private object? ExtractDefaultValue(JsonNode? defaultValue)
     {
         if (defaultValue == null)
             return null;
         
-        // Простая реализация - можно улучшить
-        return defaultValue.ToString();
+        // Извлекаем значение из JsonNode
+        return defaultValue switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<object>(),
+            JsonObject jsonObject => jsonObject,
+            JsonArray jsonArray => jsonArray,
+            _ => defaultValue.ToString()
+        };
     }
     
     /// <summary>
     /// Извлекает композицию из схемы
     /// </summary>
-    private IrComposition? ExtractComposition(OpenApiSchema schema, OpenApiDocument document)
+    private IrComposition? ExtractComposition(IOpenApiSchema schema, OpenApiDocument document)
     {
         if (schema.AllOf?.Count > 0)
         {
@@ -210,7 +218,7 @@ public class IrBuilder
                 DiscriminatorPropertyName = schema.Discriminator?.PropertyName,
                 DiscriminatorMapping = schema.Discriminator?.Mapping?.ToDictionary(
                     kvp => kvp.Key,
-                    kvp => kvp.Value
+                    kvp => kvp.Value?.Id ?? string.Empty
                 )
             };
         }
@@ -239,7 +247,7 @@ public class IrBuilder
             throw new ArgumentNullException(nameof(document));
         
         // Разрешаем ссылки
-        var resolvedSchema = _schemaResolver.ResolveSchema(schema, document);
+        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
         
         if (resolvedSchema == null)
             throw new InvalidOperationException("Schema resolver returned null schema");
@@ -254,7 +262,7 @@ public class IrBuilder
         }
         
         // Массив
-        if (resolvedSchema.Type == "array")
+        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Array))
         {
             if (resolvedSchema.Items == null)
                 throw new InvalidOperationException("Array schema must have Items property");
@@ -264,7 +272,7 @@ public class IrBuilder
         }
         
         // Словарь
-        if (resolvedSchema.Type == "object" && resolvedSchema.AdditionalProperties != null)
+        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object) && resolvedSchema.AdditionalProperties != null)
         {
             var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
             var valueType = BuildType(resolvedSchema.AdditionalProperties, document);
@@ -287,14 +295,18 @@ public class IrBuilder
         }
         
         // Ссылка на модель
-        if (resolvedSchema.Reference != null)
+        if (resolvedSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
-            var modelName = _namingConverter.SanitizeIdentifier(resolvedSchema.Reference.Id);
-            return new IrModelReference { ModelName = modelName };
+            var reference = referenceHolder.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+            {
+                var modelName = _namingConverter.SanitizeIdentifier(reference.Id);
+                return new IrModelReference { ModelName = modelName };
+            }
         }
         
         // Object (inline) - создаем анонимную модель или возвращаем словарь
-        if (resolvedSchema.Type == "object")
+        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object))
         {
             // Если есть Properties, это объект с полями - создаем анонимную модель
             if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
@@ -315,7 +327,8 @@ public class IrBuilder
             return new IrDictionaryType { KeyType = emptyKeyType, ValueType = emptyValueType };
         }
         
-        throw new InvalidOperationException($"Unknown schema type: {resolvedSchema.Type}");
+        var typeStr = resolvedSchema.Type?.ToString() ?? "null";
+        throw new InvalidOperationException($"Unknown schema type: {typeStr}");
     }
     
     /// <summary>
@@ -323,31 +336,50 @@ public class IrBuilder
     /// </summary>
     private bool IsPrimitive(IOpenApiSchema schema)
     {
-        return schema.Type == "string" || 
-               schema.Type == "number" || 
-               schema.Type == "integer" || 
-               schema.Type == "boolean";
+        if (!schema.Type.HasValue)
+            return false;
+        
+        var type = schema.Type.Value;
+        return type.HasFlag(JsonSchemaType.String) || 
+               type.HasFlag(JsonSchemaType.Number) || 
+               type.HasFlag(JsonSchemaType.Integer) || 
+               type.HasFlag(JsonSchemaType.Boolean);
     }
     
     /// <summary>
     /// Маппит примитивный тип OpenAPI в IrPrimitiveKind
     /// </summary>
-    private IrPrimitiveKind MapPrimitive(string? type, string? format)
+    private IrPrimitiveKind MapPrimitive(JsonSchemaType? type, string? format)
     {
-        return (type, format) switch
+        if (!type.HasValue)
+            return IrPrimitiveKind.String;
+        
+        var typeValue = type.Value;
+        
+        if (typeValue.HasFlag(JsonSchemaType.String))
         {
-            ("string", "date") => IrPrimitiveKind.Date,
-            ("string", "date-time") => IrPrimitiveKind.DateTime,
-            ("string", "time") => IrPrimitiveKind.Time,
-            ("string", "uuid") or ("string", "guid") => IrPrimitiveKind.Uuid,
-            ("string", "binary") => IrPrimitiveKind.Binary,
-            ("string", "byte") => IrPrimitiveKind.ByteArray,
-            ("string", _) => IrPrimitiveKind.String,
-            ("number", _) => IrPrimitiveKind.Number,
-            ("integer", _) => IrPrimitiveKind.Integer,
-            ("boolean", _) => IrPrimitiveKind.Boolean,
-            _ => IrPrimitiveKind.String
-        };
+            return format switch
+            {
+                "date" => IrPrimitiveKind.Date,
+                "date-time" => IrPrimitiveKind.DateTime,
+                "time" => IrPrimitiveKind.Time,
+                "uuid" or "guid" => IrPrimitiveKind.Uuid,
+                "binary" => IrPrimitiveKind.Binary,
+                "byte" => IrPrimitiveKind.ByteArray,
+                _ => IrPrimitiveKind.String
+            };
+        }
+        
+        if (typeValue.HasFlag(JsonSchemaType.Number))
+            return IrPrimitiveKind.Number;
+        
+        if (typeValue.HasFlag(JsonSchemaType.Integer))
+            return IrPrimitiveKind.Integer;
+        
+        if (typeValue.HasFlag(JsonSchemaType.Boolean))
+            return IrPrimitiveKind.Boolean;
+        
+        return IrPrimitiveKind.String;
     }
     
     /// <summary>
@@ -376,10 +408,12 @@ public class IrBuilder
     /// <summary>
     /// Строит enum из схемы
     /// </summary>
-    private IrEnum BuildEnum(string name, OpenApiSchema schema)
+    private IrEnum BuildEnum(string name, IOpenApiSchema schema)
     {
         var values = new List<IrEnumValue>();
-        var baseType = schema.Type == "integer" ? IrEnumBaseType.Integer : IrEnumBaseType.String;
+        var baseType = schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Integer) 
+            ? IrEnumBaseType.Integer 
+            : IrEnumBaseType.String;
         
         if (schema.Enum != null)
         {
@@ -562,17 +596,18 @@ public class IrBuilder
             HeaderParameters = headerParameters,
             RequestBody = requestBody,
             Responses = responses,
-            Tags = openApiOperation.Tags?.Select(t => t.Name).Where(n => n != null).ToList()
+            Tags = openApiOperation.Tags?.Select(t => t.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList() ?? new List<string>()
         };
     }
     
     /// <summary>
     /// Строит IrParameter из OpenAPI параметра
     /// </summary>
-    private IrParameter BuildParameter(OpenApiParameter parameter, OpenApiDocument document)
+    private IrParameter BuildParameter(IOpenApiParameter parameter, OpenApiDocument document)
     {
-        var name = _namingConverter.SanitizeIdentifier(parameter.Name);
-        var type = BuildType(parameter.Schema ?? new OpenApiSchema { Type = "string" }, document);
+        var name = _namingConverter.SanitizeIdentifier(parameter.Name ?? "param");
+        var defaultSchema = new OpenApiSchema { Type = JsonSchemaType.String };
+        var type = BuildType(parameter.Schema ?? defaultSchema, document);
         var isRequired = parameter.Required;
         
         return new IrParameter
@@ -587,7 +622,7 @@ public class IrBuilder
     /// <summary>
     /// Строит IrRequestBody из OpenAPI request body
     /// </summary>
-    private IrRequestBody BuildRequestBody(OpenApiRequestBody requestBody, OpenApiDocument document)
+    private IrRequestBody BuildRequestBody(IOpenApiRequestBody requestBody, OpenApiDocument document)
     {
         // Берем первый content type (обычно application/json)
         var contentType = requestBody.Content?.Keys.FirstOrDefault();
@@ -612,7 +647,7 @@ public class IrBuilder
     /// <summary>
     /// Извлекает тип ответа из OpenAPI response
     /// </summary>
-    private IrType? ExtractResponseType(OpenApiResponse response, OpenApiDocument document)
+    private IrType? ExtractResponseType(IOpenApiResponse response, OpenApiDocument document)
     {
         // Берем первый content type
         var content = response.Content?.FirstOrDefault();

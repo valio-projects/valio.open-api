@@ -27,7 +27,7 @@ public sealed class HeaderParameterNode : AstNode
     
     public override AstNodeKind Kind => AstNodeKind.HeaderParameter;
     
-    public override IReadOnlyList<AstNode> Children => new[] { Name, Type };
+    public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Type };
     
     /// <summary>
     /// Конструктор

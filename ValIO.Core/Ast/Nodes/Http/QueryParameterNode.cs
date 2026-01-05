@@ -27,7 +27,7 @@ public sealed class QueryParameterNode : AstNode
     
     public override AstNodeKind Kind => AstNodeKind.QueryParameter;
     
-    public override IReadOnlyList<AstNode> Children => new[] { Name, Type };
+    public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Type };
     
     /// <summary>
     /// Конструктор

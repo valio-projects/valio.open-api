@@ -293,7 +293,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitNullableType(NullableTypeNode node)
     {
-        return $"{RenderType(node.ElementType)}?";
+        return $"{RenderType(node.InnerType)}?";
     }
 
     public override string VisitArrayType(ArrayTypeNode node)
@@ -305,6 +305,13 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var typeArgs = string.Join(", ", node.TypeArguments.Select(RenderType));
         return $"{node.Name.Name}<{typeArgs}>";
+    }
+
+    public override string VisitDictionaryType(DictionaryTypeNode node)
+    {
+        var keyType = RenderType(node.KeyType);
+        var valueType = RenderType(node.ValueType);
+        return $"Dictionary<{keyType}, {valueType}>";
     }
 
     public override string VisitLiteralExpression(LiteralExpressionNode node)
@@ -326,8 +333,8 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
-        var target = Visit(node.Target);
-        return $"{target}.{node.MemberName}";
+        var target = Visit(node.Object);
+        return $"{target}.{node.Member.Name}";
     }
 
     public override string VisitReturnStatement(ReturnStatementNode node)
@@ -364,34 +371,25 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var sb = new StringBuilder();
         var condition = Visit(node.Condition);
         CodeFormatter.AppendLine(sb, _indentLevel, $"if ({condition})");
-        CodeFormatter.AppendLine(sb, _indentLevel, "{");
-        _indentLevel++;
-        foreach (var stmt in node.ThenStatements)
+        var thenBlock = Visit(node.ThenBlock);
+        sb.Append(thenBlock);
+        if (node.ElseBlock != null)
         {
-            var rendered = Visit(stmt);
-            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+            CodeFormatter.AppendLine(sb, _indentLevel, "else");
+            var elseBlock = Visit(node.ElseBlock);
+            sb.Append(elseBlock);
         }
-        _indentLevel--;
-        CodeFormatter.AppendLine(sb, _indentLevel, "}");
         return sb.ToString();
     }
 
     public override string VisitForEachStatement(ForEachStatementNode node)
     {
         var sb = new StringBuilder();
-        var itemType = RenderType(node.ItemType);
-        var itemName = node.ItemName;
+        var variable = node.Variable.Name;
         var collection = Visit(node.Collection);
-        CodeFormatter.AppendLine(sb, _indentLevel, $"foreach ({itemType} {itemName} in {collection})");
-        CodeFormatter.AppendLine(sb, _indentLevel, "{");
-        _indentLevel++;
-        foreach (var stmt in node.Body)
-        {
-            var rendered = Visit(stmt);
-            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
-        }
-        _indentLevel--;
-        CodeFormatter.AppendLine(sb, _indentLevel, "}");
+        CodeFormatter.AppendLine(sb, _indentLevel, $"foreach (var {variable} in {collection})");
+        var body = Visit(node.Body);
+        sb.Append(body);
         return sb.ToString();
     }
 
@@ -682,13 +680,6 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         sb.Append($"{modifiers}{type} {node.Name.Name}{defaultValue}");
     }
 
-    private string VisitParameterDeclaration(ParameterDeclarationNode node)
-    {
-        var sb = new StringBuilder();
-        RenderParameter(sb, node);
-        return sb.ToString();
-    }
-
     private void RenderEnumMember(StringBuilder sb, EnumMemberDeclarationNode node, int indentLevel, string? comma = null)
     {
         // XML комментарий
@@ -875,6 +866,135 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitResponseType(ResponseTypeNode node)
     {
         return RenderType(node.Type);
+    }
+
+    public override string VisitComment(CommentNode node)
+    {
+        if (node.CommentKind == CommentKind.XmlDocumentation)
+        {
+            var sb = new StringBuilder();
+            CommentGenerator.GenerateXmlComment(sb, 0, node.Text);
+            return sb.ToString();
+        }
+        else if (node.CommentKind == CommentKind.SingleLine)
+        {
+            return $"// {node.Text}";
+        }
+        else if (node.CommentKind == CommentKind.MultiLine)
+        {
+            var lines = node.Text.Split('\n');
+            var sb = new StringBuilder();
+            sb.AppendLine("/*");
+            foreach (var line in lines)
+            {
+                sb.AppendLine($" * {line.TrimEnd()}");
+            }
+            sb.AppendLine(" */");
+            return sb.ToString();
+        }
+        return string.Empty;
+    }
+    
+    public override string VisitTypeDeclaration(TypeDeclarationNode node)
+    {
+        // TypeDeclaration - это базовый класс, конкретные реализации обрабатываются отдельно
+        throw new NotSupportedException("TypeDeclaration should be handled by specific visitor methods");
+    }
+    
+    public override string VisitBlock(BlockNode node)
+    {
+        var sb = new StringBuilder();
+        _indentLevel++;
+        CodeFormatter.AppendLine(sb, _indentLevel - 1, "{");
+        foreach (var statement in node.Statements)
+        {
+            var stmt = Visit(statement);
+            CodeFormatter.AppendLine(sb, _indentLevel, stmt);
+        }
+        _indentLevel--;
+        CodeFormatter.AppendLine(sb, _indentLevel, "}");
+        return sb.ToString();
+    }
+    
+    public override string VisitBinaryExpression(BinaryExpressionNode node)
+    {
+        var left = Visit(node.Left);
+        var right = Visit(node.Right);
+        var op = node.Operator switch
+        {
+            BinaryOperatorKind.Add => "+",
+            BinaryOperatorKind.Subtract => "-",
+            BinaryOperatorKind.Multiply => "*",
+            BinaryOperatorKind.Divide => "/",
+            BinaryOperatorKind.Modulo => "%",
+            BinaryOperatorKind.Equal => "==",
+            BinaryOperatorKind.NotEqual => "!=",
+            BinaryOperatorKind.LessThan => "<",
+            BinaryOperatorKind.LessThanOrEqual => "<=",
+            BinaryOperatorKind.GreaterThan => ">",
+            BinaryOperatorKind.GreaterThanOrEqual => ">=",
+            BinaryOperatorKind.And => "&&",
+            BinaryOperatorKind.Or => "||",
+            BinaryOperatorKind.BitwiseAnd => "&",
+            BinaryOperatorKind.BitwiseOr => "|",
+            BinaryOperatorKind.BitwiseXor => "^",
+            _ => throw new NotSupportedException($"Binary operator {node.Operator} is not supported")
+        };
+        return $"{left} {op} {right}";
+    }
+    
+    public override string VisitExport(ExportNode node)
+    {
+        // Export не используется в C#
+        return string.Empty;
+    }
+    
+    public override string VisitIdentifier(IdentifierNode node)
+    {
+        return node.Name;
+    }
+    
+    public override string VisitImport(ImportNode node)
+    {
+        // Import в C# - это using directive, обрабатывается отдельно
+        return $"using {node.Path};";
+    }
+    
+    public override string VisitUnionType(UnionTypeNode node)
+    {
+        // Union type в C# - это object или можно использовать OneOf библиотеку
+        // Для простоты возвращаем object
+        return "object";
+    }
+    
+    public override string VisitOptionalType(OptionalTypeNode node)
+    {
+        // Optional type в C# - это nullable тип
+        var innerType = RenderType(node.InnerType);
+        return $"{innerType}?";
+    }
+    
+    public override string VisitIntersectionType(IntersectionTypeNode node)
+    {
+        // Intersection type в C# не поддерживается напрямую
+        // Возвращаем первый тип
+        return RenderType(node.Types.FirstOrDefault() ?? new SimpleTypeNode(new IdentifierNode("object")));
+    }
+    
+    public override string VisitConditionalExpression(ConditionalExpressionNode node)
+    {
+        var condition = Visit(node.Condition);
+        var thenExpr = Visit(node.ThenExpression);
+        var elseExpr = Visit(node.ElseExpression);
+        return $"{condition} ? {thenExpr} : {elseExpr}";
+    }
+    
+    public override string VisitAttribute(AttributeNode node)
+    {
+        var args = node.Arguments != null && node.Arguments.Count > 0
+            ? $"({string.Join(", ", node.Arguments.Select(Visit))})"
+            : string.Empty;
+        return $"[{node.Name.Name}{args}]";
     }
 
     #endregion
