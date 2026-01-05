@@ -1,3 +1,4 @@
+using System;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
@@ -6,10 +7,6 @@ using ValIO.Core.Services;
 using System.Linq;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Generators.CSharp.Models;
-using ValIO.Core.IR;
-using ValIO.Core.IR.Builders;
-using ValIO.Generators.CSharp.Ast.Builders;
-using ValIO.Generators.CSharp.Ast.Renderers;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Builders;
 using ValIO.Generators.CSharp.Ast.Builders;
