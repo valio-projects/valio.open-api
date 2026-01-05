@@ -19,6 +19,7 @@ namespace ValIO.Generators.TypeScript;
 public class TypeScriptCodeGenerator : BaseCodeGenerator
 {
     private readonly TypeScriptTypeMapper _typescriptTypeMapper;
+    [Obsolete("Используйте новый IR → AST → Code pipeline через GenerateCodeFromIr")]
     private readonly TypeScriptCodeRenderer _codeRenderer;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IQueryWrapperRenderer? _queryWrapperRenderer;

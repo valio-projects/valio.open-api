@@ -23,6 +23,7 @@ namespace ValIO.Generators.CSharp;
 public class CSharpCodeGenerator : BaseCodeGenerator
 {
     private readonly CSharpTypeMapper _csharpTypeMapper;
+    [Obsolete("Используйте новый IR → AST → Code pipeline через GenerateCodeFromIr")]
     private readonly CSharpCodeRenderer _codeRenderer;
 
     public CSharpCodeGenerator(
