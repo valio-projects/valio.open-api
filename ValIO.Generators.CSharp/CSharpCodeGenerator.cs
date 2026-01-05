@@ -10,6 +10,10 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Builders;
 using ValIO.Generators.CSharp.Ast.Builders;
 using ValIO.Generators.CSharp.Ast.Renderers;
+using ValIO.Core.IR;
+using ValIO.Core.IR.Builders;
+using ValIO.Generators.CSharp.Ast.Builders;
+using ValIO.Generators.CSharp.Ast.Renderers;
 
 namespace ValIO.Generators.CSharp;
 
@@ -896,5 +900,64 @@ public class ValioHttpRequestException : HttpRequestException
 
     // Метод EnsureTemplatesPreloadedAsync удален - шаблоны больше не используются
     // Методы ValidateModelTemplateData и ValidateOperationTemplateData теперь в BaseCodeGenerator
+    
+    // Новые методы с использованием IR → AST → Code pipeline
+    
+    /// <summary>
+    /// Генерирует код используя новый IR → AST → Code pipeline
+    /// </summary>
+    private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config)
+    {
+        var files = new Dictionary<string, string>();
+        
+        // 1. OpenAPI → IR
+        var schemaResolver = new SchemaResolver(document);
+        var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
+        var irDocument = irBuilder.BuildFromOpenApi(document);
+        
+        // 2. IR → AST
+        var astBuilder = new CSharpAstBuilder(NamingConverter, TypeMapper);
+        var compilationUnits = astBuilder.BuildCompilationUnits(irDocument, config.Namespace);
+        
+        // 3. AST → Code
+        var astRenderer = new CSharpAstRenderer();
+        
+        foreach (var compilationUnit in compilationUnits)
+        {
+            var code = astRenderer.Render(compilationUnit);
+            
+            // Определяем имя файла на основе содержимого CompilationUnit
+            var fileName = DetermineFileName(compilationUnit, config);
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
+            
+            files[filePath] = code;
+        }
+        
+        return files;
+    }
+    
+    /// <summary>
+    /// Определяет имя файла на основе CompilationUnit
+    /// </summary>
+    private string DetermineFileName(CompilationUnitNode compilationUnit, GenerationConfiguration config)
+    {
+        // Ищем первую декларацию в namespace для определения имени файла
+        foreach (var namespaceNode in compilationUnit.Namespaces)
+        {
+            foreach (var declaration in namespaceNode.Declarations)
+            {
+                if (declaration is ClassDeclarationNode classNode)
+                {
+                    return $"{classNode.Name.Name}.cs";
+                }
+                if (declaration is EnumDeclarationNode enumNode)
+                {
+                    return $"{enumNode.Name.Name}.cs";
+                }
+            }
+        }
+        
+        return "Generated.cs";
+    }
 }
 
