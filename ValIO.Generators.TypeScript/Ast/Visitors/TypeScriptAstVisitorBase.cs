@@ -23,6 +23,9 @@ public abstract class TypeScriptAstVisitorBase<TResult> : BaseAstVisitor<TResult
         };
     }
     
+    // Enum (общий для C# и TypeScript)
+    public abstract TResult VisitEnumDeclaration(EnumDeclarationNode node);
+    
     // Абстрактные методы только для TypeScript узлов
     public abstract TResult VisitSourceFile(SourceFileNode node);
     public abstract TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);
