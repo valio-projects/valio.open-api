@@ -110,4 +110,14 @@ public interface ITypeScriptAstBuilder
     /// Строит SourceFile из IrEnum
     /// </summary>
     SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null);
+    
+    /// <summary>
+    /// Строит FunctionDeclarationNode из IrOperation
+    /// </summary>
+    FunctionDeclarationNode BuildFunction(IrOperation operation);
+    
+    /// <summary>
+    /// Строит SourceFile из IrClient
+    /// </summary>
+    SourceFileNode BuildSourceFile(IrClient client, string? importPath = null);
 }

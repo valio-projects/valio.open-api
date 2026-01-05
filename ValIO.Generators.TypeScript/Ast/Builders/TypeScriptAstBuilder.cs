@@ -634,4 +634,181 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             _ => TypeInfo.Simple("unknown", language: GenerationLanguage.TypeScript)
         };
     }
+    
+    /// <summary>
+    /// Строит FunctionDeclarationNode из IrOperation
+    /// </summary>
+    public FunctionDeclarationNode BuildFunction(IrOperation operation)
+    {
+        var name = new IdentifierNode(operation.MethodName);
+        
+        // Определяем тип возвращаемого значения из responses
+        var returnType = ExtractReturnType(operation.Responses);
+        
+        var comment = !string.IsNullOrEmpty(operation.Description)
+            ? new CommentNode(operation.Description, CommentKind.JSDoc)
+            : !string.IsNullOrEmpty(operation.Summary)
+                ? new CommentNode(operation.Summary, CommentKind.JSDoc)
+                : null;
+        
+        var parameters = BuildFunctionParameters(operation);
+        var body = BuildFunctionBody(operation);
+        
+        return new FunctionDeclarationNode(
+            name: name,
+            returnType: returnType,
+            parameters: parameters,
+            body: body,
+            isArrowFunction: false,
+            isAsync: true,
+            documentation: comment);
+    }
+    
+    /// <summary>
+    /// Строит SourceFile из IrClient
+    /// </summary>
+    public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null)
+    {
+        var imports = BuildImports(ExtractDependencies(client), importPath);
+        var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunction(op)).ToList();
+        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+        
+        return new SourceFileNode(
+            imports: imports,
+            exports: exports,
+            declarations: declarations);
+    }
+    
+    // Приватные вспомогательные методы для IR операций
+    
+    private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation)
+    {
+        var parameters = new List<ParameterDeclarationNode>();
+        
+        // Path parameters
+        foreach (var param in operation.PathParameters)
+        {
+            var type = BuildType(param.Type);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode(param.Name),
+                type: type,
+                isRequired: true));
+        }
+        
+        // Query parameters
+        foreach (var param in operation.QueryParameters)
+        {
+            var type = BuildType(param.Type);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode(param.Name),
+                type: type,
+                isRequired: param.IsRequired));
+        }
+        
+        // Header parameters
+        foreach (var param in operation.HeaderParameters)
+        {
+            var type = BuildType(param.Type);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode(param.Name),
+                type: type,
+                isRequired: param.IsRequired));
+        }
+        
+        // Request body
+        if (operation.RequestBody != null)
+        {
+            var bodyType = BuildType(operation.RequestBody.Type);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode("request"),
+                type: bodyType,
+                isRequired: operation.RequestBody.IsRequired));
+        }
+        
+        return parameters.ToImmutableList();
+    }
+    
+    private BlockNode? BuildFunctionBody(IrOperation operation)
+    {
+        // TODO: Полная реализация построения тела функции с использованием HTTP узлов
+        // Пока возвращаем null для type-only функции
+        // 
+        // В будущем здесь будет построение тела функции с использованием:
+        // - HttpMethodNode - для определения HTTP метода
+        // - RouteNode - для построения пути с path параметрами
+        // - PathParameterNode, QueryParameterNode, HeaderParameterNode - для параметров
+        // - RequestBodyNode - для тела запроса
+        // - ResponseTypeNode - для обработки ответа
+        //
+        // Структура тела функции:
+        // 1. Построение пути (const path = `...`)
+        // 2. Построение query параметров (const queryParams = ...)
+        // 3. Построение headers (const headers = {...})
+        // 4. Построение body (если есть)
+        // 5. Fetch/Axios вызов
+        // 6. Обработка ответа и return
+        //
+        // Для полной реализации потребуется:
+        // - Создание VariableDeclarationNode для промежуточных переменных
+        // - Создание ExpressionStatementNode для вызовов
+        // - Создание ReturnStatementNode для возврата результата
+        // - Использование TemplateLiteralExpressionNode для путей
+        // - Использование ObjectLiteralExpressionNode для headers, body
+        // - Использование CallExpressionNode для fetch/axios вызовов
+        return null;
+    }
+    
+    private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
+    {
+        // Ищем первый успешный ответ (200-299)
+        var successResponse = responses.FirstOrDefault(r =>
+        {
+            if (int.TryParse(r.StatusCode, out var code))
+                return code >= 200 && code < 300;
+            return false;
+        });
+        
+        if (successResponse?.Type != null)
+        {
+            return BuildType(successResponse.Type);
+        }
+        
+        // Если нет успешного ответа, возвращаем void
+        return new SimpleTypeNode(
+            name: new IdentifierNode("void"),
+            isPrimitive: true,
+            isNullable: false,
+            isOptional: false);
+    }
+    
+    private IReadOnlyList<string> ExtractDependencies(IrClient client)
+    {
+        var dependencies = new HashSet<string>();
+        
+        foreach (var operation in client.Operations)
+        {
+            // Зависимости из параметров
+            foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+            {
+                ExtractDependenciesFromType(param.Type, dependencies);
+            }
+            
+            // Зависимости из request body
+            if (operation.RequestBody != null)
+            {
+                ExtractDependenciesFromType(operation.RequestBody.Type, dependencies);
+            }
+            
+            // Зависимости из responses
+            foreach (var response in operation.Responses)
+            {
+                if (response.Type != null)
+                {
+                    ExtractDependenciesFromType(response.Type, dependencies);
+                }
+            }
+        }
+        
+        return dependencies.ToList();
+    }
 }
