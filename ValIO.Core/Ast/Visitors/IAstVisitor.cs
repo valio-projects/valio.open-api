@@ -1,5 +1,6 @@
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 
@@ -94,4 +95,15 @@ public interface IAstVisitor<TResult>
     TResult VisitObjectLiteralExpression(ObjectLiteralExpressionNode node);
     TResult VisitPropertyAssignment(PropertyAssignmentNode node);
     TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node);
+    TResult VisitGenericParameter(GenericParameterNode node);
+    TResult VisitPropertySignature(PropertySignatureNode node);
+    
+    // HTTP специфичные узлы
+    TResult VisitHttpMethod(HttpMethodNode node);
+    TResult VisitRoute(RouteNode node);
+    TResult VisitPathParameter(PathParameterNode node);
+    TResult VisitQueryParameter(QueryParameterNode node);
+    TResult VisitHeaderParameter(HeaderParameterNode node);
+    TResult VisitRequestBody(RequestBodyNode node);
+    TResult VisitResponseType(ResponseTypeNode node);
 }

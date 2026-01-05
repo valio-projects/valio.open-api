@@ -65,4 +65,15 @@ public enum AstNodeKind
     ObjectLiteralExpression,
     PropertyAssignment,
     TemplateLiteralExpression,
+    GenericParameter,
+    PropertySignature,
+    
+    // HTTP специфичные узлы
+    HttpMethod,
+    Route,
+    PathParameter,
+    QueryParameter,
+    HeaderParameter,
+    RequestBody,
+    ResponseType,
 }

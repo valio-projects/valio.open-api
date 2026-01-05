@@ -1,6 +1,7 @@
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 
@@ -42,6 +43,7 @@ public abstract class AstVisitorBase<TResult> : IAstVisitor<TResult>
             AstNodeKind.TypeAliasDeclaration => VisitTypeAliasDeclaration((TypeAliasDeclarationNode)node),
             AstNodeKind.FunctionDeclaration => VisitFunctionDeclaration((FunctionDeclarationNode)node),
             AstNodeKind.VariableDeclaration => VisitVariableDeclaration((VariableDeclarationNode)node),
+            AstNodeKind.PropertySignature => VisitPropertySignature((PropertySignatureNode)node),
             _ => VisitDefault(node)
         };
     }
@@ -158,6 +160,17 @@ public abstract class AstVisitorBase<TResult> : IAstVisitor<TResult>
     public abstract TResult VisitObjectLiteralExpression(ObjectLiteralExpressionNode node);
     public abstract TResult VisitPropertyAssignment(PropertyAssignmentNode node);
     public abstract TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node);
+    public abstract TResult VisitGenericParameter(GenericParameterNode node);
+    public abstract TResult VisitPropertySignature(PropertySignatureNode node);
+    
+    // HTTP специфичные узлы
+    public abstract TResult VisitHttpMethod(HttpMethodNode node);
+    public abstract TResult VisitRoute(RouteNode node);
+    public abstract TResult VisitPathParameter(PathParameterNode node);
+    public abstract TResult VisitQueryParameter(QueryParameterNode node);
+    public abstract TResult VisitHeaderParameter(HeaderParameterNode node);
+    public abstract TResult VisitRequestBody(RequestBodyNode node);
+    public abstract TResult VisitResponseType(ResponseTypeNode node);
     
     /// <summary>
     /// Метод по умолчанию для неизвестных узлов

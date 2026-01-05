@@ -1,0 +1,71 @@
+using System.Collections.Immutable;
+using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.Ast.Visitors;
+
+namespace ValIO.Core.Ast.Nodes;
+
+/// <summary>
+/// Узел generic параметра (для TypeScript и C#)
+/// </summary>
+public sealed class GenericParameterNode : AstNode
+{
+    /// <summary>
+    /// Имя generic параметра
+    /// </summary>
+    public IdentifierNode Name { get; }
+    
+    /// <summary>
+    /// Ограничение (например, extends Type)
+    /// </summary>
+    public TypeNode? Constraint { get; }
+    
+    /// <summary>
+    /// Значение по умолчанию
+    /// </summary>
+    public TypeNode? Default { get; }
+    
+    public override AstNodeKind Kind => AstNodeKind.GenericParameter;
+    
+    public override IReadOnlyList<AstNode> Children
+    {
+        get
+        {
+            var children = new List<AstNode> { Name };
+            if (Constraint != null)
+                children.Add(Constraint);
+            if (Default != null)
+                children.Add(Default);
+            return children;
+        }
+    }
+    
+    /// <summary>
+    /// Конструктор
+    /// </summary>
+    public GenericParameterNode(
+        IdentifierNode name,
+        TypeNode? constraint = null,
+        TypeNode? @default = null,
+        IReadOnlyDictionary<string, object>? metadata = null)
+        : base(metadata)
+    {
+        Name = name ?? throw new ArgumentNullException(nameof(name));
+        Constraint = constraint;
+        Default = @default;
+    }
+    
+    public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
+    {
+        return visitor.VisitGenericParameter(this);
+    }
+    
+    public override AstNode Clone()
+    {
+        return new GenericParameterNode(
+            (IdentifierNode)Name.Clone(),
+            Constraint != null ? (TypeNode)Constraint.Clone() : null,
+            Default != null ? (TypeNode)Default.Clone() : null,
+            Metadata.ToImmutableDictionary());
+    }
+}

@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
@@ -812,6 +813,65 @@ public class CSharpAstRenderer : AstVisitorBase<string>, ICSharpAstRenderer
             LiteralKind.Character => $"'{CodeEscapeHelper.EscapeString(node.Value?.ToString())}'",
             _ => node.Value?.ToString() ?? "null"
         };
+    }
+
+    public override string VisitGenericParameter(GenericParameterNode node)
+    {
+        var constraint = node.Constraint != null ? $" where {node.Name.Name} : {RenderType(node.Constraint)}" : "";
+        var defaultValue = node.Default != null ? $" = {RenderType(node.Default)}" : "";
+        return $"{node.Name.Name}{defaultValue}{constraint}";
+    }
+
+    public override string VisitPropertySignature(PropertySignatureNode node)
+    {
+        // PropertySignature используется только в TypeScript, для C# это не поддерживается
+        throw new NotSupportedException("PropertySignature is not supported in C# renderer. Use PropertyDeclaration instead.");
+    }
+
+    // HTTP специфичные методы (для C# не используются напрямую, но требуются интерфейсом)
+    public override string VisitHttpMethod(HttpMethodNode node)
+    {
+        return node.Method switch
+        {
+            HttpMethodKind.Get => "HttpMethod.Get",
+            HttpMethodKind.Post => "HttpMethod.Post",
+            HttpMethodKind.Put => "HttpMethod.Put",
+            HttpMethodKind.Delete => "HttpMethod.Delete",
+            HttpMethodKind.Patch => "HttpMethod.Patch",
+            HttpMethodKind.Head => "HttpMethod.Head",
+            HttpMethodKind.Options => "HttpMethod.Options",
+            _ => throw new NotSupportedException($"HTTP method {node.Method} is not supported")
+        };
+    }
+
+    public override string VisitRoute(RouteNode node)
+    {
+        return $"@\"{node.Path.Replace("\"", "\"\"")}\"";
+    }
+
+    public override string VisitPathParameter(PathParameterNode node)
+    {
+        return $"{RenderType(node.Type)} {node.Name.Name}";
+    }
+
+    public override string VisitQueryParameter(QueryParameterNode node)
+    {
+        return $"{RenderType(node.Type)} {node.Name.Name}";
+    }
+
+    public override string VisitHeaderParameter(HeaderParameterNode node)
+    {
+        return $"{RenderType(node.Type)} {node.Name.Name}";
+    }
+
+    public override string VisitRequestBody(RequestBodyNode node)
+    {
+        return RenderType(node.Type);
+    }
+
+    public override string VisitResponseType(ResponseTypeNode node)
+    {
+        return RenderType(node.Type);
     }
 
     #endregion

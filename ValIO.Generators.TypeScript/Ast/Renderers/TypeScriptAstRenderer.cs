@@ -2,6 +2,7 @@ using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
@@ -170,17 +171,17 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
 
     public override string VisitSimpleType(SimpleTypeNode node)
     {
-        return node.Name.Value;
+        return node.Name.Name;
     }
 
     public override string VisitNullableType(NullableTypeNode node)
     {
-        return $"{RenderType(node.ElementType)} | null";
+        return $"{RenderType(node.InnerType)} | null";
     }
 
     public override string VisitOptionalType(OptionalTypeNode node)
     {
-        return $"{RenderType(node.ElementType)}?";
+        return $"{RenderType(node.InnerType)}?";
     }
 
     public override string VisitArrayType(ArrayTypeNode node)
@@ -191,7 +192,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
     public override string VisitGenericType(GenericTypeNode node)
     {
         var typeArgs = string.Join(", ", node.TypeArguments.Select(RenderType));
-        return $"{node.Name.Value}<{typeArgs}>";
+        return $"{node.Name.Name}<{typeArgs}>";
     }
 
     public override string VisitUnionType(UnionTypeNode node)
@@ -220,7 +221,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
 
     public override string VisitIdentifierExpression(IdentifierExpressionNode node)
     {
-        return node.Identifier.Value;
+        return node.Identifier.Name;
     }
 
     public override string VisitCallExpression(CallExpressionNode node)
@@ -232,8 +233,8 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
 
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
-        var target = Visit(node.Target);
-        return $"{target}.{node.MemberName}";
+        var target = Visit(node.Object);
+        return $"{target}.{node.Member.Name}";
     }
 
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
@@ -280,6 +281,253 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         return sb.ToString();
     }
 
+    public override string VisitForEachStatement(ForEachStatementNode node)
+    {
+        var sb = new StringBuilder();
+        var item = node.Variable.Name;
+        var collection = Visit(node.Collection);
+        CodeFormatter.AppendLine(sb, _indentLevel, $"for (const {item} of {collection}) {{");
+        _indentLevel++;
+        foreach (var stmt in node.Body.Statements)
+        {
+            var rendered = Visit(stmt);
+            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+        }
+        _indentLevel--;
+        CodeFormatter.AppendLine(sb, _indentLevel, "}");
+        return sb.ToString();
+    }
+
+    public override string VisitBinaryExpression(BinaryExpressionNode node)
+    {
+        var left = Visit(node.Left);
+        var right = Visit(node.Right);
+        var op = GetBinaryOperator(node.Operator);
+        return $"({left} {op} {right})";
+    }
+    
+    /// <summary>
+    /// Преобразует BinaryOperator в строку оператора TypeScript
+    /// </summary>
+    private static string GetBinaryOperator(BinaryOperator op)
+    {
+        return op switch
+        {
+            BinaryOperator.Add => "+",
+            BinaryOperator.Subtract => "-",
+            BinaryOperator.Multiply => "*",
+            BinaryOperator.Divide => "/",
+            BinaryOperator.Modulo => "%",
+            BinaryOperator.Equal => "===",
+            BinaryOperator.NotEqual => "!==",
+            BinaryOperator.LessThan => "<",
+            BinaryOperator.LessThanOrEqual => "<=",
+            BinaryOperator.GreaterThan => ">",
+            BinaryOperator.GreaterThanOrEqual => ">=",
+            BinaryOperator.LogicalAnd => "&&",
+            BinaryOperator.LogicalOr => "||",
+            BinaryOperator.BitwiseAnd => "&",
+            BinaryOperator.BitwiseOr => "|",
+            BinaryOperator.BitwiseXor => "^",
+            BinaryOperator.LeftShift => "<<",
+            BinaryOperator.RightShift => ">>",
+            _ => throw new NotSupportedException($"Binary operator {op} is not supported")
+        };
+    }
+
+    public override string VisitConditionalExpression(ConditionalExpressionNode node)
+    {
+        var condition = Visit(node.Condition);
+        var trueExpr = Visit(node.TrueExpression);
+        var falseExpr = Visit(node.FalseExpression);
+        return $"({condition} ? {trueExpr} : {falseExpr})";
+    }
+
+    public override string VisitBlock(BlockNode node)
+    {
+        var sb = new StringBuilder();
+        CodeFormatter.AppendLine(sb, _indentLevel, "{");
+        _indentLevel++;
+        foreach (var stmt in node.Statements)
+        {
+            var rendered = Visit(stmt);
+            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+        }
+        _indentLevel--;
+        CodeFormatter.AppendLine(sb, _indentLevel, "}");
+        return sb.ToString();
+    }
+
+    public override string VisitImport(ImportNode node)
+    {
+        var sb = new StringBuilder();
+        RenderImport(node);
+        return sb.ToString();
+    }
+
+    public override string VisitExport(ExportNode node)
+    {
+        var declaration = Visit(node.Declaration);
+        var exportKeyword = node.ExportKind switch
+        {
+            ExportKind.Default => "export default ",
+            ExportKind.Named => "export ",
+            _ => "export "
+        };
+        return $"{exportKeyword}{declaration}";
+    }
+
+    public override string VisitIdentifier(IdentifierNode node)
+    {
+        return node.Name;
+    }
+
+    public override string VisitComment(CommentNode node)
+    {
+        var sb = new StringBuilder();
+        RenderComment(sb, node, 0);
+        return sb.ToString();
+    }
+
+    public override string VisitAttribute(AttributeNode node)
+    {
+        // TypeScript не имеет атрибутов в том же смысле, что C#
+        // Можно использовать декораторы, но для базовой реализации возвращаем пустую строку
+        return "";
+    }
+
+    public override string VisitEnumMemberDeclaration(EnumMemberDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        RenderEnumMember(sb, node, 0);
+        return sb.ToString();
+    }
+
+    public override string VisitPropertyAssignment(PropertyAssignmentNode node)
+    {
+        var key = node.Name.Name;
+        var value = Visit(node.Value);
+        if (node.IsShorthand)
+        {
+            return key; // Shorthand: { name } вместо { name: name }
+        }
+        return $"{key}: {value}";
+    }
+
+    // C# специфичные методы (не используются для TypeScript, но требуются интерфейсом)
+    public override string VisitTypeDeclaration(TypeDeclarationNode node)
+    {
+        throw new NotSupportedException("TypeDeclaration is not supported in TypeScript renderer. Use specific declaration types instead.");
+    }
+
+    public override string VisitMethodDeclaration(MethodDeclarationNode node)
+    {
+        throw new NotSupportedException("MethodDeclaration is not supported in TypeScript renderer. Use FunctionDeclaration instead.");
+    }
+
+    public override string VisitCompilationUnit(CompilationUnitNode node)
+    {
+        throw new NotSupportedException("CompilationUnit is not supported in TypeScript renderer. Use SourceFile instead.");
+    }
+
+    public override string VisitNamespaceDeclaration(NamespaceDeclarationNode node)
+    {
+        throw new NotSupportedException("NamespaceDeclaration is not supported in TypeScript renderer.");
+    }
+
+    public override string VisitUsingDirective(UsingDirectiveNode node)
+    {
+        throw new NotSupportedException("UsingDirective is not supported in TypeScript renderer. Use Import instead.");
+    }
+
+    public override string VisitClassDeclaration(ClassDeclarationNode node)
+    {
+        throw new NotSupportedException("ClassDeclaration is not supported in TypeScript renderer. Use InterfaceDeclaration or TypeAliasDeclaration instead.");
+    }
+
+    public override string VisitRecordDeclaration(RecordDeclarationNode node)
+    {
+        throw new NotSupportedException("RecordDeclaration is not supported in TypeScript renderer. Use InterfaceDeclaration or TypeAliasDeclaration instead.");
+    }
+
+    public override string VisitStructDeclaration(StructDeclarationNode node)
+    {
+        throw new NotSupportedException("StructDeclaration is not supported in TypeScript renderer. Use InterfaceDeclaration or TypeAliasDeclaration instead.");
+    }
+
+    public override string VisitFieldDeclaration(FieldDeclarationNode node)
+    {
+        throw new NotSupportedException("FieldDeclaration is not supported in TypeScript renderer. Use PropertyDeclaration or VariableDeclaration instead.");
+    }
+
+    public override string VisitConstructorDeclaration(ConstructorDeclarationNode node)
+    {
+        throw new NotSupportedException("ConstructorDeclaration is not supported in TypeScript renderer.");
+    }
+
+    public override string VisitGenericParameter(GenericParameterNode node)
+    {
+        var constraint = node.Constraint != null ? $" extends {RenderType(node.Constraint)}" : "";
+        var defaultValue = node.Default != null ? $" = {RenderType(node.Default)}" : "";
+        return $"{node.Name.Name}{constraint}{defaultValue}";
+    }
+
+    public override string VisitPropertySignature(PropertySignatureNode node)
+    {
+        var readonlyKeyword = node.IsReadonly ? "readonly " : "";
+        var optional = node.IsRequired ? "" : "?";
+        var type = RenderType(node.Type);
+        return $"{readonlyKeyword}{node.Name.Name}{optional}: {type}";
+    }
+
+    // HTTP специфичные методы
+    public override string VisitHttpMethod(HttpMethodNode node)
+    {
+        return node.Method switch
+        {
+            HttpMethodKind.Get => "GET",
+            HttpMethodKind.Post => "POST",
+            HttpMethodKind.Put => "PUT",
+            HttpMethodKind.Delete => "DELETE",
+            HttpMethodKind.Patch => "PATCH",
+            HttpMethodKind.Head => "HEAD",
+            HttpMethodKind.Options => "OPTIONS",
+            _ => throw new NotSupportedException($"HTTP method {node.Method} is not supported")
+        };
+    }
+
+    public override string VisitRoute(RouteNode node)
+    {
+        return $"\"{node.Path}\"";
+    }
+
+    public override string VisitPathParameter(PathParameterNode node)
+    {
+        return $"{node.Name.Name}: {RenderType(node.Type)}";
+    }
+
+    public override string VisitQueryParameter(QueryParameterNode node)
+    {
+        var optional = node.IsRequired ? "" : "?";
+        return $"{node.Name.Name}{optional}: {RenderType(node.Type)}";
+    }
+
+    public override string VisitHeaderParameter(HeaderParameterNode node)
+    {
+        var optional = node.IsRequired ? "" : "?";
+        return $"{node.Name.Name}{optional}: {RenderType(node.Type)}";
+    }
+
+    public override string VisitRequestBody(RequestBodyNode node)
+    {
+        return RenderType(node.Type);
+    }
+
+    public override string VisitResponseType(ResponseTypeNode node)
+    {
+        return RenderType(node.Type);
+    }
+
     #endregion
 
     #region Private Helper Methods
@@ -288,24 +536,24 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
     {
         var from = !string.IsNullOrEmpty(import.From) ? $" from \"{import.From}\"" : "";
         var imports = import.Items.Count > 0 
-            ? string.Join(", ", import.Items.Select(i => i.Value))
+            ? string.Join(", ", import.Items.Select(i => i.Name))
             : "*";
         
         if (import.Kind == ImportKind.Default && import.Items.Count > 0)
         {
             // Default import: import name from "module"
-            CodeFormatter.AppendLine(_sb, 0, $"import {import.Items[0].Value}{from};");
+            CodeFormatter.AppendLine(_sb, 0, $"import {import.Items[0].Name}{from};");
         }
         else if (import.Kind == ImportKind.Namespace)
         {
             // Namespace import: import * as name from "module"
-            var name = import.Items.Count > 0 ? import.Items[0].Value : "namespace";
+            var name = import.Items.Count > 0 ? import.Items[0].Name : "namespace";
             CodeFormatter.AppendLine(_sb, 0, $"import * as {name}{from};");
         }
         else
         {
             // Named imports: import { a, b } from "module"
-            var namedImports = string.Join(", ", import.Items.Select(i => i.Value));
+            var namedImports = string.Join(", ", import.Items.Select(i => i.Name));
             CodeFormatter.AppendLine(_sb, 0, $"import {{ {namedImports} }}{from};");
         }
     }
@@ -335,7 +583,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         // Для TypeScript interface всегда export (если нужно, можно добавить флаг позже)
         var exportKeyword = ""; // InterfaceDeclarationNode не имеет IsExported, используем пустую строку
         var baseTypes = node.BaseTypes.Count > 0 ? $" extends {string.Join(", ", node.BaseTypes.Select(RenderType))}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}interface {node.Name.Value}{baseTypes} {{");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}interface {node.Name.Name}{baseTypes} {{");
         
         // Члены interface
         foreach (var member in node.Members)
@@ -361,7 +609,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         // TypeAliasDeclarationNode не имеет IsExported, используем пустую строку
         var exportKeyword = "";
         var type = RenderType(node.Type);
-        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Value} = {type};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
     }
 
     private void RenderFunction(StringBuilder sb, FunctionDeclarationNode node, int indentLevel)
@@ -369,7 +617,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         // JSDoc комментарий
         if (node.Documentation != null)
         {
-            var parameters = node.Parameters.Select(p => (p.Name.Value, p.Documentation?.Text, RenderType(p.Type))).ToList();
+            var parameters = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text, RenderType(p.Type))).ToList();
             CommentGenerator.GenerateJSDocCommentWithParams(sb, indentLevel, node.Documentation.Text, parameters, node.ReturnType != null ? RenderType(node.ReturnType) : null);
         }
         
@@ -383,11 +631,11 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         
         if (node.IsArrowFunction)
         {
-            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Value} = {asyncKeyword}({parameters}){returnType} => {{");
+            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parameters}){returnType} => {{");
         }
         else
         {
-            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Value}({parameters}){returnType} {{");
+            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Name}({parameters}){returnType} {{");
         }
         
         // Тело функции
@@ -430,7 +678,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         };
         var type = node.Type != null ? $": {RenderType(node.Type)}" : "";
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{constKeyword} {node.Name.Value}{type}{initializer};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{constKeyword} {node.Name.Name}{type}{initializer};");
     }
 
     private void RenderEnum(StringBuilder sb, EnumDeclarationNode node, int indentLevel)
@@ -445,7 +693,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         // EnumDeclarationNode не имеет IsExported и IsConstEnum для TypeScript, используем пустые строки
         var exportKeyword = "";
         var constKeyword = ""; // TypeScript const enum можно добавить позже через metadata
-        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{constKeyword}enum {node.Name.Value} {{");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{constKeyword}enum {node.Name.Name} {{");
         
         // Члены enum
         for (int i = 0; i < node.Members.Count; i++)
@@ -471,7 +719,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         // PropertyDeclarationNode не имеет IsReadOnly для TypeScript, используем пустую строку
         var readonly = ""; // Можно добавить через metadata позже
         var type = RenderType(node.Type);
-        CodeFormatter.AppendLine(sb, indentLevel, $"{readonly}{node.Name.Value}{optional}: {type};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{readonly}{node.Name.Name}{optional}: {type};");
     }
 
     private void RenderParameter(StringBuilder sb, ParameterDeclarationNode node)
@@ -479,7 +727,7 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         var optional = node.IsRequired ? "" : "?";
         var type = RenderType(node.Type);
         var defaultValue = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        sb.Append($"{node.Name.Value}{optional}: {type}{defaultValue}");
+        sb.Append($"{node.Name.Name}{optional}: {type}{defaultValue}");
     }
 
     private string VisitParameterDeclaration(ParameterDeclarationNode node)
@@ -499,19 +747,9 @@ public class TypeScriptAstRenderer : AstVisitorBase<string>, ITypeScriptAstRende
         
         // Значение enum
         var value = node.Value != null ? $" = {Visit(node.Value)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Value}{value}{comma ?? ""}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Name}{value}{comma ?? ""}");
     }
 
-    private string VisitPropertyAssignment(PropertyAssignmentNode node)
-    {
-        var key = node.Name.Value;
-        var value = Visit(node.Value);
-        if (node.IsShorthand)
-        {
-            return key; // Shorthand: { name } вместо { name: name }
-        }
-        return $"{key}: {value}";
-    }
 
     private void RenderComment(StringBuilder sb, CommentNode comment, int indentLevel)
     {
