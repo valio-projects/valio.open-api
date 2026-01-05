@@ -5,6 +5,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
 using System.Linq;
+using ValIO.Core.Ast.Nodes;
 using ValIO.Generators.CSharp.Models;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Builders;
@@ -185,7 +186,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         var irDocument = irBuilder.BuildFromOpenApi(document);
         
             // 2. IR → AST
-            var astBuilder = new CSharpAstBuilder(NamingConverter);
+            var astBuilder = new CSharpAstBuilder(NamingConverter, TypeMapper); // TypeMapper передается для совместимости, но не используется
             var compilationUnits = astBuilder.BuildCompilationUnits(irDocument, config.Namespace);
         
         // 3. AST → Code

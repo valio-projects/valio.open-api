@@ -376,9 +376,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var returnType = ExtractReturnType(operation.Responses);
         
         var comment = !string.IsNullOrEmpty(operation.Description)
-            ? new CommentNode(operation.Description, CommentKind.XmlDoc)
+            ? new CommentNode(operation.Description, CommentKind.Xml)
             : !string.IsNullOrEmpty(operation.Summary)
-                ? new CommentNode(operation.Summary, CommentKind.XmlDoc)
+                ? new CommentNode(operation.Summary, CommentKind.Xml)
                 : null;
         
         var parameters = BuildMethodParameters(operation);
