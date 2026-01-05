@@ -710,15 +710,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     private void RenderComment(StringBuilder sb, CommentNode comment, int indentLevel)
     {
-        if (comment.Kind == CommentKind.JSDoc || comment.Kind == CommentKind.Xml)
+        if (comment.CommentKind == CommentKind.JSDoc || comment.CommentKind == CommentKind.Xml)
         {
             CommentGenerator.GenerateJSDocComment(sb, indentLevel, comment.Text);
         }
-        else if (comment.Kind == CommentKind.SingleLine)
+        else if (comment.CommentKind == CommentKind.SingleLine)
         {
             CodeFormatter.AppendLine(sb, indentLevel, $"// {comment.Text}");
         }
-        else if (comment.Kind == CommentKind.MultiLine)
+        else if (comment.CommentKind == CommentKind.MultiLine)
         {
             var lines = comment.Text.Split('\n');
             CodeFormatter.AppendLine(sb, indentLevel, "/*");

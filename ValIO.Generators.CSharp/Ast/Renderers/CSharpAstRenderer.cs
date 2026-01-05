@@ -782,15 +782,15 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     private void RenderComment(StringBuilder sb, CommentNode comment, int indentLevel)
     {
-        if (comment.Kind == CommentKind.Xml)
+        if (comment.CommentKind == CommentKind.Xml)
         {
             CommentGenerator.GenerateXmlComment(sb, indentLevel, comment.Text);
         }
-        else if (comment.Kind == CommentKind.SingleLine)
+        else if (comment.CommentKind == CommentKind.SingleLine)
         {
             CodeFormatter.AppendLine(sb, indentLevel, $"// {comment.Text}");
         }
-        else if (comment.Kind == CommentKind.MultiLine)
+        else if (comment.CommentKind == CommentKind.MultiLine)
         {
             var lines = comment.Text.Split('\n');
             CodeFormatter.AppendLine(sb, indentLevel, "/*");
