@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Visitors;

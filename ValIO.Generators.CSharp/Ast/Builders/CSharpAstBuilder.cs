@@ -18,12 +18,11 @@ namespace ValIO.Generators.CSharp.Ast.Builders;
 public class CSharpAstBuilder : ICSharpAstBuilder
 {
     private readonly INamingConverter _namingConverter;
-    private readonly ITypeMapper _typeMapper;
     
     public CSharpAstBuilder(INamingConverter namingConverter, ITypeMapper typeMapper)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
+        // typeMapper параметр оставлен для совместимости, но не используется в новом IR → AST pipeline
     }
     
     public NamespaceDeclarationNode BuildNamespace(string name, IReadOnlyList<DeclarationNode> declarations)

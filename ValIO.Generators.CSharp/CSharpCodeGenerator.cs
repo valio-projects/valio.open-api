@@ -19,8 +19,6 @@ namespace ValIO.Generators.CSharp;
 /// </summary>
 public class CSharpCodeGenerator : BaseCodeGenerator
 {
-    private readonly CSharpTypeMapper _csharpTypeMapper;
-
     public CSharpCodeGenerator(
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
@@ -28,40 +26,10 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         ILogger<CSharpCodeGenerator> logger)
         : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.CSharp)
     {
-        _csharpTypeMapper = typeMapper as CSharpTypeMapper ?? throw new InvalidOperationException("TypeMapper must be CSharpTypeMapper");
     }
 
-    /// <summary>
-    /// Создает анализатор зависимостей для C#
-    /// </summary>
-    protected override IDependencyAnalyzer CreateDependencyAnalyzer()
-    {
-        return new Services.CSharpDependencyAnalyzer(NamingConverter);
-    }
-
-    /// <summary>
-    /// Создает построитель TypeInfo для C#
-    /// </summary>
-    protected override ITypeInfoBuilder CreateTypeInfoBuilder(ISchemaResolver schemaResolver)
-    {
-        return new Services.CSharpTypeInfoBuilder(TypeMapper, schemaResolver);
-    }
-
-    /// <summary>
-    /// Создает извлекатель enum для C#
-    /// </summary>
-    protected override IEnumExtractor CreateEnumExtractor(ISchemaResolver schemaResolver)
-    {
-        return new Services.CSharpEnumExtractor(schemaResolver, NamingConverter);
-    }
-
-    /// <summary>
-    /// Создает стратегию именования для операций C#
-    /// </summary>
-    protected override IOperationNamingStrategy CreateOperationNamingStrategy()
-    {
-        return new Services.CSharpOperationNamingStrategy();
-    }
+    // Методы CreateDependencyAnalyzer, CreateTypeInfoBuilder, CreateEnumExtractor, CreateOperationNamingStrategy
+    // удалены - они больше не используются, так как новый IR → AST → Code pipeline не использует TemplateData подход
 
     public override bool SupportsLanguage(GenerationLanguage language)
     {
@@ -161,102 +129,9 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         return result;
     }
 
-    // Методы MapModelTypes и MapOperationTypes удалены - маппинг теперь выполняется в extractors
-
-    /// <summary>
-    /// Переопределяет BuildOperationCache для более сложной логики с operationId
-    /// </summary>
-    protected override void BuildOperationCache(OpenApiDocument document)
-    {
-        OperationCache = new Dictionary<string, OpenApiOperation>();
-        
-        if (document.Paths == null)
-            return;
-
-        foreach (var pathEntry in document.Paths)
-        {
-            if (pathEntry.Value.Operations == null)
-                continue;
-
-            foreach (var operationEntry in pathEntry.Value.Operations)
-            {
-                var openApiOperation = operationEntry.Value;
-                var operationId = openApiOperation.OperationId ?? 
-                    $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
-
-                // Создаем ключ: operationId + method + path
-                var cacheKey = $"{operationId}|{operationEntry.Key.Method}|{pathEntry.Key}";
-                OperationCache[cacheKey] = openApiOperation;
-            }
-        }
-        
-        Logger.LogDebug("Built operation cache with {Count} entries", OperationCache.Count);
-    }
-    // Старые методы GenerateEnums, GenerateModels, GenerateClients удалены - теперь используется IR → AST → Code pipeline через GenerateCodeFromIr
-
-    /// <summary>
-    /// Получает C# специфичные опции из конфигурации
-    /// </summary>
-    private static CSharpGenerationOptions GetCSharpOptions(GenerationConfiguration config)
-    {
-        // Пытаемся получить C# опции из config.Options
-        if (config.Options?.CSharpOptions is CSharpGenerationOptions csharpOptions)
-        {
-            return csharpOptions;
-        }
-        
-        // Используем значения по умолчанию
-        return new CSharpGenerationOptions();
-    }
-
-    // Старые методы GenerateEnums, GenerateModels, GenerateClients, GenerateQueryParametersModelCode, GenerateExceptionCode, GenerateClientCode удалены
-    // Теперь используется IR → AST → Code pipeline через GenerateCodeFromIr
-
-    // GroupOperations и ExtractRouteGroup теперь в базовом классе BaseCodeGenerator
-    // Переопределяем ExtractRouteGroup для более сложной логики C#
-
-    /// <summary>
-    /// Извлекает имя группы из пути операции (C# специфичная реализация)
-    /// Например: /api/users/{id} -> Users, /api/products -> Products
-    /// </summary>
-    protected override string ExtractRouteGroup(string path)
-    {
-        if (string.IsNullOrEmpty(path))
-            return "Default";
-
-        // Убираем начальный и конечный слэши
-        var cleanPath = path.Trim('/');
-        
-        // Разбиваем путь на сегменты
-        var segments = cleanPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        
-        if (segments.Length == 0)
-            return "Default";
-
-        // Берем последний сегмент пути (или предпоследний, если последний - параметр)
-        // Например: /api/users/{id} -> users, /api/products -> products
-        var lastSegment = segments[^1];
-        
-        // Если последний сегмент - параметр (начинается с {), берем предыдущий
-        if (lastSegment.StartsWith("{") && segments.Length > 1)
-        {
-            lastSegment = segments[^2];
-        }
-
-        // Убираем префиксы типа "api", "v1", "v2" и т.д.
-        if (segments.Length > 1 && (lastSegment.StartsWith("api", StringComparison.OrdinalIgnoreCase) || 
-                                     lastSegment.StartsWith("v", StringComparison.OrdinalIgnoreCase)))
-        {
-            if (segments.Length > 2)
-            {
-                lastSegment = segments[^2];
-            }
-        }
-
-        // Конвертируем в PascalCase и санитизируем
-        var sanitized = NamingConverter.SanitizeIdentifier(lastSegment);
-        return NamingConverter.ToPascalCase(sanitized);
-    }
+    // Методы BuildOperationCache, GetCSharpOptions, ExtractRouteGroup удалены
+    // Они использовались только в старом TemplateData подходе
+    // Новый IR → AST → Code pipeline не использует эти методы
 
     // ============================================================================
     // Новые методы с использованием IR → AST → Code pipeline
@@ -309,9 +184,9 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
         var irDocument = irBuilder.BuildFromOpenApi(document);
         
-        // 2. IR → AST
-        var astBuilder = new CSharpAstBuilder(NamingConverter, TypeMapper);
-        var compilationUnits = astBuilder.BuildCompilationUnits(irDocument, config.Namespace);
+            // 2. IR → AST
+            var astBuilder = new CSharpAstBuilder(NamingConverter, TypeMapper); // TypeMapper передается для совместимости, но не используется
+            var compilationUnits = astBuilder.BuildCompilationUnits(irDocument, config.Namespace);
         
         // 3. AST → Code
         var astRenderer = new CSharpAstRenderer();

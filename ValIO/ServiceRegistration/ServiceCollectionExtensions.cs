@@ -44,19 +44,8 @@ public static class ServiceCollectionExtensions
         });
         services.AddSingleton<ICodeGenerator>(sp => sp.GetRequiredService<CSharpCodeGenerator>());
         
-        // Code Renderers (Obsolete - будут удалены)
-        // services.AddSingleton<CSharpCodeRenderer>();
-        // services.AddSingleton<ICodeRenderer>(sp => sp.GetRequiredService<CSharpCodeRenderer>());
-        
-        // Model Format Renderers
-        services.AddSingleton<ClassModelRenderer>();
-        services.AddSingleton<RecordModelRenderer>();
-        services.AddSingleton<IModelFormatRenderer>(sp => sp.GetRequiredService<ClassModelRenderer>());
-        services.AddSingleton<IModelFormatRenderer>(sp => sp.GetRequiredService<RecordModelRenderer>());
-        
-        // Enum Format Renderers
-        services.AddSingleton<CSharpEnumRenderer>();
-        services.AddSingleton<IEnumFormatRenderer>(sp => sp.GetRequiredService<CSharpEnumRenderer>());
+        // Старые рендеры удалены - теперь используется IR → AST → Code pipeline
+        // ClassModelRenderer, RecordModelRenderer, CSharpEnumRenderer больше не нужны
         
         return services;
     }
