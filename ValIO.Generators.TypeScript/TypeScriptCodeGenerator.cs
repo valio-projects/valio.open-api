@@ -5,6 +5,10 @@ using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Models;
 using System.Text;
+using ValIO.Core.IR;
+using ValIO.Core.IR.Builders;
+using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.Renderers;
 
 namespace ValIO.Generators.TypeScript;
 
@@ -1157,4 +1161,64 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     }
 
     // Метод EnsureTemplatesPreloadedAsync удален - шаблоны больше не используются
+    
+    // Новые методы с использованием IR → AST → Code pipeline
+    
+    /// <summary>
+    /// Генерирует код используя новый IR → AST → Code pipeline
+    /// </summary>
+    private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config)
+    {
+        var files = new Dictionary<string, string>();
+        
+        // 1. OpenAPI → IR
+        var schemaResolver = new SchemaResolver(document);
+        var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
+        var irDocument = irBuilder.BuildFromOpenApi(document);
+        
+        // 2. IR → AST
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper);
+        var sourceFiles = astBuilder.BuildSourceFiles(irDocument, config.ImportPath);
+        
+        // 3. AST → Code
+        var astRenderer = new TypeScriptAstRenderer();
+        
+        foreach (var sourceFile in sourceFiles)
+        {
+            var code = astRenderer.Render(sourceFile);
+            
+            // Определяем имя файла на основе содержимого SourceFile
+            var fileName = DetermineFileName(sourceFile, config);
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
+            
+            files[filePath] = code;
+        }
+        
+        return files;
+    }
+    
+    /// <summary>
+    /// Определяет имя файла на основе SourceFile
+    /// </summary>
+    private string DetermineFileName(SourceFileNode sourceFile, GenerationConfiguration config)
+    {
+        // Ищем первую декларацию для определения имени файла
+        foreach (var declaration in sourceFile.Declarations)
+        {
+            if (declaration is InterfaceDeclarationNode interfaceNode)
+            {
+                return $"{GetModelFileNameInternal(interfaceNode.Name.Name)}.ts";
+            }
+            if (declaration is TypeAliasDeclarationNode typeAliasNode)
+            {
+                return $"{GetModelFileNameInternal(typeAliasNode.Name.Name)}.ts";
+            }
+            if (declaration is FunctionDeclarationNode functionNode)
+            {
+                return $"{GetModelFileNameInternal(functionNode.Name.Name)}.ts";
+            }
+        }
+        
+        return "generated.ts";
+    }
 }
