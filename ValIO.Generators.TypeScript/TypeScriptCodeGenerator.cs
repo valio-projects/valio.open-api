@@ -1040,6 +1040,13 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         {
             sb.Append(_queryWrapperRenderer.RenderMutationImports());
         }
+        
+        // Добавляем импорт AxiosInstance, если используется Axios
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            sb.AppendLine("import type { AxiosInstance } from 'axios';");
+            sb.AppendLine();
+        }
 
         // Определяем путь к axios файлу для импорта методов клиента
         var axiosFileName = $"{NamingConverter.ToCamelCase(groupName)}.axios";
