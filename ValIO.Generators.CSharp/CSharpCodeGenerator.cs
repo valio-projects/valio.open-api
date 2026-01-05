@@ -185,7 +185,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         var irDocument = irBuilder.BuildFromOpenApi(document);
         
             // 2. IR → AST
-            var astBuilder = new CSharpAstBuilder(NamingConverter, TypeMapper); // TypeMapper передается для совместимости, но не используется
+            var astBuilder = new CSharpAstBuilder(NamingConverter);
             var compilationUnits = astBuilder.BuildCompilationUnits(irDocument, config.Namespace);
         
         // 3. AST → Code

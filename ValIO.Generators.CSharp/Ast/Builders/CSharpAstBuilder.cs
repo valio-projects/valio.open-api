@@ -19,10 +19,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     
-    public CSharpAstBuilder(INamingConverter namingConverter, ITypeMapper typeMapper)
+    public CSharpAstBuilder(INamingConverter namingConverter)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        // typeMapper параметр оставлен для совместимости, но не используется в новом IR → AST pipeline
     }
     
     public NamespaceDeclarationNode BuildNamespace(string name, IReadOnlyList<DeclarationNode> declarations)
