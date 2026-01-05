@@ -20,8 +20,6 @@ namespace ValIO.Generators.TypeScript;
 public class TypeScriptCodeGenerator : BaseCodeGenerator
 {
     private readonly TypeScriptTypeMapper _typescriptTypeMapper;
-    [Obsolete("Используйте новый IR → AST → Code pipeline через GenerateCodeFromIr")]
-    private readonly TypeScriptCodeRenderer _codeRenderer;
     private readonly ILoggerFactory _loggerFactory;
     private readonly IQueryWrapperRenderer? _queryWrapperRenderer;
     private readonly IModelFormatRenderer? _zodModelRenderer;
@@ -39,7 +37,6 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.TypeScript)
     {
         _typescriptTypeMapper = typeMapper as TypeScriptTypeMapper ?? throw new InvalidOperationException("TypeMapper must be TypeScriptTypeMapper");
-        _codeRenderer = new TypeScriptCodeRenderer(namingConverter);
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _queryWrapperRenderer = queryWrapperRenderer;
         _zodModelRenderer = zodModelRenderer;
@@ -111,98 +108,24 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 return result;
             }
 
-            // TODO: Миграция на новый IR → AST → Code pipeline
-            // Сейчас используется старый подход с TemplateData и TypeScriptCodeRenderer
-            // В будущем нужно заменить на GenerateCodeFromIr(document, config)
-            // См. метод GenerateCodeFromIr для примера использования нового pipeline
+            Logger.LogInformation("Starting TypeScript code generation using IR → AST → Code pipeline");
 
-            Logger.LogInformation("Starting TypeScript code generation");
-
-            // Инициализируем кэши
-            InitializeCaches();
-
-            // Предзаполняем кэш операций для быстрого поиска
-            BuildOperationCache(document);
-
-            // Извлекаем данные из OpenAPI документа
-            var extractedData = ExtractData(document);
-
-            // Валидируем извлеченные данные
-            ValidateExtractedData(extractedData, config, result);
-
-            var modelTemplateDataList = extractedData.Models;
-            var operationTemplateDataList = extractedData.Operations;
-            var enumTemplateDataList = extractedData.Enums;
-            var schemaResolver = extractedData.SchemaResolver;
-
-            // Получаем TypeScript опции
-            var typescriptOptions = GetTypeScriptOptions(config);
-
-            // Генерируем файлы
+            // Используем новый IR → AST → Code pipeline
             var generatedFiles = new Dictionary<string, string>();
             var generationErrors = new List<string>();
             var generationWarnings = new List<string>();
 
-            // Унифицированная генерация моделей и enum через один processor с несколькими renderers
-            if (config.GenerateModels || config.GenerateEnums)
+            try
             {
-                try
+                var files = GenerateCodeFromIr(document, config);
+                foreach (var file in files)
                 {
-                    var unifiedFiles = await GenerateModelsAndEnumsUnifiedAsync(
-                        modelTemplateDataList.Cast<IModelTemplateData>().ToList(), 
-                        enumTemplateDataList.Cast<IEnumTemplateData>().ToList(), 
-                        document, 
-                        schemaResolver, 
-                        config, 
-                        typescriptOptions);
-
-                    foreach (var file in unifiedFiles)
-                    {
-                        generatedFiles[file.Key] = file.Value;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    HandleGenerationError(ex, "models and enums", generationErrors,
-                        modelTemplateDataList.Count + enumTemplateDataList.Count);
+                    generatedFiles[file.Key] = file.Value;
                 }
             }
-
-            if (config.GenerateClients)
+            catch (Exception ex)
             {
-                try
-                {
-                    // Всегда генерируем базовые клиенты (axios или fetch) в отдельные файлы
-                    var clientFiles = GenerateClients(operationTemplateDataList, config, typescriptOptions);
-                    foreach (var file in clientFiles)
-                    {
-                        generatedFiles[file.Key] = file.Value;
-                    }
-
-                    // Если UseTanStackQuery = true и renderer доступен, генерируем TanStack Query хуки
-                    if (typescriptOptions.UseTanStackQuery && _queryWrapperRenderer != null)
-                    {
-                        try
-                        {
-                            var queryFiles = await GenerateTanStackQueryHooksAsync(operationTemplateDataList, config, typescriptOptions);
-                            foreach (var file in queryFiles)
-                            {
-                                generatedFiles[file.Key] = file.Value;
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Logger.LogError(ex, "Failed to generate TanStack Query hooks");
-                            var errors = result.Errors.ToList();
-                            errors.Add($"Failed to generate TanStack Query hooks: {ex.Message}");
-                            result.Errors = errors;
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    HandleGenerationError(ex, "clients", generationErrors, operationTemplateDataList.Count);
-                }
+                HandleGenerationError(ex, "code generation", generationErrors, 0);
             }
 
             // Добавляем ошибки генерации

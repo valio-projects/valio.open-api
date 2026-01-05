@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Interfaces;

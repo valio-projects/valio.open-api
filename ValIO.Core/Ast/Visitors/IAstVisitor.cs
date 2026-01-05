@@ -11,71 +11,31 @@ namespace ValIO.Core.Ast.Visitors;
 /// Объединяет все интерфейсы визиторов для поддержки всех типов узлов
 /// Используется узлами AST в методе Accept для диспетчеризации
 /// </summary>
+/// <remarks>
+/// Наследует все базовые методы из IBaseAstVisitor.
+/// Добавляет только методы для диспетчеризации и специфичные узлы.
+/// </remarks>
 public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
     /// <summary>
-    /// Посещает узел (диспетчеризация по типу)
-    /// </summary>
-    TResult Visit(AstNode node);
-    
-    /// <summary>
-    /// Посещает объявление
+    /// Посещает объявление (диспетчеризация по типу)
     /// </summary>
     TResult VisitDeclaration(DeclarationNode node);
     
     /// <summary>
-    /// Посещает тип
+    /// Посещает тип (диспетчеризация по типу)
     /// </summary>
     TResult VisitType(TypeNode node);
     
     /// <summary>
-    /// Посещает выражение
+    /// Посещает выражение (диспетчеризация по типу)
     /// </summary>
     TResult VisitExpression(ExpressionNode node);
     
     /// <summary>
-    /// Посещает statement
+    /// Посещает statement (диспетчеризация по типу)
     /// </summary>
     TResult VisitStatement(StatementNode node);
-    
-    // Базовые узлы
-    TResult VisitIdentifier(IdentifierNode node);
-    TResult VisitComment(CommentNode node);
-    TResult VisitAttribute(AttributeNode node);
-    TResult VisitBlock(BlockNode node);
-    TResult VisitImport(ImportNode node);
-    TResult VisitExport(ExportNode node);
-    
-    // Типы
-    TResult VisitSimpleType(SimpleTypeNode node);
-    TResult VisitGenericType(GenericTypeNode node);
-    TResult VisitNullableType(NullableTypeNode node);
-    TResult VisitOptionalType(OptionalTypeNode node);
-    TResult VisitArrayType(ArrayTypeNode node);
-    TResult VisitUnionType(UnionTypeNode node);
-    TResult VisitIntersectionType(IntersectionTypeNode node);
-    TResult VisitDictionaryType(DictionaryTypeNode node);
-    
-    // Выражения
-    TResult VisitLiteralExpression(LiteralExpressionNode node);
-    TResult VisitIdentifierExpression(IdentifierExpressionNode node);
-    TResult VisitCallExpression(CallExpressionNode node);
-    TResult VisitMemberAccessExpression(MemberAccessExpressionNode node);
-    TResult VisitBinaryExpression(BinaryExpressionNode node);
-    TResult VisitConditionalExpression(ConditionalExpressionNode node);
-    
-    // Statements
-    TResult VisitReturnStatement(ReturnStatementNode node);
-    TResult VisitIfStatement(IfStatementNode node);
-    TResult VisitForEachStatement(ForEachStatementNode node);
-    TResult VisitExpressionStatement(ExpressionStatementNode node);
-    
-    // Объявления
-    TResult VisitTypeDeclaration(TypeDeclarationNode node);
-    TResult VisitPropertyDeclaration(PropertyDeclarationNode node);
-    TResult VisitMethodDeclaration(MethodDeclarationNode node);
-    TResult VisitParameterDeclaration(ParameterDeclarationNode node);
-    TResult VisitEnumMemberDeclaration(EnumMemberDeclarationNode node);
     
     // C# специфичные узлы
     TResult VisitCompilationUnit(CompilationUnitNode node);

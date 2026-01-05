@@ -20,8 +20,6 @@ namespace ValIO.Generators.CSharp;
 public class CSharpCodeGenerator : BaseCodeGenerator
 {
     private readonly CSharpTypeMapper _csharpTypeMapper;
-    [Obsolete("Используйте новый IR → AST → Code pipeline через GenerateCodeFromIr")]
-    private readonly CSharpCodeRenderer _codeRenderer;
 
     public CSharpCodeGenerator(
         ITypeMapper typeMapper,
@@ -31,7 +29,6 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.CSharp)
     {
         _csharpTypeMapper = typeMapper as CSharpTypeMapper ?? throw new InvalidOperationException("TypeMapper must be CSharpTypeMapper");
-        _codeRenderer = new CSharpCodeRenderer();
     }
 
     /// <summary>
@@ -98,80 +95,24 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 return result;
             }
 
-            // TODO: Миграция на новый IR → AST → Code pipeline
-            // Сейчас используется старый подход с TemplateData и CSharpCodeRenderer
-            // В будущем нужно заменить на GenerateCodeFromIr(document, config)
-            // См. метод GenerateCodeFromIr для примера использования нового pipeline
+            Logger.LogInformation("Starting C# code generation using IR → AST → Code pipeline");
 
-            Logger.LogInformation("Starting C# code generation");
-
-            // Инициализируем кэши
-            InitializeCaches();
-            
-            // Предзаполняем кэш операций для быстрого поиска
-            BuildOperationCache(document);
-
-            // Извлекаем данные из OpenAPI документа
-            var extractedData = ExtractData(document);
-            
-            // Валидируем извлеченные данные
-            ValidateExtractedData(extractedData, config, result);
-            
-            var modelTemplateDataList = extractedData.Models;
-            var operationTemplateDataList = extractedData.Operations;
-            var enumTemplateDataList = extractedData.Enums;
-
-            // Генерируем файлы
+            // Используем новый IR → AST → Code pipeline
             var generatedFiles = new Dictionary<string, string>();
             var generationErrors = new List<string>();
             var generationWarnings = new List<string>();
 
-            if (config.GenerateEnums)
+            try
             {
-                try
+                var files = GenerateCodeFromIr(document, config);
+                foreach (var file in files)
                 {
-                    var enumFiles = GenerateEnums(enumTemplateDataList, config);
-                    foreach (var file in enumFiles)
-                    {
-                        generatedFiles[file.Key] = file.Value;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    HandleGenerationError(ex, "enums", generationErrors, enumTemplateDataList.Count);
+                    generatedFiles[file.Key] = file.Value;
                 }
             }
-
-            if (config.GenerateModels)
+            catch (Exception ex)
             {
-                try
-                {
-                    var modelFiles = GenerateModels(modelTemplateDataList, config);
-                    foreach (var file in modelFiles)
-                    {
-                        generatedFiles[file.Key] = file.Value;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    HandleGenerationError(ex, "models", generationErrors, modelTemplateDataList.Count);
-                }
-            }
-
-            if (config.GenerateClients)
-            {
-                try
-                {
-                    var clientFiles = GenerateClients(operationTemplateDataList, config);
-                    foreach (var file in clientFiles)
-                    {
-                        generatedFiles[file.Key] = file.Value;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    HandleGenerationError(ex, "clients", generationErrors, operationTemplateDataList.Count);
-                }
+                HandleGenerationError(ex, "code generation", generationErrors, 0);
             }
 
             // Добавляем ошибки генерации
