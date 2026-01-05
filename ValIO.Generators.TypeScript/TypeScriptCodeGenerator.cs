@@ -976,6 +976,12 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             Options = clientOptions
         };
 
+        // TODO: Заменить на новый IR → AST → Code pipeline
+        // Вместо использования старого рендерера, нужно использовать:
+        // 1. IrBuilder для создания IR из OpenAPI
+        // 2. TypeScriptAstBuilder для создания AST из IR
+        // 3. TypeScriptAstRenderer для рендеринга AST в код
+        // См. метод GenerateCodeFromIr для примера
         // Передаем интерфейс IClientTemplateData в renderer (без каста)
         return _codeRenderer.RenderClient(templateData);
     }

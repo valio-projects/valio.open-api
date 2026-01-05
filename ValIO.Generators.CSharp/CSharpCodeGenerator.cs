@@ -654,6 +654,12 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         // Приводим к базовому типу для дальнейшего использования
         var baseTemplateData = (Core.Models.TemplateData.ModelTemplateData)(object)templateData;
 
+        // TODO: Заменить на новый IR → AST → Code pipeline
+        // Вместо использования старого рендерера, нужно использовать:
+        // 1. IrBuilder для создания IR из OpenAPI
+        // 2. CSharpAstBuilder для создания AST из IR
+        // 3. CSharpAstRenderer для рендеринга AST в код
+        // См. метод GenerateCodeFromIr для примера
         return _codeRenderer.RenderModel(baseTemplateData);
     }
 
@@ -855,6 +861,12 @@ public class ValioHttpRequestException : HttpRequestException
             Options = new CSharpClientTemplateDataOptions()
         };
 
+        // TODO: Заменить на новый IR → AST → Code pipeline
+        // Вместо использования старого рендерера, нужно использовать:
+        // 1. IrBuilder для создания IR из OpenAPI
+        // 2. CSharpAstBuilder для создания AST из IR
+        // 3. CSharpAstRenderer для рендеринга AST в код
+        // См. метод GenerateCodeFromIr для примера
         return _codeRenderer.RenderClient(templateData);
     }
     
