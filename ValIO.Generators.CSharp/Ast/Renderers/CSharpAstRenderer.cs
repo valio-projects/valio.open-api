@@ -70,7 +70,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         _sb.Clear();
         _indentLevel = 0;
         
-        CodeFormatter.AppendLine(_sb, _indentLevel, $"namespace {node.Name.Value};");
+        CodeFormatter.AppendLine(_sb, _indentLevel, $"namespace {node.Name.Name};");
         CodeFormatter.AppendEmptyLine(_sb);
         
         foreach (var declaration in node.Declarations)
@@ -206,7 +206,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public string Render(UsingDirectiveNode node)
     {
         var sb = new StringBuilder();
-        CodeFormatter.AppendLine(sb, 0, $"using {node.Namespace.Value};");
+        CodeFormatter.AppendLine(sb, 0, $"using {node.Namespace.Name};");
         return sb.ToString();
     }
 
@@ -288,7 +288,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitSimpleType(SimpleTypeNode node)
     {
-        return node.Name.Value;
+        return node.Name.Name;
     }
 
     public override string VisitNullableType(NullableTypeNode node)
@@ -304,7 +304,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitGenericType(GenericTypeNode node)
     {
         var typeArgs = string.Join(", ", node.TypeArguments.Select(RenderType));
-        return $"{node.Name.Value}<{typeArgs}>";
+        return $"{node.Name.Name}<{typeArgs}>";
     }
 
     public override string VisitLiteralExpression(LiteralExpressionNode node)
@@ -314,7 +314,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitIdentifierExpression(IdentifierExpressionNode node)
     {
-        return node.Identifier.Value;
+        return node.Identifier.Name;
     }
 
     public override string VisitCallExpression(CallExpressionNode node)
@@ -414,7 +414,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var classModifiers = GetClassModifiers(node);
         var modifiers = RenderModifiers(node.AccessModifier, classModifiers);
         var baseTypes = RenderBaseTypes(node.BaseTypes);
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}class {node.Name.Value}{baseTypes}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}class {node.Name.Name}{baseTypes}");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
         
         // Члены класса
@@ -444,7 +444,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var primaryParams = node.PrimaryConstructorParameters.Count > 0 
             ? $"({string.Join(", ", node.PrimaryConstructorParameters.Select(p => VisitParameterDeclaration(p)))})" 
             : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{recordKeyword} {node.Name.Value}{primaryParams}{baseTypes}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{recordKeyword} {node.Name.Name}{primaryParams}{baseTypes}");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
         
         // Члены record
@@ -470,7 +470,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Модификаторы и объявление struct
         var modifiers = RenderModifiers(node.AccessModifier);
         var baseTypes = RenderBaseTypes(node.BaseTypes);
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}struct {node.Name.Value}{baseTypes}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}struct {node.Name.Name}{baseTypes}");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
         
         // Члены struct
@@ -496,7 +496,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Модификаторы и объявление interface
         var modifiers = RenderModifiers(node.AccessModifier);
         var baseTypes = RenderBaseTypes(node.BaseTypes);
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}interface {node.Name.Value}{baseTypes}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}interface {node.Name.Name}{baseTypes}");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
         
         // Члены interface
@@ -519,7 +519,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Модификаторы и объявление enum
         var modifiers = RenderModifiers(node.AccessModifier);
         var underlyingType = node.UnderlyingType != null ? $" : {RenderType(node.UnderlyingType)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}enum {node.Name.Value}{underlyingType}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}enum {node.Name.Name}{underlyingType}");
         CodeFormatter.AppendLine(sb, indentLevel, "{");
         
         // Члены enum
@@ -556,7 +556,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             PropertyAccessorKind.GetInit => " { get; init; }",
             _ => " { get; set; }"
         };
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Value}{accessor}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{accessor}");
     }
 
     private void RenderMethod(StringBuilder sb, MethodDeclarationNode node, int indentLevel)
@@ -564,7 +564,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // XML комментарий
         if (node.Documentation != null)
         {
-            var parameters = node.Parameters.Select(p => (p.Name.Value, p.Documentation?.Text)).ToList();
+            var parameters = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
             CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, parameters, null);
         }
         
@@ -576,7 +576,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var returnType = node.ReturnType != null ? $"{RenderType(node.ReturnType)} " : "";
         var parameters = string.Join(", ", node.Parameters.Select(p => VisitParameterDeclaration(p)));
         var asyncKeyword = node.IsAsync ? "async " : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{asyncKeyword}{returnType}{node.Name.Value}({parameters})");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{asyncKeyword}{returnType}{node.Name.Name}({parameters})");
         
         // Тело метода
         if (node.Body != null && node.Body.Count > 0)
@@ -614,7 +614,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var modifiers = RenderModifiers(node.AccessModifier);
         var type = RenderType(node.Type);
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Value}{initializer};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{initializer};");
     }
 
     private void RenderConstructor(StringBuilder sb, ConstructorDeclarationNode node, int indentLevel)
@@ -622,7 +622,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // XML комментарий
         if (node.Documentation != null)
         {
-            var parameters = node.Parameters.Select(p => (p.Name.Value, p.Documentation?.Text)).ToList();
+            var parameters = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
             CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, parameters, null);
         }
         
@@ -632,7 +632,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Модификаторы и объявление конструктора
         var modifiers = RenderModifiers(node.AccessModifier);
         var parameters = string.Join(", ", node.Parameters.Select(p => VisitParameterDeclaration(p)));
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{node.Name.Value}({parameters})");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{node.Name.Name}({parameters})");
         
         // Тело конструктора
         if (node.Body != null && node.Body.Count > 0)
@@ -666,7 +666,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         };
         var type = RenderType(node.Type);
         var defaultValue = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        sb.Append($"{modifiers}{type} {node.Name.Value}{defaultValue}");
+        sb.Append($"{modifiers}{type} {node.Name.Name}{defaultValue}");
     }
 
     private string VisitParameterDeclaration(ParameterDeclarationNode node)
@@ -686,7 +686,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         
         // Значение enum
         var value = node.Value != null ? $" = {Visit(node.Value)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Value}{value}{comma ?? ""}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Name}{value}{comma ?? ""}");
     }
 
     private void RenderMember(StringBuilder sb, MemberDeclarationNode member, int indentLevel)
@@ -722,7 +722,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         foreach (var attr in attributes)
         {
             var args = attr.Arguments.Count > 0 ? $"({string.Join(", ", attr.Arguments.Select(Visit))})" : "";
-            CodeFormatter.AppendLine(sb, indentLevel, $"[{attr.Name.Value}{args}]");
+            CodeFormatter.AppendLine(sb, indentLevel, $"[{attr.Name.Name}{args}]");
         }
     }
 
