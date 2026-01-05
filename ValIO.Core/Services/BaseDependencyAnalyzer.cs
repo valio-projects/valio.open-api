@@ -128,7 +128,7 @@ public abstract class BaseDependencyAnalyzer : IDependencyAnalyzer
         if (!typeInfo.IsPrimitive && typeInfo.BaseType != "void" && !string.IsNullOrEmpty(typeInfo.BaseType))
         {
             // Проверяем, не является ли это встроенным типом языка
-            if (!IsBuiltInType(typeInfo.BaseType, typeInfo.Language ?? Language))
+            if (!IsBuiltInType(typeInfo))
             {
                 dependencies.Add(typeInfo.BaseType);
             }
@@ -261,4 +261,26 @@ public abstract class BaseDependencyAnalyzer : IDependencyAnalyzer
     /// Проверяет, является ли тип встроенным типом языка
     /// </summary>
     public abstract bool IsBuiltInType(string typeName, GenerationLanguage language);
+    
+    /// <summary>
+    /// Проверяет, является ли тип встроенным типом языка на основе TypeInfo
+    /// </summary>
+    public bool IsBuiltInType(TypeInfo typeInfo)
+    {
+        if (typeInfo == null)
+            return true;
+        
+        // Примитивные типы всегда встроенные
+        if (typeInfo.IsPrimitive)
+            return true;
+        
+        // Коллекции и словари - встроенные типы, если их базовый тип встроенный
+        if (typeInfo.IsCollection || typeInfo.IsDictionary)
+        {
+            return IsBuiltInType(typeInfo.BaseType, typeInfo.Language ?? Language);
+        }
+        
+        // Для остальных типов проверяем BaseType
+        return IsBuiltInType(typeInfo.BaseType, typeInfo.Language ?? Language);
+    }
 }

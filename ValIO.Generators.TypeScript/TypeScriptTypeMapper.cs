@@ -248,26 +248,29 @@ public class TypeScriptTypeMapper : BaseTypeMapper
                     return objectTypeInfo;
                 }
                 
-                // Если имя не найдено, используем Record<string, any>
-                var recordType = TypeInfo.Simple("Record<string, any>", language: Language);
-                recordType.IsNullable = isNullable;
-                recordType.IsOptional = isNullable;
-                return recordType;
+                // Если имя не найдено, это inline объект с Properties - создаем словарь Record<string, any>
+                var inlineValueType = TypeInfo.Simple("any", isPrimitive: true, language: Language);
+                var inlineKeyType = TypeInfo.Simple("string", isPrimitive: true, language: Language);
+                var inlineDictType = CreateDictionaryTypeInfo(inlineKeyType, inlineValueType, isNullable);
+                inlineDictType.IsOptional = isNullable;
+                return inlineDictType;
             }
 
             if (IsDictionary(schema))
             {
-                var valueTypeInfo = schema.AdditionalProperties != null
+                var dictValueType = schema.AdditionalProperties != null
                     ? MapTypeInfoInternal(schema.AdditionalProperties, schemaResolver, false)
                     : TypeInfo.Simple("any", isPrimitive: true, language: Language);
-                var keyTypeInfo = TypeInfo.Simple("string", isPrimitive: true, language: Language);
-                var dictType = CreateDictionaryTypeInfo(keyTypeInfo, valueTypeInfo, isNullable);
+                var dictKeyType = TypeInfo.Simple("string", isPrimitive: true, language: Language);
+                var dictType = CreateDictionaryTypeInfo(dictKeyType, dictValueType, isNullable);
                 dictType.IsOptional = isNullable;
                 return dictType;
             }
 
-            var defaultObjectType = TypeInfo.Simple("Record<string, any>", language: Language);
-            defaultObjectType.IsNullable = isNullable;
+            // Для объекта без Properties создаем словарь Record<string, any>
+            var defaultValueType = TypeInfo.Simple("any", isPrimitive: true, language: Language);
+            var defaultKeyType = TypeInfo.Simple("string", isPrimitive: true, language: Language);
+            var defaultObjectType = CreateDictionaryTypeInfo(defaultKeyType, defaultValueType, isNullable);
             defaultObjectType.IsOptional = isNullable;
             return defaultObjectType;
         }
@@ -336,7 +339,15 @@ public class TypeScriptTypeMapper : BaseTypeMapper
     /// </summary>
     protected override TypeInfo CreateObjectTypeInfo(string? typeName, bool isNullable)
     {
-        var typeInfo = TypeInfo.Simple(typeName ?? "Record<string, any>", language: Language);
+        if (string.IsNullOrEmpty(typeName))
+        {
+            // Для объекта без имени создаем словарь Record<string, any>
+            var valueTypeInfo = TypeInfo.Simple("any", isPrimitive: true, language: Language);
+            var keyTypeInfo = TypeInfo.Simple("string", isPrimitive: true, language: Language);
+            return CreateDictionaryTypeInfo(keyTypeInfo, valueTypeInfo, isNullable);
+        }
+        
+        var typeInfo = TypeInfo.Simple(typeName, language: Language);
         typeInfo.IsNullable = isNullable;
         return typeInfo;
     }

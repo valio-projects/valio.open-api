@@ -50,4 +50,9 @@ public interface IDependencyAnalyzer
     /// Проверяет, является ли тип встроенным типом языка
     /// </summary>
     bool IsBuiltInType(string typeName, GenerationLanguage language);
+    
+    /// <summary>
+    /// Проверяет, является ли тип встроенным типом языка на основе TypeInfo
+    /// </summary>
+    bool IsBuiltInType(TypeInfo typeInfo);
 }
