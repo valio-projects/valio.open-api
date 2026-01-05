@@ -1,4 +1,5 @@
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Generators.TypeScript.Ast.Visitors;
