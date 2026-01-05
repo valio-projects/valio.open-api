@@ -99,4 +99,14 @@ public interface ICSharpAstBuilder
     /// Строит EnumDeclarationNode из IrEnum
     /// </summary>
     EnumDeclarationNode BuildEnum(IrEnum enumModel);
+    
+    /// <summary>
+    /// Строит MethodDeclarationNode из IrOperation
+    /// </summary>
+    MethodDeclarationNode BuildMethod(IrOperation operation);
+    
+    /// <summary>
+    /// Строит CompilationUnit из IrClient
+    /// </summary>
+    CompilationUnitNode BuildCompilationUnit(IrClient client, string? @namespace = null);
 }
