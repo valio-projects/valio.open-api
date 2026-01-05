@@ -28,6 +28,9 @@ public class IrBuilder
     /// </summary>
     public IrDocument BuildFromOpenApi(OpenApiDocument document)
     {
+        if (document == null)
+            throw new ArgumentNullException(nameof(document));
+        
         var models = ExtractModels(document);
         var enums = ExtractEnums(document);
         var clients = ExtractClients(document);
@@ -231,8 +234,16 @@ public class IrBuilder
     /// </summary>
     private IrType BuildType(IOpenApiSchema schema, OpenApiDocument document)
     {
+        if (schema == null)
+            throw new ArgumentNullException(nameof(schema));
+        if (document == null)
+            throw new ArgumentNullException(nameof(document));
+        
         // Разрешаем ссылки
         var resolvedSchema = _schemaResolver.ResolveSchema(schema, document);
+        
+        if (resolvedSchema == null)
+            throw new InvalidOperationException("Schema resolver returned null schema");
         
         // Примитивные типы
         if (IsPrimitive(resolvedSchema))
@@ -244,8 +255,11 @@ public class IrBuilder
         }
         
         // Массив
-        if (resolvedSchema.Type == "array" && resolvedSchema.Items != null)
+        if (resolvedSchema.Type == "array")
         {
+            if (resolvedSchema.Items == null)
+                throw new InvalidOperationException("Array schema must have Items property");
+            
             var elementType = BuildType(resolvedSchema.Items, document);
             return new IrArrayType { ElementType = elementType };
         }
