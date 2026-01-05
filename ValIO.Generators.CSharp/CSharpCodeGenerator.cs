@@ -10,6 +10,7 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Builders;
 using ValIO.Generators.CSharp.Ast.Builders;
 using ValIO.Generators.CSharp.Ast.Renderers;
+using ValIO.Generators.CSharp.Ast.Nodes;
 
 namespace ValIO.Generators.CSharp;
 

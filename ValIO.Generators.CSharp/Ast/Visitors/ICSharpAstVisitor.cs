@@ -1,5 +1,6 @@
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Generators.CSharp.Ast.Nodes;
 
 namespace ValIO.Generators.CSharp.Ast.Visitors;
 

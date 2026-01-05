@@ -3,6 +3,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Generators.CSharp.Ast.Nodes;
 
 namespace ValIO.Generators.CSharp.Ast.Builders;
 

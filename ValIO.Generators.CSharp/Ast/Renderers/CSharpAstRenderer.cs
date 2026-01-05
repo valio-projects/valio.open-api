@@ -7,6 +7,7 @@ using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
+using ValIO.Generators.CSharp.Ast.Nodes;
 using ValIO.Generators.CSharp.Ast.Visitors;
 
 namespace ValIO.Generators.CSharp.Ast.Renderers;
