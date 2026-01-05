@@ -598,4 +598,174 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             _ => TypeInfo.Simple("object")
         };
     }
+    
+    /// <summary>
+    /// Строит MethodDeclarationNode из IrOperation
+    /// </summary>
+    public MethodDeclarationNode BuildMethod(IrOperation operation)
+    {
+        var name = new IdentifierNode(operation.MethodName);
+        
+        // Определяем тип возвращаемого значения из responses
+        var returnType = ExtractReturnType(operation.Responses);
+        
+        var comment = !string.IsNullOrEmpty(operation.Description)
+            ? new CommentNode(operation.Description, CommentKind.XmlDoc)
+            : !string.IsNullOrEmpty(operation.Summary)
+                ? new CommentNode(operation.Summary, CommentKind.XmlDoc)
+                : null;
+        
+        var parameters = BuildMethodParameters(operation);
+        var body = BuildMethodBody(operation);
+        
+        return new MethodDeclarationNode(
+            name: name,
+            returnType: returnType,
+            parameters: parameters,
+            body: body,
+            accessModifier: AccessModifier.Public,
+            isAsync: true,
+            isStatic: false,
+            documentation: comment);
+    }
+    
+    /// <summary>
+    /// Строит CompilationUnit из IrClient
+    /// </summary>
+    public CompilationUnitNode BuildCompilationUnit(IrClient client, string? @namespace = null)
+    {
+        var usings = BuildUsingDirectives(ExtractDependencies(client));
+        var classNode = BuildClientClass(client);
+        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)classNode }.ToList());
+        
+        return new CompilationUnitNode(
+            usings: usings,
+            namespaces: new[] { namespaceNode }.ToImmutableList(),
+            declarations: ImmutableList<DeclarationNode>.Empty);
+    }
+    
+    // Приватные вспомогательные методы для IR операций
+    
+    private IReadOnlyList<ParameterDeclarationNode> BuildMethodParameters(IrOperation operation)
+    {
+        var parameters = new List<ParameterDeclarationNode>();
+        
+        // Path parameters
+        foreach (var param in operation.PathParameters)
+        {
+            var type = BuildType(param.Type);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode(param.Name),
+                type: type,
+                isRequired: true));
+        }
+        
+        // Query parameters
+        foreach (var param in operation.QueryParameters)
+        {
+            var type = BuildType(param.Type);
+            // В C# опциональные параметры делаются через nullable или default значения
+            var nullableType = param.IsRequired ? type : new NullableTypeNode(type);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode(param.Name),
+                type: nullableType,
+                isRequired: param.IsRequired));
+        }
+        
+        // Header parameters
+        foreach (var param in operation.HeaderParameters)
+        {
+            var type = BuildType(param.Type);
+            var nullableType = param.IsRequired ? type : new NullableTypeNode(type);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode(param.Name),
+                type: nullableType,
+                isRequired: param.IsRequired));
+        }
+        
+        // Request body
+        if (operation.RequestBody != null)
+        {
+            var bodyType = BuildType(operation.RequestBody.Type);
+            var nullableType = operation.RequestBody.IsRequired ? bodyType : new NullableTypeNode(bodyType);
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode("request"),
+                type: nullableType,
+                isRequired: operation.RequestBody.IsRequired));
+        }
+        
+        return parameters.ToImmutableList();
+    }
+    
+    private BlockNode? BuildMethodBody(IrOperation operation)
+    {
+        // TODO: Полная реализация построения тела метода с использованием HTTP узлов
+        // Пока возвращаем null для type-only метода
+        return null;
+    }
+    
+    private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
+    {
+        // Ищем первый успешный ответ (200-299)
+        var successResponse = responses.FirstOrDefault(r =>
+        {
+            if (int.TryParse(r.StatusCode, out var code))
+                return code >= 200 && code < 300;
+            return false;
+        });
+        
+        if (successResponse?.Type != null)
+        {
+            return BuildType(successResponse.Type);
+        }
+        
+        // Если нет успешного ответа, возвращаем Task (для async методов)
+        return new SimpleTypeNode(
+            name: new IdentifierNode("Task"),
+            isPrimitive: false,
+            isNullable: false,
+            isOptional: false);
+    }
+    
+    private ClassDeclarationNode BuildClientClass(IrClient client)
+    {
+        var name = new IdentifierNode(client.Name);
+        var methods = client.Operations.Select(BuildMethod).ToList<DeclarationNode>();
+        
+        return new ClassDeclarationNode(
+            name: name,
+            accessModifier: AccessModifier.Public,
+            members: methods.ToImmutableList());
+    }
+    
+    private IReadOnlyList<string> ExtractDependencies(IrClient client)
+    {
+        var dependencies = new HashSet<string>();
+        
+        foreach (var operation in client.Operations)
+        {
+            // Зависимости из параметров
+            foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+            {
+                ExtractDependenciesFromType(param.Type, dependencies);
+            }
+            
+            // Зависимости из request body
+            if (operation.RequestBody != null)
+            {
+                ExtractDependenciesFromType(operation.RequestBody.Type, dependencies);
+            }
+            
+            // Зависимости из responses
+            foreach (var response in operation.Responses)
+            {
+                if (response.Type != null)
+                {
+                    ExtractDependenciesFromType(response.Type, dependencies);
+                }
+            }
+        }
+        
+        return dependencies.ToList();
+    }
 }
