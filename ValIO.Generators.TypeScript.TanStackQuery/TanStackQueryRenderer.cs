@@ -191,9 +191,15 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         var keyArray = string.Join(", ", keyItems);
         
-        CodeFormatter.AppendLine(sb, 0, $"export const {queryKeyFunctionName} = ({functionParams}): QueryKey => [");
-        CodeFormatter.AppendLine(sb, 1, keyArray);
-        CodeFormatter.AppendLine(sb, 0, "];");
+        CodeFormatter.AppendLine(sb, 0, $"export const {queryKeyFunctionName} = (");
+        if (!string.IsNullOrEmpty(functionParams))
+        {
+            CodeFormatter.AppendLine(sb, 1, functionParams);
+        }
+        CodeFormatter.AppendLine(sb, 0, ") => {");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, $"return [{keyArray}];");
+        CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
     }
 
@@ -235,16 +241,19 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             CodeFormatter.AppendLine(sb, 1, "const { query: queryOptions, timeout } = options ?? {};");
         }
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyCall};");
+        CodeFormatter.AppendLine(sb, 1, $"const queryKey = queryOptions?.queryKey ?? {queryKeyCall};");
         CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}> = ({{ signal }}) => {{");
         CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({queryFnParams});");
         CodeFormatter.AppendLine(sb, 1, "};");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"return useQuery<{awaitedReturnTypeName}, TError, TData>({{");
+        CodeFormatter.AppendLine(sb, 1, $"const query = useQuery<{awaitedReturnTypeName}, TError, TData>({{");
         CodeFormatter.AppendLine(sb, 2, "queryKey,");
         CodeFormatter.AppendLine(sb, 2, "queryFn,");
+        CodeFormatter.AppendLine(sb, 2, "enabled: true,");
         CodeFormatter.AppendLine(sb, 2, "...queryOptions");
         CodeFormatter.AppendLine(sb, 1, "});");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, "return query;");
         CodeFormatter.AppendLine(sb, 0, "}");
         CodeFormatter.AppendEmptyLine(sb);
     }
@@ -271,7 +280,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         CodeFormatter.AppendLine(sb, 0, $"export const {helperName} = <TData = {awaitedReturnTypeName}, TError = {errorType}>(");
         CodeFormatter.AppendLine(sb, 1, functionParams);
-        CodeFormatter.AppendLine(sb, 0, $") : UseQueryOptions<{awaitedReturnTypeName}, TError, TData> & {{ queryKey: QueryKey }} => {{");
+        CodeFormatter.AppendLine(sb, 0, $") => {{");
         CodeFormatter.AppendEmptyLine(sb);
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
@@ -282,7 +291,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             CodeFormatter.AppendLine(sb, 1, "const { query: queryOptions, timeout } = options ?? {};");
         }
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyCall};");
+        CodeFormatter.AppendLine(sb, 1, $"const queryKey = queryOptions?.queryKey ?? {queryKeyCall};");
         CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}> = ({{ signal }}) => {{");
         CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({queryFnParams});");
         CodeFormatter.AppendLine(sb, 1, "};");
@@ -292,7 +301,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         CodeFormatter.AppendLine(sb, 2, "queryFn,");
         CodeFormatter.AppendLine(sb, 2, "enabled: true,");
         CodeFormatter.AppendLine(sb, 2, "...queryOptions");
-        CodeFormatter.AppendLine(sb, 1, "};");
+        CodeFormatter.AppendLine(sb, 1, $"}} as UseQueryOptions<{awaitedReturnTypeName}, TError, TData> & {{ queryKey: QueryKey }};");
         CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
     }
@@ -304,19 +313,228 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     {
         var errorType = "Error";
         var infiniteHookName = $"use{_namingConverter.ToPascalCase(functionName)}Infinite";
+        var infiniteQueryKeyFunctionName = $"get{_namingConverter.ToPascalCase(functionName)}InfiniteQueryKey";
+        var infiniteQueryOptionsFunctionName = $"get{_namingConverter.ToPascalCase(functionName)}InfiniteQueryOptions";
         var queryKeyFunctionName = $"get{_namingConverter.ToPascalCase(functionName)}QueryKey";
         
         // Генерируем имена типов на основе имени функции клиента
         var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
         var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
         
-        var functionParams = BuildQueryHookParameters(operation, awaitedReturnTypeName, options);
+        // Генерируем Infinite Query Key функцию
+        RenderInfiniteQueryKeyFunction(sb, operation, infiniteQueryKeyFunctionName, queryKeyFunctionName);
+        
+        // Генерируем Infinite Query Options функцию
+        RenderInfiniteQueryOptionsFunction(sb, operation, functionName, infiniteQueryKeyFunctionName, infiniteQueryOptionsFunctionName, clientMethodName, options);
+        
+        // Генерируем Infinite Query Hook
+        // Строим параметры с Partial<UseInfiniteQueryOptions>
+        var hookParameters = new List<string>();
+        
+        // Path параметры
+        foreach (var param in operation.PathParameters)
+        {
+            hookParameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
+        }
+        
+        // Query параметры
+        if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
+        {
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            hookParameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
+        }
+        else
+        {
+            foreach (var param in operation.QueryParameters)
+            {
+                var optional = param.IsRequired ? "" : "?";
+                hookParameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
+            }
+        }
+        
+        // Query options с Partial<UseInfiniteQueryOptions>
+        var optionsParamBuilder = new StringBuilder();
+        CodeFormatter.AppendLine(optionsParamBuilder, 0, "options?: {");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, $"query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, {errorType}, TData, QueryKey, unknown>>;");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, "timeout?: number;");
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            CodeFormatter.AppendLine(optionsParamBuilder, 1, "axiosInstance?: AxiosInstance;");
+        }
+        CodeFormatter.AppendLine(optionsParamBuilder, 0, "}");
+        hookParameters.Add(optionsParamBuilder.ToString().TrimEnd());
+        
+        var functionParams = string.Join(",\n", hookParameters);
         var queryKeyParamsStr = string.Join(", ", BuildQueryKeyParameters(operation));
+        
+        CodeFormatter.AppendLine(sb, 0, $"export const {infiniteHookName} = <");
+        CodeFormatter.AppendLine(sb, 1, $"TData = InfiniteData<{awaitedReturnTypeName}, unknown>,");
+        CodeFormatter.AppendLine(sb, 1, $"TError = {errorType},");
+        CodeFormatter.AppendLine(sb, 0, ">(");
+        // Добавляем параметры функции с правильным отступом
+        var infiniteHookParamsLines = functionParams.Split('\n');
+        foreach (var line in infiniteHookParamsLines)
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                CodeFormatter.AppendLine(sb, 1, line.TrimStart());
+            }
+        }
+        CodeFormatter.AppendLine(sb, 0, $") : UseInfiniteQueryResult<TData, TError> => {{");
+        CodeFormatter.AppendEmptyLine(sb);
+        
+        if (string.IsNullOrEmpty(queryKeyParamsStr))
+        {
+            CodeFormatter.AppendLine(sb, 1, $"const queryOptions = {infiniteQueryOptionsFunctionName}(options);");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, 1, $"const queryOptions = {infiniteQueryOptionsFunctionName}({queryKeyParamsStr}, options);");
+        }
+        CodeFormatter.AppendLine(sb, 1, "const query = useInfiniteQuery(queryOptions);");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, "return query;");
+        CodeFormatter.AppendLine(sb, 0, "};");
+        CodeFormatter.AppendEmptyLine(sb);
+    }
+    
+    /// <summary>
+    /// Рендерит infinite query key функцию
+    /// </summary>
+    private void RenderInfiniteQueryKeyFunction(StringBuilder sb, OperationTemplateData operation, string infiniteQueryKeyFunctionName, string queryKeyFunctionName)
+    {
+        // Собираем параметры для query key
+        var keyParams = new List<string>();
+        
+        // Path параметры всегда включены в query key
+        foreach (var param in operation.PathParameters)
+        {
+            keyParams.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
+        }
+        
+        // Query параметры также включены в query key
+        if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
+        {
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            keyParams.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
+        }
+        else
+        {
+            foreach (var param in operation.QueryParameters)
+            {
+                var optional = param.IsRequired ? "" : "?";
+                keyParams.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
+            }
+        }
+        
+        // Генерируем параметры функции
+        var functionParams = keyParams.Count > 0 ? string.Join(", ", keyParams) : "";
+        
+        // Генерируем query key массив (используем обычный query key, обернутый в 'infinite')
+        var keyItems = new List<string> { $"'{operation.Path}'" };
+        
+        // Добавляем path параметры в query key
+        foreach (var param in operation.PathParameters)
+        {
+            keyItems.Add(param.VariableName);
+        }
+        
+        // Добавляем query параметры в query key
+        if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
+        {
+            keyItems.Add("params");
+        }
+        else
+        {
+            foreach (var param in operation.QueryParameters)
+            {
+                keyItems.Add(param.VariableName);
+            }
+        }
+        
+        var keyArray = string.Join(", ", keyItems);
+        
+        CodeFormatter.AppendLine(sb, 0, $"export const {infiniteQueryKeyFunctionName} = (");
+        if (!string.IsNullOrEmpty(functionParams))
+        {
+            CodeFormatter.AppendLine(sb, 1, functionParams);
+        }
+        CodeFormatter.AppendLine(sb, 0, ") => {");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, $"return ['infinite', [{keyArray}]];");
+        CodeFormatter.AppendLine(sb, 0, "};");
+        CodeFormatter.AppendEmptyLine(sb);
+    }
+    
+    /// <summary>
+    /// Рендерит infinite query options функцию
+    /// </summary>
+    private void RenderInfiniteQueryOptionsFunction(StringBuilder sb, OperationTemplateData operation, string functionName, string infiniteQueryKeyFunctionName, string infiniteQueryOptionsFunctionName, string clientMethodName, TypeScriptGenerationOptions options)
+    {
+        var errorType = "Error";
+        
+        // Генерируем имена типов на основе имени функции клиента
+        var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
+        var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
+        
+        // Строим параметры с Partial<UseInfiniteQueryOptions>
+        var parameters = new List<string>();
+        
+        // Path параметры
+        foreach (var param in operation.PathParameters)
+        {
+            parameters.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName}");
+        }
+        
+        // Query параметры
+        if (operation.UseQueryParametersModel && !string.IsNullOrEmpty(operation.QueryParametersModelTypeName))
+        {
+            var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
+            var optional = hasRequiredParam ? "" : "?";
+            parameters.Add($"params{optional}: {operation.QueryParametersModelTypeName}");
+        }
+        else
+        {
+            foreach (var param in operation.QueryParameters)
+            {
+                var optional = param.IsRequired ? "" : "?";
+                parameters.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName}");
+            }
+        }
+        
+        // Query options с Partial<UseInfiniteQueryOptions>
+        var optionsParamBuilder = new StringBuilder();
+        CodeFormatter.AppendLine(optionsParamBuilder, 0, "options?: {");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, $"query?: Partial<UseInfiniteQueryOptions<{awaitedReturnTypeName}, {errorType}, TData, QueryKey, unknown>>;");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, "timeout?: number;");
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            CodeFormatter.AppendLine(optionsParamBuilder, 1, "axiosInstance?: AxiosInstance;");
+        }
+        CodeFormatter.AppendLine(optionsParamBuilder, 0, "}");
+        parameters.Add(optionsParamBuilder.ToString().TrimEnd());
+        
+        var functionParams = string.Join(",\n", parameters);
+        var queryKeyParams = BuildQueryKeyParameters(operation);
+        var queryKeyParamsStr = string.Join(", ", queryKeyParams);
         var infiniteQueryFnParams = BuildQueryFnClientMethodParameters(operation, clientMethodName, options);
         
-        CodeFormatter.AppendLine(sb, 0, $"export function {infiniteHookName}<TData = InfiniteData<{awaitedReturnTypeName}, unknown>, TError = {errorType}>(");
-        CodeFormatter.AppendLine(sb, 1, functionParams);
-        CodeFormatter.AppendLine(sb, 0, $") : UseInfiniteQueryResult<TData, TError> {{");
+        CodeFormatter.AppendLine(sb, 0, $"export const {infiniteQueryOptionsFunctionName} = <");
+        CodeFormatter.AppendLine(sb, 1, $"TData = InfiniteData<{awaitedReturnTypeName}, unknown>,");
+        CodeFormatter.AppendLine(sb, 1, $"TError = {errorType},");
+        CodeFormatter.AppendLine(sb, 0, ">(");
+        // Добавляем параметры функции с правильным отступом
+        var infiniteOptionsParamsLines = functionParams.Split('\n');
+        foreach (var line in infiniteOptionsParamsLines)
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                CodeFormatter.AppendLine(sb, 1, line.TrimStart());
+            }
+        }
+        CodeFormatter.AppendLine(sb, 0, $") => {{");
         CodeFormatter.AppendEmptyLine(sb);
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
@@ -327,20 +545,25 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
             CodeFormatter.AppendLine(sb, 1, "const { query: queryOptions, timeout } = options ?? {};");
         }
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyFunctionName}({queryKeyParamsStr});");
-        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}, QueryKey, unknown> = ({{ signal }}) => {{");
-        CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({infiniteQueryFnParams});");
-        CodeFormatter.AppendLine(sb, 1, "};");
+        
+        if (string.IsNullOrEmpty(queryKeyParamsStr))
+        {
+            CodeFormatter.AppendLine(sb, 1, $"const queryKey = queryOptions?.queryKey ?? {infiniteQueryKeyFunctionName}();");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, 1, $"const queryKey = queryOptions?.queryKey ?? {infiniteQueryKeyFunctionName}({queryKeyParamsStr});");
+        }
+        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}, QueryKey, unknown> = ({{ signal }}) =>");
+        CodeFormatter.AppendLine(sb, 2, $"{clientMethodName}({infiniteQueryFnParams});");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"return useInfiniteQuery<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>({{");
+        CodeFormatter.AppendLine(sb, 1, "return {");
         CodeFormatter.AppendLine(sb, 2, "queryKey,");
         CodeFormatter.AppendLine(sb, 2, "queryFn,");
-        CodeFormatter.AppendLine(sb, 2, "initialPageParam: 0,");
-        CodeFormatter.AppendLine(sb, 2, "getNextPageParam: (lastPage) => lastPage.nextCursor,");
         CodeFormatter.AppendLine(sb, 2, "enabled: true,");
         CodeFormatter.AppendLine(sb, 2, "...queryOptions");
-        CodeFormatter.AppendLine(sb, 1, "});");
-        CodeFormatter.AppendLine(sb, 0, "}");
+        CodeFormatter.AppendLine(sb, 1, $"}} as UseInfiniteQueryOptions<{awaitedReturnTypeName}, TError, TData, QueryKey, unknown>;");
+        CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
     }
 
@@ -350,6 +573,9 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     private void RenderPrefetchSupport(StringBuilder sb, OperationTemplateData operation, string functionName, string queryKeyFunctionName, string clientMethodName, TypeScriptGenerationOptions options)
     {
         var prefetchFunctionName = $"prefetch{_namingConverter.ToPascalCase(functionName)}";
+        var prefetchInfiniteFunctionName = $"prefetch{_namingConverter.ToPascalCase(functionName)}Infinite";
+        var queryOptionsFunctionName = $"get{_namingConverter.ToPascalCase(functionName)}QueryOptions";
+        var infiniteQueryOptionsFunctionName = $"get{_namingConverter.ToPascalCase(functionName)}InfiniteQueryOptions";
         
         // Генерируем имена типов на основе имени функции клиента
         var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
@@ -357,38 +583,68 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         var functionParams = BuildQueryHookParameters(operation, awaitedReturnTypeName, options);
         var queryKeyParams = BuildQueryKeyParameters(operation);
-        var queryKeyCall = queryKeyParams.Count > 0 
-            ? $"{queryKeyFunctionName}({string.Join(", ", queryKeyParams)})"
-            : $"{queryKeyFunctionName}()";
+        var queryKeyParamsStr = string.Join(", ", queryKeyParams);
         
-        var queryFnParams = BuildQueryFnClientMethodParameters(operation, clientMethodName, options);
-        
+        // Prefetch для обычного query
         CodeFormatter.AppendLine(sb, 0, $"export const {prefetchFunctionName} = async <");
-        CodeFormatter.AppendLine(sb, 1, $"  TData = {awaitedReturnTypeName},");
-        CodeFormatter.AppendLine(sb, 1, "  TError = Error,");
+        CodeFormatter.AppendLine(sb, 1, $"TData = {awaitedReturnTypeName},");
+        CodeFormatter.AppendLine(sb, 1, "TError = Error,");
         CodeFormatter.AppendLine(sb, 0, ">(");
-        CodeFormatter.AppendLine(sb, 1, "  queryClient: QueryClient,");
-        CodeFormatter.AppendLine(sb, 1, functionParams);
+        CodeFormatter.AppendLine(sb, 1, "queryClient: QueryClient,");
+        // Добавляем параметры функции с правильным отступом
+        var paramsLines = functionParams.Split('\n');
+        foreach (var line in paramsLines)
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                CodeFormatter.AppendLine(sb, 1, line.TrimStart());
+            }
+        }
         CodeFormatter.AppendLine(sb, 0, $") : Promise<QueryClient> => {{");
         CodeFormatter.AppendEmptyLine(sb);
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        
+        if (string.IsNullOrEmpty(queryKeyParamsStr))
         {
-            CodeFormatter.AppendLine(sb, 1, "const { query: queryOptions, timeout, axiosInstance } = options ?? {};");
+            CodeFormatter.AppendLine(sb, 1, $"const queryOptions = {queryOptionsFunctionName}(options);");
         }
         else
         {
-            CodeFormatter.AppendLine(sb, 1, "const { query: queryOptions, timeout } = options ?? {};");
+            CodeFormatter.AppendLine(sb, 1, $"const queryOptions = {queryOptionsFunctionName}({queryKeyParamsStr}, options);");
         }
+        CodeFormatter.AppendLine(sb, 1, "await queryClient.prefetchQuery(queryOptions);");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"const queryKey = {queryKeyCall};");
-        CodeFormatter.AppendLine(sb, 1, $"const queryFn: QueryFunction<{awaitedReturnTypeName}> = ({{ signal }}) => {{");
-        CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({queryFnParams});");
-        CodeFormatter.AppendLine(sb, 1, "};");
+        CodeFormatter.AppendLine(sb, 1, "return queryClient;");
+        CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"await queryClient.prefetchQuery<{awaitedReturnTypeName}, TError>({{");
-        CodeFormatter.AppendLine(sb, 2, "queryKey,");
-        CodeFormatter.AppendLine(sb, 2, "queryFn");
-        CodeFormatter.AppendLine(sb, 1, "});");
+        
+        // Prefetch для infinite query
+        CodeFormatter.AppendLine(sb, 0, $"export const {prefetchInfiniteFunctionName} = async <");
+        CodeFormatter.AppendLine(sb, 1, $"TData = InfiniteData<{awaitedReturnTypeName}, unknown>,");
+        CodeFormatter.AppendLine(sb, 1, "TError = Error,");
+        CodeFormatter.AppendLine(sb, 0, ">(");
+        CodeFormatter.AppendLine(sb, 1, "queryClient: QueryClient,");
+        // Добавляем параметры функции с правильным отступом
+        var infiniteParamsLines = functionParams.Split('\n');
+        foreach (var line in infiniteParamsLines)
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                CodeFormatter.AppendLine(sb, 1, line.TrimStart());
+            }
+        }
+        CodeFormatter.AppendLine(sb, 0, $") : Promise<QueryClient> => {{");
+        CodeFormatter.AppendEmptyLine(sb);
+        
+        if (string.IsNullOrEmpty(queryKeyParamsStr))
+        {
+            CodeFormatter.AppendLine(sb, 1, $"const queryOptions = {infiniteQueryOptionsFunctionName}(options);");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, 1, $"const queryOptions = {infiniteQueryOptionsFunctionName}({queryKeyParamsStr}, options);");
+        }
+        CodeFormatter.AppendLine(sb, 1, "await queryClient.prefetchInfiniteQuery(queryOptions);");
+        CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, "return queryClient;");
         CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
@@ -416,40 +672,114 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         // Формируем аргументы для вызова клиентского метода
         var clientMethodParams = BuildClientMethodParameters(operation, clientMethodName, options);
         
-        CodeFormatter.AppendLine(sb, 0, $"export const {helperName} = <TError = {errorType}, TContext = unknown>(");
-        CodeFormatter.AppendLine(sb, 1, mutationParams);
-        CodeFormatter.AppendLine(sb, 0, $") : UseMutationOptions<{awaitedReturnTypeName}, TError, {{\n{variablesTypeStr}\n  }}, TContext> => {{");
+        CodeFormatter.AppendLine(sb, 0, $"export const {helperName} = <");
+        CodeFormatter.AppendLine(sb, 1, $"TError = {errorType},");
+        CodeFormatter.AppendLine(sb, 1, "TContext = unknown,");
+        CodeFormatter.AppendLine(sb, 0, ">(options?: {");
+        CodeFormatter.AppendLine(sb, 1, "mutation?: UseMutationOptions<");
+        CodeFormatter.AppendLine(sb, 2, $"{awaitedReturnTypeName},");
+        CodeFormatter.AppendLine(sb, 2, "TError,");
+        CodeFormatter.AppendLine(sb, 2, "{");
+        // Добавляем переменные с правильным отступом
+        if (!string.IsNullOrEmpty(variablesTypeStr))
+        {
+            var variablesLines = variablesTypeStr.Split('\n');
+            foreach (var line in variablesLines)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    CodeFormatter.AppendLine(sb, 2, line.TrimStart());
+                }
+            }
+        }
+        CodeFormatter.AppendLine(sb, 2, "},");
+        CodeFormatter.AppendLine(sb, 2, "TContext");
+        CodeFormatter.AppendLine(sb, 1, ">;");
+        CodeFormatter.AppendLine(sb, 1, "timeout?: number;");
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            CodeFormatter.AppendLine(sb, 1, "axiosInstance?: AxiosInstance;");
+        }
+        CodeFormatter.AppendLine(sb, 0, "}): UseMutationOptions<");
+        CodeFormatter.AppendLine(sb, 1, $"{awaitedReturnTypeName},");
+        CodeFormatter.AppendLine(sb, 1, "TError,");
+        CodeFormatter.AppendLine(sb, 1, "{");
+        // Добавляем переменные с правильным отступом
+        if (!string.IsNullOrEmpty(variablesTypeStr))
+        {
+            var variablesLines = variablesTypeStr.Split('\n');
+            foreach (var line in variablesLines)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    CodeFormatter.AppendLine(sb, 2, line.TrimStart());
+                }
+            }
+        }
+        CodeFormatter.AppendLine(sb, 1, "},");
+        CodeFormatter.AppendLine(sb, 1, "TContext");
+        CodeFormatter.AppendLine(sb, 0, "> => {");
         CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, $"const mutationKey = [\"{clientMethodName}\"];");
+        CodeFormatter.AppendEmptyLine(sb);
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
-            CodeFormatter.AppendLine(sb, 1, "const { mutation: mutationOptions, timeout, axiosInstance } = options");
+            CodeFormatter.AppendLine(sb, 1, "const { mutation: mutationOptions");
+            CodeFormatter.AppendLine(sb, 1, ", axiosInstance: requestOptions } = options");
         }
         else
         {
-            CodeFormatter.AppendLine(sb, 1, "const { mutation: mutationOptions, timeout } = options");
-        }
-        CodeFormatter.AppendLine(sb, 1, "  ? options.mutation &&");
-        CodeFormatter.AppendLine(sb, 1, "    \"mutationKey\" in options.mutation &&");
-        CodeFormatter.AppendLine(sb, 1, "    options.mutation.mutationKey");
-        CodeFormatter.AppendLine(sb, 1, "    ? options");
-        CodeFormatter.AppendLine(sb, 1, "    : { ...options, mutation: { ...options.mutation, mutationKey } }");
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
-        {
-            CodeFormatter.AppendLine(sb, 1, "  : { mutation: { mutationKey }, timeout: undefined, axiosInstance: undefined };");
-        }
-        else
-        {
-            CodeFormatter.AppendLine(sb, 1, "  : { mutation: { mutationKey }, timeout: undefined };");
+            CodeFormatter.AppendLine(sb, 1, "const { mutation: mutationOptions } = options");
         }
         CodeFormatter.AppendEmptyLine(sb);
-        CodeFormatter.AppendLine(sb, 1, $"const mutationFn: MutationFunction<{awaitedReturnTypeName}, {{");
-        CodeFormatter.AppendLine(sb, 1, variablesTypeStr);
-        CodeFormatter.AppendLine(sb, 1, "}> = async (props) => {");
+        CodeFormatter.AppendLine(sb, 1, "? options.mutation &&");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, "  \"mutationKey\" in options.mutation &&");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, "  options.mutation.mutationKey");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, "  ? options");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, "  : { ...options, mutation: { ...options.mutation, mutationKey } }");
+        CodeFormatter.AppendEmptyLine(sb);
+        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            CodeFormatter.AppendLine(sb, 1, ": { mutation: { mutationKey }");
+            CodeFormatter.AppendLine(sb, 1, ", axiosInstance: undefined };");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, 1, ": { mutation: { mutationKey } };");
+        }
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, $"const mutationFn: MutationFunction<");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 2, $"{awaitedReturnTypeName},");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 2, "{");
+        CodeFormatter.AppendEmptyLine(sb);
+        // Добавляем переменные с правильным отступом
+        if (!string.IsNullOrEmpty(variablesTypeStr))
+        {
+            var variablesLines = variablesTypeStr.Split('\n');
+            foreach (var line in variablesLines)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    CodeFormatter.AppendLine(sb, 2, line.TrimStart());
+                }
+            }
+        }
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 2, "}");
+        CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendLine(sb, 1, "> = (props) => {");
+        CodeFormatter.AppendLine(sb, 1, "");
         CodeFormatter.AppendLine(sb, 2, $"const {{ {variablesDestructuring} }} = props ?? {{}};");
         CodeFormatter.AppendEmptyLine(sb);
+        
         // Собираем аргументы для вызова клиентского метода
-        // Порядок должен соответствовать порядку параметров в axios методах: axiosInstance, signal, timeout
+        // В старой версии используется только requestOptions (axiosInstance), без signal и timeout
         var methodArgs = new List<string>();
         if (!string.IsNullOrEmpty(clientMethodParams))
         {
@@ -457,15 +787,17 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         }
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
-            methodArgs.Add("axiosInstance");
+            methodArgs.Add("requestOptions");
         }
-        methodArgs.Add("undefined"); // signal для mutations обычно не используется
-        methodArgs.Add("timeout");
         var methodArgsStr = string.Join(", ", methodArgs);
+        CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 2, $"return {clientMethodName}({methodArgsStr});");
+        CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, "};");
         CodeFormatter.AppendEmptyLine(sb);
+        CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 1, "return { mutationFn, ...mutationOptions };");
+        CodeFormatter.AppendEmptyLine(sb);
         CodeFormatter.AppendLine(sb, 0, "};");
         CodeFormatter.AppendEmptyLine(sb);
     }
@@ -531,16 +863,18 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         
         // Query options
         var errorType = "Error";
-        var optionsLines = new List<string> { $"    query?: UseQueryOptions<{awaitedReturnTypeName}, {errorType}, TData>;" };
-        optionsLines.Add("    timeout?: number;");
+        var optionsParamBuilder = new StringBuilder();
+        CodeFormatter.AppendLine(optionsParamBuilder, 0, "options?: {");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, $"query?: Partial<UseQueryOptions<{awaitedReturnTypeName}, {errorType}, TData>>;");
+        CodeFormatter.AppendLine(optionsParamBuilder, 1, "timeout?: number;");
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
-            optionsLines.Add("    axiosInstance?: AxiosInstance;");
+            CodeFormatter.AppendLine(optionsParamBuilder, 1, "axiosInstance?: AxiosInstance;");
         }
-        var optionsStr = string.Join("\n", optionsLines);
-        parameters.Add($"options?: {{\n{optionsStr}\n  }}");
+        CodeFormatter.AppendLine(optionsParamBuilder, 0, "}");
+        parameters.Add(optionsParamBuilder.ToString().TrimEnd());
         
-        return string.Join(",\n  ", parameters);
+        return string.Join(",\n", parameters);
     }
 
     /// <summary>
@@ -683,6 +1017,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
 
     /// <summary>
     /// Строит тип TVariables для mutation hook (объект с полями параметров)
+    /// Возвращает строки без отступов - отступы добавляются при использовании через CodeFormatter.AppendLine
     /// </summary>
     private string BuildMutationVariablesType(OperationTemplateData operation)
     {
@@ -691,7 +1026,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         // Path параметры
         foreach (var param in operation.PathParameters)
         {
-            variables.Add($"  {param.VariableName}: {param.TypeInfo.FullTypeName};");
+            variables.Add($"{param.VariableName}: {param.TypeInfo.FullTypeName};");
         }
         
         // Query параметры
@@ -699,14 +1034,14 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         {
             var hasRequiredParam = operation.QueryParameters.Any(p => p.IsRequired);
             var optional = hasRequiredParam ? "" : "?";
-            variables.Add($"  params{optional}: {operation.QueryParametersModelTypeName};");
+            variables.Add($"params{optional}: {operation.QueryParametersModelTypeName};");
         }
         else
         {
             foreach (var param in operation.QueryParameters)
             {
                 var optional = param.IsRequired ? "" : "?";
-                variables.Add($"  {param.VariableName}{optional}: {param.TypeInfo.FullTypeName};");
+                variables.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName};");
             }
         }
         
@@ -714,7 +1049,7 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         foreach (var param in operation.HeaderParameters)
         {
             var optional = param.IsRequired ? "" : "?";
-            variables.Add($"  {param.VariableName}{optional}: {param.TypeInfo.FullTypeName};");
+            variables.Add($"{param.VariableName}{optional}: {param.TypeInfo.FullTypeName};");
         }
         
         // Request body
@@ -722,14 +1057,14 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
         {
             var optional = operation.RequestBodyTypeInfo != null && !operation.RequestBodyTypeInfo.IsNullable ? "" : "?";
             var typeStr = operation.RequestBodyTypeInfo?.FullTypeName ?? "any";
-            variables.Add($"  {operation.RequestBodyParameter}{optional}: {typeStr};");
+            variables.Add($"{operation.RequestBodyParameter}{optional}: {typeStr};");
         }
         else if (operation.IsFormData && operation.FormDataProperties != null && operation.FormDataProperties.Count > 0)
         {
             foreach (var formProp in operation.FormDataProperties)
             {
                 var optional = formProp.IsRequired ? "" : "?";
-                variables.Add($"  {formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName};");
+                variables.Add($"{formProp.VariableName}{optional}: {formProp.TypeInfo.FullTypeName};");
             }
         }
         
@@ -786,24 +1121,48 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     
     /// <summary>
     /// Строит параметры для mutation hook (только options и queryClient)
+    /// Использует CodeFormatter для правильных отступов
     /// </summary>
     private string BuildMutationHookParameters(OperationTemplateData operation, string awaitedReturnTypeName, string variablesTypeStr, TypeScriptGenerationOptions options)
     {
         var errorType = "Error";
-        var optionsLines = new List<string> { $"    mutation?: UseMutationOptions<{awaitedReturnTypeName}, {errorType}, {{\n{variablesTypeStr}\n    }}, unknown>;" };
-        optionsLines.Add("    timeout?: number;");
+        // Строим параметры функции напрямую без промежуточных разбиений
+        var parametersBuilder = new StringBuilder();
+        CodeFormatter.AppendLine(parametersBuilder, 0, "options?: {");
+        CodeFormatter.AppendLine(parametersBuilder, 1, "mutation?: UseMutationOptions<");
+        CodeFormatter.AppendLine(parametersBuilder, 2, $"{awaitedReturnTypeName},");
+        CodeFormatter.AppendLine(parametersBuilder, 2, $"{errorType},");
+        CodeFormatter.AppendLine(parametersBuilder, 2, "{");
+        // Добавляем переменные с правильным отступом
+        if (!string.IsNullOrEmpty(variablesTypeStr))
+        {
+            var variablesLines = variablesTypeStr.Split('\n');
+            foreach (var line in variablesLines)
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                {
+                    CodeFormatter.AppendLine(parametersBuilder, 2, line.TrimStart());
+                }
+            }
+        }
+        CodeFormatter.AppendLine(parametersBuilder, 2, "},");
+        CodeFormatter.AppendLine(parametersBuilder, 2, "unknown");
+        CodeFormatter.AppendLine(parametersBuilder, 1, ">;");
+        CodeFormatter.AppendLine(parametersBuilder, 1, "timeout?: number;");
         if (options.HttpClientLibrary == HttpClientLibrary.Axios)
         {
-            optionsLines.Add("    axiosInstance?: AxiosInstance;");
+            CodeFormatter.AppendLine(parametersBuilder, 1, "axiosInstance?: AxiosInstance;");
         }
-        var optionsStr = string.Join("\n", optionsLines);
+        CodeFormatter.AppendLine(parametersBuilder, 0, "}");
+        var optionsParam = parametersBuilder.ToString();
+        
         var parameters = new List<string>
         {
-            $"options?: {{\n{optionsStr}\n  }}",
+            optionsParam.TrimEnd(),
             "queryClient?: QueryClient"
         };
         
-        return string.Join(",\n  ", parameters);
+        return string.Join(",\n", parameters);
     }
 
     /// <summary>
@@ -891,16 +1250,20 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     {
         var sb = new StringBuilder();
         CodeFormatter.AppendLine(sb, 0, "import {");
-        CodeFormatter.AppendLine(sb, 1, "useQuery,");
+        CodeFormatter.AppendLine(sb, 1, "InfiniteData,");
+        CodeFormatter.AppendLine(sb, 1, "MutationFunction,");
+        CodeFormatter.AppendLine(sb, 1, "QueryClient,");
+        CodeFormatter.AppendLine(sb, 1, "QueryFunction,");
+        CodeFormatter.AppendLine(sb, 1, "QueryKey,");
         CodeFormatter.AppendLine(sb, 1, "useInfiniteQuery,");
-        CodeFormatter.AppendLine(sb, 1, "useQueryClient,");
-        CodeFormatter.AppendLine(sb, 1, "type UseQueryOptions,");
-        CodeFormatter.AppendLine(sb, 1, "type UseQueryResult,");
-        CodeFormatter.AppendLine(sb, 1, "type QueryFunction,");
-        CodeFormatter.AppendLine(sb, 1, "type QueryKey,");
-        CodeFormatter.AppendLine(sb, 1, "type InfiniteData,");
-        CodeFormatter.AppendLine(sb, 1, "type UseInfiniteQueryResult,");
-        CodeFormatter.AppendLine(sb, 1, "type QueryClient,");
+        CodeFormatter.AppendLine(sb, 1, "UseInfiniteQueryOptions,");
+        CodeFormatter.AppendLine(sb, 1, "UseInfiniteQueryResult,");
+        CodeFormatter.AppendLine(sb, 1, "useMutation,");
+        CodeFormatter.AppendLine(sb, 1, "UseMutationOptions,");
+        CodeFormatter.AppendLine(sb, 1, "UseMutationResult,");
+        CodeFormatter.AppendLine(sb, 1, "useQuery,");
+        CodeFormatter.AppendLine(sb, 1, "UseQueryOptions,");
+        CodeFormatter.AppendLine(sb, 1, "UseQueryResult,");
         CodeFormatter.AppendLine(sb, 0, "} from '@tanstack/react-query';");
         CodeFormatter.AppendEmptyLine(sb);
         return sb.ToString();
@@ -909,18 +1272,11 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     /// <summary>
     /// Рендерит импорты TanStack Query типов для mutations
     /// </summary>
-    /// <returns>Строка с импортами для mutation операций</returns>
+    /// <returns>Строка с импортами для mutation операций (пустая, так как все импорты в RenderQueryImports)</returns>
     public string RenderMutationImports()
     {
-        var sb = new StringBuilder();
-        CodeFormatter.AppendLine(sb, 0, "import {");
-        CodeFormatter.AppendLine(sb, 1, "useMutation,");
-        CodeFormatter.AppendLine(sb, 1, "type UseMutationOptions,");
-        CodeFormatter.AppendLine(sb, 1, "type UseMutationResult,");
-        CodeFormatter.AppendLine(sb, 1, "type MutationFunction,");
-        CodeFormatter.AppendLine(sb, 0, "} from '@tanstack/react-query';");
-        CodeFormatter.AppendEmptyLine(sb);
-        return sb.ToString();
+        // Импорты для mutations уже включены в RenderQueryImports
+        return string.Empty;
     }
 
     /// <summary>
@@ -1158,15 +1514,17 @@ public class TanStackQueryRenderer : IQueryWrapperRenderer
     private void RenderTypeExports(StringBuilder sb, OperationTemplateData operation, string clientMethodName)
     {
         // Используем имя функции клиента для генерации типов
-        var functionName = _namingConverter.ToCamelCase(clientMethodName);
         var functionNamePascal = _namingConverter.ToPascalCase(clientMethodName);
         
         // Генерируем имена типов на основе имени функции клиента
         var returnTypeName = $"{functionNamePascal}ReturnType";
         var awaitedReturnTypeName = $"{functionNamePascal}AwaitedReturnType";
         
-        // Экспортируем ResultType на основе функции клиента
-        CodeFormatter.AppendLine(sb, 0, $"export type {returnTypeName} = ReturnType<typeof {functionName}>;");
+        // Определяем тип ответа из ReturnTypeInfo
+        var responseType = operation.ReturnTypeInfo?.FullTypeName ?? "any";
+        
+        // Экспортируем ResultType как Promise<Type> (как в старой версии)
+        CodeFormatter.AppendLine(sb, 0, $"export type {returnTypeName} = Promise<{responseType}>;");
         CodeFormatter.AppendEmptyLine(sb);
         
         // Экспортируем AwaitedResultType на основе ResultType
