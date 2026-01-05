@@ -496,12 +496,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             ? string.Join(", ", import.Items.Select(i => i.Name))
             : "*";
         
-        if (import.Kind == ImportKind.Default && import.Items.Count > 0)
+        if (import.ImportKind == ImportKind.Default && import.Items.Count > 0)
         {
             // Default import: import name from "module"
             CodeFormatter.AppendLine(_sb, 0, $"import {import.Items[0].Name}{from};");
         }
-        else if (import.Kind == ImportKind.Namespace)
+        else if (import.ImportKind == ImportKind.Namespace)
         {
             // Namespace import: import * as name from "module"
             var name = import.Items.Count > 0 ? import.Items[0].Name : "namespace";
