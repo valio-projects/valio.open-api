@@ -536,7 +536,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Члены enum
         for (int i = 0; i < node.Members.Count; i++)
         {
-            var member = node.Members[i];
+            var member = (EnumMemberDeclarationNode)node.Members[i];
             var comma = i < node.Members.Count - 1 ? "," : "";
             RenderEnumMember(sb, member, indentLevel + 1, comma);
         }
@@ -575,8 +575,8 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // XML комментарий
         if (node.Documentation != null)
         {
-            var parameters = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
-            CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, parameters, null);
+            var paramDocs = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
+            CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, paramDocs, null);
         }
         
         // Атрибуты
@@ -624,7 +624,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Модификаторы и объявление поля
         var modifiers = RenderModifiers(node.AccessModifier);
         var type = RenderType(node.Type);
-        var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
+        var initializer = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
         CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{initializer};");
     }
 
