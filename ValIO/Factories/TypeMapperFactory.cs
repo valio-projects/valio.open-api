@@ -2,7 +2,6 @@ using Microsoft.Extensions.DependencyInjection;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Generators.CSharp;
-using ValIO.Generators.TypeScript;
 
 namespace ValIO.Factories;
 
@@ -26,7 +25,7 @@ public class TypeMapperFactory
         return language switch
         {
             GenerationLanguage.CSharp => _serviceProvider.GetRequiredService<CSharpTypeMapper>(),
-            GenerationLanguage.TypeScript => _serviceProvider.GetRequiredService<TypeScriptTypeMapper>(),
+            //GenerationLanguage.TypeScript => _serviceProvider.GetRequiredService<TypeScriptTypeMapper>(),
             _ => throw new NotSupportedException($"Type mapper for language {language} is not supported")
         };
     }

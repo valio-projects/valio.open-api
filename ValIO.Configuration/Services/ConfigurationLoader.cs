@@ -4,7 +4,6 @@ using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
 using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Models;
-using ValIO.Generators.TypeScript.Models;
 using YamlDotNet.Serialization;
 
 namespace ValIO.Configuration.Services;
@@ -118,7 +117,7 @@ public class ConfigurationLoader : IConfigurationLoader
             // Маппинг TypeScript опций
             if (config.Options.TypeScript != null)
             {
-                generationOptions.TypeScriptOptions = ParseTypeScriptOptions(config.Options.TypeScript, config.Options);
+                //generationOptions.TypeScriptOptions = ParseTypeScriptOptions(config.Options.TypeScript, config.Options);
             }
             
             generationConfig.Options = generationOptions;
@@ -301,6 +300,7 @@ public class ConfigurationLoader : IConfigurationLoader
         return options;
     }
 
+    /*
     private static ValIO.Generators.TypeScript.Models.TypeScriptGenerationOptions ParseTypeScriptOptions(ConfigTypeScriptOptions? config, ConfigOptions? parentOptions = null)
     {
         if (config == null)
@@ -404,6 +404,6 @@ public class ConfigurationLoader : IConfigurationLoader
         // QueryParametersStyle не используется для TypeScript, query параметры всегда передаются как отдельные параметры
 
         return options;
-    }
+    }*/
 }
 

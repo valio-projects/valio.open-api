@@ -4,7 +4,6 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Generators.CSharp;
-using ValIO.Generators.TypeScript;
 
 namespace ValIO.Factories;
 
@@ -25,7 +24,7 @@ public class CodeGeneratorFactory
         return language switch
         {
             GenerationLanguage.CSharp => _serviceProvider.GetRequiredService<CSharpCodeGenerator>(),
-            GenerationLanguage.TypeScript => _serviceProvider.GetRequiredService<TypeScriptCodeGenerator>(),
+            //GenerationLanguage.TypeScript => _serviceProvider.GetRequiredService<TypeScriptCodeGenerator>(),
             _ => throw new NotSupportedException($"Generator for language {language} is not supported")
         };
     }

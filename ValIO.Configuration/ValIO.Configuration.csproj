@@ -3,7 +3,6 @@
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
     <ProjectReference Include="..\ValIO.Generators.CSharp\ValIO.Generators.CSharp.csproj" />
-    <ProjectReference Include="..\ValIO.Generators.TypeScript\ValIO.Generators.TypeScript.csproj" />
   </ItemGroup>
 
   <ItemGroup>

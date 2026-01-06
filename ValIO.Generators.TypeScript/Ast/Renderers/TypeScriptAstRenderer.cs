@@ -676,9 +676,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // Объявление свойства
         var optional = node.IsRequired ? "" : "?";
         // PropertyDeclarationNode не имеет IsReadOnly для TypeScript, используем пустую строку
-        var readonly = ""; // Можно добавить через metadata позже
+        var isReadonly = ""; // Можно добавить через metadata позже
         var type = RenderType(node.Type);
-        CodeFormatter.AppendLine(sb, indentLevel, $"{readonly}{node.Name.Name}{optional}: {type};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{isReadonly}{node.Name.Name}{optional}: {type};");
     }
 
     private void RenderParameter(StringBuilder sb, ParameterDeclarationNode node)

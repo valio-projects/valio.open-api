@@ -1,15 +1,7 @@
-using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ValIO.Core.Interfaces;
-using ValIO.Core.Models;
 using ValIO.Generators.CSharp;
-using ValIO.Generators.TypeScript;
-using ValIO.Generators.TypeScript.Renderers;
-using ValIO.Generators.TypeScript.Zod;
-using ValIO.Generators.TypeScript.Zod.Models;
-using ValIO.Generators.TypeScript.Zod.Renderers;
-using ValIO.Generators.TypeScript.TanStackQuery;
 
 namespace ValIO.ServiceRegistration;
 
@@ -48,7 +40,7 @@ public static class ServiceCollectionExtensions
         
         return services;
     }
-    
+    /*
     /// <summary>
     /// Регистрирует все генераторы, мапперы и рендеры для TypeScript
     /// </summary>
@@ -132,7 +124,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IQueryWrapperRenderer>(sp => sp.GetRequiredService<TanStackQueryRenderer>());
         
         return services;
-    }
+    }*/
     
     /// <summary>
     /// Регистрирует все доступные генераторы, мапперы и рендеры
@@ -140,9 +132,9 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAllGenerators(this IServiceCollection services)
     {
         services.AddCSharpGenerators();
-        services.AddTypeScriptGenerators();
-        services.AddZodGenerators();
-        services.AddTanStackQueryRenderers();
+        //services.AddTypeScriptGenerators();
+        //services.AddZodGenerators();
+        //services.AddTanStackQueryRenderers();
         
         return services;
     }
