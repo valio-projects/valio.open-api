@@ -74,8 +74,20 @@ public class IrBuilder
         foreach (var (schemaName, schema) in document.Components.Schemas)
         {
             // Пропускаем enum схемы (они будут обработаны в ExtractEnums)
-            if (schema.Enum?.Count > 0 && schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.String))
-                continue;
+            // Enum должен иметь непустой список значений и тип string или integer, без Properties
+            if (schema.Enum != null && schema.Enum.Count > 0)
+            {
+                if (schema.Type.HasValue)
+                {
+                    var type = schema.Type.Value;
+                    var isStringEnum = type.HasFlag(JsonSchemaType.String) && !type.HasFlag(JsonSchemaType.Integer) && !type.HasFlag(JsonSchemaType.Number);
+                    var isIntegerEnum = type.HasFlag(JsonSchemaType.Integer) && !type.HasFlag(JsonSchemaType.String) && !type.HasFlag(JsonSchemaType.Number);
+                    
+                    // Если это enum (string или integer) и нет Properties - пропускаем
+                    if ((isStringEnum || isIntegerEnum) && (schema.Properties == null || schema.Properties.Count == 0))
+                        continue;
+                }
+            }
             
             var sanitizedName = _namingConverter.SanitizeIdentifier(schemaName);
             var model = BuildModel(sanitizedName, schema, document);
@@ -415,7 +427,23 @@ public class IrBuilder
         
         foreach (var (schemaName, schema) in document.Components.Schemas)
         {
-            if (schema.Enum?.Count == 0)
+            // Enum должен иметь непустой список значений и тип string или integer
+            if (schema.Enum == null || schema.Enum.Count == 0)
+                continue;
+            
+            // Enum должен быть либо string, либо integer (без других типов)
+            if (!schema.Type.HasValue)
+                continue;
+            
+            var type = schema.Type.Value;
+            var isStringEnum = type.HasFlag(JsonSchemaType.String) && !type.HasFlag(JsonSchemaType.Integer) && !type.HasFlag(JsonSchemaType.Number);
+            var isIntegerEnum = type.HasFlag(JsonSchemaType.Integer) && !type.HasFlag(JsonSchemaType.String) && !type.HasFlag(JsonSchemaType.Number);
+            
+            if (!isStringEnum && !isIntegerEnum)
+                continue;
+            
+            // Если есть Properties, это не enum, а модель с enum полем
+            if (schema.Properties != null && schema.Properties.Count > 0)
                 continue;
             
             var sanitizedName = _namingConverter.SanitizeIdentifier(schemaName);

@@ -196,9 +196,9 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         {
             var code = astRenderer.Render(compilationUnit);
             
-            // Определяем имя файла на основе содержимого CompilationUnit
-            var fileName = DetermineFileName(compilationUnit, config);
-            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
+            // Определяем имя файла и категорию на основе содержимого CompilationUnit
+            var (fileName, fileCategory) = DetermineFileNameAndCategory(compilationUnit, config);
+            var filePath = ResolveFilePath(fileName, config, fileCategory);
             
             files[filePath] = code;
         }
@@ -207,33 +207,39 @@ public class CSharpCodeGenerator : BaseCodeGenerator
     }
     
     /// <summary>
-    /// Определяет имя файла на основе CompilationUnit
+    /// Определяет имя файла и категорию на основе CompilationUnit
     /// </summary>
     /// <param name="compilationUnit">AST узел CompilationUnit</param>
     /// <param name="config">Конфигурация генерации</param>
-    /// <returns>Имя файла с расширением .cs</returns>
+    /// <returns>Кортеж (имя файла с расширением .cs, категория файла)</returns>
     /// <remarks>
-    /// Ищет первую декларацию (класс или enum) в namespace для определения имени файла
+    /// Ищет первую декларацию (класс или enum) в namespace для определения имени файла и категории.
+    /// Клиенты определяются по наличию методов HTTP операций.
     /// </remarks>
-    private string DetermineFileName(CompilationUnitNode compilationUnit, GenerationConfiguration config)
+    private (string fileName, FileCategory category) DetermineFileNameAndCategory(CompilationUnitNode compilationUnit, GenerationConfiguration config)
     {
-        // Ищем первую декларацию в namespace для определения имени файла
+        // Ищем первую декларацию в namespace для определения имени файла и категории
         foreach (var namespaceNode in compilationUnit.Namespaces)
         {
             foreach (var declaration in namespaceNode.Declarations)
             {
                 if (declaration is ClassDeclarationNode classNode)
                 {
-                    return $"{classNode.Name.Name}.cs";
+                    // Проверяем, является ли это HTTP клиентом (есть методы с async)
+                    var isClient = classNode.Members.Any(m => 
+                        m is MethodDeclarationNode method && method.IsAsync);
+                    
+                    var category = isClient ? FileCategory.Clients : FileCategory.Models;
+                    return ($"{classNode.Name.Name}.cs", category);
                 }
                 if (declaration is EnumDeclarationNode enumNode)
                 {
-                    return $"{enumNode.Name.Name}.cs";
+                    return ($"{enumNode.Name.Name}.cs", FileCategory.Models);
                 }
             }
         }
         
-        return "Generated.cs";
+        return ("Generated.cs", FileCategory.Models);
     }
 }
 
