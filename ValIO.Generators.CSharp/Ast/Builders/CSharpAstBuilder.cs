@@ -507,12 +507,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 isRequired: operation.RequestBody.IsRequired));
         }
         
-        // CancellationToken
+        // CancellationToken с default value
         var cancellationTokenType = new SimpleTypeNode(new IdentifierNode("CancellationToken"), isPrimitive: false);
+        var defaultCancellationToken = new LiteralExpressionNode("default", LiteralKind.Null);
         parameters.Add(new ParameterDeclarationNode(
             name: new IdentifierNode("cancellationToken"),
             type: cancellationTokenType,
-            isRequired: false));
+            isRequired: false,
+            defaultValue: defaultCancellationToken));
         
         return parameters.ToImmutableList();
     }
@@ -539,13 +541,17 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             .Select(r => new { StatusCode = r.StatusCode, Type = BuildType(r.Type!) })
             .ToList();
         
-        // 1. Строим URL через StringBuilder
+        // Подсчитываем capacity для StringBuilder
+        var estimatedCapacity = EstimateStringBuilderCapacity(operation);
+        
+        // 1. Строим URL через StringBuilder с предварительно рассчитанной capacity
+        var capacityLiteral = new LiteralExpressionNode(estimatedCapacity.ToString(), LiteralKind.Number);
         var urlBuilderVar = new VariableDeclarationStatementNode(
             name: new IdentifierNode("urlBuilder"),
             type: new SimpleTypeNode(new IdentifierNode("StringBuilder"), isPrimitive: false),
             initializer: new CallExpressionNode(
                 target: new IdentifierExpressionNode(new IdentifierNode("StringBuilder")),
-                arguments: ImmutableList<ExpressionNode>.Empty,
+                arguments: new[] { capacityLiteral }.ToImmutableList(),
                 metadata: new Dictionary<string, object> { ["IsNewExpression"] = true }));
         statements.Add(urlBuilderVar);
         
@@ -590,7 +596,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             // Извлекаем имя параметра
             var paramName = basePath.Substring(paramStart + 1, paramEnd - paramStart - 1);
             var sanitizedParamName = _namingConverter.SanitizeIdentifier(paramName);
-            pathParts.Add((Text: (string?)null, ParamName: sanitizedParamName));
+            pathParts.Add((Text: null, ParamName: sanitizedParamName));
             
             currentIndex = paramEnd + 1;
         }
@@ -600,9 +606,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         {
             if (text != null)
             {
+                // Исправляем двойное экранирование - убираем лишние кавычки
                 var appendTextCall = new CallExpressionNode(
                     target: appendMethod,
-                    arguments: new[] { new LiteralExpressionNode($"\"{text}\"", LiteralKind.String) }.ToImmutableList());
+                    arguments: new[] { new LiteralExpressionNode(text, LiteralKind.String) }.ToImmutableList());
                 statements.Add(new ExpressionStatementNode(appendTextCall));
             }
             else if (paramName != null)
@@ -654,7 +661,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             var firstParam = operation.QueryParameters[0];
             var appendQuerySeparator = new CallExpressionNode(
                 target: appendMethod,
-                arguments: new[] { new LiteralExpressionNode("\"?\"", LiteralKind.String) }.ToImmutableList());
+                arguments: new[] { new LiteralExpressionNode("?", LiteralKind.String) }.ToImmutableList());
             statements.Add(new ExpressionStatementNode(appendQuerySeparator));
             
             for (int i = 0; i < operation.QueryParameters.Count; i++)
@@ -664,11 +671,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 {
                     var appendAnd = new CallExpressionNode(
                         target: appendMethod,
-                        arguments: new[] { new LiteralExpressionNode("\"&\"", LiteralKind.String) }.ToImmutableList());
+                        arguments: new[] { new LiteralExpressionNode("&", LiteralKind.String) }.ToImmutableList());
                     statements.Add(new ExpressionStatementNode(appendAnd));
                 }
                 
-                var paramName = new LiteralExpressionNode($"\"{queryParam.Name}=\"", LiteralKind.String);
+                var paramName = new LiteralExpressionNode($"{queryParam.Name}=", LiteralKind.String);
                 var appendName = new CallExpressionNode(
                     target: appendMethod,
                     arguments: new[] { paramName }.ToImmutableList());
@@ -718,34 +725,35 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 arguments: ImmutableList<ExpressionNode>.Empty));
         statements.Add(urlStringVar);
         
-        // 2. Создаем HttpRequestMessage
-        var httpMethodType = new IdentifierExpressionNode(new IdentifierNode("HttpMethod"));
-        var httpMethodValue = new LiteralExpressionNode($"\"{operation.HttpMethod}\"", LiteralKind.String);
-        var httpMethodCtor = new CallExpressionNode(
-            target: httpMethodType,
-            arguments: new[] { httpMethodValue }.ToImmutableList(),
-            metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
+        // 2-5. Создаем HttpRequestMessage и отправляем запрос через HttpClient.SendAsync с using
+        // Используем HttpMethod.Get, HttpMethod.Post и т.д. вместо new HttpMethod("GET")
+        var httpMethodName = operation.HttpMethod.ToUpperInvariant();
+        var httpMethodStaticProperty = new MemberAccessExpressionNode(
+            @object: new IdentifierExpressionNode(new IdentifierNode("HttpMethod")),
+            member: new IdentifierNode(httpMethodName));
         
         var requestMessageType = new IdentifierExpressionNode(new IdentifierNode("HttpRequestMessage"));
         var urlExpr = new IdentifierExpressionNode(new IdentifierNode("url"));
-        var requestMessageCtorArgs = new ExpressionNode[] { httpMethodCtor, urlExpr };
+        var requestMessageCtorArgs = new ExpressionNode[] { httpMethodStaticProperty, urlExpr };
         var requestMessageCtor = new CallExpressionNode(
             target: requestMessageType,
             arguments: requestMessageCtorArgs.ToImmutableList(),
             metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
         
-        var requestVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("request"),
+        var requestMessageVar = new VariableDeclarationStatementNode(
+            name: new IdentifierNode("requestMessage"),
             type: new SimpleTypeNode(new IdentifierNode("HttpRequestMessage"), isPrimitive: false),
             initializer: requestMessageCtor);
-        statements.Add(requestVar);
+        
+        // Создаем блок для using statement requestMessage
+        var requestMessageUsingBodyStatements = new List<StatementNode>();
         
         // 3. Устанавливаем Headers (Accept: application/json)
-        var requestHeaders = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("request")),
+        var requestMessageHeaders = new MemberAccessExpressionNode(
+            @object: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
             member: new IdentifierNode("Headers"));
         var acceptHeader = new MemberAccessExpressionNode(
-            @object: requestHeaders,
+            @object: requestMessageHeaders,
             member: new IdentifierNode("Accept"));
         var acceptAdd = new MemberAccessExpressionNode(
             @object: acceptHeader,
@@ -753,12 +761,12 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var mediaTypeJson = new IdentifierExpressionNode(new IdentifierNode("MediaTypeWithQualityHeaderValue"));
         var mediaTypeJsonCtor = new CallExpressionNode(
             target: mediaTypeJson,
-            arguments: new[] { new LiteralExpressionNode("\"application/json\"", LiteralKind.String) }.ToImmutableList(),
+            arguments: new[] { new LiteralExpressionNode("application/json", LiteralKind.String) }.ToImmutableList(),
             metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
         var acceptAddCall = new CallExpressionNode(
             target: acceptAdd,
             arguments: new[] { mediaTypeJsonCtor }.ToImmutableList());
-        statements.Add(new ExpressionStatementNode(acceptAddCall));
+        requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(acceptAddCall));
         
         // 4. Добавляем request body если есть
         if (operation.RequestBody != null)
@@ -772,6 +780,13 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 target: serializeMethod,
                 arguments: new[] { requestBodyParam }.ToImmutableList());
             
+            // Помещаем JsonSerializer.Serialize(request) в промежуточную переменную requestJsonContent
+            var requestJsonContentVar = new VariableDeclarationStatementNode(
+                name: new IdentifierNode("requestJsonContent"),
+                type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                initializer: serializeCall);
+            requestMessageUsingBodyStatements.Add(requestJsonContentVar);
+            
             var stringContentTypeExpr = new IdentifierExpressionNode(new IdentifierNode("StringContent"));
             var encodingExpr = new IdentifierExpressionNode(new IdentifierNode("Encoding"));
             var encodingUtf8 = new MemberAccessExpressionNode(
@@ -779,82 +794,84 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 member: new IdentifierNode("UTF8"));
             var mediaTypeHeader = new LiteralExpressionNode("application/json", LiteralKind.String);
             
-            var stringContentCtorArgs = new ExpressionNode[] { serializeCall, encodingUtf8, mediaTypeHeader };
+            var requestJsonContentExpr = new IdentifierExpressionNode(new IdentifierNode("requestJsonContent"));
+            var stringContentCtorArgs = new ExpressionNode[] { requestJsonContentExpr, encodingUtf8, mediaTypeHeader };
             var stringContentCtor = new CallExpressionNode(
                 target: stringContentTypeExpr,
                 arguments: stringContentCtorArgs.ToImmutableList(),
                 metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
             
-            var requestContent = new MemberAccessExpressionNode(
-                @object: new IdentifierExpressionNode(new IdentifierNode("request")),
+            var requestMessageContent = new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
                 member: new IdentifierNode("Content"));
             var contentAssign = new BinaryExpressionNode(
-                left: requestContent,
+                left: requestMessageContent,
                 @operator: BinaryOperator.Add,
                 right: stringContentCtor,
                 metadata: new Dictionary<string, object> { ["IsAssignment"] = true });
-            statements.Add(new ExpressionStatementNode(contentAssign));
+            requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(contentAssign));
         }
         
-        // 5. Отправляем запрос через HttpClient.SendAsync с using
+        // 5. Отправляем запрос через HttpClient.SendAsync
         var httpClientField = new IdentifierExpressionNode(new IdentifierNode("_httpClient"));
         var sendAsyncMethod = new MemberAccessExpressionNode(
             @object: httpClientField,
             member: new IdentifierNode("SendAsync"));
         var cancellationTokenParam = new IdentifierExpressionNode(new IdentifierNode("cancellationToken"));
+        var requestMessageExpr = new IdentifierExpressionNode(new IdentifierNode("requestMessage"));
         var sendAsyncCall = new CallExpressionNode(
             target: sendAsyncMethod,
-            arguments: new[] { new IdentifierExpressionNode(new IdentifierNode("request")), cancellationTokenParam }.ToImmutableList());
+            arguments: new[] { requestMessageExpr, cancellationTokenParam }.ToImmutableList());
         var awaitSend = new AwaitExpressionNode(sendAsyncCall);
         
-        var responseVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("response"),
+        // Создаем блок для вложенного using statement (responseMessage внутри requestMessage)
+        // Сначала создаем переменную responseMessage
+        var responseMessageVar = new VariableDeclarationStatementNode(
+            name: new IdentifierNode("responseMessage"),
             type: new SimpleTypeNode(new IdentifierNode("HttpResponseMessage"), isPrimitive: false),
             initializer: awaitSend);
-        statements.Add(responseVar);
         
-        // 6. Обрабатываем response с использованием using и проверкой статус кода
-        // ReadAsStringAsync
-        var contentAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("response")),
+        var innerUsingBodyStatements = new List<StatementNode>();
+        
+        // ReadAsStringAsync (переименовано content -> responseContent)
+        var responseMessageContentAccess = new MemberAccessExpressionNode(
+            @object: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
             member: new IdentifierNode("Content"));
         var readAsString = new MemberAccessExpressionNode(
-            @object: contentAccess,
+            @object: responseMessageContentAccess,
             member: new IdentifierNode("ReadAsStringAsync"));
         var readAsStringCall = new CallExpressionNode(
             target: readAsString,
             arguments: ImmutableList<ExpressionNode>.Empty);
         var awaitRead = new AwaitExpressionNode(readAsStringCall);
         
-        var contentVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("content"),
+        var responseContentVar = new VariableDeclarationStatementNode(
+            name: new IdentifierNode("responseContent"),
             type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
             initializer: awaitRead);
-        statements.Add(contentVar);
+        responseMessageUsingBodyStatements.Add(responseContentVar);
         
         // Проверяем статус код
         var statusCodeAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("response")),
+            @object: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
             member: new IdentifierNode("StatusCode"));
         var statusCodeVar = new VariableDeclarationStatementNode(
             name: new IdentifierNode("statusCode"),
             type: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
             initializer: statusCodeAccess);
-        statements.Add(statusCodeVar);
+        responseMessageUsingBodyStatements.Add(statusCodeVar);
         
-        // Проверяем статус код - используем (int)statusCode для получения числового значения
+        // Используем CastExpressionNode вместо metadata
         var statusCodeExpr = new IdentifierExpressionNode(new IdentifierNode("statusCode"));
-        // Создаем cast expression через BinaryExpression с metadata
-        var castExpr = new BinaryExpressionNode(
-            left: statusCodeExpr,
-            @operator: BinaryOperator.Add, // Временно, будет заменено в рендерере
-            right: new LiteralExpressionNode("0", LiteralKind.Number),
-            metadata: new Dictionary<string, object> { ["IsCastExpression"] = true, ["CastTargetType"] = "int" });
+        var intType = new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true);
+        var castExpr = new CastExpressionNode(
+            targetType: intType,
+            expression: statusCodeExpr);
         var intStatusCodeVar = new VariableDeclarationStatementNode(
             name: new IdentifierNode("statusCodeInt"),
-            type: new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
+            type: intType,
             initializer: castExpr);
-        statements.Add(intStatusCodeVar);
+        responseMessageUsingBodyStatements.Add(intStatusCodeVar);
         
         var isSuccess = new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("statusCodeInt")),
@@ -872,7 +889,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var ifStatements = new List<StatementNode>();
         var elseStatements = new List<StatementNode>();
         
-        // Success branch: десериализуем в success type
+        // Success branch: десериализуем в success type и помещаем в промежуточную переменную response
         if (successType != null)
         {
             var jsonSerializerExpr = new IdentifierExpressionNode(new IdentifierNode("JsonSerializer"));
@@ -880,11 +897,20 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 @object: jsonSerializerExpr,
                 member: new IdentifierNode("Deserialize"));
             var deserializeMetadata = new Dictionary<string, object> { ["GenericTypeArgument"] = successType };
+            var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode("responseContent"));
             var deserializeCall = new CallExpressionNode(
                 target: deserializeAccess,
-                arguments: new[] { new IdentifierExpressionNode(new IdentifierNode("content")) }.ToImmutableList(),
+                arguments: new[] { responseContentExpr }.ToImmutableList(),
                 metadata: deserializeMetadata);
-            var returnStatement = new ReturnStatementNode(deserializeCall);
+            
+            // Помещаем десериализацию в промежуточную переменную response
+            var responseVar = new VariableDeclarationStatementNode(
+                name: new IdentifierNode("response"),
+                type: successType,
+                initializer: deserializeCall);
+            ifStatements.Add(responseVar);
+            
+            var returnStatement = new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("response")));
             ifStatements.Add(returnStatement);
         }
         else
@@ -903,9 +929,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 @object: jsonSerializerExpr,
                 member: new IdentifierNode("Deserialize"));
             var deserializeMetadata = new Dictionary<string, object> { ["GenericTypeArgument"] = errorType };
+            var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode("responseContent"));
             var deserializeErrorCall = new CallExpressionNode(
                 target: deserializeAccess,
-                arguments: new[] { new IdentifierExpressionNode(new IdentifierNode("content")) }.ToImmutableList(),
+                arguments: new[] { responseContentExpr }.ToImmutableList(),
                 metadata: deserializeMetadata);
             
             var errorVar = new VariableDeclarationStatementNode(
@@ -930,7 +957,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             // Если нет error type, просто выбрасываем общее исключение
             var apiExceptionType = new IdentifierExpressionNode(new IdentifierNode("ApiException"));
             var statusCodeForException = new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"));
-            var messageForException = new LiteralExpressionNode("\"Unexpected status code\"", LiteralKind.String);
+            var messageForException = new LiteralExpressionNode("Unexpected status code", LiteralKind.String);
             var apiExceptionCtorArgs = new ExpressionNode[] { statusCodeForException, messageForException };
             var apiExceptionCtor = new CallExpressionNode(
                 target: apiExceptionType,
@@ -946,29 +973,100 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             condition: isSuccessAnd,
             thenBlock: thenBlock,
             elseBlock: elseBlock);
-        statements.Add(ifStatement);
+        responseMessageUsingBodyStatements.Add(ifStatement);
         
-        // Dispose для request и response (через using в рендерере или явно)
-        // В C# using statement будет обработан в рендерере, но можно добавить явный Dispose
-        var requestDispose = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("request")),
-            member: new IdentifierNode("Dispose"));
-        var requestDisposeCall = new CallExpressionNode(
-            target: requestDispose,
-            arguments: ImmutableList<ExpressionNode>.Empty);
-        statements.Add(new ExpressionStatementNode(requestDisposeCall));
+        // Создаем using statement для responseMessage
+        var responseMessageUsingBlock = new BlockNode(responseMessageUsingBodyStatements.ToImmutableList());
+        // Используем metadata для указания, что это using с переменной
+        var responseMessageUsingResource = new CallExpressionNode(
+            target: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
+            arguments: ImmutableList<ExpressionNode>.Empty,
+            metadata: new Dictionary<string, object> { ["IsUsingVariable"] = true, ["VariableDeclaration"] = responseMessageVar });
+        var responseMessageUsing = new UsingStatementNode(
+            resource: responseMessageUsingResource,
+            body: responseMessageUsingBlock);
         
-        var responseDispose = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("response")),
-            member: new IdentifierNode("Dispose"));
-        var responseDisposeCall = new CallExpressionNode(
-            target: responseDispose,
-            arguments: ImmutableList<ExpressionNode>.Empty);
-        statements.Add(new ExpressionStatementNode(responseDisposeCall));
+        // Создаем using statement для requestMessage, который содержит using для responseMessage
+        var outerUsingBodyStatements = new List<StatementNode> { responseMessageUsing };
+        var requestMessageUsingBlock = new BlockNode(outerUsingBodyStatements.ToImmutableList());
+        var requestMessageUsingResource = new CallExpressionNode(
+            target: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
+            arguments: ImmutableList<ExpressionNode>.Empty,
+            metadata: new Dictionary<string, object> { ["IsUsingVariable"] = true, ["VariableDeclaration"] = requestMessageVar });
+        var requestMessageUsing = new UsingStatementNode(
+            resource: requestMessageUsingResource,
+            body: requestMessageUsingBlock);
+        
+        statements.Add(requestMessageUsing);
         
         return new BlockNode(statements.ToImmutableList());
     }
     
+    /// <summary>
+    /// Оценивает необходимую capacity для StringBuilder на основе длины URL и параметров
+    /// </summary>
+    private int EstimateStringBuilderCapacity(IrOperation operation)
+    {
+        var capacity = operation.Path.Length;
+        
+        // Добавляем место для path parameters
+        foreach (var pathParam in operation.PathParameters)
+        {
+            var paramType = BuildType(pathParam.Type);
+            if (paramType is SimpleTypeNode simple)
+            {
+                // Оценка длины для разных типов
+                capacity += simple.Name.Name switch
+                {
+                    "int" => 8, // Максимальная длина int: -2147483648
+                    "long" => 16, // Максимальная длина long: -9223372036854775808
+                    "string" => 32, // Средняя оценка для строки
+                    "bool" => 5, // "true" или "false"
+                    "float" => 10,
+                    "double" => 15,
+                    "decimal" => 20,
+                    _ => 16 // Дефолтная оценка
+                };
+            }
+            else
+            {
+                capacity += 16; // Дефолтная оценка для сложных типов
+            }
+        }
+        
+        // Добавляем место для query parameters
+        if (operation.QueryParameters.Count > 0)
+        {
+            capacity += 1; // "?"
+            foreach (var queryParam in operation.QueryParameters)
+            {
+                capacity += queryParam.Name.Length + 1; // "name="
+                var paramType = BuildType(queryParam.Type);
+                if (paramType is SimpleTypeNode simple)
+                {
+                    capacity += simple.Name.Name switch
+                    {
+                        "int" => 8,
+                        "long" => 16,
+                        "string" => 32,
+                        "bool" => 5,
+                        "float" => 10,
+                        "double" => 15,
+                        "decimal" => 20,
+                        _ => 16
+                    };
+                }
+                else
+                {
+                    capacity += 16;
+                }
+                capacity += 1; // "&" между параметрами
+            }
+        }
+        
+        // Добавляем запас 20% для безопасности
+        return (int)(capacity * 1.2);
+    }
     
     private ExpressionNode BuildUrlExpression(IrOperation operation)
     {

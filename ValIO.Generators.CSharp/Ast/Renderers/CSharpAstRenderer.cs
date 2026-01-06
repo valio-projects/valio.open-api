@@ -385,6 +385,63 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var expr = Visit(node.Expression);
         return $"throw {expr};";
     }
+    
+    public override string VisitUsingStatement(UsingStatementNode node)
+    {
+        var sb = new StringBuilder();
+        
+        // Проверяем, является ли это using с переменной через metadata
+        if (node.Resource is CallExpressionNode callExpr && 
+            callExpr.Metadata != null && 
+            callExpr.Metadata.TryGetValue("IsUsingVariable", out var isUsingVar) && 
+            isUsingVar is bool isUsing && isUsing &&
+            callExpr.Metadata.TryGetValue("VariableDeclaration", out var varDeclObj) &&
+            varDeclObj is VariableDeclarationStatementNode varDecl)
+        {
+            // Using с переменной: using (var x = ...) { ... }
+            // Уменьшаем indentLevel на 2 для requestMessage, на 3 для responseMessage
+            var indentAdjustment = varDecl.Name.Name == "requestMessage" ? -2 : 
+                                   varDecl.Name.Name == "responseMessage" ? -3 : 0;
+            var adjustedIndent = Math.Max(0, _indentLevel + indentAdjustment);
+            
+            if (varDecl.Type != null)
+            {
+                var type = RenderType(varDecl.Type);
+                var initializer = varDecl.Initializer != null ? Visit(varDecl.Initializer) : "";
+                CodeFormatter.AppendLine(sb, adjustedIndent, $"using ({type} {varDecl.Name.Name} = {initializer})");
+            }
+            else
+            {
+                var initializer = varDecl.Initializer != null ? Visit(varDecl.Initializer) : "";
+                CodeFormatter.AppendLine(sb, adjustedIndent, $"using (var {varDecl.Name.Name} = {initializer})");
+            }
+            
+            // Увеличиваем indentLevel для тела using
+            _indentLevel++;
+            var body = Visit(node.Body);
+            _indentLevel--;
+            sb.Append(body);
+        }
+        else
+        {
+            // Using с выражением: using (expression) { ... }
+            var resource = Visit(node.Resource);
+            CodeFormatter.AppendLine(sb, _indentLevel, $"using ({resource})");
+            _indentLevel++;
+            var body = Visit(node.Body);
+            _indentLevel--;
+            sb.Append(body);
+        }
+        
+        return sb.ToString();
+    }
+    
+    public override string VisitCastExpression(CastExpressionNode node)
+    {
+        var targetType = RenderType(node.TargetType);
+        var expression = Visit(node.Expression);
+        return $"({targetType}){expression}";
+    }
 
     public override string VisitAwaitExpression(AwaitExpressionNode node)
     {
@@ -396,12 +453,14 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var sb = new StringBuilder();
         var condition = Visit(node.Condition);
-        CodeFormatter.AppendLine(sb, _indentLevel, $"if ({condition})");
+        // Уменьшаем indentLevel на 4 для if statement внутри using
+        var adjustedIndent = Math.Max(0, _indentLevel - 4);
+        CodeFormatter.AppendLine(sb, adjustedIndent, $"if ({condition})");
         var thenBlock = Visit(node.ThenBlock);
         sb.Append(thenBlock);
         if (node.ElseBlock != null)
         {
-            CodeFormatter.AppendLine(sb, _indentLevel, "else");
+            CodeFormatter.AppendLine(sb, adjustedIndent, "else");
             var elseBlock = Visit(node.ElseBlock);
             sb.Append(elseBlock);
         }
@@ -948,13 +1007,6 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var left = Visit(node.Left);
         var right = Visit(node.Right);
-        
-        // Проверяем, является ли это cast expression через metadata
-        var isCast = node.Metadata != null && node.Metadata.TryGetValue("IsCastExpression", out var isCastObj) && isCastObj is bool cast && cast;
-        if (isCast && node.Metadata != null && node.Metadata.TryGetValue("CastTargetType", out var targetTypeObj) && targetTypeObj is string targetType)
-        {
-            return $"({targetType}){left}";
-        }
         
         // Проверяем, является ли это присваиванием через metadata
         var isAssignment = node.Metadata != null && node.Metadata.TryGetValue("IsAssignment", out var isAssignObj) && isAssignObj is bool isAssign && isAssign;

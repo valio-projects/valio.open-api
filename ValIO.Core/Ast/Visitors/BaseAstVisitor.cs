@@ -79,6 +79,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.BinaryExpression => VisitBinaryExpression((BinaryExpressionNode)node),
             AstNodeKind.ConditionalExpression => VisitConditionalExpression((ConditionalExpressionNode)node),
             AstNodeKind.AwaitExpression => VisitAwaitExpression((AwaitExpressionNode)node),
+            AstNodeKind.CastExpression => VisitCastExpression((CastExpressionNode)node),
             _ => VisitDefault(node)
         };
     }
@@ -96,6 +97,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.ExpressionStatement => VisitExpressionStatement((ExpressionStatementNode)node),
             AstNodeKind.VariableDeclarationStatement => VisitVariableDeclarationStatement((VariableDeclarationStatementNode)node),
             AstNodeKind.ThrowStatement => VisitThrowStatement((ThrowStatementNode)node),
+            AstNodeKind.UsingStatement => VisitUsingStatement((UsingStatementNode)node),
             _ => VisitDefault(node)
         };
     }
@@ -126,6 +128,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitBinaryExpression(BinaryExpressionNode node);
     public abstract TResult VisitConditionalExpression(ConditionalExpressionNode node);
     public abstract TResult VisitAwaitExpression(AwaitExpressionNode node);
+    public abstract TResult VisitCastExpression(CastExpressionNode node);
     
     // Statements
     public abstract TResult VisitReturnStatement(ReturnStatementNode node);
@@ -134,6 +137,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitExpressionStatement(ExpressionStatementNode node);
     public abstract TResult VisitVariableDeclarationStatement(VariableDeclarationStatementNode node);
     public abstract TResult VisitThrowStatement(ThrowStatementNode node);
+    public abstract TResult VisitUsingStatement(UsingStatementNode node);
     
     // Объявления
     public abstract TResult VisitTypeDeclaration(TypeDeclarationNode node);

@@ -31,6 +31,7 @@ public enum AstNodeKind
     BinaryExpression,
     ConditionalExpression,
     AwaitExpression,
+    CastExpression,
     
     // Statements
     ReturnStatement,
@@ -39,6 +40,7 @@ public enum AstNodeKind
     ExpressionStatement,
     VariableDeclarationStatement,
     ThrowStatement,
+    UsingStatement,
     
     // Объявления
     Declaration,

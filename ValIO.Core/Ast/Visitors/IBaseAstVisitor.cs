@@ -41,6 +41,7 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitBinaryExpression(BinaryExpressionNode node);
     TResult VisitConditionalExpression(ConditionalExpressionNode node);
     TResult VisitAwaitExpression(AwaitExpressionNode node);
+    TResult VisitCastExpression(CastExpressionNode node);
     
     // Statements (общие)
     TResult VisitReturnStatement(ReturnStatementNode node);
@@ -49,6 +50,7 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitExpressionStatement(ExpressionStatementNode node);
     TResult VisitVariableDeclarationStatement(VariableDeclarationStatementNode node);
     TResult VisitThrowStatement(ThrowStatementNode node);
+    TResult VisitUsingStatement(UsingStatementNode node);
     
     // Объявления (общие)
     TResult VisitTypeDeclaration(TypeDeclarationNode node);
