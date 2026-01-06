@@ -596,7 +596,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             // Извлекаем имя параметра
             var paramName = basePath.Substring(paramStart + 1, paramEnd - paramStart - 1);
             var sanitizedParamName = _namingConverter.SanitizeIdentifier(paramName);
-            pathParts.Add((Text: null, ParamName: sanitizedParamName));
+            pathParts.Add((Text: (string?)null, ParamName: sanitizedParamName));
             
             currentIndex = paramEnd + 1;
         }
@@ -831,7 +831,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             type: new SimpleTypeNode(new IdentifierNode("HttpResponseMessage"), isPrimitive: false),
             initializer: awaitSend);
         
-        var innerUsingBodyStatements = new List<StatementNode>();
+        var responseMessageUsingBodyStatements = new List<StatementNode>();
         
         // ReadAsStringAsync (переименовано content -> responseContent)
         var responseMessageContentAccess = new MemberAccessExpressionNode(

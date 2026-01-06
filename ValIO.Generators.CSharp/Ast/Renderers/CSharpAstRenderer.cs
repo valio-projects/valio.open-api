@@ -399,38 +399,68 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             varDeclObj is VariableDeclarationStatementNode varDecl)
         {
             // Using с переменной: using (var x = ...) { ... }
-            // Уменьшаем indentLevel на 2 для requestMessage, на 3 для responseMessage
-            var indentAdjustment = varDecl.Name.Name == "requestMessage" ? -2 : 
-                                   varDecl.Name.Name == "responseMessage" ? -3 : 0;
-            var adjustedIndent = Math.Max(0, _indentLevel + indentAdjustment);
-            
             if (varDecl.Type != null)
             {
                 var type = RenderType(varDecl.Type);
                 var initializer = varDecl.Initializer != null ? Visit(varDecl.Initializer) : "";
-                CodeFormatter.AppendLine(sb, adjustedIndent, $"using ({type} {varDecl.Name.Name} = {initializer})");
+                CodeFormatter.AppendLine(sb, _indentLevel, $"using ({type} {varDecl.Name.Name} = {initializer})");
             }
             else
             {
                 var initializer = varDecl.Initializer != null ? Visit(varDecl.Initializer) : "";
-                CodeFormatter.AppendLine(sb, adjustedIndent, $"using (var {varDecl.Name.Name} = {initializer})");
+                CodeFormatter.AppendLine(sb, _indentLevel, $"using (var {varDecl.Name.Name} = {initializer})");
             }
             
-            // Увеличиваем indentLevel для тела using
+            // Рендерим тело using с правильными отступами
+            CodeFormatter.AppendLine(sb, _indentLevel, "{");
             _indentLevel++;
-            var body = Visit(node.Body);
+            foreach (var statement in ((BlockNode)node.Body).Statements)
+            {
+                var stmt = Visit(statement);
+                // Если строка многострочная, она уже имеет правильные отступы внутри
+                if (stmt.Contains('\n'))
+                {
+                    sb.Append(stmt);
+                    if (!stmt.EndsWith("\n") && !stmt.EndsWith("\r\n"))
+                    {
+                        sb.AppendLine();
+                    }
+                }
+                else
+                {
+                    CodeFormatter.AppendLine(sb, _indentLevel, stmt);
+                }
+            }
             _indentLevel--;
-            sb.Append(body);
+            CodeFormatter.AppendLine(sb, _indentLevel, "}");
         }
         else
         {
             // Using с выражением: using (expression) { ... }
             var resource = Visit(node.Resource);
             CodeFormatter.AppendLine(sb, _indentLevel, $"using ({resource})");
+            // Рендерим тело using с правильными отступами
+            CodeFormatter.AppendLine(sb, _indentLevel, "{");
             _indentLevel++;
-            var body = Visit(node.Body);
+            foreach (var statement in ((BlockNode)node.Body).Statements)
+            {
+                var stmt = Visit(statement);
+                // Если строка многострочная, она уже имеет правильные отступы внутри
+                if (stmt.Contains('\n'))
+                {
+                    sb.Append(stmt);
+                    if (!stmt.EndsWith("\n") && !stmt.EndsWith("\r\n"))
+                    {
+                        sb.AppendLine();
+                    }
+                }
+                else
+                {
+                    CodeFormatter.AppendLine(sb, _indentLevel, stmt);
+                }
+            }
             _indentLevel--;
-            sb.Append(body);
+            CodeFormatter.AppendLine(sb, _indentLevel, "}");
         }
         
         return sb.ToString();
@@ -453,15 +483,15 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var sb = new StringBuilder();
         var condition = Visit(node.Condition);
-        // Уменьшаем indentLevel на 4 для if statement внутри using
-        var adjustedIndent = Math.Max(0, _indentLevel - 4);
-        CodeFormatter.AppendLine(sb, adjustedIndent, $"if ({condition})");
+        CodeFormatter.AppendLine(sb, _indentLevel, $"if ({condition})");
         var thenBlock = Visit(node.ThenBlock);
+        // VisitBlock возвращает строку с правильными отступами, добавляем её как есть
         sb.Append(thenBlock);
         if (node.ElseBlock != null)
         {
-            CodeFormatter.AppendLine(sb, adjustedIndent, "else");
+            CodeFormatter.AppendLine(sb, _indentLevel, "else");
             var elseBlock = Visit(node.ElseBlock);
+            // VisitBlock возвращает строку с правильными отступами, добавляем её как есть
             sb.Append(elseBlock);
         }
         return sb.ToString();
@@ -683,7 +713,20 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             foreach (var stmt in node.Body.Statements)
             {
                 var rendered = Visit(stmt);
-                CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                // Если строка многострочная, она уже имеет правильные отступы внутри
+                // Добавляем её как есть, без дополнительных отступов
+                if (rendered.Contains('\n'))
+                {
+                    sb.Append(rendered);
+                    if (!rendered.EndsWith("\n") && !rendered.EndsWith("\r\n"))
+                    {
+                        sb.AppendLine();
+                    }
+                }
+                else
+                {
+                    CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                }
             }
             _indentLevel = savedIndent;
             CodeFormatter.AppendLine(sb, indentLevel, "}");
@@ -991,8 +1034,8 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitBlock(BlockNode node)
     {
         var sb = new StringBuilder();
+        CodeFormatter.AppendLine(sb, _indentLevel, "{");
         _indentLevel++;
-        CodeFormatter.AppendLine(sb, _indentLevel - 1, "{");
         foreach (var statement in node.Statements)
         {
             var stmt = Visit(statement);
