@@ -252,49 +252,7 @@ public class IrBuilder
         if (resolvedSchema == null)
             throw new InvalidOperationException("Schema resolver returned null schema");
         
-        // Примитивные типы
-        if (IsPrimitive(resolvedSchema))
-        {
-            return new IrPrimitiveType
-            {
-                PrimitiveKind = MapPrimitive(resolvedSchema.Type, resolvedSchema.Format)
-            };
-        }
-        
-        // Массив
-        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Array))
-        {
-            if (resolvedSchema.Items == null)
-                throw new InvalidOperationException("Array schema must have Items property");
-            
-            var elementType = BuildType(resolvedSchema.Items, document);
-            return new IrArrayType { ElementType = elementType };
-        }
-        
-        // Словарь
-        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object) && resolvedSchema.AdditionalProperties != null)
-        {
-            var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
-            var valueType = BuildType(resolvedSchema.AdditionalProperties, document);
-            return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
-        }
-        
-        // OneOf, AnyOf -> Union
-        if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)
-        {
-            var variants = (resolvedSchema.OneOf ?? resolvedSchema.AnyOf)!;
-            var types = variants.Select(v => BuildType(v, document)).ToList();
-            return new IrUnionType { Types = types };
-        }
-        
-        // AllOf -> Intersection
-        if (resolvedSchema.AllOf?.Count > 0)
-        {
-            var types = resolvedSchema.AllOf.Select(s => BuildType(s, document)).ToList();
-            return new IrIntersectionType { Types = types };
-        }
-        
-        // Ссылка на модель
+        // Сначала проверяем ссылки (до разрешения через ResolveSchema они могут остаться)
         if (resolvedSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
             var reference = referenceHolder.Reference;
@@ -305,16 +263,79 @@ public class IrBuilder
             }
         }
         
-        // Object (inline) - создаем анонимную модель или возвращаем словарь
-        if (resolvedSchema.Type.HasValue && resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object))
+        // OneOf, AnyOf -> Union (проверяем до проверки Type, так как композиция может не иметь Type)
+        if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)
         {
-            // Если есть Properties, это объект с полями - создаем анонимную модель
+            var variants = (resolvedSchema.OneOf ?? resolvedSchema.AnyOf)!;
+            var types = variants.Select(v => BuildType(v, document)).ToList();
+            return new IrUnionType { Types = types };
+        }
+        
+        // AllOf -> Intersection (проверяем до проверки Type)
+        if (resolvedSchema.AllOf?.Count > 0)
+        {
+            var types = resolvedSchema.AllOf.Select(s => BuildType(s, document)).ToList();
+            return new IrIntersectionType { Types = types };
+        }
+        
+        // Если Type не указан, но есть Properties - это объект
+        if (!resolvedSchema.Type.HasValue)
+        {
+            // Если есть Properties, это объект с полями
             if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
             {
-                // Генерируем имя для анонимной модели
-                // В контексте IR мы можем создать временную модель или вернуть словарь
-                // Для простоты возвращаем словарь Record<string, any> (или object в C#)
-                // Это будет обработано на уровне AST builder'а
+                // Возвращаем словарь для inline объектов (они будут обработаны на уровне AST)
+                var valueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
+                var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+                return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+            }
+            
+            // Если есть AdditionalProperties, это словарь
+            if (resolvedSchema.AdditionalProperties != null)
+            {
+                var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+                var valueType = BuildType(resolvedSchema.AdditionalProperties, document);
+                return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+            }
+            
+            // Если ничего нет, возвращаем any
+            return new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
+        }
+        
+        // Примитивные типы
+        if (IsPrimitive(resolvedSchema))
+        {
+            return new IrPrimitiveType
+            {
+                PrimitiveKind = MapPrimitive(resolvedSchema.Type, resolvedSchema.Format)
+            };
+        }
+        
+        // Массив
+        if (resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Array))
+        {
+            if (resolvedSchema.Items == null)
+                throw new InvalidOperationException("Array schema must have Items property");
+            
+            var elementType = BuildType(resolvedSchema.Items, document);
+            return new IrArrayType { ElementType = elementType };
+        }
+        
+        // Словарь (object с AdditionalProperties)
+        if (resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object) && resolvedSchema.AdditionalProperties != null)
+        {
+            var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+            var valueType = BuildType(resolvedSchema.AdditionalProperties, document);
+            return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+        }
+        
+        // Object (inline) - создаем анонимную модель или возвращаем словарь
+        if (resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object))
+        {
+            // Если есть Properties, это объект с полями
+            if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
+            {
+                // Возвращаем словарь для inline объектов
                 var valueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
                 var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
                 return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
