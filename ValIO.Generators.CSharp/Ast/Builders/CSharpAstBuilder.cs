@@ -76,7 +76,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             _ => LiteralKind.String
         };
         
-        return new LiteralExpressionNode(value, literalKind);
+        return new LiteralExpressionNode(value ?? string.Empty, literalKind);
     }
     
     // Приватные вспомогательные методы
@@ -395,7 +395,6 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             body: body,
             accessModifier: AccessModifier.Public,
             isAsync: true,
-            isStatic: false,
             documentation: comment);
     }
     

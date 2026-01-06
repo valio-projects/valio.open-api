@@ -590,12 +590,12 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{asyncKeyword}{returnType}{node.Name.Name}({parameters})");
         
         // Тело метода
-        if (node.Body != null && node.Body.Count > 0)
+        if (node.Body != null && node.Body.Statements.Count > 0)
         {
             CodeFormatter.AppendLine(sb, indentLevel, "{");
             var savedIndent = _indentLevel;
             _indentLevel = indentLevel + 1;
-            foreach (var stmt in node.Body)
+            foreach (var stmt in node.Body.Statements)
             {
                 var rendered = Visit(stmt);
                 CodeFormatter.AppendLine(sb, _indentLevel, rendered);
@@ -633,8 +633,8 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // XML комментарий
         if (node.Documentation != null)
         {
-            var parameters = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
-            CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, parameters, null);
+            var paramDocs = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
+            CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, paramDocs, null);
         }
         
         // Атрибуты
@@ -646,12 +646,12 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{node.Name.Name}({parameters})");
         
         // Тело конструктора
-        if (node.Body != null && node.Body.Count > 0)
+        if (node.Body != null && node.Body.Statements.Count > 0)
         {
             CodeFormatter.AppendLine(sb, indentLevel, "{");
             var savedIndent = _indentLevel;
             _indentLevel = indentLevel + 1;
-            foreach (var stmt in node.Body)
+            foreach (var stmt in node.Body.Statements)
             {
                 var rendered = Visit(stmt);
                 CodeFormatter.AppendLine(sb, _indentLevel, rendered);
@@ -693,7 +693,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Name}{value}{comma ?? ""}");
     }
 
-    private void RenderMember(StringBuilder sb, MemberDeclarationNode member, int indentLevel)
+    private void RenderMember(StringBuilder sb, DeclarationNode member, int indentLevel)
     {
         switch (member.Kind)
         {
@@ -811,13 +811,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         return node.LiteralKind switch
         {
-            LiteralKind.String => $"\"{CodeEscapeHelper.EscapeString(node.Value)}\"",
-            LiteralKind.Integer => node.Value?.ToString() ?? "0",
-            LiteralKind.Float => $"{node.Value}f",
-            LiteralKind.Double => node.Value?.ToString() ?? "0.0",
+            LiteralKind.String => $"\"{CodeEscapeHelper.EscapeString(node.Value?.ToString() ?? string.Empty)}\"",
+            LiteralKind.Number => node.Value?.ToString() ?? "0",
             LiteralKind.Boolean => node.Value?.ToString()?.ToLowerInvariant() ?? "false",
             LiteralKind.Null => "null",
-            LiteralKind.Character => $"'{CodeEscapeHelper.EscapeString(node.Value?.ToString())}'",
+            LiteralKind.Character => $"'{CodeEscapeHelper.EscapeString(node.Value?.ToString() ?? string.Empty)}'",
             _ => node.Value?.ToString() ?? "null"
         };
     }
@@ -870,7 +868,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitComment(CommentNode node)
     {
-        if (node.CommentKind == CommentKind.XmlDocumentation)
+        if (node.CommentKind == CommentKind.Xml)
         {
             var sb = new StringBuilder();
             CommentGenerator.GenerateXmlComment(sb, 0, node.Text);
@@ -922,22 +920,24 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var right = Visit(node.Right);
         var op = node.Operator switch
         {
-            BinaryOperatorKind.Add => "+",
-            BinaryOperatorKind.Subtract => "-",
-            BinaryOperatorKind.Multiply => "*",
-            BinaryOperatorKind.Divide => "/",
-            BinaryOperatorKind.Modulo => "%",
-            BinaryOperatorKind.Equal => "==",
-            BinaryOperatorKind.NotEqual => "!=",
-            BinaryOperatorKind.LessThan => "<",
-            BinaryOperatorKind.LessThanOrEqual => "<=",
-            BinaryOperatorKind.GreaterThan => ">",
-            BinaryOperatorKind.GreaterThanOrEqual => ">=",
-            BinaryOperatorKind.And => "&&",
-            BinaryOperatorKind.Or => "||",
-            BinaryOperatorKind.BitwiseAnd => "&",
-            BinaryOperatorKind.BitwiseOr => "|",
-            BinaryOperatorKind.BitwiseXor => "^",
+            BinaryOperator.Add => "+",
+            BinaryOperator.Subtract => "-",
+            BinaryOperator.Multiply => "*",
+            BinaryOperator.Divide => "/",
+            BinaryOperator.Modulo => "%",
+            BinaryOperator.Equal => "==",
+            BinaryOperator.NotEqual => "!=",
+            BinaryOperator.LessThan => "<",
+            BinaryOperator.LessThanOrEqual => "<=",
+            BinaryOperator.GreaterThan => ">",
+            BinaryOperator.GreaterThanOrEqual => ">=",
+            BinaryOperator.LogicalAnd => "&&",
+            BinaryOperator.LogicalOr => "||",
+            BinaryOperator.BitwiseAnd => "&",
+            BinaryOperator.BitwiseOr => "|",
+            BinaryOperator.BitwiseXor => "^",
+            BinaryOperator.LeftShift => "<<",
+            BinaryOperator.RightShift => ">>",
             _ => throw new NotSupportedException($"Binary operator {node.Operator} is not supported")
         };
         return $"{left} {op} {right}";
@@ -957,7 +957,8 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitImport(ImportNode node)
     {
         // Import в C# - это using directive, обрабатывается отдельно
-        return $"using {node.Path};";
+        var from = node.From ?? string.Empty;
+        return $"using {from};";
     }
     
     public override string VisitUnionType(UnionTypeNode node)
@@ -984,9 +985,9 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitConditionalExpression(ConditionalExpressionNode node)
     {
         var condition = Visit(node.Condition);
-        var thenExpr = Visit(node.ThenExpression);
-        var elseExpr = Visit(node.ElseExpression);
-        return $"{condition} ? {thenExpr} : {elseExpr}";
+        var trueExpr = Visit(node.TrueExpression);
+        var falseExpr = Visit(node.FalseExpression);
+        return $"{condition} ? {trueExpr} : {falseExpr}";
     }
     
     public override string VisitAttribute(AttributeNode node)
