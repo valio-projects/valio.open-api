@@ -18,6 +18,10 @@ public class IrBuilder
     private readonly ISchemaResolver _schemaResolver;
     private readonly INamingConverter _namingConverter;
     
+    // Словарь для хранения созданных inline моделей
+    private readonly Dictionary<string, IrModel> _inlineModels = new();
+    private int _inlineModelCounter = 0;
+    
     public IrBuilder(ISchemaResolver schemaResolver, INamingConverter namingConverter)
     {
         _schemaResolver = schemaResolver ?? throw new ArgumentNullException(nameof(schemaResolver));
@@ -32,15 +36,23 @@ public class IrBuilder
         if (document == null)
             throw new ArgumentNullException(nameof(document));
         
+        // Очищаем словарь inline моделей перед началом
+        _inlineModels.Clear();
+        _inlineModelCounter = 0;
+        
         var models = ExtractModels(document);
         var enums = ExtractEnums(document);
         var clients = ExtractClients(document);
-        var typeDependencies = BuildTypeDependencyGraph(models, enums, clients);
+        
+        // Добавляем inline модели к основным моделям
+        var allModels = models.Concat(_inlineModels.Values).ToList();
+        
+        var typeDependencies = BuildTypeDependencyGraph(allModels, enums, clients);
         
         return new IrDocument
         {
             Metadata = ExtractMetadata(document),
-            Models = models,
+            Models = allModels,
             Enums = enums,
             Clients = clients,
             TypeDependencies = typeDependencies
@@ -258,14 +270,8 @@ public class IrBuilder
         if (document == null)
             throw new ArgumentNullException(nameof(document));
         
-        // Разрешаем ссылки
-        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
-        
-        if (resolvedSchema == null)
-            throw new InvalidOperationException("Schema resolver returned null schema");
-        
-        // Сначала проверяем ссылки (до разрешения через ResolveSchema они могут остаться)
-        if (resolvedSchema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
+        // СНАЧАЛА проверяем ссылки ДО разрешения (после разрешения информация о ссылке теряется)
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> referenceHolder)
         {
             var reference = referenceHolder.Reference;
             if (reference != null && !string.IsNullOrEmpty(reference.Id))
@@ -274,6 +280,12 @@ public class IrBuilder
                 return new IrModelReference { ModelName = modelName };
             }
         }
+        
+        // Разрешаем ссылки
+        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
+        
+        if (resolvedSchema == null)
+            throw new InvalidOperationException("Schema resolver returned null schema");
         
         // OneOf, AnyOf -> Union (проверяем до проверки Type, так как композиция может не иметь Type)
         if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)
@@ -296,10 +308,29 @@ public class IrBuilder
             // Если есть Properties, это объект с полями
             if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
             {
-                // Возвращаем словарь для inline объектов (они будут обработаны на уровне AST)
-                var valueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
-                var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
-                return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+                // Проверяем, является ли это словарем (есть AdditionalProperties и это не false)
+                // В OpenAPI AdditionalProperties может быть IOpenApiAny (boolean) или IOpenApiSchema
+                if (resolvedSchema.AdditionalProperties != null)
+                {
+                    // Если это IOpenApiSchema, это словарь
+                    if (resolvedSchema.AdditionalProperties is IOpenApiSchema schemaValue)
+                    {
+                        var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+                        var valueType = BuildType(schemaValue, document);
+                        return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+                    }
+                    
+                    // Если это не IOpenApiSchema, это может быть boolean false
+                    // В этом случае это объект с фиксированными свойствами, не словарь
+                    // Продолжаем обработку как inline объект ниже
+                }
+                
+                // Это inline объект с фиксированными свойствами
+                // Создаем inline модель
+                var inlineModelName = GenerateInlineModelName("Inline", _inlineModelCounter++);
+                var inlineModel = BuildModel(inlineModelName, resolvedSchema, document);
+                _inlineModels[inlineModelName] = inlineModel;
+                return new IrModelReference { ModelName = inlineModelName };
             }
             
             // Если есть AdditionalProperties, это словарь
@@ -333,28 +364,38 @@ public class IrBuilder
             return new IrArrayType { ElementType = elementType };
         }
         
-        // Словарь (object с AdditionalProperties)
-        if (resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object) && resolvedSchema.AdditionalProperties != null)
-        {
-            var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
-            var valueType = BuildType(resolvedSchema.AdditionalProperties, document);
-            return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
-        }
-        
-        // Object (inline) - создаем анонимную модель или возвращаем словарь
+        // Object - проверяем, является ли это словарем или объектом с фиксированными свойствами
         if (resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Object))
         {
-            // Если есть Properties, это объект с полями
-            if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
+            // Словарь: object с AdditionalProperties (не false) - это словарь
+            // additionalProperties: false означает, что это НЕ словарь, а объект с фиксированными свойствами
+            if (resolvedSchema.AdditionalProperties != null)
             {
-                // Возвращаем словарь для inline объектов
-                var valueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
-                var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
-                return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+                // Если это IOpenApiSchema, это словарь
+                if (resolvedSchema.AdditionalProperties is IOpenApiSchema schemaValue)
+                {
+                    var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+                    var valueType = BuildType(schemaValue, document);
+                    return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
+                }
+                
+                // Если это не IOpenApiSchema, это может быть boolean false
+                // В этом случае это объект с фиксированными свойствами, не словарь
+                // Продолжаем обработку ниже
             }
             
-            // Если нет Properties, но есть AdditionalProperties - это уже обработано выше
-            // Если нет ни того, ни другого - это пустой объект, возвращаем словарь
+            // Если есть Properties, это объект с фиксированными полями
+            // Для inline объектов (не в components/schemas) создаем отдельную модель
+            if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
+            {
+                // Это inline объект - создаем для него модель
+                var inlineModelName = GenerateInlineModelName("Inline", _inlineModelCounter++);
+                var inlineModel = BuildModel(inlineModelName, resolvedSchema, document);
+                _inlineModels[inlineModelName] = inlineModel;
+                return new IrModelReference { ModelName = inlineModelName };
+            }
+            
+            // Пустой объект без Properties и AdditionalProperties
             var emptyValueType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
             var emptyKeyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
             return new IrDictionaryType { KeyType = emptyKeyType, ValueType = emptyValueType };
@@ -905,5 +946,13 @@ public class IrBuilder
         }
         
         return result;
+    }
+    
+    /// <summary>
+    /// Генерирует имя для inline модели
+    /// </summary>
+    private string GenerateInlineModelName(string prefix, int counter)
+    {
+        return _namingConverter.SanitizeIdentifier($"{prefix}Model{counter}");
     }
 }

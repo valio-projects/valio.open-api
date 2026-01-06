@@ -327,8 +327,24 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
+        
+        // Проверяем, есть ли generic type argument в metadata
+        var genericTypeArgStr = "";
+        if (node.Metadata != null && node.Metadata.TryGetValue("GenericTypeArgument", out var genericTypeArgObj) && genericTypeArgObj is TypeNode genericTypeArg)
+        {
+            genericTypeArgStr = $"<{RenderType(genericTypeArg)}>";
+        }
+        
         var args = string.Join(", ", node.Arguments.Select(Visit));
-        return $"{target}({args})";
+        
+        // Проверяем, является ли это new expression
+        var isNewExpression = node.Metadata != null && node.Metadata.TryGetValue("IsNewExpression", out var isNewObj) && isNewObj is bool isNew && isNew;
+        if (isNewExpression)
+        {
+            return $"new {target}{genericTypeArgStr}({args})";
+        }
+        
+        return $"{target}{genericTypeArgStr}({args})";
     }
 
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
@@ -358,6 +374,16 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var type = node.Type != null ? $"{RenderType(node.Type)} " : "var ";
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
         return $"{type}{node.Name.Name}{initializer};";
+    }
+    
+    public override string VisitThrowStatement(ThrowStatementNode node)
+    {
+        if (node.Expression == null)
+        {
+            return "throw;";
+        }
+        var expr = Visit(node.Expression);
+        return $"throw {expr};";
     }
 
     public override string VisitAwaitExpression(AwaitExpressionNode node)
@@ -922,6 +948,21 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var left = Visit(node.Left);
         var right = Visit(node.Right);
+        
+        // Проверяем, является ли это cast expression через metadata
+        var isCast = node.Metadata != null && node.Metadata.TryGetValue("IsCastExpression", out var isCastObj) && isCastObj is bool cast && cast;
+        if (isCast && node.Metadata != null && node.Metadata.TryGetValue("CastTargetType", out var targetTypeObj) && targetTypeObj is string targetType)
+        {
+            return $"({targetType}){left}";
+        }
+        
+        // Проверяем, является ли это присваиванием через metadata
+        var isAssignment = node.Metadata != null && node.Metadata.TryGetValue("IsAssignment", out var isAssignObj) && isAssignObj is bool isAssign && isAssign;
+        if (isAssignment)
+        {
+            return $"{left} = {right}";
+        }
+        
         var op = node.Operator switch
         {
             BinaryOperator.Add => "+",

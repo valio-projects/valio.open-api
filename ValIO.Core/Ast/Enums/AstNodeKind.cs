@@ -38,6 +38,7 @@ public enum AstNodeKind
     ForEachStatement,
     ExpressionStatement,
     VariableDeclarationStatement,
+    ThrowStatement,
     
     // Объявления
     Declaration,
