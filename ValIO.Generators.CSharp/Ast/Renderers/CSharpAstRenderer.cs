@@ -781,6 +781,10 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             AstNodeKind.NullableType => Visit((NullableTypeNode)type),
             AstNodeKind.ArrayType => Visit((ArrayTypeNode)type),
             AstNodeKind.GenericType => Visit((GenericTypeNode)type),
+            AstNodeKind.DictionaryType => Visit((DictionaryTypeNode)type),
+            AstNodeKind.UnionType => Visit((UnionTypeNode)type),
+            AstNodeKind.IntersectionType => Visit((IntersectionTypeNode)type),
+            AstNodeKind.OptionalType => Visit((OptionalTypeNode)type),
             _ => throw new NotSupportedException($"Type kind {type.Kind} is not supported")
         };
     }
