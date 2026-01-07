@@ -183,7 +183,12 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// </summary>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
-        var name = new IdentifierNode(property.Name);
+        // Проверяем, является ли имя зарезервированным в C#
+        var originalName = property.Name;
+        var isReserved = IsCSharpReservedKeyword(originalName);
+        var propertyName = isReserved ? $"@{originalName}" : originalName;
+        
+        var name = new IdentifierNode(propertyName);
         var type = BuildType(property.Type);
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.Xml)
@@ -193,13 +198,46 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             ? BuildLiteral(property.Constraints.DefaultValue, InferTypeInfo(property.Type))
             : null;
         
+        // Если имя зарезервированное, добавляем JsonPropertyName атрибут с оригинальным именем
+        IReadOnlyList<AttributeNode>? attributes = null;
+        if (isReserved)
+        {
+            var jsonPropertyNameAttr = new AttributeNode(
+                name: new IdentifierNode("JsonPropertyName"),
+                arguments: new[] { new LiteralExpressionNode(originalName, LiteralKind.String) }.ToImmutableList());
+            attributes = new[] { jsonPropertyNameAttr }.ToImmutableList();
+        }
+        
         return new PropertyDeclarationNode(
             name: name,
             type: type,
             isRequired: property.IsRequired,
             accessor: PropertyAccessorKind.GetSet,
             defaultValue: defaultValue,
-            documentation: comment);
+            documentation: comment,
+            attributes: attributes);
+    }
+    
+    /// <summary>
+    /// Проверяет, является ли имя зарезервированным ключевым словом в C#
+    /// </summary>
+    private bool IsCSharpReservedKeyword(string name)
+    {
+        // C# зарезервированные ключевые слова
+        var reservedKeywords = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
+            "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else",
+            "enum", "event", "explicit", "extern", "false", "finally", "fixed", "float", "for",
+            "foreach", "goto", "if", "implicit", "in", "int", "interface", "internal", "is", "lock",
+            "long", "namespace", "new", "null", "object", "operator", "out", "override", "params",
+            "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed", "short",
+            "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true",
+            "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual",
+            "void", "volatile", "while"
+        };
+        
+        return reservedKeywords.Contains(name);
     }
     
     /// <summary>
@@ -368,6 +406,16 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Не добавляем зависимости для типов моделей, так как они генерируются в том же namespace
         // Используем только системные типы и типы из других namespace'ов, если они нужны
         var dependencies = new HashSet<string>();
+        
+        // Проверяем, используется ли JsonPropertyName атрибут (для зарезервированных имен)
+        foreach (var property in model.Properties)
+        {
+            if (IsCSharpReservedKeyword(property.Name))
+            {
+                dependencies.Add("System.Text.Json.Serialization");
+                break; // Достаточно одного использования
+            }
+        }
         
         // В будущем можно добавить проверку на типы из других namespace'ов
         // Например, если модель использует типы из System.Collections.Generic и т.д.

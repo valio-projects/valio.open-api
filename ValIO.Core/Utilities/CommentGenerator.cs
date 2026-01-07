@@ -17,7 +17,15 @@ public static class CommentGenerator
             return;
         
         CodeFormatter.AppendLine(sb, indentLevel, "/// <summary>");
-        CodeFormatter.AppendLine(sb, indentLevel, $"/// {CodeEscapeHelper.EscapeXmlComment(description)}");
+        
+        // Разбиваем многострочные комментарии на отдельные строки
+        var lines = description.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        foreach (var line in lines)
+        {
+            var escapedLine = CodeEscapeHelper.EscapeXmlComment(line);
+            CodeFormatter.AppendLine(sb, indentLevel, $"/// {escapedLine}");
+        }
+        
         CodeFormatter.AppendLine(sb, indentLevel, "/// </summary>");
     }
     
@@ -32,7 +40,13 @@ public static class CommentGenerator
         CodeFormatter.AppendLine(sb, indentLevel, "/// <summary>");
         if (!string.IsNullOrEmpty(description))
         {
-            CodeFormatter.AppendLine(sb, indentLevel, $"/// {CodeEscapeHelper.EscapeXmlComment(description)}");
+            // Разбиваем многострочные комментарии на отдельные строки
+            var lines = description.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+            foreach (var line in lines)
+            {
+                var escapedLine = CodeEscapeHelper.EscapeXmlComment(line);
+                CodeFormatter.AppendLine(sb, indentLevel, $"/// {escapedLine}");
+            }
         }
         CodeFormatter.AppendLine(sb, indentLevel, "/// </summary>");
         
