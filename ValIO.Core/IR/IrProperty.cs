@@ -9,7 +9,12 @@ namespace ValIO.Core.IR;
 public sealed record IrProperty
 {
     /// <summary>
-    /// Имя свойства (sanitized)
+    /// Оригинальное имя свойства из OpenAPI схемы (до обработки)
+    /// </summary>
+    public required string OriginalName { get; init; }
+    
+    /// <summary>
+    /// Имя свойства (sanitized, безопасное для использования в коде, обработано через NamingConverter)
     /// </summary>
     public required string Name { get; init; }
     

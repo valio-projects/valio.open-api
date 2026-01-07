@@ -175,6 +175,7 @@ public class IrBuilder
         foreach (var (propertyName, propertySchema) in schema.Properties)
         {
             var sanitizedName = _namingConverter.SanitizeIdentifier(propertyName);
+            var safeName = _namingConverter.SanitizeReservedKeyword(sanitizedName);
             var propertyType = BuildType(propertySchema, document, propertyContext: new PropertyContext
             {
                 PropertyName = propertyName,
@@ -185,7 +186,8 @@ public class IrBuilder
             
             properties.Add(new IrProperty
             {
-                Name = sanitizedName,
+                OriginalName = propertyName,
+                Name = safeName,
                 Type = propertyType,
                 IsRequired = isRequired,
                 Description = propertySchema.Description,

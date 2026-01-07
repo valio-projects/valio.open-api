@@ -154,7 +154,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             ? new CommentNode(model.Description, CommentKind.Xml)
             : null;
         
-        var properties = model.Properties.Select(BuildProperty).ToList<DeclarationNode>();
+        var properties = model.Properties.Select(p => BuildProperty(p, model)).ToList<DeclarationNode>();
         
         // Обрабатываем Composition для allOf (наследование)
         var baseTypes = new List<TypeNode>();
@@ -218,14 +218,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// <summary>
     /// Строит PropertyDeclarationNode из IrProperty
     /// </summary>
-    public PropertyDeclarationNode BuildProperty(IrProperty property)
+    public PropertyDeclarationNode BuildProperty(IrProperty property, IrModel? model = null)
     {
-        // Проверяем, является ли имя зарезервированным в C#
-        var originalName = property.Name;
-        var isReserved = IsCSharpReservedKeyword(originalName);
-        var propertyName = isReserved ? $"@{originalName}" : originalName;
-        
-        var name = new IdentifierNode(propertyName);
+        var name = new IdentifierNode(property.Name);
         var type = BuildType(property.Type);
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.Xml)
@@ -238,19 +233,19 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Собираем атрибуты
         var attributes = new List<AttributeNode>();
         
-        // Если имя зарезервированное, добавляем JsonPropertyName атрибут с оригинальным именем
-        if (isReserved)
+        // Добавляем JsonPropertyName атрибут с оригинальным именем, если имя изменилось
+        if (property.Name != property.OriginalName)
         {
             var jsonPropertyNameAttr = new AttributeNode(
                 name: new IdentifierNode("JsonPropertyName"),
-                arguments: new[] { new LiteralExpressionNode(originalName, LiteralKind.String) }.ToImmutableList());
+                arguments: new[] { new LiteralExpressionNode(property.OriginalName, LiteralKind.String) }.ToImmutableList());
             attributes.Add(jsonPropertyNameAttr);
         }
         
         // Добавляем атрибуты валидации, если включено
-        if (_options.GenerateValidationAttributes)
+        if (_options.GenerateValidationAttributes && model != null)
         {
-            AddValidationAttributes(property, attributes);
+            AddValidationAttributes(property, model, attributes);
         }
         
         // Определяем тип аксессора на основе опций
@@ -274,59 +269,143 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// <summary>
     /// Добавляет атрибуты валидации для свойства на основе ограничений
     /// </summary>
-    private void AddValidationAttributes(IrProperty property, List<AttributeNode> attributes)
+    private void AddValidationAttributes(IrProperty property, IrModel model, List<AttributeNode> attributes)
     {
         if (property.Constraints == null)
             return;
-        
+
         var constraints = property.Constraints;
         
+        // Определяем имя класса констант (если генерируем константы)
+        string? constantsClassName = null;
+        if (_options.GenerateValidationConstants)
+        {
+            var propertyNamePascalCase = _namingConverter.ToPascalCase(property.OriginalName);
+            constantsClassName = $"{propertyNamePascalCase}Constants";
+        }
+
         // Required атрибут для обязательных свойств
         if (property.IsRequired)
         {
             attributes.Add(new AttributeNode(new IdentifierNode("Required")));
         }
-        
+
         // MinLength / MaxLength для строк
         if (constraints.MinLength.HasValue)
         {
+            ExpressionNode minLengthValue;
+            if (_options.GenerateValidationConstants && constantsClassName != null)
+            {
+                // Используем константу из класса констант
+                var constantsClassAccess = new IdentifierExpressionNode(new IdentifierNode(constantsClassName));
+                var minLengthAccess = new MemberAccessExpressionNode(
+                    @object: constantsClassAccess,
+                    member: new IdentifierNode("MinLength"));
+                minLengthValue = minLengthAccess;
+            }
+            else
+            {
+                // Используем inline значение
+                minLengthValue = new LiteralExpressionNode(constraints.MinLength.Value.ToString(), LiteralKind.Number);
+            }
+            
             var minLengthAttr = new AttributeNode(
                 name: new IdentifierNode("MinLength"),
-                arguments: new[] { new LiteralExpressionNode(constraints.MinLength.Value.ToString(), LiteralKind.Number) }.ToImmutableList());
+                arguments: new[] { minLengthValue }.ToImmutableList());
             attributes.Add(minLengthAttr);
         }
-        
+
         if (constraints.MaxLength.HasValue)
         {
+            ExpressionNode maxLengthValue;
+            if (_options.GenerateValidationConstants && constantsClassName != null)
+            {
+                // Используем константу из класса констант
+                var constantsClassAccess = new IdentifierExpressionNode(new IdentifierNode(constantsClassName));
+                var maxLengthAccess = new MemberAccessExpressionNode(
+                    @object: constantsClassAccess,
+                    member: new IdentifierNode("MaxLength"));
+                maxLengthValue = maxLengthAccess;
+            }
+            else
+            {
+                // Используем inline значение
+                maxLengthValue = new LiteralExpressionNode(constraints.MaxLength.Value.ToString(), LiteralKind.Number);
+            }
+            
             var maxLengthAttr = new AttributeNode(
                 name: new IdentifierNode("MaxLength"),
-                arguments: new[] { new LiteralExpressionNode(constraints.MaxLength.Value.ToString(), LiteralKind.Number) }.ToImmutableList());
+                arguments: new[] { maxLengthValue }.ToImmutableList());
             attributes.Add(maxLengthAttr);
         }
-        
+
         // Range для чисел (Min/Max)
         if (constraints.Min.HasValue || constraints.Max.HasValue)
         {
-            var minValue = constraints.Min.HasValue 
-                ? new LiteralExpressionNode(constraints.Min.Value.ToString(), LiteralKind.Number)
-                : new LiteralExpressionNode("0", LiteralKind.Number);
-            
-            var maxValue = constraints.Max.HasValue
-                ? new LiteralExpressionNode(constraints.Max.Value.ToString(), LiteralKind.Number)
-                : new LiteralExpressionNode("double.MaxValue", LiteralKind.String);
-            
+            ExpressionNode minValue;
+            if (_options.GenerateValidationConstants && constantsClassName != null && constraints.Min.HasValue)
+            {
+                // Используем константу из класса констант
+                var constantsClassAccess = new IdentifierExpressionNode(new IdentifierNode(constantsClassName));
+                var minAccess = new MemberAccessExpressionNode(
+                    @object: constantsClassAccess,
+                    member: new IdentifierNode("Min"));
+                minValue = minAccess;
+            }
+            else
+            {
+                // Используем inline значение
+                minValue = constraints.Min.HasValue
+                    ? new LiteralExpressionNode(constraints.Min.Value.ToString(), LiteralKind.Number)
+                    : new LiteralExpressionNode("0", LiteralKind.Number);
+            }
+
+            ExpressionNode maxValue;
+            if (_options.GenerateValidationConstants && constantsClassName != null && constraints.Max.HasValue)
+            {
+                // Используем константу из класса констант
+                var constantsClassAccess = new IdentifierExpressionNode(new IdentifierNode(constantsClassName));
+                var maxAccess = new MemberAccessExpressionNode(
+                    @object: constantsClassAccess,
+                    member: new IdentifierNode("Max"));
+                maxValue = maxAccess;
+            }
+            else
+            {
+                // Используем inline значение
+                maxValue = constraints.Max.HasValue
+                    ? new LiteralExpressionNode(constraints.Max.Value.ToString(), LiteralKind.Number)
+                    : new LiteralExpressionNode("double.MaxValue", LiteralKind.String);
+            }
+
             var rangeAttr = new AttributeNode(
                 name: new IdentifierNode("Range"),
                 arguments: new[] { minValue, maxValue }.ToImmutableList());
             attributes.Add(rangeAttr);
         }
-        
+
         // RegularExpression для паттернов
         if (!string.IsNullOrEmpty(constraints.Pattern))
         {
+            ExpressionNode patternValue;
+            if (_options.GenerateValidationConstants && constantsClassName != null)
+            {
+                // Используем константу из класса констант
+                var constantsClassAccess = new IdentifierExpressionNode(new IdentifierNode(constantsClassName));
+                var patternAccess = new MemberAccessExpressionNode(
+                    @object: constantsClassAccess,
+                    member: new IdentifierNode("Pattern"));
+                patternValue = patternAccess;
+            }
+            else
+            {
+                // Используем inline значение
+                patternValue = new LiteralExpressionNode(constraints.Pattern, LiteralKind.String);
+            }
+            
             var regexAttr = new AttributeNode(
                 name: new IdentifierNode("RegularExpression"),
-                arguments: new[] { new LiteralExpressionNode(constraints.Pattern, LiteralKind.String) }.ToImmutableList());
+                arguments: new[] { patternValue }.ToImmutableList());
             attributes.Add(regexAttr);
         }
     }
@@ -505,17 +584,12 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var equalityChecks = new List<ExpressionNode>();
         foreach (var property in allProperties)
         {
-            // Получаем правильное имя свойства (с "@" префиксом для зарезервированных ключевых слов)
-            var originalName = property.Name;
-            var isReserved = IsCSharpReservedKeyword(originalName);
-            var propertyName = isReserved ? $"@{originalName}" : originalName;
-            
             var thisProperty = new MemberAccessExpressionNode(
                 @object: thisExpr,
-                member: new IdentifierNode(propertyName));
+                member: new IdentifierNode(property.Name));
             var otherProperty = new MemberAccessExpressionNode(
                 @object: new IdentifierExpressionNode(new IdentifierNode("other")),
-                member: new IdentifierNode(propertyName));
+                member: new IdentifierNode(property.Name));
             
             // Используем метод Equals для сравнения свойств
             var equalsMethod = new MemberAccessExpressionNode(
@@ -583,14 +657,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         foreach (var property in allProperties)
         {
-            // Получаем правильное имя свойства (с "@" префиксом для зарезервированных ключевых слов)
-            var originalName = property.Name;
-            var isReserved = IsCSharpReservedKeyword(originalName);
-            var propertyName = isReserved ? $"@{originalName}" : originalName;
-            
             var thisProperty = new MemberAccessExpressionNode(
                 @object: new IdentifierExpressionNode(new IdentifierNode("this")),
-                member: new IdentifierNode(propertyName));
+                member: new IdentifierNode(property.Name));
             
             var addCall = new CallExpressionNode(
                 target: addMethod,
@@ -635,8 +704,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             if (!hasConstants)
                 continue;
             
-            // Создаем вложенный класс с константами для свойства: PropertyNameConstants
-            var constantsClassName = $"{property.Name}Constants";
+            // Создаем вложенный класс с константами для свойства
+            var propertyNamePascalCase = _namingConverter.ToPascalCase(property.OriginalName);
+            var constantsClassName = $"{propertyNamePascalCase}Constants";
+            
+            // Добавляем XML комментарий с see cref на свойство
+            var constantsClassComment = new CommentNode(
+                $"Константы валидации для <see cref=\"{model.Name}.{property.Name}\"/>", 
+                CommentKind.Xml);
+            
             var constantsClass = new ClassDeclarationNode(
                 name: new IdentifierNode(constantsClassName),
                 accessModifier: AccessModifier.Public,
@@ -644,8 +720,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 isStatic: true,
                 isPartial: false,
                 baseTypes: ImmutableList<TypeNode>.Empty,
-                members: BuildConstantsClassMembers(property, constraints).ToImmutableList(),
-                documentation: null);
+                members: BuildConstantsClassMembers(model, property, constraints, constantsClassName).ToImmutableList(),
+                documentation: constantsClassComment);
             
             constantsClasses.Add(constantsClass);
         }
@@ -656,78 +732,89 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// <summary>
     /// Строит члены класса с константами валидации
     /// </summary>
-    private IReadOnlyList<DeclarationNode> BuildConstantsClassMembers(IrProperty property, IrPropertyConstraints constraints)
+    private IReadOnlyList<DeclarationNode> BuildConstantsClassMembers(IrModel model, IrProperty property, IrPropertyConstraints constraints, string constantsClassName)
     {
         var members = new List<DeclarationNode>();
         
         // MinLength константа
         if (constraints.MinLength.HasValue)
         {
+            var comment = new CommentNode($"Минимальная длина для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var minLengthField = new FieldDeclarationNode(
                 name: new IdentifierNode("MinLength"),
                 type: new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly
                 isStatic: true,
-                defaultValue: new LiteralExpressionNode(constraints.MinLength.Value.ToString(), LiteralKind.Number));
+                defaultValue: new LiteralExpressionNode(constraints.MinLength.Value.ToString(), LiteralKind.Number),
+                documentation: comment);
             members.Add(minLengthField);
         }
         
         // MaxLength константа
         if (constraints.MaxLength.HasValue)
         {
+            var comment = new CommentNode($"Максимальная длина для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var maxLengthField = new FieldDeclarationNode(
                 name: new IdentifierNode("MaxLength"),
                 type: new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly
                 isStatic: true,
-                defaultValue: new LiteralExpressionNode(constraints.MaxLength.Value.ToString(), LiteralKind.Number));
+                defaultValue: new LiteralExpressionNode(constraints.MaxLength.Value.ToString(), LiteralKind.Number),
+                documentation: comment);
             members.Add(maxLengthField);
         }
         
         // Min константа
         if (constraints.Min.HasValue)
         {
+            var comment = new CommentNode($"Минимальное значение для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var minField = new FieldDeclarationNode(
                 name: new IdentifierNode("Min"),
                 type: new SimpleTypeNode(new IdentifierNode("decimal"), isPrimitive: true),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly
                 isStatic: true,
-                defaultValue: new LiteralExpressionNode(constraints.Min.Value.ToString(), LiteralKind.Number));
+                defaultValue: new LiteralExpressionNode(constraints.Min.Value.ToString(), LiteralKind.Number),
+                documentation: comment);
             members.Add(minField);
         }
         
         // Max константа
         if (constraints.Max.HasValue)
         {
+            var comment = new CommentNode($"Максимальное значение для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var maxField = new FieldDeclarationNode(
                 name: new IdentifierNode("Max"),
                 type: new SimpleTypeNode(new IdentifierNode("decimal"), isPrimitive: true),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly
                 isStatic: true,
-                defaultValue: new LiteralExpressionNode(constraints.Max.Value.ToString(), LiteralKind.Number));
+                defaultValue: new LiteralExpressionNode(constraints.Max.Value.ToString(), LiteralKind.Number),
+                documentation: comment);
             members.Add(maxField);
         }
         
         // Pattern константа
         if (!string.IsNullOrEmpty(constraints.Pattern))
         {
+            var comment = new CommentNode($"Регулярное выражение для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var patternField = new FieldDeclarationNode(
                 name: new IdentifierNode("Pattern"),
                 type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly
                 isStatic: true,
-                defaultValue: new LiteralExpressionNode(constraints.Pattern, LiteralKind.String));
+                defaultValue: new LiteralExpressionNode(constraints.Pattern, LiteralKind.String),
+                documentation: comment);
             members.Add(patternField);
         }
         
         // DefaultValue константа
         if (constraints.DefaultValue != null)
         {
+            var comment = new CommentNode($"Значение по умолчанию для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var defaultValueType = InferTypeInfo(property.Type);
             var defaultValueField = new FieldDeclarationNode(
                 name: new IdentifierNode("DefaultValue"),
@@ -735,34 +822,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly, если примитивный тип
                 isStatic: true,
-                defaultValue: BuildLiteral(constraints.DefaultValue, defaultValueType));
+                defaultValue: BuildLiteral(constraints.DefaultValue, defaultValueType),
+                documentation: comment);
             members.Add(defaultValueField);
         }
         
         return members;
     }
     
-    /// <summary>
-    /// Проверяет, является ли имя зарезервированным ключевым словом в C#
-    /// </summary>
-    private bool IsCSharpReservedKeyword(string name)
-    {
-        // C# зарезервированные ключевые слова
-        var reservedKeywords = new HashSet<string>(StringComparer.Ordinal)
-        {
-            "abstract", "as", "base", "bool", "break", "byte", "case", "catch", "char", "checked",
-            "class", "const", "continue", "decimal", "default", "delegate", "do", "double", "else",
-            "enum", "event", "explicit", "extern", "false", "finally", "fixed", "float", "for",
-            "foreach", "goto", "if", "implicit", "in", "int", "interface", "internal", "is", "lock",
-            "long", "namespace", "new", "null", "object", "operator", "out", "override", "params",
-            "private", "protected", "public", "readonly", "ref", "return", "sbyte", "sealed", "short",
-            "sizeof", "stackalloc", "static", "string", "struct", "switch", "this", "throw", "true",
-            "try", "typeof", "uint", "ulong", "unchecked", "unsafe", "ushort", "using", "virtual",
-            "void", "volatile", "while"
-        };
-        
-        return reservedKeywords.Contains(name);
-    }
     
     /// <summary>
     /// Строит CompilationUnit из IrEnum
@@ -931,10 +998,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Используем только системные типы и типы из других namespace'ов, если они нужны
         var dependencies = new HashSet<string>();
         
-        // Проверяем, используется ли JsonPropertyName атрибут (для зарезервированных имен)
+        // Проверяем, используется ли JsonPropertyName атрибут
         foreach (var property in model.Properties)
         {
-            if (IsCSharpReservedKeyword(property.Name))
+            if (property.Name != property.OriginalName)
             {
                 dependencies.Add("System.Text.Json.Serialization");
                 break; // Достаточно одного использования

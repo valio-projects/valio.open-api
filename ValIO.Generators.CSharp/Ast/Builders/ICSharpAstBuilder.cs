@@ -48,7 +48,7 @@ public interface ICSharpAstBuilder
     /// <summary>
     /// Строит PropertyDeclarationNode из IrProperty
     /// </summary>
-    PropertyDeclarationNode BuildProperty(IrProperty property);
+    PropertyDeclarationNode BuildProperty(IrProperty property, IrModel? model = null);
     
     /// <summary>
     /// Строит CompilationUnit из IrEnum

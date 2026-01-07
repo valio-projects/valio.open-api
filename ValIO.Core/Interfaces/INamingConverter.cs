@@ -10,5 +10,15 @@ public interface INamingConverter
     string ToSnakeCase(string name);
     string ToKebabCase(string name);
     string SanitizeIdentifier(string name);
+    
+    /// <summary>
+    /// Обрабатывает зарезервированные ключевые слова, добавляя необходимые префиксы/суффиксы
+    /// </summary>
+    string SanitizeReservedKeyword(string name);
+    
+    /// <summary>
+    /// Проверяет, является ли имя зарезервированным ключевым словом
+    /// </summary>
+    bool IsReservedKeyword(string name);
 }
 

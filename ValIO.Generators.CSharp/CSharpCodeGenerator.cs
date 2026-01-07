@@ -182,7 +182,9 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         
         // 1. OpenAPI → IR
         var schemaResolver = new SchemaResolver(document);
-        var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
+        // Используем CSharpNamingConverter для обработки зарезервированных ключевых слов на этапе IR
+        var csharpNamingConverter = new Services.CSharpNamingConverter();
+        var irBuilder = new IrBuilder(schemaResolver, csharpNamingConverter);
         var irDocument = irBuilder.BuildFromOpenApi(document);
         
             // 2. IR → AST
