@@ -25,6 +25,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     private readonly INamingConverter _namingConverter;
     private readonly HttpAstBuilder _httpBuilder;
     private readonly CSharpGenerationOptions _options;
+    private Dictionary<string, IrModel>? _modelsByName;
     
     public CSharpAstBuilder(INamingConverter namingConverter, CSharpGenerationOptions? options = null)
     {
@@ -157,6 +158,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // Обрабатываем Composition для allOf (наследование)
         var baseTypes = new List<TypeNode>();
+        bool hasBaseClass = false;
         if (model.Composition != null && model.Composition.Kind == IrCompositionKind.AllOf)
         {
             // Для allOf в C# первый тип с IrModelReference становится базовым классом
@@ -167,10 +169,18 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                     // Это базовый класс - добавляем его в baseTypes
                     var baseType = BuildType(modelRef);
                     baseTypes.Add(baseType);
+                    hasBaseClass = true;
                     break; // В C# множественное наследование не поддерживается, берем только первый
                 }
             }
         }
+        
+        // Определяем, должен ли класс быть sealed
+        // Класс должен быть sealed, если:
+        // 1. Включена опция UseSealed И
+        // 2. Класс имеет базовый класс (является дочерним классом через allOf)
+        // Базовые классы (без базового класса) не должны быть sealed, если есть наследники
+        bool shouldBeSealed = _options.UseSealed && hasBaseClass;
         
         // Добавляем вложенные классы с константами валидации, если включено
         if (_options.GenerateValidationConstants)
@@ -190,14 +200,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 isNullable: false);
             baseTypes.Add(equatableInterface);
             
-            var equalityMethods = BuildEqualityMembers(model);
+            var equalityMethods = BuildEqualityMembers(model, baseTypes);
             properties.AddRange(equalityMethods.Cast<DeclarationNode>());
         }
         
         return new ClassDeclarationNode(
             name: name,
             accessModifier: AccessModifier.Public,
-            isSealed: _options.UseSealed,
+            isSealed: shouldBeSealed,
             isStatic: false,
             isPartial: false,
             baseTypes: baseTypes.ToImmutableList(),
@@ -322,9 +332,48 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     }
     
     /// <summary>
+    /// Получает все свойства модели, включая свойства из родительских классов через allOf
+    /// </summary>
+    private IReadOnlyList<IrProperty> GetAllPropertiesIncludingInherited(IrModel model, IReadOnlyList<TypeNode> baseTypes)
+    {
+        var allProperties = new List<IrProperty>();
+        
+        // Добавляем свойства из родительских классов
+        foreach (var baseType in baseTypes)
+        {
+            if (baseType is SimpleTypeNode simpleBaseType && _modelsByName != null)
+            {
+                var baseModelName = simpleBaseType.Name.Name;
+                if (_modelsByName.TryGetValue(baseModelName, out var baseModel))
+                {
+                    // Рекурсивно получаем свойства базового класса (включая его базовые классы)
+                    var baseBaseTypes = new List<TypeNode>();
+                    if (baseModel.Composition != null && baseModel.Composition.Kind == IrCompositionKind.AllOf)
+                    {
+                        foreach (var type in baseModel.Composition.Types)
+                        {
+                            if (type is IrModelReference modelRef)
+                            {
+                                baseBaseTypes.Add(BuildType(modelRef));
+                                break;
+                            }
+                        }
+                    }
+                    allProperties.AddRange(GetAllPropertiesIncludingInherited(baseModel, baseBaseTypes));
+                }
+            }
+        }
+        
+        // Добавляем собственные свойства модели
+        allProperties.AddRange(model.Properties);
+        
+        return allProperties;
+    }
+    
+    /// <summary>
     /// Строит методы Equals и GetHashCode для класса модели
     /// </summary>
-    private IReadOnlyList<MethodDeclarationNode> BuildEqualityMembers(IrModel model)
+    private IReadOnlyList<MethodDeclarationNode> BuildEqualityMembers(IrModel model, IReadOnlyList<TypeNode> baseTypes)
     {
         var methods = new List<MethodDeclarationNode>();
         
@@ -337,7 +386,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             type: nullableModelType,
             isRequired: false);
         
-        var equalsTBody = BuildEqualsTMethodBody(model);
+        var allProperties = GetAllPropertiesIncludingInherited(model, baseTypes);
+        var equalsTBody = BuildEqualsTMethodBody(model, allProperties);
         var equalsTMethod = new MethodDeclarationNode(
             name: new IdentifierNode("Equals"),
             returnType: new SimpleTypeNode(new IdentifierNode("bool"), isPrimitive: true),
@@ -367,7 +417,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         methods.Add(equalsObjMethod);
         
         // Метод GetHashCode()
-        var getHashCodeBody = BuildGetHashCodeMethodBody(model);
+        var getHashCodeBody = BuildGetHashCodeMethodBody(model, allProperties);
         var getHashCodeMethod = new MethodDeclarationNode(
             name: new IdentifierNode("GetHashCode"),
             returnType: new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
@@ -418,7 +468,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// <summary>
     /// Строит тело метода Equals(TModel? other) - основная реализация
     /// </summary>
-    private BlockNode BuildEqualsTMethodBody(IrModel model)
+    private BlockNode BuildEqualsTMethodBody(IrModel model, IReadOnlyList<IrProperty> allProperties)
     {
         var statements = new List<StatementNode>();
         
@@ -451,16 +501,21 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // Параметр "other" уже имеет тип TModel?, так что не нужно приводить тип
         
-        // Сравниваем все свойства через Equals
+        // Сравниваем все свойства (включая наследуемые) через Equals
         var equalityChecks = new List<ExpressionNode>();
-        foreach (var property in model.Properties)
+        foreach (var property in allProperties)
         {
+            // Получаем правильное имя свойства (с "@" префиксом для зарезервированных ключевых слов)
+            var originalName = property.Name;
+            var isReserved = IsCSharpReservedKeyword(originalName);
+            var propertyName = isReserved ? $"@{originalName}" : originalName;
+            
             var thisProperty = new MemberAccessExpressionNode(
                 @object: thisExpr,
-                member: new IdentifierNode(property.Name));
+                member: new IdentifierNode(propertyName));
             var otherProperty = new MemberAccessExpressionNode(
                 @object: new IdentifierExpressionNode(new IdentifierNode("other")),
-                member: new IdentifierNode(property.Name));
+                member: new IdentifierNode(propertyName));
             
             // Используем метод Equals для сравнения свойств
             var equalsMethod = new MemberAccessExpressionNode(
@@ -498,11 +553,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// <summary>
     /// Строит тело метода GetHashCode
     /// </summary>
-    private BlockNode BuildGetHashCodeMethodBody(IrModel model)
+    private BlockNode BuildGetHashCodeMethodBody(IrModel model, IReadOnlyList<IrProperty> allProperties)
     {
         var statements = new List<StatementNode>();
         
-        if (model.Properties.Count == 0)
+        if (allProperties.Count == 0)
         {
             // return 0;
             statements.Add(new ReturnStatementNode(new LiteralExpressionNode("0", LiteralKind.Number)));
@@ -520,17 +575,22 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 metadata: new Dictionary<string, object> { { "IsNewExpression", true } }.ToImmutableDictionary()));
         statements.Add(hashCodeVar);
         
-        // Добавляем все свойства через hashCode.Add()
+        // Добавляем все свойства (включая наследуемые) через hashCode.Add()
         var hashCodeIdentifier = new IdentifierExpressionNode(new IdentifierNode("hashCode"));
         var addMethod = new MemberAccessExpressionNode(
             @object: hashCodeIdentifier,
             member: new IdentifierNode("Add"));
         
-        foreach (var property in model.Properties)
+        foreach (var property in allProperties)
         {
+            // Получаем правильное имя свойства (с "@" префиксом для зарезервированных ключевых слов)
+            var originalName = property.Name;
+            var isReserved = IsCSharpReservedKeyword(originalName);
+            var propertyName = isReserved ? $"@{originalName}" : originalName;
+            
             var thisProperty = new MemberAccessExpressionNode(
                 @object: new IdentifierExpressionNode(new IdentifierNode("this")),
-                member: new IdentifierNode(property.Name));
+                member: new IdentifierNode(propertyName));
             
             var addCall = new CallExpressionNode(
                 target: addMethod,
@@ -984,6 +1044,17 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// Строит CompilationUnit из IrDocument (все модели)
     /// </summary>
     public IReadOnlyList<CompilationUnitNode> BuildCompilationUnits(IrDocument document, string? @namespace = null)
+    {
+        // Сохраняем модели по имени для доступа к родительским моделям в методах равенства
+        _modelsByName = document.Models.ToDictionary(m => m.Name, m => m);
+        
+        return BuildCompilationUnitsInternal(document, @namespace);
+    }
+    
+    /// <summary>
+    /// Внутренний метод построения CompilationUnit
+    /// </summary>
+    private IReadOnlyList<CompilationUnitNode> BuildCompilationUnitsInternal(IrDocument document, string? @namespace = null)
     {
         var compilationUnits = new List<CompilationUnitNode>();
         

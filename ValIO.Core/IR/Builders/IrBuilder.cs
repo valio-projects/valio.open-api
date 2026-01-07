@@ -7,6 +7,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Core.IR.Builders;
 
@@ -114,7 +115,41 @@ public class IrBuilder
     /// </summary>
     private IrModel BuildModel(string name, IOpenApiSchema schema, OpenApiDocument document, string? parentModelName = null, PropertyContext? propertyContext = null)
     {
-        var properties = ExtractProperties(schema, document, parentModelName);
+        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
+        
+        // Для allOf берем только свойства из inline-схем (не из базового класса через $ref)
+        // Свойства базового класса наследуются через базовый класс в C#
+        var properties = new List<IrProperty>();
+        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
+        {
+            // Берем свойства только из inline-схем (без $ref), которые определяют собственные свойства дочернего класса
+            foreach (var subSchema in resolvedSchema.AllOf)
+            {
+                var referencedSchemaName = SchemaCompositionHelper.GetSchemaNameRaw(subSchema, _schemaResolver);
+                bool isBaseClass = !string.IsNullOrEmpty(referencedSchemaName);
+                
+                if (!isBaseClass)
+                {
+                    // Это inline-схема с собственными свойствами дочернего класса
+                    var resolvedSubSchema = _schemaResolver.ResolveSchema(subSchema);
+                    var subProperties = ExtractProperties(resolvedSubSchema, document, parentModelName);
+                    properties.AddRange(subProperties);
+                }
+            }
+            
+            // Также добавляем свойства, определенные напрямую в схеме после allOf
+            if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
+            {
+                var ownProperties = ExtractProperties(resolvedSchema, document, parentModelName);
+                properties.AddRange(ownProperties);
+            }
+        }
+        else
+        {
+            // Обычная схема без allOf
+            properties = ExtractProperties(resolvedSchema, document, parentModelName).ToList();
+        }
+        
         var composition = ExtractComposition(schema, document, propertyContext);
         
         return new IrModel
