@@ -789,15 +789,51 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Модификаторы и объявление конструктора
         var modifiers = RenderModifiers(node.AccessModifier);
         var parameters = string.Join(", ", node.Parameters.Select(p => VisitParameterDeclaration(p)));
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{node.Name.Name}({parameters})");
         
-        // Тело конструктора
+        // Ищем вызов base() в теле конструктора
+        string? baseCall = null;
+        var bodyStatements = new List<StatementNode>();
+        
         if (node.Body != null && node.Body.Statements.Count > 0)
+        {
+            foreach (var stmt in node.Body.Statements)
+            {
+                // Проверяем, является ли это вызовом base()
+                if (stmt is ExpressionStatementNode exprStmt &&
+                    exprStmt.Expression is BinaryExpressionNode binaryExpr &&
+                    binaryExpr.Metadata != null &&
+                    binaryExpr.Metadata.TryGetValue("IsConstructorBaseCall", out var isBaseCallObj) &&
+                    isBaseCallObj is bool isBaseCall && isBaseCall &&
+                    binaryExpr.Metadata.TryGetValue("ConstructorArguments", out var baseArgsObj) &&
+                    baseArgsObj is IReadOnlyList<ExpressionNode> baseArgs)
+                {
+                    // Извлекаем аргументы для base()
+                    var baseArgsStr = string.Join(", ", baseArgs.Select(Visit));
+                    baseCall = $"base({baseArgsStr})";
+                }
+                else
+                {
+                    // Это обычный statement, добавляем в тело
+                    bodyStatements.Add(stmt);
+                }
+            }
+        }
+        
+        // Формируем заголовок конструктора с base() вызовом, если он есть
+        var constructorHeader = $"{modifiers}{node.Name.Name}({parameters})";
+        if (baseCall != null)
+        {
+            constructorHeader += $" : {baseCall}";
+        }
+        CodeFormatter.AppendLine(sb, indentLevel, constructorHeader);
+        
+        // Тело конструктора (без вызова base(), так как он уже в заголовке)
+        if (bodyStatements.Count > 0)
         {
             CodeFormatter.AppendLine(sb, indentLevel, "{");
             var savedIndent = _indentLevel;
             _indentLevel = indentLevel + 1;
-            foreach (var stmt in node.Body.Statements)
+            foreach (var stmt in bodyStatements)
             {
                 var rendered = Visit(stmt);
                 CodeFormatter.AppendLine(sb, _indentLevel, rendered);
@@ -1084,6 +1120,17 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var left = Visit(node.Left);
         var right = Visit(node.Right);
+        
+        // Проверяем, является ли это вызовом base() конструктора
+        if (node.Metadata != null && 
+            node.Metadata.TryGetValue("IsConstructorBaseCall", out var isBaseCallObj) && 
+            isBaseCallObj is bool isBaseCall && isBaseCall &&
+            node.Metadata.TryGetValue("ConstructorArguments", out var baseArgsObj) &&
+            baseArgsObj is IReadOnlyList<ExpressionNode> baseArgs)
+        {
+            var args = string.Join(", ", baseArgs.Select(Visit));
+            return $"base({args})";
+        }
         
         // Проверяем, является ли это присваиванием через metadata
         var isAssignment = node.Metadata != null && node.Metadata.TryGetValue("IsAssignment", out var isAssignObj) && isAssignObj is bool isAssign && isAssign;
