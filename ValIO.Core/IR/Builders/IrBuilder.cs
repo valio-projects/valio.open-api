@@ -112,10 +112,10 @@ public class IrBuilder
     /// <summary>
     /// Строит модель из схемы
     /// </summary>
-    private IrModel BuildModel(string name, IOpenApiSchema schema, OpenApiDocument document)
+    private IrModel BuildModel(string name, IOpenApiSchema schema, OpenApiDocument document, string? parentModelName = null, PropertyContext? propertyContext = null)
     {
-        var properties = ExtractProperties(schema, document);
-        var composition = ExtractComposition(schema, document);
+        var properties = ExtractProperties(schema, document, parentModelName);
+        var composition = ExtractComposition(schema, document, propertyContext);
         
         return new IrModel
         {
@@ -130,7 +130,7 @@ public class IrBuilder
     /// <summary>
     /// Извлекает свойства из схемы
     /// </summary>
-    private IReadOnlyList<IrProperty> ExtractProperties(IOpenApiSchema schema, OpenApiDocument document)
+    private IReadOnlyList<IrProperty> ExtractProperties(IOpenApiSchema schema, OpenApiDocument document, string? parentModelName = null)
     {
         var properties = new List<IrProperty>();
         
@@ -140,7 +140,11 @@ public class IrBuilder
         foreach (var (propertyName, propertySchema) in schema.Properties)
         {
             var sanitizedName = _namingConverter.SanitizeIdentifier(propertyName);
-            var propertyType = BuildType(propertySchema, document);
+            var propertyType = BuildType(propertySchema, document, propertyContext: new PropertyContext
+            {
+                PropertyName = propertyName,
+                ParentModelName = parentModelName
+            });
             var isRequired = schema.Required?.Contains(propertyName) ?? false;
             var constraints = ExtractConstraints(propertySchema);
             
@@ -155,6 +159,17 @@ public class IrBuilder
         }
         
         return properties;
+    }
+    
+    /// <summary>
+    /// Контекст для генерации имен inline моделей
+    /// </summary>
+    private sealed class PropertyContext
+    {
+        public string? PropertyName { get; init; }
+        public string? ParentModelName { get; init; }
+        public bool IsForm { get; init; }
+        public string? OperationId { get; init; }
     }
     
     /// <summary>
@@ -220,11 +235,11 @@ public class IrBuilder
     /// <summary>
     /// Извлекает композицию из схемы
     /// </summary>
-    private IrComposition? ExtractComposition(IOpenApiSchema schema, OpenApiDocument document)
+    private IrComposition? ExtractComposition(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext = null)
     {
         if (schema.AllOf?.Count > 0)
         {
-            var types = schema.AllOf.Select(s => BuildType(s, document)).ToList();
+            var types = schema.AllOf.Select(s => BuildType(s, document, propertyContext)).ToList();
             return new IrComposition
             {
                 Kind = IrCompositionKind.AllOf,
@@ -234,7 +249,7 @@ public class IrBuilder
         
         if (schema.OneOf?.Count > 0)
         {
-            var types = schema.OneOf.Select(s => BuildType(s, document)).ToList();
+            var types = schema.OneOf.Select(s => BuildType(s, document, propertyContext)).ToList();
             return new IrComposition
             {
                 Kind = IrCompositionKind.OneOf,
@@ -249,7 +264,7 @@ public class IrBuilder
         
         if (schema.AnyOf?.Count > 0)
         {
-            var types = schema.AnyOf.Select(s => BuildType(s, document)).ToList();
+            var types = schema.AnyOf.Select(s => BuildType(s, document, propertyContext)).ToList();
             return new IrComposition
             {
                 Kind = IrCompositionKind.AnyOf,
@@ -263,7 +278,7 @@ public class IrBuilder
     /// <summary>
     /// Строит тип из схемы (рекурсивно)
     /// </summary>
-    private IrType BuildType(IOpenApiSchema schema, OpenApiDocument document)
+    private IrType BuildType(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext = null)
     {
         if (schema == null)
             throw new ArgumentNullException(nameof(schema));
@@ -291,14 +306,14 @@ public class IrBuilder
         if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)
         {
             var variants = (resolvedSchema.OneOf ?? resolvedSchema.AnyOf)!;
-            var types = variants.Select(v => BuildType(v, document)).ToList();
+            var types = variants.Select(v => BuildType(v, document, propertyContext)).ToList();
             return new IrUnionType { Types = types };
         }
         
         // AllOf -> Intersection (проверяем до проверки Type)
         if (resolvedSchema.AllOf?.Count > 0)
         {
-            var types = resolvedSchema.AllOf.Select(s => BuildType(s, document)).ToList();
+            var types = resolvedSchema.AllOf.Select(s => BuildType(s, document, propertyContext)).ToList();
             return new IrIntersectionType { Types = types };
         }
         
@@ -316,7 +331,7 @@ public class IrBuilder
                     if (resolvedSchema.AdditionalProperties is IOpenApiSchema schemaValue)
                     {
                         var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
-                        var valueType = BuildType(schemaValue, document);
+                        var valueType = BuildType(schemaValue, document, propertyContext);
                         return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
                     }
                     
@@ -326,9 +341,9 @@ public class IrBuilder
                 }
                 
                 // Это inline объект с фиксированными свойствами
-                // Создаем inline модель
-                var inlineModelName = GenerateInlineModelName("Inline", _inlineModelCounter++);
-                var inlineModel = BuildModel(inlineModelName, resolvedSchema, document);
+                // Создаем inline модель с правильным именем на основе контекста
+                var inlineModelName = GenerateInlineModelNameFromContext(propertyContext);
+                var inlineModel = BuildModel(inlineModelName, resolvedSchema, document, propertyContext?.ParentModelName, propertyContext);
                 _inlineModels[inlineModelName] = inlineModel;
                 return new IrModelReference { ModelName = inlineModelName };
             }
@@ -337,7 +352,7 @@ public class IrBuilder
             if (resolvedSchema.AdditionalProperties != null)
             {
                 var keyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
-                var valueType = BuildType(resolvedSchema.AdditionalProperties, document);
+                var valueType = BuildType(resolvedSchema.AdditionalProperties, document, propertyContext);
                 return new IrDictionaryType { KeyType = keyType, ValueType = valueType };
             }
             
@@ -360,7 +375,7 @@ public class IrBuilder
             if (resolvedSchema.Items == null)
                 throw new InvalidOperationException("Array schema must have Items property");
             
-            var elementType = BuildType(resolvedSchema.Items, document);
+            var elementType = BuildType(resolvedSchema.Items, document, propertyContext);
             return new IrArrayType { ElementType = elementType };
         }
         
@@ -388,9 +403,9 @@ public class IrBuilder
             // Для inline объектов (не в components/schemas) создаем отдельную модель
             if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
             {
-                // Это inline объект - создаем для него модель
-                var inlineModelName = GenerateInlineModelName("Inline", _inlineModelCounter++);
-                var inlineModel = BuildModel(inlineModelName, resolvedSchema, document);
+                // Это inline объект - создаем для него модель с правильным именем на основе контекста
+                var inlineModelName = GenerateInlineModelNameFromContext(propertyContext);
+                var inlineModel = BuildModel(inlineModelName, resolvedSchema, document, propertyContext?.ParentModelName, propertyContext);
                 _inlineModels[inlineModelName] = inlineModel;
                 return new IrModelReference { ModelName = inlineModelName };
             }
@@ -647,11 +662,11 @@ public class IrBuilder
             }
         }
         
-        // Извлекаем request body
+        // Извлекаем request body (передаем operationId для генерации FormModel)
         IrRequestBody? requestBody = null;
         if (openApiOperation.RequestBody != null)
         {
-            requestBody = BuildRequestBody(openApiOperation.RequestBody, document);
+            requestBody = BuildRequestBody(openApiOperation.RequestBody, document, operationId);
         }
         
         // Извлекаем responses
@@ -712,7 +727,7 @@ public class IrBuilder
     /// <summary>
     /// Строит IrRequestBody из OpenAPI request body
     /// </summary>
-    private IrRequestBody BuildRequestBody(IOpenApiRequestBody requestBody, OpenApiDocument document)
+    private IrRequestBody BuildRequestBody(IOpenApiRequestBody requestBody, OpenApiDocument document, string? operationId = null)
     {
         // Берем первый content type (обычно application/json)
         var contentType = requestBody.Content?.Keys.FirstOrDefault();
@@ -721,8 +736,18 @@ public class IrBuilder
             : null;
         
         var schema = content?.Schema;
+        
+        // Определяем, является ли это формой (multipart/form-data или application/x-www-form-urlencoded)
+        var isForm = contentType == "multipart/form-data" || contentType == "application/x-www-form-urlencoded";
+        
         var type = schema != null
-            ? BuildType(schema, document)
+            ? BuildType(schema, document, propertyContext: isForm && !string.IsNullOrEmpty(operationId)
+                ? new PropertyContext
+                {
+                    IsForm = true,
+                    OperationId = operationId
+                }
+                : null)
             : new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         
         return new IrRequestBody
@@ -949,10 +974,25 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Генерирует имя для inline модели
+    /// Генерирует имя для inline модели на основе контекста
     /// </summary>
-    private string GenerateInlineModelName(string prefix, int counter)
+    private string GenerateInlineModelNameFromContext(PropertyContext? propertyContext)
     {
-        return _namingConverter.SanitizeIdentifier($"{prefix}Model{counter}");
+        // Если это форма, генерируем {operationId}FormModel
+        if (propertyContext?.IsForm == true && !string.IsNullOrEmpty(propertyContext.OperationId))
+        {
+            var operationIdPascal = _namingConverter.ToPascalCase(propertyContext.OperationId);
+            return _namingConverter.SanitizeIdentifier($"{operationIdPascal}FormModel");
+        }
+        
+        // Если есть имя свойства, генерируем {propertyName}InlineModel
+        if (!string.IsNullOrEmpty(propertyContext?.PropertyName))
+        {
+            var propertyNamePascal = _namingConverter.ToPascalCase(propertyContext.PropertyName);
+            return _namingConverter.SanitizeIdentifier($"{propertyNamePascal}InlineModel");
+        }
+        
+        // Fallback: используем счетчик
+        return _namingConverter.SanitizeIdentifier($"InlineModel{_inlineModelCounter++}");
     }
 }

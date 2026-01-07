@@ -6,6 +6,7 @@ namespace ValIO.Core.Interfaces;
 /// <summary>
 /// Интерфейс для извлечения моделей из OpenAPI схемы
 /// </summary>
+[Obsolete("Используется IrBuilder вместо ModelExtractor")]
 public interface IModelExtractor
 {
     /// <summary>

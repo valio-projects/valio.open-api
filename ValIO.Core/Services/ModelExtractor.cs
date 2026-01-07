@@ -11,6 +11,7 @@ namespace ValIO.Core.Services;
 /// <summary>
 /// Реализация извлечения моделей из OpenAPI документа
 /// </summary>
+[Obsolete("Используется IrBuilder вместо ModelExtractor")]
 public class ModelExtractor : IModelExtractor
 {
     private readonly ISchemaResolver _schemaResolver;
@@ -475,19 +476,13 @@ public class ModelExtractor : IModelExtractor
     }
     
     /// <summary>
-    /// Генерирует имя для inline модели на основе родительской модели и имени свойства
+    /// Генерирует имя для inline модели на основе имени свойства
+    /// Формат: {propertyName}InlineModel
     /// </summary>
     private string GenerateInlineModelName(string? parentModelName, string propertyName)
     {
         var propertyNamePascal = _namingConverter.ToPascalCase(propertyName);
-        
-        if (!string.IsNullOrEmpty(parentModelName))
-        {
-            var parentNamePascal = _namingConverter.ToPascalCase(parentModelName);
-            return $"{parentNamePascal}{propertyNamePascal}";
-        }
-        
-        return propertyNamePascal;
+        return $"{propertyNamePascal}InlineModel";
     }
     
     /// <summary>
