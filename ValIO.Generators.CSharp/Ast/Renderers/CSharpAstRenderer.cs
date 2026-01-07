@@ -487,6 +487,17 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var targetType = RenderType(node.TargetType);
         var expression = Visit(node.Expression);
+        
+        // Проверяем, нужно ли использовать оператор "as" вместо обычного cast
+        var useAsOperator = node.Metadata != null && 
+                           node.Metadata.TryGetValue("UseAsOperator", out var useAsObj) && 
+                           useAsObj is bool useAs && useAs;
+        
+        if (useAsOperator)
+        {
+            return $"{expression} as {targetType}";
+        }
+        
         return $"({targetType}){expression}";
     }
 
@@ -720,7 +731,14 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var returnType = node.ReturnType != null ? $"{RenderType(node.ReturnType)} " : "";
         var parameters = string.Join(", ", node.Parameters.Select(p => VisitParameterDeclaration(p)));
         var asyncKeyword = node.IsAsync ? "async " : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{asyncKeyword}{returnType}{node.Name.Name}({parameters})");
+        
+        // Проверяем, нужно ли добавить override
+        var isOverride = node.Metadata != null && 
+                        node.Metadata.TryGetValue("IsOverride", out var isOverrideObj) && 
+                        isOverrideObj is bool overrideFlag && overrideFlag;
+        var overrideKeyword = isOverride ? "override " : "";
+        
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{overrideKeyword}{asyncKeyword}{returnType}{node.Name.Name}({parameters})");
         
         // Тело метода
         if (node.Body != null && node.Body.Statements.Count > 0)
@@ -769,9 +787,38 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         
         // Модификаторы и объявление поля
         var modifiers = RenderModifiers(node.AccessModifier);
+        
+        // Для static полей с начальным значением в static классах используем const, иначе static readonly
+        var constKeyword = "";
+        var readonlyKeyword = "";
+        if (node.IsStatic && node.DefaultValue != null)
+        {
+            // Проверяем, является ли тип примитивным или string для const
+            var isConstCompatible = node.Type is SimpleTypeNode simpleType && 
+                (simpleType.IsPrimitive || simpleType.Name.Name == "string");
+            
+            if (isConstCompatible)
+            {
+                constKeyword = "const ";
+            }
+            else
+            {
+                readonlyKeyword = "readonly ";
+            }
+        }
+        else if (node.IsReadOnly)
+        {
+            readonlyKeyword = "readonly ";
+        }
+        
+        if (node.IsStatic && string.IsNullOrEmpty(constKeyword))
+        {
+            modifiers += "static ";
+        }
+        
         var type = RenderType(node.Type);
         var initializer = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{initializer};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{constKeyword}{readonlyKeyword}{type} {node.Name.Name}{initializer};");
     }
 
     private void RenderConstructor(StringBuilder sb, ConstructorDeclarationNode node, int indentLevel)
@@ -903,6 +950,10 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
                 break;
             case AstNodeKind.ConstructorDeclaration:
                 RenderConstructor(sb, (ConstructorDeclarationNode)member, indentLevel);
+                CodeFormatter.AppendEmptyLine(sb);
+                break;
+            case AstNodeKind.ClassDeclaration:
+                RenderClass(sb, (ClassDeclarationNode)member, indentLevel);
                 CodeFormatter.AppendEmptyLine(sb);
                 break;
             default:

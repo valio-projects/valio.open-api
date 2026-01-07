@@ -8,10 +8,12 @@ using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Ast.Nodes;
+using ValIO.Generators.CSharp.Models;
 
 namespace ValIO.Generators.CSharp.Ast.Builders;
 
@@ -22,11 +24,13 @@ public class CSharpAstBuilder : ICSharpAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     private readonly HttpAstBuilder _httpBuilder;
+    private readonly CSharpGenerationOptions _options;
     
-    public CSharpAstBuilder(INamingConverter namingConverter)
+    public CSharpAstBuilder(INamingConverter namingConverter, CSharpGenerationOptions? options = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _httpBuilder = new HttpAstBuilder();
+        _options = options ?? new CSharpGenerationOptions();
     }
     
     public NamespaceDeclarationNode BuildNamespace(string name, IReadOnlyList<DeclarationNode> declarations)
@@ -130,7 +134,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     public CompilationUnitNode BuildCompilationUnit(IrModel model, string? @namespace = null)
     {
         var usings = BuildUsingDirectives(ExtractDependencies(model));
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { BuildClass(model) }.ToList<DeclarationNode>());
+        var classNode = BuildClass(model);
+        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { classNode }.ToList<DeclarationNode>());
         
         return new CompilationUnitNode(
             usings: usings,
@@ -167,10 +172,32 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             }
         }
         
+        // Добавляем вложенные классы с константами валидации, если включено
+        if (_options.GenerateValidationConstants)
+        {
+            var constantsClasses = BuildValidationConstantsClasses(model);
+            properties.AddRange(constantsClasses.Cast<DeclarationNode>());
+        }
+        
+        // Добавляем интерфейс IEquatable<TModel> и методы Equals/GetHashCode, если включено
+        if (_options.GenerateEqualityMembers)
+        {
+            // Добавляем интерфейс IEquatable<TModel>
+            var modelType = new SimpleTypeNode(new IdentifierNode(model.Name), isPrimitive: false);
+            var equatableInterface = new GenericTypeNode(
+                name: new IdentifierNode("IEquatable"),
+                typeArguments: new[] { modelType }.ToImmutableList(),
+                isNullable: false);
+            baseTypes.Add(equatableInterface);
+            
+            var equalityMethods = BuildEqualityMembers(model);
+            properties.AddRange(equalityMethods.Cast<DeclarationNode>());
+        }
+        
         return new ClassDeclarationNode(
             name: name,
             accessModifier: AccessModifier.Public,
-            isSealed: false,
+            isSealed: _options.UseSealed,
             isStatic: false,
             isPartial: false,
             baseTypes: baseTypes.ToImmutableList(),
@@ -198,24 +225,461 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             ? BuildLiteral(property.Constraints.DefaultValue, InferTypeInfo(property.Type))
             : null;
         
+        // Собираем атрибуты
+        var attributes = new List<AttributeNode>();
+        
         // Если имя зарезервированное, добавляем JsonPropertyName атрибут с оригинальным именем
-        IReadOnlyList<AttributeNode>? attributes = null;
         if (isReserved)
         {
             var jsonPropertyNameAttr = new AttributeNode(
                 name: new IdentifierNode("JsonPropertyName"),
                 arguments: new[] { new LiteralExpressionNode(originalName, LiteralKind.String) }.ToImmutableList());
-            attributes = new[] { jsonPropertyNameAttr }.ToImmutableList();
+            attributes.Add(jsonPropertyNameAttr);
         }
+        
+        // Добавляем атрибуты валидации, если включено
+        if (_options.GenerateValidationAttributes)
+        {
+            AddValidationAttributes(property, attributes);
+        }
+        
+        // Определяем тип аксессора на основе опций
+        var accessor = _options.PropertyAccessor == PropertyAccessorType.Init
+            ? PropertyAccessorKind.GetInit
+            : PropertyAccessorKind.GetSet;
+        
+        // Определяем, нужно ли добавлять required keyword
+        var isRequiredKeyword = _options.UseRequired && property.IsRequired;
         
         return new PropertyDeclarationNode(
             name: name,
             type: type,
-            isRequired: property.IsRequired,
-            accessor: PropertyAccessorKind.GetSet,
+            isRequired: isRequiredKeyword,
+            accessor: accessor,
             defaultValue: defaultValue,
             documentation: comment,
-            attributes: attributes);
+            attributes: attributes.Count > 0 ? attributes.ToImmutableList() : null);
+    }
+    
+    /// <summary>
+    /// Добавляет атрибуты валидации для свойства на основе ограничений
+    /// </summary>
+    private void AddValidationAttributes(IrProperty property, List<AttributeNode> attributes)
+    {
+        if (property.Constraints == null)
+            return;
+        
+        var constraints = property.Constraints;
+        
+        // Required атрибут для обязательных свойств
+        if (property.IsRequired)
+        {
+            attributes.Add(new AttributeNode(new IdentifierNode("Required")));
+        }
+        
+        // MinLength / MaxLength для строк
+        if (constraints.MinLength.HasValue)
+        {
+            var minLengthAttr = new AttributeNode(
+                name: new IdentifierNode("MinLength"),
+                arguments: new[] { new LiteralExpressionNode(constraints.MinLength.Value.ToString(), LiteralKind.Number) }.ToImmutableList());
+            attributes.Add(minLengthAttr);
+        }
+        
+        if (constraints.MaxLength.HasValue)
+        {
+            var maxLengthAttr = new AttributeNode(
+                name: new IdentifierNode("MaxLength"),
+                arguments: new[] { new LiteralExpressionNode(constraints.MaxLength.Value.ToString(), LiteralKind.Number) }.ToImmutableList());
+            attributes.Add(maxLengthAttr);
+        }
+        
+        // Range для чисел (Min/Max)
+        if (constraints.Min.HasValue || constraints.Max.HasValue)
+        {
+            var minValue = constraints.Min.HasValue 
+                ? new LiteralExpressionNode(constraints.Min.Value.ToString(), LiteralKind.Number)
+                : new LiteralExpressionNode("0", LiteralKind.Number);
+            
+            var maxValue = constraints.Max.HasValue
+                ? new LiteralExpressionNode(constraints.Max.Value.ToString(), LiteralKind.Number)
+                : new LiteralExpressionNode("double.MaxValue", LiteralKind.String);
+            
+            var rangeAttr = new AttributeNode(
+                name: new IdentifierNode("Range"),
+                arguments: new[] { minValue, maxValue }.ToImmutableList());
+            attributes.Add(rangeAttr);
+        }
+        
+        // RegularExpression для паттернов
+        if (!string.IsNullOrEmpty(constraints.Pattern))
+        {
+            var regexAttr = new AttributeNode(
+                name: new IdentifierNode("RegularExpression"),
+                arguments: new[] { new LiteralExpressionNode(constraints.Pattern, LiteralKind.String) }.ToImmutableList());
+            attributes.Add(regexAttr);
+        }
+    }
+    
+    /// <summary>
+    /// Строит методы Equals и GetHashCode для класса модели
+    /// </summary>
+    private IReadOnlyList<MethodDeclarationNode> BuildEqualityMembers(IrModel model)
+    {
+        var methods = new List<MethodDeclarationNode>();
+        
+        // Метод Equals(TModel? other) - реализация IEquatable<T>
+        var modelType = new SimpleTypeNode(new IdentifierNode(model.Name), isPrimitive: false);
+        var nullableModelType = new NullableTypeNode(modelType);
+        
+        var equalsTParam = new ParameterDeclarationNode(
+            name: new IdentifierNode("other"),
+            type: nullableModelType,
+            isRequired: false);
+        
+        var equalsTBody = BuildEqualsTMethodBody(model);
+        var equalsTMethod = new MethodDeclarationNode(
+            name: new IdentifierNode("Equals"),
+            returnType: new SimpleTypeNode(new IdentifierNode("bool"), isPrimitive: true),
+            parameters: new[] { equalsTParam }.ToImmutableList(),
+            body: equalsTBody,
+            accessModifier: AccessModifier.Public,
+            isAsync: false,
+            documentation: new CommentNode("Определяет, равен ли указанный объект текущему объекту.", CommentKind.Xml));
+        methods.Add(equalsTMethod);
+        
+        // Метод Equals(object? obj) - переопределение из System.Object
+        var equalsObjParam = new ParameterDeclarationNode(
+            name: new IdentifierNode("obj"),
+            type: new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: true)),
+            isRequired: false);
+        
+        var equalsObjBody = BuildEqualsObjectMethodBody(model);
+        var equalsObjMethod = new MethodDeclarationNode(
+            name: new IdentifierNode("Equals"),
+            returnType: new SimpleTypeNode(new IdentifierNode("bool"), isPrimitive: true),
+            parameters: new[] { equalsObjParam }.ToImmutableList(),
+            body: equalsObjBody,
+            accessModifier: AccessModifier.Public,
+            isAsync: false,
+            documentation: new CommentNode("Определяет, равен ли указанный объект текущему объекту.", CommentKind.Xml),
+            metadata: new Dictionary<string, object> { { "IsOverride", true } }.ToImmutableDictionary());
+        methods.Add(equalsObjMethod);
+        
+        // Метод GetHashCode()
+        var getHashCodeBody = BuildGetHashCodeMethodBody(model);
+        var getHashCodeMethod = new MethodDeclarationNode(
+            name: new IdentifierNode("GetHashCode"),
+            returnType: new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
+            parameters: ImmutableList<ParameterDeclarationNode>.Empty,
+            body: getHashCodeBody,
+            accessModifier: AccessModifier.Public,
+            isAsync: false,
+            documentation: new CommentNode("Служит хэш-функцией по умолчанию.", CommentKind.Xml),
+            metadata: new Dictionary<string, object> { { "IsOverride", true } }.ToImmutableDictionary());
+        methods.Add(getHashCodeMethod);
+        
+        return methods;
+    }
+    
+    /// <summary>
+    /// Строит тело метода Equals(object? obj) - вызывает Equals(TModel? other)
+    /// </summary>
+    private BlockNode BuildEqualsObjectMethodBody(IrModel model)
+    {
+        var statements = new List<StatementNode>();
+        
+        // return Equals(obj as TModel);
+        var objParam = new IdentifierExpressionNode(new IdentifierNode("obj"));
+        var modelType = new SimpleTypeNode(new IdentifierNode(model.Name), isPrimitive: false);
+        
+        // Используем CastExpressionNode для приведения типа, но рендерим как "as"
+        // Для этого используем metadata или создаем специальный узел
+        // Пока используем простой cast, но в рендерере нужно будет добавить поддержку "as"
+        var castExpression = new CastExpressionNode(
+            targetType: modelType,
+            expression: objParam);
+        
+        // Помечаем через metadata что нужно использовать "as" вместо обычного cast
+        var asExpression = new CastExpressionNode(
+            targetType: modelType,
+            expression: objParam,
+            metadata: new Dictionary<string, object> { { "UseAsOperator", true } }.ToImmutableDictionary());
+        
+        var equalsCall = new CallExpressionNode(
+            target: new IdentifierExpressionNode(new IdentifierNode("Equals")),
+            arguments: new[] { asExpression }.ToImmutableList());
+        
+        statements.Add(new ReturnStatementNode(equalsCall));
+        
+        return new BlockNode(statements.ToImmutableList());
+    }
+    
+    /// <summary>
+    /// Строит тело метода Equals(TModel? other) - основная реализация
+    /// </summary>
+    private BlockNode BuildEqualsTMethodBody(IrModel model)
+    {
+        var statements = new List<StatementNode>();
+        
+        // if (other == null) return false;
+        var otherParam = new IdentifierExpressionNode(new IdentifierNode("other"));
+        var nullCheck = new BinaryExpressionNode(
+            left: otherParam,
+            @operator: BinaryOperator.Equal,
+            right: new LiteralExpressionNode("null", LiteralKind.Null));
+        var ifNullReturn = new IfStatementNode(
+            condition: nullCheck,
+            thenBlock: new BlockNode(new[] { new ReturnStatementNode(new LiteralExpressionNode("false", LiteralKind.Boolean)) }.ToImmutableList()),
+            elseBlock: null);
+        statements.Add(ifNullReturn);
+        
+        // if (ReferenceEquals(this, other)) return true;
+        var thisExpr = new IdentifierExpressionNode(new IdentifierNode("this"));
+        var objectType = new IdentifierExpressionNode(new IdentifierNode("object"));
+        var referenceEqualsMethod = new MemberAccessExpressionNode(
+            @object: objectType,
+            member: new IdentifierNode("ReferenceEquals"));
+        var referenceEqualsCall = new CallExpressionNode(
+            target: referenceEqualsMethod,
+            arguments: new[] { thisExpr, otherParam }.ToImmutableList());
+        var ifReferenceEqualsReturn = new IfStatementNode(
+            condition: referenceEqualsCall,
+            thenBlock: new BlockNode(new[] { new ReturnStatementNode(new LiteralExpressionNode("true", LiteralKind.Boolean)) }.ToImmutableList()),
+            elseBlock: null);
+        statements.Add(ifReferenceEqualsReturn);
+        
+        // Параметр "other" уже имеет тип TModel?, так что не нужно приводить тип
+        
+        // Сравниваем все свойства через Equals
+        var equalityChecks = new List<ExpressionNode>();
+        foreach (var property in model.Properties)
+        {
+            var thisProperty = new MemberAccessExpressionNode(
+                @object: thisExpr,
+                member: new IdentifierNode(property.Name));
+            var otherProperty = new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("other")),
+                member: new IdentifierNode(property.Name));
+            
+            // Используем метод Equals для сравнения свойств
+            var equalsMethod = new MemberAccessExpressionNode(
+                @object: thisProperty,
+                member: new IdentifierNode("Equals"));
+            ExpressionNode propertyEquals = new CallExpressionNode(
+                target: equalsMethod,
+                arguments: new[] { otherProperty }.ToImmutableList());
+            
+            equalityChecks.Add(propertyEquals);
+        }
+        
+        // Объединяем все проверки через &&
+        if (equalityChecks.Count > 0)
+        {
+            ExpressionNode combinedCheck = equalityChecks[0];
+            for (int i = 1; i < equalityChecks.Count; i++)
+            {
+                combinedCheck = new BinaryExpressionNode(
+                    left: combinedCheck,
+                    @operator: BinaryOperator.LogicalAnd,
+                    right: equalityChecks[i]);
+            }
+            
+            statements.Add(new ReturnStatementNode(combinedCheck));
+        }
+        else
+        {
+            statements.Add(new ReturnStatementNode(new LiteralExpressionNode("true", LiteralKind.Boolean)));
+        }
+        
+        return new BlockNode(statements.ToImmutableList());
+    }
+    
+    /// <summary>
+    /// Строит тело метода GetHashCode
+    /// </summary>
+    private BlockNode BuildGetHashCodeMethodBody(IrModel model)
+    {
+        var statements = new List<StatementNode>();
+        
+        if (model.Properties.Count == 0)
+        {
+            // return 0;
+            statements.Add(new ReturnStatementNode(new LiteralExpressionNode("0", LiteralKind.Number)));
+            return new BlockNode(statements.ToImmutableList());
+        }
+        
+        // Создаем переменную HashCode hashCode = new();
+        var hashCodeType = new SimpleTypeNode(new IdentifierNode("HashCode"), isPrimitive: false);
+        var hashCodeVar = new VariableDeclarationStatementNode(
+            name: new IdentifierNode("hashCode"),
+            type: hashCodeType,
+            initializer: new CallExpressionNode(
+                target: new IdentifierExpressionNode(new IdentifierNode("HashCode")),
+                arguments: ImmutableList<ExpressionNode>.Empty,
+                metadata: new Dictionary<string, object> { { "IsNewExpression", true } }.ToImmutableDictionary()));
+        statements.Add(hashCodeVar);
+        
+        // Добавляем все свойства через hashCode.Add()
+        var hashCodeIdentifier = new IdentifierExpressionNode(new IdentifierNode("hashCode"));
+        var addMethod = new MemberAccessExpressionNode(
+            @object: hashCodeIdentifier,
+            member: new IdentifierNode("Add"));
+        
+        foreach (var property in model.Properties)
+        {
+            var thisProperty = new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("this")),
+                member: new IdentifierNode(property.Name));
+            
+            var addCall = new CallExpressionNode(
+                target: addMethod,
+                arguments: new[] { thisProperty }.ToImmutableList());
+            
+            statements.Add(new ExpressionStatementNode(addCall));
+        }
+        
+        // return hashCode.ToHashCode();
+        var toHashCodeMethod = new MemberAccessExpressionNode(
+            @object: hashCodeIdentifier,
+            member: new IdentifierNode("ToHashCode"));
+        var toHashCodeCall = new CallExpressionNode(
+            target: toHashCodeMethod,
+            arguments: ImmutableList<ExpressionNode>.Empty);
+        
+        statements.Add(new ReturnStatementNode(toHashCodeCall));
+        
+        return new BlockNode(statements.ToImmutableList());
+    }
+    
+    /// <summary>
+    /// Строит классы с константами валидации для свойств модели
+    /// </summary>
+    private IReadOnlyList<ClassDeclarationNode> BuildValidationConstantsClasses(IrModel model)
+    {
+        var constantsClasses = new List<ClassDeclarationNode>();
+        
+        foreach (var property in model.Properties)
+        {
+            if (property.Constraints == null)
+                continue;
+            
+            var constraints = property.Constraints;
+            var hasConstants = constraints.MinLength.HasValue ||
+                              constraints.MaxLength.HasValue ||
+                              constraints.Min.HasValue ||
+                              constraints.Max.HasValue ||
+                              !string.IsNullOrEmpty(constraints.Pattern) ||
+                              constraints.DefaultValue != null;
+            
+            if (!hasConstants)
+                continue;
+            
+            // Создаем вложенный класс с константами для свойства: PropertyNameConstants
+            var constantsClassName = $"{property.Name}Constants";
+            var constantsClass = new ClassDeclarationNode(
+                name: new IdentifierNode(constantsClassName),
+                accessModifier: AccessModifier.Public,
+                isSealed: false, // static классы не могут быть sealed
+                isStatic: true,
+                isPartial: false,
+                baseTypes: ImmutableList<TypeNode>.Empty,
+                members: BuildConstantsClassMembers(property, constraints).ToImmutableList(),
+                documentation: null);
+            
+            constantsClasses.Add(constantsClass);
+        }
+        
+        return constantsClasses;
+    }
+    
+    /// <summary>
+    /// Строит члены класса с константами валидации
+    /// </summary>
+    private IReadOnlyList<DeclarationNode> BuildConstantsClassMembers(IrProperty property, IrPropertyConstraints constraints)
+    {
+        var members = new List<DeclarationNode>();
+        
+        // MinLength константа
+        if (constraints.MinLength.HasValue)
+        {
+            var minLengthField = new FieldDeclarationNode(
+                name: new IdentifierNode("MinLength"),
+                type: new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
+                accessModifier: AccessModifier.Public,
+                isReadOnly: false, // const не требует readonly
+                isStatic: true,
+                defaultValue: new LiteralExpressionNode(constraints.MinLength.Value.ToString(), LiteralKind.Number));
+            members.Add(minLengthField);
+        }
+        
+        // MaxLength константа
+        if (constraints.MaxLength.HasValue)
+        {
+            var maxLengthField = new FieldDeclarationNode(
+                name: new IdentifierNode("MaxLength"),
+                type: new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
+                accessModifier: AccessModifier.Public,
+                isReadOnly: false, // const не требует readonly
+                isStatic: true,
+                defaultValue: new LiteralExpressionNode(constraints.MaxLength.Value.ToString(), LiteralKind.Number));
+            members.Add(maxLengthField);
+        }
+        
+        // Min константа
+        if (constraints.Min.HasValue)
+        {
+            var minField = new FieldDeclarationNode(
+                name: new IdentifierNode("Min"),
+                type: new SimpleTypeNode(new IdentifierNode("decimal"), isPrimitive: true),
+                accessModifier: AccessModifier.Public,
+                isReadOnly: false, // const не требует readonly
+                isStatic: true,
+                defaultValue: new LiteralExpressionNode(constraints.Min.Value.ToString(), LiteralKind.Number));
+            members.Add(minField);
+        }
+        
+        // Max константа
+        if (constraints.Max.HasValue)
+        {
+            var maxField = new FieldDeclarationNode(
+                name: new IdentifierNode("Max"),
+                type: new SimpleTypeNode(new IdentifierNode("decimal"), isPrimitive: true),
+                accessModifier: AccessModifier.Public,
+                isReadOnly: false, // const не требует readonly
+                isStatic: true,
+                defaultValue: new LiteralExpressionNode(constraints.Max.Value.ToString(), LiteralKind.Number));
+            members.Add(maxField);
+        }
+        
+        // Pattern константа
+        if (!string.IsNullOrEmpty(constraints.Pattern))
+        {
+            var patternField = new FieldDeclarationNode(
+                name: new IdentifierNode("Pattern"),
+                type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                accessModifier: AccessModifier.Public,
+                isReadOnly: false, // const не требует readonly
+                isStatic: true,
+                defaultValue: new LiteralExpressionNode(constraints.Pattern, LiteralKind.String));
+            members.Add(patternField);
+        }
+        
+        // DefaultValue константа
+        if (constraints.DefaultValue != null)
+        {
+            var defaultValueType = InferTypeInfo(property.Type);
+            var defaultValueField = new FieldDeclarationNode(
+                name: new IdentifierNode("DefaultValue"),
+                type: BuildType(property.Type),
+                accessModifier: AccessModifier.Public,
+                isReadOnly: false, // const не требует readonly, если примитивный тип
+                isStatic: true,
+                defaultValue: BuildLiteral(constraints.DefaultValue, defaultValueType));
+            members.Add(defaultValueField);
+        }
+        
+        return members;
     }
     
     /// <summary>
@@ -416,6 +880,26 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 break; // Достаточно одного использования
             }
         }
+        
+        // Добавляем using для атрибутов валидации, если они используются
+        if (_options.GenerateValidationAttributes)
+        {
+            var hasValidationAttributes = model.Properties.Any(p => 
+                p.IsRequired || 
+                (p.Constraints != null && (
+                    p.Constraints.MinLength.HasValue ||
+                    p.Constraints.MaxLength.HasValue ||
+                    p.Constraints.Min.HasValue ||
+                    p.Constraints.Max.HasValue ||
+                    !string.IsNullOrEmpty(p.Constraints.Pattern))));
+            
+            if (hasValidationAttributes)
+            {
+                dependencies.Add("System.ComponentModel.DataAnnotations");
+            }
+        }
+        
+        // HashCode находится в System, который уже включен по умолчанию
         
         // В будущем можно добавить проверку на типы из других namespace'ов
         // Например, если модель использует типы из System.Collections.Generic и т.д.
@@ -665,7 +1149,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             member: new IdentifierNode("Append"));
         
         // Парсим путь и добавляем части в StringBuilder
-        var pathParts = new List<(string Text, string? ParamName)>();
+        var pathParts = new List<(string? Text, string? ParamName)>();
         var currentIndex = 0;
         
         while (currentIndex < basePath.Length)
@@ -699,7 +1183,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             // Извлекаем имя параметра
             var paramName = basePath.Substring(paramStart + 1, paramEnd - paramStart - 1);
             var sanitizedParamName = _namingConverter.SanitizeIdentifier(paramName);
-            pathParts.Add((Text: null, ParamName: sanitizedParamName));
+            pathParts.Add((Text: (string?)null, ParamName: sanitizedParamName));
             
             currentIndex = paramEnd + 1;
         }
@@ -1538,6 +2022,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         return new ClassDeclarationNode(
             name: name,
             accessModifier: AccessModifier.Public,
+            isSealed: _options.UseSealed,
+            isStatic: false,
+            isPartial: false,
+            baseTypes: ImmutableList<TypeNode>.Empty,
             members: members.ToImmutableList());
     }
     

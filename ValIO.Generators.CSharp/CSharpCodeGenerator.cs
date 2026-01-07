@@ -186,7 +186,8 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         var irDocument = irBuilder.BuildFromOpenApi(document);
         
             // 2. IR → AST
-            var astBuilder = new CSharpAstBuilder(NamingConverter);
+            var csharpOptions = GetCSharpOptions(config.Options);
+            var astBuilder = new CSharpAstBuilder(NamingConverter, csharpOptions);
             var compilationUnits = astBuilder.BuildCompilationUnits(irDocument, config.Namespace);
         
         // 3. AST → Code
@@ -204,6 +205,19 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         }
         
         return files;
+    }
+    
+    /// <summary>
+    /// Получает C# опции из конфигурации
+    /// </summary>
+    private CSharpGenerationOptions GetCSharpOptions(GenerationOptions? options)
+    {
+        if (options?.CSharpOptions is CSharpGenerationOptions csharpOptions)
+        {
+            return csharpOptions;
+        }
+        
+        return new CSharpGenerationOptions();
     }
     
     /// <summary>
