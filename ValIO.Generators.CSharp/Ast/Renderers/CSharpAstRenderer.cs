@@ -34,17 +34,18 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         {
             foreach (var usingDirective in node.Usings)
             {
-                Render(usingDirective);
+                var rendered =  Render(usingDirective);
+                _sb.Append(rendered);
             }
             CodeFormatter.AppendEmptyLine(_sb);
         }
         
-        // Рендерим namespaces
+        // Рендерим namespaces (без очистки _sb)
         if (node.Namespaces.Count > 0)
         {
             foreach (var namespaceNode in node.Namespaces)
             {
-                Render(namespaceNode);
+                RenderNamespaceContent(namespaceNode);
             }
         }
         
@@ -63,7 +64,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     }
 
     /// <summary>
-    /// Рендерит Namespace
+    /// Рендерит Namespace (отдельно, с собственным StringBuilder)
     /// </summary>
     public string Render(NamespaceDeclarationNode node)
     {
@@ -81,6 +82,22 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         }
         
         return _sb.ToString();
+    }
+    
+    /// <summary>
+    /// Рендерит содержимое Namespace без очистки StringBuilder (для использования в CompilationUnit)
+    /// </summary>
+    private void RenderNamespaceContent(NamespaceDeclarationNode node)
+    {
+        CodeFormatter.AppendLine(_sb, _indentLevel, $"namespace {node.Name.Name};");
+        CodeFormatter.AppendEmptyLine(_sb);
+        
+        foreach (var declaration in node.Declarations)
+        {
+            var rendered = RenderDeclaration(declaration);
+            _sb.Append(rendered);
+            CodeFormatter.AppendEmptyLine(_sb);
+        }
     }
 
     /// <summary>
@@ -637,9 +654,10 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     private void RenderEnum(StringBuilder sb, EnumDeclarationNode node, int indentLevel)
     {
         // XML комментарий
-        if (node.Documentation != null)
+        if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
         {
             RenderComment(sb, node.Documentation, indentLevel);
+            CodeFormatter.AppendEmptyLine(sb);
         }
         
         // Модификаторы и объявление enum
@@ -811,9 +829,19 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     private void RenderEnumMember(StringBuilder sb, EnumMemberDeclarationNode node, int indentLevel, string? comma = null)
     {
         // XML комментарий
-        if (node.Documentation != null)
+        if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
         {
             RenderComment(sb, node.Documentation, indentLevel);
+        }
+        
+        // Атрибуты
+        if (node.Attributes.Count > 0)
+        {
+            foreach (var attr in node.Attributes)
+            {
+                var rendered = Visit(attr);
+                CodeFormatter.AppendLine(sb, indentLevel, rendered);
+            }
         }
         
         // Значение enum
@@ -941,6 +969,12 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     private string RenderLiteral(LiteralExpressionNode node)
     {
+        // Специальная обработка для "default" значения (для CancellationToken и других value types)
+        if (node.Value?.ToString() == "default")
+        {
+            return "default";
+        }
+        
         return node.LiteralKind switch
         {
             LiteralKind.String => $"\"{CodeEscapeHelper.EscapeString(node.Value?.ToString() ?? string.Empty)}\"",
@@ -1132,10 +1166,31 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     
     public override string VisitAttribute(AttributeNode node)
     {
-        var args = node.Arguments != null && node.Arguments.Count > 0
-            ? $"({string.Join(", ", node.Arguments.Select(Visit))})"
-            : string.Empty;
-        return $"[{node.Name.Name}{args}]";
+        if (node.Arguments != null && node.Arguments.Count > 0)
+        {
+            var args = new List<string>();
+            foreach (var arg in node.Arguments)
+            {
+                // Проверяем, является ли это именованным аргументом
+                if (arg is BinaryExpressionNode binaryExpr && 
+                    binaryExpr.Metadata != null && 
+                    binaryExpr.Metadata.TryGetValue("IsNamedArgument", out var isNamedObj) && 
+                    isNamedObj is bool isNamed && isNamed)
+                {
+                    // Рендерим как именованный аргумент: Name = Value
+                    var name = Visit(binaryExpr.Left);
+                    var value = Visit(binaryExpr.Right);
+                    args.Add($"{name} = {value}");
+                }
+                else
+                {
+                    args.Add(Visit(arg));
+                }
+            }
+            var argsStr = $"({string.Join(", ", args)})";
+            return $"[{node.Name.Name}{argsStr}]";
+        }
+        return $"[{node.Name.Name}]";
     }
 
     #endregion

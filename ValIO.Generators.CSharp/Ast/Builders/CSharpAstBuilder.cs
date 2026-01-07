@@ -190,7 +190,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// </summary>
     public CompilationUnitNode BuildCompilationUnit(IrEnum enumModel, string? @namespace = null)
     {
-        var usings = BuildUsingDirectives(Array.Empty<string>());
+        var dependencies = new HashSet<string>();
+        
+        // Если enum имеет строковые значения, добавляем using для EnumMember
+        if (enumModel.BaseType == IrEnumBaseType.String)
+        {
+            dependencies.Add("System.Runtime.Serialization");
+        }
+        
+        var usings = BuildUsingDirectives(dependencies.ToList());
         var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { BuildEnum(enumModel) }.ToList<DeclarationNode>());
         
         return new CompilationUnitNode(
@@ -213,12 +221,43 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             ? BuildSimpleType("int")
             : null;
         
-        var members = enumModel.Values.Select(v => new EnumMemberDeclarationNode(
-            name: new IdentifierNode(v.Name),
-            value: v.Value != null ? BuildLiteral(v.Value, TypeInfo.Simple(enumModel.BaseType == IrEnumBaseType.Integer ? "int" : "string")) : null,
-            documentation: !string.IsNullOrEmpty(v.Description)
-                ? new CommentNode(v.Description, CommentKind.Xml)
-                : null)).ToList<DeclarationNode>();
+        var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
+        
+        var members = enumModel.Values.Select(v =>
+        {
+            ExpressionNode? value = null;
+            IReadOnlyList<AttributeNode>? attributes = null;
+            
+            if (isStringEnum)
+            {
+                // Для строковых enum'ов используем атрибут [EnumMember(Value = "...")] вместо присваивания значения
+                var enumMemberAttributeName = new IdentifierNode("EnumMember");
+                var valueArg = new LiteralExpressionNode(
+                    v.Value?.ToString() ?? string.Empty,
+                    LiteralKind.String);
+                // В C# именованные аргументы атрибутов: [EnumMember(Value = "...")]
+                // Используем BinaryExpression с metadata для указания что это именованный аргумент
+                var namedArg = new BinaryExpressionNode(
+                    left: new IdentifierExpressionNode(new IdentifierNode("Value")),
+                    @operator: BinaryOperator.Add, // Временно, будет обработано в рендерере как именованный аргумент
+                    right: valueArg,
+                    metadata: new Dictionary<string, object> { ["IsNamedArgument"] = true });
+                attributes = new[] { new AttributeNode(enumMemberAttributeName, new[] { namedArg }.ToImmutableList()) }.ToImmutableList();
+            }
+            else
+            {
+                // Для числовых enum'ов используем обычное присваивание значения
+                value = v.Value != null ? BuildLiteral(v.Value, TypeInfo.Simple("int")) : null;
+            }
+            
+            return new EnumMemberDeclarationNode(
+                name: new IdentifierNode(v.Name),
+                value: value,
+                documentation: !string.IsNullOrEmpty(v.Description)
+                    ? new CommentNode(v.Description, CommentKind.Xml)
+                    : null,
+                attributes: attributes);
+        }).ToList<DeclarationNode>();
         
         return new EnumDeclarationNode(
             name: name,
@@ -309,20 +348,13 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
+        // Не добавляем зависимости для типов моделей, так как они генерируются в том же namespace
+        // Используем только системные типы и типы из других namespace'ов, если они нужны
         var dependencies = new HashSet<string>();
         
-        foreach (var property in model.Properties)
-        {
-            ExtractDependenciesFromType(property.Type, dependencies);
-        }
-        
-        if (model.Composition != null)
-        {
-            foreach (var type in model.Composition.Types)
-            {
-                ExtractDependenciesFromType(type, dependencies);
-            }
-        }
+        // В будущем можно добавить проверку на типы из других namespace'ов
+        // Например, если модель использует типы из System.Collections.Generic и т.д.
+        // Но сейчас все модели в одном namespace, поэтому зависимости не нужны
         
         return dependencies.ToList();
     }
@@ -509,7 +541,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // CancellationToken с default value
         var cancellationTokenType = new SimpleTypeNode(new IdentifierNode("CancellationToken"), isPrimitive: false);
-        var defaultCancellationToken = new LiteralExpressionNode("default", LiteralKind.Null);
+        var defaultCancellationToken = new LiteralExpressionNode("default", LiteralKind.String);
         parameters.Add(new ParameterDeclarationNode(
             name: new IdentifierNode("cancellationToken"),
             type: cancellationTokenType,
@@ -596,7 +628,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             // Извлекаем имя параметра
             var paramName = basePath.Substring(paramStart + 1, paramEnd - paramStart - 1);
             var sanitizedParamName = _namingConverter.SanitizeIdentifier(paramName);
-            pathParts.Add((Text: (string?)null, ParamName: sanitizedParamName));
+            pathParts.Add((Text: null, ParamName: sanitizedParamName));
             
             currentIndex = paramEnd + 1;
         }
@@ -727,7 +759,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // 2-5. Создаем HttpRequestMessage и отправляем запрос через HttpClient.SendAsync с using
         // Используем HttpMethod.Get, HttpMethod.Post и т.д. вместо new HttpMethod("GET")
-        var httpMethodName = operation.HttpMethod.ToUpperInvariant();
+        var httpMethodName = GetHttpMethodPropertyName(operation.HttpMethod);
         var httpMethodStaticProperty = new MemberAccessExpressionNode(
             @object: new IdentifierExpressionNode(new IdentifierNode("HttpMethod")),
             member: new IdentifierNode(httpMethodName));
@@ -840,9 +872,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var readAsString = new MemberAccessExpressionNode(
             @object: responseMessageContentAccess,
             member: new IdentifierNode("ReadAsStringAsync"));
+        var cancellationTokenParamForRead = new IdentifierExpressionNode(new IdentifierNode("cancellationToken"));
         var readAsStringCall = new CallExpressionNode(
             target: readAsString,
-            arguments: ImmutableList<ExpressionNode>.Empty);
+            arguments: new[] { cancellationTokenParamForRead }.ToImmutableList());
         var awaitRead = new AwaitExpressionNode(readAsStringCall);
         
         var responseContentVar = new VariableDeclarationStatementNode(
@@ -903,14 +936,41 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 arguments: new[] { responseContentExpr }.ToImmutableList(),
                 metadata: deserializeMetadata);
             
+            // Десериализуем в nullable тип
+            var nullableSuccessType = new NullableTypeNode(successType);
+            
             // Помещаем десериализацию в промежуточную переменную response
             var responseVar = new VariableDeclarationStatementNode(
                 name: new IdentifierNode("response"),
-                type: successType,
+                type: nullableSuccessType,
                 initializer: deserializeCall);
             ifStatements.Add(responseVar);
             
-            var returnStatement = new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("response")));
+            // Проверяем response на null
+            var responseExpr = new IdentifierExpressionNode(new IdentifierNode("response"));
+            var nullCheck = new BinaryExpressionNode(
+                left: responseExpr,
+                @operator: BinaryOperator.Equal,
+                right: new LiteralExpressionNode("null", LiteralKind.Null));
+            
+            var throwIfNullStatements = new List<StatementNode>();
+            var apiExceptionForNullType = new IdentifierExpressionNode(new IdentifierNode("ApiException"));
+            var statusCodeForNull = new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"));
+            var messageForNull = new LiteralExpressionNode("Response deserialization returned null", LiteralKind.String);
+            var apiExceptionForNullCtor = new CallExpressionNode(
+                target: apiExceptionForNullType,
+                arguments: new ExpressionNode[] { statusCodeForNull, messageForNull }.ToImmutableList(),
+                metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
+            throwIfNullStatements.Add(new ThrowStatementNode(apiExceptionForNullCtor));
+            var throwIfNullBlock = new BlockNode(throwIfNullStatements.ToImmutableList());
+            
+            var ifNullCheck = new IfStatementNode(
+                condition: nullCheck,
+                thenBlock: throwIfNullBlock,
+                elseBlock: null);
+            ifStatements.Add(ifNullCheck);
+            
+            var returnStatement = new ReturnStatementNode(responseExpr);
             ifStatements.Add(returnStatement);
         }
         else
@@ -935,19 +995,45 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 arguments: new[] { responseContentExpr }.ToImmutableList(),
                 metadata: deserializeMetadata);
             
+            // Десериализуем в nullable тип
+            var nullableErrorType = new NullableTypeNode(errorType);
+            
             var errorVar = new VariableDeclarationStatementNode(
                 name: new IdentifierNode("error"),
-                type: errorType,
+                type: nullableErrorType,
                 initializer: deserializeErrorCall);
             elseStatements.Add(errorVar);
+            
+            // Проверяем error на null
+            var errorExpr = new IdentifierExpressionNode(new IdentifierNode("error"));
+            var nullCheck = new BinaryExpressionNode(
+                left: errorExpr,
+                @operator: BinaryOperator.Equal,
+                right: new LiteralExpressionNode("null", LiteralKind.Null));
+            
+            var throwIfNullStatements = new List<StatementNode>();
+            var apiExceptionForNullType = new IdentifierExpressionNode(new IdentifierNode("ApiException"));
+            var statusCodeForNull = new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"));
+            var messageForNull = new LiteralExpressionNode("Error deserialization returned null", LiteralKind.String);
+            var apiExceptionForNullCtor = new CallExpressionNode(
+                target: apiExceptionForNullType,
+                arguments: new ExpressionNode[] { statusCodeForNull, messageForNull }.ToImmutableList(),
+                metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
+            throwIfNullStatements.Add(new ThrowStatementNode(apiExceptionForNullCtor));
+            var throwIfNullBlock = new BlockNode(throwIfNullStatements.ToImmutableList());
+            
+            var ifNullCheck = new IfStatementNode(
+                condition: nullCheck,
+                thenBlock: throwIfNullBlock,
+                elseBlock: null);
+            elseStatements.Add(ifNullCheck);
             
             // Выбрасываем исключение
             var apiExceptionType = new IdentifierExpressionNode(new IdentifierNode("ApiException"));
             var statusCodeForException = new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"));
-            var errorForException = new IdentifierExpressionNode(new IdentifierNode("error"));
             var apiExceptionCtor = new CallExpressionNode(
                 target: apiExceptionType,
-                arguments: new[] { statusCodeForException, errorForException }.ToImmutableList(),
+                arguments: new[] { statusCodeForException, errorExpr }.ToImmutableList(),
                 metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
             var throwStatement = new ThrowStatementNode(apiExceptionCtor);
             elseStatements.Add(throwStatement);
@@ -1198,6 +1284,25 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     }
     
     /// <summary>
+    /// Преобразует HTTP метод в имя статического свойства HttpMethod (Get, Post, Put и т.д.)
+    /// </summary>
+    private string GetHttpMethodPropertyName(string httpMethod)
+    {
+        return httpMethod.ToUpperInvariant() switch
+        {
+            "GET" => "Get",
+            "POST" => "Post",
+            "PUT" => "Put",
+            "DELETE" => "Delete",
+            "PATCH" => "Patch",
+            "HEAD" => "Head",
+            "OPTIONS" => "Options",
+            "TRACE" => "Trace",
+            _ => throw new NotSupportedException($"HTTP method {httpMethod} is not supported")
+        };
+    }
+    
+    /// <summary>
     /// Строит HTTP узлы из IrOperation (для использования в других местах)
     /// </summary>
     private (HttpMethodNode Method, RouteNode Route, RequestBodyNode? Body, IReadOnlyList<QueryParameterNode> QueryParams, IReadOnlyList<HeaderParameterNode> HeaderParams) BuildHttpNodes(IrOperation operation)
@@ -1308,37 +1413,18 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     {
         var dependencies = new HashSet<string>();
         
-        // Добавляем необходимые using для HTTP клиентов
+        // Добавляем только необходимые системные using для HTTP клиентов
+        // Модели (IrModelReference) не добавляются, так как они генерируются в том же namespace
         dependencies.Add("System");
-        dependencies.Add("System.Net.Http");
-        dependencies.Add("System.Text");
-        dependencies.Add("System.Text.Json");
-        dependencies.Add("System.Threading");
-        dependencies.Add("System.Threading.Tasks");
+        dependencies.Add("System.Net"); // HttpStatusCode
+        dependencies.Add("System.Net.Http"); // HttpClient, HttpRequestMessage, HttpResponseMessage
+        dependencies.Add("System.Text"); // StringBuilder, Encoding
+        dependencies.Add("System.Text.Json"); // JsonSerializer
+        dependencies.Add("System.Threading"); // CancellationToken
+        dependencies.Add("System.Threading.Tasks"); // Task, Task<T>
         
-        foreach (var operation in client.Operations)
-        {
-            // Зависимости из параметров
-            foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
-            {
-                ExtractDependenciesFromType(param.Type, dependencies);
-            }
-            
-            // Зависимости из request body
-            if (operation.RequestBody != null)
-            {
-                ExtractDependenciesFromType(operation.RequestBody.Type, dependencies);
-            }
-            
-            // Зависимости из responses
-            foreach (var response in operation.Responses)
-            {
-                if (response.Type != null)
-                {
-                    ExtractDependenciesFromType(response.Type, dependencies);
-                }
-            }
-        }
+        // Не извлекаем зависимости из типов параметров и response,
+        // так как модели генерируются в том же namespace и using'и для них не нужны
         
         return dependencies.ToList();
     }
