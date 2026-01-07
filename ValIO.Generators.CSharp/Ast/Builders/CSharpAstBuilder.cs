@@ -150,13 +150,30 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         var properties = model.Properties.Select(BuildProperty).ToList<DeclarationNode>();
         
+        // Обрабатываем Composition для allOf (наследование)
+        var baseTypes = new List<TypeNode>();
+        if (model.Composition != null && model.Composition.Kind == IrCompositionKind.AllOf)
+        {
+            // Для allOf в C# первый тип с IrModelReference становится базовым классом
+            foreach (var type in model.Composition.Types)
+            {
+                if (type is IrModelReference modelRef)
+                {
+                    // Это базовый класс - добавляем его в baseTypes
+                    var baseType = BuildType(modelRef);
+                    baseTypes.Add(baseType);
+                    break; // В C# множественное наследование не поддерживается, берем только первый
+                }
+            }
+        }
+        
         return new ClassDeclarationNode(
             name: name,
             accessModifier: AccessModifier.Public,
             isSealed: false,
             isStatic: false,
             isPartial: false,
-            baseTypes: ImmutableList<TypeNode>.Empty,
+            baseTypes: baseTypes.ToImmutableList(),
             members: properties.ToImmutableList(),
             documentation: comment);
     }
