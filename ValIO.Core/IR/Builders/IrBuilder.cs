@@ -473,6 +473,35 @@ public class IrBuilder
     }
     
     /// <summary>
+    /// Проверяет, есть ли в схеме хотя бы одно required свойство
+    /// </summary>
+    private bool HasRequiredPropertiesInSchema(IOpenApiSchema schema, OpenApiDocument document)
+    {
+        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
+        
+        // Если в схеме есть Required и в нем есть хотя бы одно свойство
+        if (resolvedSchema.Required != null && resolvedSchema.Required.Count > 0)
+        {
+            return true;
+        }
+        
+        // Также проверяем allOf - если в какой-то из базовых схем есть required свойства
+        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
+        {
+            foreach (var allOfSchema in resolvedSchema.AllOf)
+            {
+                var resolvedAllOfSchema = _schemaResolver.ResolveSchema(allOfSchema);
+                if (resolvedAllOfSchema.Required != null && resolvedAllOfSchema.Required.Count > 0)
+                {
+                    return true;
+                }
+            }
+        }
+        
+        return false;
+    }
+    
+    /// <summary>
     /// Маппит примитивный тип OpenAPI в IrPrimitiveKind
     /// </summary>
     private IrPrimitiveKind MapPrimitive(JsonSchemaType? type, string? format)
@@ -787,10 +816,15 @@ public class IrBuilder
                 : null)
             : new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         
+        // Проверяем, есть ли в схеме хотя бы одно required свойство
+        // Если есть, то request body должен быть required, даже если requestBody.Required = false
+        var hasRequiredProperties = schema != null && HasRequiredPropertiesInSchema(schema, document);
+        var isRequired = requestBody.Required || hasRequiredProperties;
+        
         return new IrRequestBody
         {
             Type = type,
-            IsRequired = requestBody.Required,
+            IsRequired = isRequired,
             ContentType = contentType,
             Description = requestBody.Description
         };

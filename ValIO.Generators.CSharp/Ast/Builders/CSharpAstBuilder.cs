@@ -769,10 +769,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Min константа
         if (constraints.Min.HasValue)
         {
+            var numericTypeName = GetNumericTypeName(property.Type);
             var comment = new CommentNode($"Минимальное значение для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var minField = new FieldDeclarationNode(
                 name: new IdentifierNode("Min"),
-                type: new SimpleTypeNode(new IdentifierNode("decimal"), isPrimitive: true),
+                type: new SimpleTypeNode(new IdentifierNode(numericTypeName), isPrimitive: true),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly
                 isStatic: true,
@@ -784,10 +785,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Max константа
         if (constraints.Max.HasValue)
         {
+            var numericTypeName = GetNumericTypeName(property.Type);
             var comment = new CommentNode($"Максимальное значение для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
             var maxField = new FieldDeclarationNode(
                 name: new IdentifierNode("Max"),
-                type: new SimpleTypeNode(new IdentifierNode("decimal"), isPrimitive: true),
+                type: new SimpleTypeNode(new IdentifierNode(numericTypeName), isPrimitive: true),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly
                 isStatic: true,
@@ -990,6 +992,31 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             IrPrimitiveKind.File => "IFormFile",
             _ => "object"
         };
+    }
+    
+    /// <summary>
+    /// Получает имя числового типа для констант Min/Max на основе типа свойства
+    /// </summary>
+    private string GetNumericTypeName(IrType irType)
+    {
+        // Разворачиваем nullable
+        IrType unwrappedType = irType;
+        if (irType is IrNullableType nullableType)
+        {
+            unwrappedType = nullableType.InnerType;
+        }
+        
+        // Если это примитивный тип, используем MapPrimitiveToCSharp
+        if (unwrappedType is IrPrimitiveType primitiveType)
+        {
+            var csharpType = MapPrimitiveToCSharp(primitiveType.PrimitiveKind);
+            // Для констант Min/Max используем тот же тип, что и у свойства
+            // Integer -> int, Number -> double (можно было бы decimal, но double более универсальный)
+            return csharpType;
+        }
+        
+        // Если тип не определен или не числовой, используем decimal как fallback
+        return "decimal";
     }
     
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
@@ -1225,6 +1252,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         if (operation.RequestBody != null)
         {
             var bodyType = BuildType(operation.RequestBody.Type);
+            // Логика проверки required свойств теперь на уровне IR
+            // IrRequestBody.IsRequired уже учитывает наличие required свойств в модели
             var nullableType = operation.RequestBody.IsRequired ? bodyType : new NullableTypeNode(bodyType);
             parameters.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode("request"),
