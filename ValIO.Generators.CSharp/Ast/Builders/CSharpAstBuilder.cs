@@ -1447,7 +1447,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         return new ClassDeclarationNode(
             name: decoratorName,
             accessModifier: AccessModifier.Public,
-            isSealed: false,
+            isSealed: true,
             isStatic: false,
             isPartial: false,
             baseTypes: baseTypes.ToImmutableList(),
@@ -3162,7 +3162,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         return new ClassDeclarationNode(
             name: className,
             accessModifier: AccessModifier.Internal,
-            isSealed: false,
+            isSealed: true,
             isStatic: false,
             isPartial: false,
             baseTypes: baseTypes.ToImmutableList(),
@@ -3236,10 +3236,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             arguments: ImmutableList<ExpressionNode>.Empty);
         var awaitExpression = new AwaitExpressionNode(funcCall);
         var resultVar = new IdentifierNode("result");
-        var resultType = new GenericTypeNode(
+        // Для generic параметра типа T используем SimpleTypeNode, а не GenericTypeNode
+        var resultType = new SimpleTypeNode(
             name: new IdentifierNode("T"),
-            typeArguments: ImmutableList<TypeNode>.Empty,
-            isNullable: false);
+            isPrimitive: false);
         var resultDeclaration = new VariableDeclarationStatementNode(
             name: resultVar,
             type: resultType,
