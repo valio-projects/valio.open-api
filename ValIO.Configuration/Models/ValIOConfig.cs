@@ -87,6 +87,31 @@ public class ConfigCSharpOptions
     /// Стиль передачи query параметров: "IndividualParameters" или "ModelClass"
     /// </summary>
     public string? QueryParametersStyle { get; set; }
+    
+    /// <summary>
+    /// Генерировать интерфейсы для HTTP клиентов
+    /// </summary>
+    public bool? GenerateInterfaces { get; set; }
+    
+    /// <summary>
+    /// Стратегия размещения интерфейсов: "SameFile" или "SeparateFile"
+    /// </summary>
+    public string? InterfaceFileStrategy { get; set; }
+    
+    /// <summary>
+    /// Модификатор доступа для классов HTTP клиентов: "Public" или "Internal"
+    /// </summary>
+    public string? ClientAccessModifier { get; set; }
+    
+    /// <summary>
+    /// Генерировать traces (spans, activities) для OpenTelemetry
+    /// </summary>
+    public bool? GenerateTraces { get; set; }
+    
+    /// <summary>
+    /// Генерировать metrics для OpenTelemetry
+    /// </summary>
+    public bool? GenerateMetrics { get; set; }
 }
 
 /// <summary>

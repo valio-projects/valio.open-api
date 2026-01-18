@@ -53,4 +53,10 @@ public sealed class SimpleTypeNode : TypeNode
             IsOptional,
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var nullableStr = IsNullable ? "?" : "";
+        return $"{Name.Name}{nullableStr}";
+    }
 }

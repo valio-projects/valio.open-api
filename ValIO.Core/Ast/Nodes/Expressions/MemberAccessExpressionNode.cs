@@ -20,6 +20,11 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
     /// </summary>
     public IdentifierNode Member { get; }
     
+    /// <summary>
+    /// Использовать как оператор (например, "as" в C# для приведения типов)
+    /// </summary>
+    public bool UseAsOperator { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.MemberAccessExpression;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Object, Member };
@@ -31,11 +36,13 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
         ExpressionNode @object,
         IdentifierNode member,
         TypeNode? type = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        bool useAsOperator = false)
         : base(type, metadata)
     {
         Object = @object ?? throw new ArgumentNullException(nameof(@object));
         Member = member ?? throw new ArgumentNullException(nameof(member));
+        UseAsOperator = useAsOperator;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -49,6 +56,7 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
             (ExpressionNode)Object.Clone(),
             (IdentifierNode)Member.Clone(),
             Type != null ? (TypeNode)Type.Clone() : null,
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            UseAsOperator);
     }
 }

@@ -25,6 +25,16 @@ public sealed class BinaryExpressionNode : ExpressionNode
     /// </summary>
     public ExpressionNode Right { get; }
     
+    /// <summary>
+    /// Является ли выражение присваиванием (например, x = y)
+    /// </summary>
+    public bool IsAssignment { get; }
+    
+    /// <summary>
+    /// Является ли выражение именованным аргументом атрибута (например, Value = "x" в [EnumMember(Value = "x")])
+    /// </summary>
+    public bool IsNamedArgument { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.BinaryExpression;
     
     public override IReadOnlyList<AstNode> Children => new[] { Left, Right };
@@ -37,12 +47,16 @@ public sealed class BinaryExpressionNode : ExpressionNode
         BinaryOperator @operator,
         ExpressionNode right,
         TypeNode? type = null,
+        bool isAssignment = false,
+        bool isNamedArgument = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(type, metadata)
     {
         Left = left ?? throw new ArgumentNullException(nameof(left));
         Operator = @operator;
         Right = right ?? throw new ArgumentNullException(nameof(right));
+        IsAssignment = isAssignment;
+        IsNamedArgument = isNamedArgument;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -57,6 +71,15 @@ public sealed class BinaryExpressionNode : ExpressionNode
             Operator,
             (ExpressionNode)Right.Clone(),
             Type != null ? (TypeNode)Type.Clone() : null,
+            IsAssignment,
+            IsNamedArgument,
             Metadata.ToImmutableDictionary());
+    }
+    
+    public override string ToString()
+    {
+        var assignmentStr = IsAssignment ? " [assignment]" : "";
+        var namedArgStr = IsNamedArgument ? " [named-arg]" : "";
+        return $"BinaryExpression({Operator}){assignmentStr}{namedArgStr}";
     }
 }

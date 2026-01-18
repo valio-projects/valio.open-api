@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Diagnostics;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
@@ -41,4 +42,12 @@ public abstract class AstNode
     /// Клонирует узел (Prototype Pattern)
     /// </summary>
     public abstract AstNode Clone();
+    
+    /// <summary>
+    /// Возвращает строковое представление узла для отладки
+    /// </summary>
+    public override string ToString()
+    {
+        return $"{Kind}";
+    }
 }

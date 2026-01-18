@@ -51,6 +51,8 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitVariableDeclarationStatement(VariableDeclarationStatementNode node);
     TResult VisitThrowStatement(ThrowStatementNode node);
     TResult VisitUsingStatement(UsingStatementNode node);
+    TResult VisitTryCatchStatement(TryCatchStatementNode node);
+    TResult VisitCatchClause(CatchClauseNode node);
     
     // Объявления (общие)
     TResult VisitTypeDeclaration(TypeDeclarationNode node);

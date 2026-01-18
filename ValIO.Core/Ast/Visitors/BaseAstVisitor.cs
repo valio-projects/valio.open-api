@@ -98,6 +98,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.VariableDeclarationStatement => VisitVariableDeclarationStatement((VariableDeclarationStatementNode)node),
             AstNodeKind.ThrowStatement => VisitThrowStatement((ThrowStatementNode)node),
             AstNodeKind.UsingStatement => VisitUsingStatement((UsingStatementNode)node),
+            AstNodeKind.TryCatchStatement => VisitTryCatchStatement((TryCatchStatementNode)node),
             _ => VisitDefault(node)
         };
     }
@@ -138,6 +139,8 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitVariableDeclarationStatement(VariableDeclarationStatementNode node);
     public abstract TResult VisitThrowStatement(ThrowStatementNode node);
     public abstract TResult VisitUsingStatement(UsingStatementNode node);
+    public abstract TResult VisitTryCatchStatement(TryCatchStatementNode node);
+    public abstract TResult VisitCatchClause(CatchClauseNode node);
     
     // Объявления
     public abstract TResult VisitTypeDeclaration(TypeDeclarationNode node);

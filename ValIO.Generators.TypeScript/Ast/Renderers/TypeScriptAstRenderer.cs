@@ -335,6 +335,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             BinaryOperator.BitwiseXor => "^",
             BinaryOperator.LeftShift => "<<",
             BinaryOperator.RightShift => ">>",
+            BinaryOperator.Assign => "=",
             _ => throw new NotSupportedException($"Binary operator {op} is not supported")
         };
     }

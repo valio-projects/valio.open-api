@@ -43,4 +43,9 @@ public sealed class NullableTypeNode : TypeNode
             IsOptional,
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        return $"{InnerType}?";
+    }
 }

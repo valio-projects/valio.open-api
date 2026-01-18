@@ -41,6 +41,8 @@ public enum AstNodeKind
     VariableDeclarationStatement,
     ThrowStatement,
     UsingStatement,
+    TryCatchStatement,
+    CatchClause,
     
     // Объявления
     Declaration,

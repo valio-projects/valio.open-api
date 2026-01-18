@@ -35,6 +35,26 @@ public sealed class MethodDeclarationNode : DeclarationNode
     /// </summary>
     public AccessModifier AccessModifier { get; }
     
+    /// <summary>
+    /// Является ли метод методом интерфейса (без тела, только сигнатура)
+    /// </summary>
+    public bool IsInterfaceMethod { get; }
+    
+    /// <summary>
+    /// Использовать inheritdoc для документации метода
+    /// </summary>
+    public bool UseInheritDoc { get; }
+    
+    /// <summary>
+    /// Является ли метод переопределением базового метода (override)
+    /// </summary>
+    public bool IsOverride { get; }
+    
+    /// <summary>
+    /// Generic параметры типа метода (например, ["T", "U"] для метода Measure&lt;T, U&gt;)
+    /// </summary>
+    public IReadOnlyList<string>? GenericTypeParameters { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.MethodDeclaration;
     
     public override IReadOnlyList<AstNode> Children
@@ -66,7 +86,11 @@ public sealed class MethodDeclarationNode : DeclarationNode
         AccessModifier accessModifier = AccessModifier.Public,
         CommentNode? documentation = null,
         IReadOnlyList<AttributeNode>? attributes = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        bool isInterfaceMethod = false,
+        bool useInheritDoc = false,
+        bool isOverride = false,
+        IReadOnlyList<string>? genericTypeParameters = null)
         : base(name, documentation, attributes, metadata)
     {
         ReturnType = returnType;
@@ -74,6 +98,10 @@ public sealed class MethodDeclarationNode : DeclarationNode
         Body = body;
         IsAsync = isAsync;
         AccessModifier = accessModifier;
+        IsInterfaceMethod = isInterfaceMethod;
+        UseInheritDoc = useInheritDoc;
+        IsOverride = isOverride;
+        GenericTypeParameters = genericTypeParameters?.ToImmutableList();
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -92,6 +120,21 @@ public sealed class MethodDeclarationNode : DeclarationNode
             AccessModifier,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            IsInterfaceMethod,
+            UseInheritDoc,
+            IsOverride,
+            GenericTypeParameters?.ToImmutableList());
+    }
+    
+    public override string ToString()
+    {
+        var returnTypeStr = ReturnType != null ? ReturnType.ToString() : "void";
+        var asyncStr = IsAsync ? "async " : "";
+        var paramsStr = Parameters.Count > 0 
+            ? string.Join(", ", Parameters.Select(p => $"{p.Type} {p.Name.Name}"))
+            : "";
+        var interfaceStr = IsInterfaceMethod ? " [interface]" : "";
+        return $"{asyncStr}{returnTypeStr} {Name.Name}({paramsStr}){interfaceStr}";
     }
 }

@@ -44,4 +44,13 @@ public sealed class InterfaceDeclarationNode : TypeDeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var baseTypesStr = BaseTypes.Count > 0 
+            ? $" : {string.Join(", ", BaseTypes)}" 
+            : "";
+        var membersCount = Members.Count;
+        return $"interface {Name.Name}{baseTypesStr} [{membersCount} members]";
+    }
 }

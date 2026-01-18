@@ -33,4 +33,11 @@ public abstract class TypeNode : AstNode
     {
         return visitor.VisitType(this);
     }
+    
+    public override string ToString()
+    {
+        var nullableStr = IsNullable ? "?" : "";
+        var optionalStr = IsOptional ? "?" : "";
+        return $"{Kind}{nullableStr}{optionalStr}";
+    }
 }

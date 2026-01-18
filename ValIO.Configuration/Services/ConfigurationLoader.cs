@@ -297,6 +297,46 @@ public class ConfigurationLoader : IConfigurationLoader
             };
         }
 
+        // Парсинг GenerateInterfaces
+        if (config.GenerateInterfaces.HasValue)
+        {
+            options.GenerateInterfaces = config.GenerateInterfaces.Value;
+        }
+
+        // Парсинг InterfaceFileStrategy
+        if (!string.IsNullOrEmpty(config.InterfaceFileStrategy))
+        {
+            options.InterfaceFileStrategy = config.InterfaceFileStrategy.ToLowerInvariant() switch
+            {
+                "samefile" or "same-file" => ValIO.Generators.CSharp.Models.InterfaceFileStrategy.SameFile,
+                "separatefile" or "separate-file" => ValIO.Generators.CSharp.Models.InterfaceFileStrategy.SeparateFile,
+                _ => ValIO.Generators.CSharp.Models.InterfaceFileStrategy.SameFile
+            };
+        }
+
+        // Парсинг ClientAccessModifier
+        if (!string.IsNullOrEmpty(config.ClientAccessModifier))
+        {
+            options.ClientAccessModifier = config.ClientAccessModifier.ToLowerInvariant() switch
+            {
+                "public" => ValIO.Core.Ast.Enums.AccessModifier.Public,
+                "internal" => ValIO.Core.Ast.Enums.AccessModifier.Internal,
+                _ => ValIO.Core.Ast.Enums.AccessModifier.Public
+            };
+        }
+
+        // Парсинг GenerateTraces
+        if (config.GenerateTraces.HasValue)
+        {
+            options.GenerateTraces = config.GenerateTraces.Value;
+        }
+
+        // Парсинг GenerateMetrics
+        if (config.GenerateMetrics.HasValue)
+        {
+            options.GenerateMetrics = config.GenerateMetrics.Value;
+        }
+
         return options;
     }
 

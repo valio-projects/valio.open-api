@@ -39,4 +39,9 @@ public sealed class IdentifierNode : AstNode
     {
         return new IdentifierNode(Name, Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        return $"Identifier({Name})";
+    }
 }

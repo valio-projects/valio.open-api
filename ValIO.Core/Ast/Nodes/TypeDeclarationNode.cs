@@ -55,4 +55,13 @@ public abstract class TypeDeclarationNode : DeclarationNode
         BaseTypes = baseTypes?.ToImmutableList() ?? ImmutableList<TypeNode>.Empty;
         Members = members?.ToImmutableList() ?? ImmutableList<DeclarationNode>.Empty;
     }
+    
+    public override string ToString()
+    {
+        var baseTypesStr = BaseTypes.Count > 0 
+            ? $" : {string.Join(", ", BaseTypes)}" 
+            : "";
+        var membersCount = Members.Count;
+        return $"{Kind}({AccessModifier} {Name.Name}{baseTypesStr}) [{membersCount} members]";
+    }
 }

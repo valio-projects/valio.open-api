@@ -22,5 +22,6 @@ public enum BinaryOperator
     BitwiseOr,
     BitwiseXor,
     LeftShift,
-    RightShift
+    RightShift,
+    Assign
 }

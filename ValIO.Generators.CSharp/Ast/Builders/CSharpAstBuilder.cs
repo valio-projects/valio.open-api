@@ -492,7 +492,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             accessModifier: AccessModifier.Public,
             isAsync: false,
             documentation: new CommentNode("Определяет, равен ли указанный объект текущему объекту.", CommentKind.Xml),
-            metadata: new Dictionary<string, object> { { "IsOverride", true } }.ToImmutableDictionary());
+            isOverride: true);
         methods.Add(equalsObjMethod);
         
         // Метод GetHashCode()
@@ -505,7 +505,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             accessModifier: AccessModifier.Public,
             isAsync: false,
             documentation: new CommentNode("Служит хэш-функцией по умолчанию.", CommentKind.Xml),
-            metadata: new Dictionary<string, object> { { "IsOverride", true } }.ToImmutableDictionary());
+            isOverride: true);
         methods.Add(getHashCodeMethod);
         
         return methods;
@@ -529,11 +529,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             targetType: modelType,
             expression: objParam);
         
-        // Помечаем через metadata что нужно использовать "as" вместо обычного cast
+        // Используем "as" оператор вместо обычного cast
         var asExpression = new CastExpressionNode(
             targetType: modelType,
             expression: objParam,
-            metadata: new Dictionary<string, object> { { "UseAsOperator", true } }.ToImmutableDictionary());
+            useAsOperator: true);
         
         var equalsCall = new CallExpressionNode(
             target: new IdentifierExpressionNode(new IdentifierNode("Equals")),
@@ -646,7 +646,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             initializer: new CallExpressionNode(
                 target: new IdentifierExpressionNode(new IdentifierNode("HashCode")),
                 arguments: ImmutableList<ExpressionNode>.Empty,
-                metadata: new Dictionary<string, object> { { "IsNewExpression", true } }.ToImmutableDictionary()));
+                isNewExpression: true));
         statements.Add(hashCodeVar);
         
         // Добавляем все свойства (включая наследуемые) через hashCode.Add()
@@ -889,7 +889,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                     left: new IdentifierExpressionNode(new IdentifierNode("Value")),
                     @operator: BinaryOperator.Add, // Временно, будет обработано в рендерере как именованный аргумент
                     right: valueArg,
-                    metadata: new Dictionary<string, object> { ["IsNamedArgument"] = true });
+                    isNamedArgument: true);
                 attributes = new[] { new AttributeNode(enumMemberAttributeName, new[] { namedArg }.ToImmutableList()) }.ToImmutableList();
             }
             else
@@ -1110,19 +1110,31 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// </summary>
     public MethodDeclarationNode BuildMethod(IrOperation operation)
     {
+        return BuildMethod(operation, includeBody: true, includeDocumentation: true);
+    }
+    
+    /// <summary>
+    /// Строит MethodDeclarationNode из IrOperation с опциями
+    /// </summary>
+    private MethodDeclarationNode BuildMethod(IrOperation operation, bool includeBody, bool includeDocumentation)
+    {
         var name = new IdentifierNode(operation.MethodName);
         
         // Определяем тип возвращаемого значения из responses
         var returnType = ExtractReturnType(operation.Responses);
         
-        var comment = !string.IsNullOrEmpty(operation.Description)
-            ? new CommentNode(operation.Description, CommentKind.Xml)
-            : !string.IsNullOrEmpty(operation.Summary)
-                ? new CommentNode(operation.Summary, CommentKind.Xml)
-                : null;
+        CommentNode? comment = null;
+        if (includeDocumentation)
+        {
+            comment = !string.IsNullOrEmpty(operation.Description)
+                ? new CommentNode(operation.Description, CommentKind.Xml)
+                : !string.IsNullOrEmpty(operation.Summary)
+                    ? new CommentNode(operation.Summary, CommentKind.Xml)
+                    : null;
+        }
         
         var parameters = BuildMethodParameters(operation);
-        var body = BuildMethodBody(operation);
+        var body = includeBody ? BuildMethodBody(operation) : null;
         
         return new MethodDeclarationNode(
             name: name,
@@ -1131,7 +1143,18 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             body: body,
             accessModifier: AccessModifier.Public,
             isAsync: true,
-            documentation: comment);
+            documentation: comment,
+            metadata: null,
+            isInterfaceMethod: !includeBody,
+            useInheritDoc: false);
+    }
+    
+    /// <summary>
+    /// Строит MethodDeclarationNode для интерфейса (без тела)
+    /// </summary>
+    private MethodDeclarationNode BuildInterfaceMethod(IrOperation operation)
+    {
+        return BuildMethod(operation, includeBody: false, includeDocumentation: true);
     }
     
     /// <summary>
@@ -1179,10 +1202,29 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             compilationUnits.Add(BuildCompilationUnit(enumModel, @namespace));
         }
         
+        // Генерируем IHttpClientMetrics и HttpClientMetrics один раз, если включены метрики и есть хотя бы один клиент
+        if (_options.GenerateMetrics && document.Clients.Count > 0)
+        {
+            compilationUnits.Add(BuildCompilationUnitForIHttpClientMetrics(@namespace));
+            compilationUnits.Add(BuildCompilationUnitForHttpClientMetrics(@namespace));
+        }
+        
         // Генерируем клиенты
         foreach (var client in document.Clients)
         {
+            // Если интерфейсы в отдельном файле, генерируем их отдельно
+            if (_options.GenerateInterfaces && _options.InterfaceFileStrategy == InterfaceFileStrategy.SeparateFile)
+            {
+                compilationUnits.Add(BuildCompilationUnitForInterface(client, @namespace));
+            }
+            
             compilationUnits.Add(BuildCompilationUnit(client, @namespace));
+            
+            // Если включен OpenTelemetry (traces или metrics), генерируем декоратор
+            if (_options.GenerateTraces || _options.GenerateMetrics)
+            {
+                compilationUnits.Add(BuildCompilationUnitForDecorator(client, @namespace));
+            }
         }
         
         // Генерируем ApiException один раз, если есть хотя бы один клиент
@@ -1200,13 +1242,421 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     public CompilationUnitNode BuildCompilationUnit(IrClient client, string? @namespace = null)
     {
         var usings = BuildUsingDirectives(ExtractDependencies(client));
+        var declarations = new List<DeclarationNode>();
+        
+        // Если нужно генерировать интерфейсы и они в том же файле
+        if (_options.GenerateInterfaces && _options.InterfaceFileStrategy == InterfaceFileStrategy.SameFile)
+        {
+            var interfaceNode = BuildClientInterface(client);
+            declarations.Add(interfaceNode);
+        }
+        
         var classNode = BuildClientClass(client);
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)classNode }.ToList());
+        declarations.Add(classNode);
+        
+        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, declarations);
         
         return new CompilationUnitNode(
             usings: usings,
             namespaces: new[] { namespaceNode }.ToImmutableList(),
             declarations: ImmutableList<DeclarationNode>.Empty);
+    }
+    
+    /// <summary>
+    /// Строит CompilationUnit для интерфейса клиента (для отдельного файла)
+    /// </summary>
+    public CompilationUnitNode BuildCompilationUnitForInterface(IrClient client, string? @namespace = null)
+    {
+        var usings = BuildUsingDirectives(ExtractDependencies(client));
+        var interfaceNode = BuildClientInterface(client);
+        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)interfaceNode }.ToList());
+        
+        return new CompilationUnitNode(
+            usings: usings,
+            namespaces: new[] { namespaceNode }.ToImmutableList(),
+            declarations: ImmutableList<DeclarationNode>.Empty);
+    }
+    
+    /// <summary>
+    /// Строит CompilationUnit для интерфейса IHttpClientMetrics
+    /// </summary>
+    public CompilationUnitNode BuildCompilationUnitForIHttpClientMetrics(string? @namespace = null)
+    {
+        var dependencies = new HashSet<string> { "System.Diagnostics" };
+        var usings = BuildUsingDirectives(dependencies.ToList());
+        var metricsInterface = BuildIHttpClientMetricsInterface();
+        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)metricsInterface }.ToList());
+        
+        return new CompilationUnitNode(
+            usings: usings,
+            namespaces: new[] { namespaceNode }.ToImmutableList(),
+            declarations: ImmutableList<DeclarationNode>.Empty);
+    }
+    
+    /// <summary>
+    /// Строит CompilationUnit для класса HttpClientMetrics
+    /// </summary>
+    public CompilationUnitNode BuildCompilationUnitForHttpClientMetrics(string? @namespace = null)
+    {
+        var dependencies = new HashSet<string> { "System.Diagnostics" };
+        var usings = BuildUsingDirectives(dependencies.ToList());
+        var metricsClass = BuildHttpClientMetricsClass();
+        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)metricsClass }.ToList());
+        
+        return new CompilationUnitNode(
+            usings: usings,
+            namespaces: new[] { namespaceNode }.ToImmutableList(),
+            declarations: ImmutableList<DeclarationNode>.Empty);
+    }
+    
+    /// <summary>
+    /// Строит CompilationUnit для декоратора OpenTelemetry
+    /// </summary>
+    public CompilationUnitNode BuildCompilationUnitForDecorator(IrClient client, string? @namespace = null)
+    {
+        var dependencies = ExtractDependencies(client).ToList();
+        // Добавляем зависимости для OpenTelemetry
+        dependencies.Add("System.Diagnostics");
+        
+        var usings = BuildUsingDirectives(dependencies);
+        var decoratorNode = BuildOpenTelemetryDecorator(client);
+        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)decoratorNode }.ToList());
+        
+        return new CompilationUnitNode(
+            usings: usings,
+            namespaces: new[] { namespaceNode }.ToImmutableList(),
+            declarations: ImmutableList<DeclarationNode>.Empty);
+    }
+    
+    /// <summary>
+    /// Строит ClassDeclarationNode для декоратора OpenTelemetry
+    /// </summary>
+    private ClassDeclarationNode BuildOpenTelemetryDecorator(IrClient client)
+    {
+        var decoratorName = new IdentifierNode($"{client.Name}TelemetryDecorator");
+        var baseClientName = new IdentifierNode(client.Name);
+        var interfaceName = _options.GenerateInterfaces 
+            ? new IdentifierNode($"I{client.Name}")
+            : null;
+        
+        var members = new List<DeclarationNode>();
+        
+        // Поле для базового клиента
+        var baseClientField = new FieldDeclarationNode(
+            name: new IdentifierNode("_baseClient"),
+            type: interfaceName != null 
+                ? new SimpleTypeNode(interfaceName, isPrimitive: false)
+                : new SimpleTypeNode(baseClientName, isPrimitive: false),
+            accessModifier: AccessModifier.Private,
+            isReadOnly: true,
+            defaultValue: null);
+        members.Add(baseClientField);
+        
+        // Поле для ActivitySource
+        var activitySourceField = new FieldDeclarationNode(
+            name: new IdentifierNode("_activitySource"),
+            type: new SimpleTypeNode(new IdentifierNode("ActivitySource"), isPrimitive: false),
+            accessModifier: AccessModifier.Private,
+            isReadOnly: true,
+            defaultValue: null);
+        members.Add(activitySourceField);
+        
+        // Поле для метрик (если включены)
+        if (_options.GenerateMetrics)
+        {
+            var metricsField = new FieldDeclarationNode(
+                name: new IdentifierNode("_metrics"),
+                type: new SimpleTypeNode(new IdentifierNode("HttpClientMetrics"), isPrimitive: false),
+                accessModifier: AccessModifier.Private,
+                isReadOnly: true,
+                defaultValue: null);
+            members.Add(metricsField);
+        }
+        
+        // Конструктор
+        var constructorParams = new List<ParameterDeclarationNode>
+        {
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("baseClient"),
+                type: interfaceName != null 
+                    ? new SimpleTypeNode(interfaceName, isPrimitive: false)
+                    : new SimpleTypeNode(baseClientName, isPrimitive: false),
+                isRequired: true),
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("activitySource"),
+                type: new SimpleTypeNode(new IdentifierNode("ActivitySource"), isPrimitive: false),
+                isRequired: true)
+        };
+        
+        // Добавляем параметры для метрик, если включены
+        if (_options.GenerateMetrics)
+        {
+            constructorParams.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode("metrics"),
+                type: new SimpleTypeNode(new IdentifierNode("IHttpClientMetrics"), isPrimitive: false),
+                isRequired: true));
+        }
+        
+        var constructorBodyStatements = new List<StatementNode>();
+        // _baseClient = baseClient;
+        var baseClientAssignment = new BinaryExpressionNode(
+            left: new IdentifierExpressionNode(new IdentifierNode("_baseClient")),
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("baseClient")));
+        constructorBodyStatements.Add(new ExpressionStatementNode(baseClientAssignment));
+        
+        // _activitySource = activitySource;
+        var activitySourceAssignment = new BinaryExpressionNode(
+            left: new IdentifierExpressionNode(new IdentifierNode("_activitySource")),
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("activitySource")));
+        constructorBodyStatements.Add(new ExpressionStatementNode(activitySourceAssignment));
+        
+        // Инициализация метрик, если включены
+        if (_options.GenerateMetrics)
+        {
+            // _metrics = metrics;
+            var metricsAssignment = new BinaryExpressionNode(
+                left: new IdentifierExpressionNode(new IdentifierNode("_metrics")),
+                @operator: BinaryOperator.Assign,
+                right: new IdentifierExpressionNode(new IdentifierNode("metrics")));
+            constructorBodyStatements.Add(new ExpressionStatementNode(metricsAssignment));
+        }
+        
+        var constructorBody = new BlockNode(constructorBodyStatements.ToImmutableList());
+        var constructor = new ConstructorDeclarationNode(
+            name: decoratorName,
+            parameters: constructorParams.ToImmutableList(),
+            body: constructorBody,
+            accessModifier: AccessModifier.Public);
+        members.Add(constructor);
+        
+        // Базовые типы (интерфейс если есть, иначе пусто)
+        var baseTypes = new List<TypeNode>();
+        if (interfaceName != null)
+        {
+            baseTypes.Add(new SimpleTypeNode(interfaceName, isPrimitive: false));
+        }
+        
+        // Методы декоратора (оборачивают вызовы базового клиента в Activity)
+        var decoratorMethods = client.Operations
+            .Select(op => BuildDecoratorMethod(op, client.Name))
+            .ToList<DeclarationNode>();
+        members.AddRange(decoratorMethods);
+        
+        return new ClassDeclarationNode(
+            name: decoratorName,
+            accessModifier: AccessModifier.Public,
+            isSealed: false,
+            isStatic: false,
+            isPartial: false,
+            baseTypes: baseTypes.ToImmutableList(),
+            members: members.ToImmutableList());
+    }
+    
+    /// <summary>
+    /// Строит MethodDeclarationNode для декоратора (оборачивает вызов в Activity)
+    /// </summary>
+    private MethodDeclarationNode BuildDecoratorMethod(IrOperation operation, string clientName)
+    {
+        var name = new IdentifierNode(operation.MethodName);
+        var returnType = ExtractReturnType(operation.Responses);
+        var parameters = BuildMethodParameters(operation);
+        
+        // Тело метода декоратора
+        var statements = new List<StatementNode>();
+        
+        // var activity = _activitySource.StartActivity("{serviceName}.ClientName.MethodName" или "ClientName.MethodName");
+        var serviceName = _options.ServiceName;
+        var activityName = string.IsNullOrWhiteSpace(serviceName)
+            ? $"{clientName}.{operation.MethodName}"
+            : $"{serviceName}.{clientName}.{operation.MethodName}";
+        var activityNameLiteral = new LiteralExpressionNode(activityName, LiteralKind.String);
+        var startActivityCall = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("_activitySource")),
+                member: new IdentifierNode("StartActivity")),
+            arguments: new[] { activityNameLiteral }.ToImmutableList());
+        
+        var activityVar = new IdentifierNode("activity");
+        TypeNode activityType = _options.NullableActivity
+            ? new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("Activity"), isPrimitive: false))
+            : new SimpleTypeNode(new IdentifierNode("Activity"), isPrimitive: false);
+        var activityDeclaration = new VariableDeclarationStatementNode(
+            name: activityVar,
+            type: activityType,
+            initializer: startActivityCall);
+        statements.Add(activityDeclaration);
+        
+        // Вызов базового клиента с метриками (если включены) или без них
+        ExpressionNode baseClientCallExpression;
+        
+        if (_options.GenerateMetrics)
+        {
+            // return await _metrics.Measure(clientName, methodName, async () => await _baseClient.MethodName(...));
+            var baseClientCall = new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(new IdentifierNode("_baseClient")),
+                    member: name),
+                arguments: parameters.Select(p => new IdentifierExpressionNode(p.Name)).ToImmutableList<ExpressionNode>());
+            
+            var awaitBaseClientCall = new AwaitExpressionNode(baseClientCall);
+            
+            // Создаем лямбда-выражение: async () => await _baseClient.MethodName(...)
+            var lambdaExpression = new CallExpressionNode(
+                target: new IdentifierExpressionNode(new IdentifierNode("async")),
+                arguments: ImmutableList<ExpressionNode>.Empty,
+                isLambda: true,
+                lambdaBody: awaitBaseClientCall);
+            
+            // _metrics.Measure<T>(clientName, methodName, async () => await _baseClient.MethodName(...))
+            var returnTypeGenericArg = ExtractReturnTypeGenericArgument(returnType);
+            var clientNameLiteral = new LiteralExpressionNode(clientName, LiteralKind.String);
+            var methodNameLiteral = new LiteralExpressionNode(operation.MethodName, LiteralKind.String);
+            var measureCall = new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(new IdentifierNode("_metrics")),
+                    member: new IdentifierNode("Measure")),
+                arguments: new ExpressionNode[] { clientNameLiteral, methodNameLiteral, lambdaExpression }.ToImmutableList<ExpressionNode>(),
+                genericTypeArgument: returnTypeGenericArg);
+            
+            baseClientCallExpression = new AwaitExpressionNode(measureCall);
+        }
+        else
+        {
+            // return await _baseClient.MethodName(...);
+            var baseClientCall = new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(new IdentifierNode("_baseClient")),
+                    member: name),
+                arguments: parameters.Select(p => new IdentifierExpressionNode(p.Name)).ToImmutableList<ExpressionNode>());
+            
+            baseClientCallExpression = new AwaitExpressionNode(baseClientCall);
+        }
+        
+        // try {
+        var tryStatements = new List<StatementNode>();
+        
+        var returnStatement = new ReturnStatementNode(baseClientCallExpression);
+        tryStatements.Add(returnStatement);
+        
+        var tryBlock = new BlockNode(tryStatements.ToImmutableList());
+        
+        // catch (Exception ex) {
+        var catchStatements = new List<StatementNode>();
+        
+        // if (activity != null) { activity.SetStatus(ActivityStatusCode.Error, ex.Message); activity.RecordException(ex); }
+        // или просто activity.SetStatus(...) если NullableActivity = false
+        if (_options.GenerateTraces)
+        {
+            var exceptionVar = new IdentifierNode("ex");
+            
+            var setStatusCall = new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(activityVar),
+                    member: new IdentifierNode("SetStatus")),
+                arguments: new[]
+                {
+                    new MemberAccessExpressionNode(
+                        @object: new IdentifierExpressionNode(new IdentifierNode("ActivityStatusCode")),
+                        member: new IdentifierNode("Error")),
+                    new MemberAccessExpressionNode(
+                        @object: new IdentifierExpressionNode(exceptionVar),
+                        member: new IdentifierNode("Message"))
+                }.ToImmutableList<ExpressionNode>());
+            
+            var recordExceptionCall = new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(activityVar),
+                    member: new IdentifierNode("RecordException")),
+                arguments: new[] { new IdentifierExpressionNode(exceptionVar) }.ToImmutableList<ExpressionNode>());
+            
+            var ifBodyStatements = new List<StatementNode>
+            {
+                new ExpressionStatementNode(setStatusCall),
+                new ExpressionStatementNode(recordExceptionCall)
+            };
+            
+            if (_options.NullableActivity)
+            {
+                // Если Activity nullable, проверяем на null
+                var activityNotNull = new BinaryExpressionNode(
+                    left: new IdentifierExpressionNode(activityVar),
+                    @operator: BinaryOperator.NotEqual,
+                    right: new LiteralExpressionNode("null", LiteralKind.Null));
+                var ifBody = new BlockNode(ifBodyStatements.ToImmutableList());
+                var ifStatement = new IfStatementNode(activityNotNull, ifBody);
+                catchStatements.Add(ifStatement);
+            }
+            else
+            {
+                // Если Activity not nullable, просто выполняем без проверки
+                catchStatements.AddRange(ifBodyStatements.Select(s => s));
+            }
+        }
+        
+        // throw; (rethrow)
+        catchStatements.Add(new ThrowStatementNode(null));
+        
+        var catchBlock = new BlockNode(catchStatements.ToImmutableList());
+        var catchClause = new CatchClauseNode(
+            body: catchBlock,
+            exceptionType: new SimpleTypeNode(new IdentifierNode("Exception"), isPrimitive: false),
+            exceptionVariable: new IdentifierNode("ex"));
+        
+        // finally {
+        var finallyStatements = new List<StatementNode>();
+        
+        // if (activity != null) { activity.Dispose(); }
+        // или просто activity.Dispose() если NullableActivity = false
+        if (_options.GenerateTraces)
+        {
+            var activityDisposeCall = new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(activityVar),
+                    member: new IdentifierNode("Dispose")),
+                arguments: ImmutableList<ExpressionNode>.Empty);
+            
+            if (_options.NullableActivity)
+            {
+                // Если Activity nullable, проверяем на null
+                var activityNotNull = new BinaryExpressionNode(
+                    left: new IdentifierExpressionNode(activityVar),
+                    @operator: BinaryOperator.NotEqual,
+                    right: new LiteralExpressionNode("null", LiteralKind.Null));
+                var ifBody = new BlockNode(new[] { new ExpressionStatementNode(activityDisposeCall) }.ToImmutableList());
+                var ifStatement = new IfStatementNode(activityNotNull, ifBody);
+                finallyStatements.Add(ifStatement);
+            }
+            else
+            {
+                // Если Activity not nullable, просто вызываем Dispose
+                finallyStatements.Add(new ExpressionStatementNode(activityDisposeCall));
+            }
+        }
+        
+        var finallyBlock = new BlockNode(finallyStatements.ToImmutableList());
+        
+        // Создаем try-catch-finally
+        var tryCatchStatement = new TryCatchStatementNode(
+            tryBlock: tryBlock,
+            catchClauses: new[] { catchClause }.ToImmutableList(),
+            finallyBlock: finallyBlock);
+        statements.Add(tryCatchStatement);
+        
+        // Метрики для успешных вызовов (перед try-catch, так как они должны быть в finally)
+        // Но лучше добавить их в finally после измерения длительности
+        
+        var body = new BlockNode(statements.ToImmutableList());
+        
+        return new MethodDeclarationNode(
+            name: name,
+            returnType: returnType,
+            parameters: parameters,
+            body: body,
+            accessModifier: AccessModifier.Public,
+            isAsync: true,
+            documentation: null);
     }
     
     // Приватные вспомогательные методы для IR операций
@@ -1305,8 +1755,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             type: new SimpleTypeNode(new IdentifierNode("StringBuilder"), isPrimitive: false),
             initializer: new CallExpressionNode(
                 target: new IdentifierExpressionNode(new IdentifierNode("StringBuilder")),
-                arguments: new[] { capacityLiteral }.ToImmutableList(),
-                metadata: new Dictionary<string, object> { ["IsNewExpression"] = true }));
+                arguments: new ExpressionNode[] { capacityLiteral }.ToImmutableList(),
+                isNewExpression: true));
         statements.Add(urlBuilderVar);
         
         // Строим URL по частям, заменяя {param} на значения
@@ -1492,7 +1942,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var requestMessageCtor = new CallExpressionNode(
             target: requestMessageType,
             arguments: requestMessageCtorArgs.ToImmutableList(),
-            metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
+            isNewExpression: true);
         
         var requestMessageVar = new VariableDeclarationStatementNode(
             name: new IdentifierNode("requestMessage"),
@@ -1515,8 +1965,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var mediaTypeJson = new IdentifierExpressionNode(new IdentifierNode("MediaTypeWithQualityHeaderValue"));
         var mediaTypeJsonCtor = new CallExpressionNode(
             target: mediaTypeJson,
-            arguments: new[] { new LiteralExpressionNode("application/json", LiteralKind.String) }.ToImmutableList(),
-            metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
+            arguments: new ExpressionNode[] { new LiteralExpressionNode("application/json", LiteralKind.String) }.ToImmutableList(),
+            isNewExpression: true);
         var acceptAddCall = new CallExpressionNode(
             target: acceptAdd,
             arguments: new[] { mediaTypeJsonCtor }.ToImmutableList());
@@ -1553,16 +2003,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             var stringContentCtor = new CallExpressionNode(
                 target: stringContentTypeExpr,
                 arguments: stringContentCtorArgs.ToImmutableList(),
-                metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
+                isNewExpression: true);
             
             var requestMessageContent = new MemberAccessExpressionNode(
                 @object: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
                 member: new IdentifierNode("Content"));
             var contentAssign = new BinaryExpressionNode(
                 left: requestMessageContent,
-                @operator: BinaryOperator.Add,
-                right: stringContentCtor,
-                metadata: new Dictionary<string, object> { ["IsAssignment"] = true });
+                @operator: BinaryOperator.Assign,
+                right: stringContentCtor);
             requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(contentAssign));
         }
         
@@ -1688,12 +2137,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             var deserializeAccess = new MemberAccessExpressionNode(
                 @object: jsonSerializerExpr,
                 member: new IdentifierNode("Deserialize"));
-            var deserializeMetadata = new Dictionary<string, object> { ["GenericTypeArgument"] = successType };
             var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode("responseContent"));
             var deserializeCall = new CallExpressionNode(
                 target: deserializeAccess,
-                arguments: new[] { responseContentExpr }.ToImmutableList(),
-                metadata: deserializeMetadata);
+                arguments: new ExpressionNode[] { responseContentExpr }.ToImmutableList(),
+                genericTypeArgument: successType);
             
             // Десериализуем в nullable тип
             var nullableSuccessType = new NullableTypeNode(successType);
@@ -1751,12 +2199,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             var deserializeAccess = new MemberAccessExpressionNode(
                 @object: jsonSerializerExpr,
                 member: new IdentifierNode("Deserialize"));
-            var deserializeMetadata = new Dictionary<string, object> { ["GenericTypeArgument"] = errorType };
             var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode("responseContent"));
             var deserializeErrorCall = new CallExpressionNode(
                 target: deserializeAccess,
-                arguments: new[] { responseContentExpr }.ToImmutableList(),
-                metadata: deserializeMetadata);
+                arguments: new ExpressionNode[] { responseContentExpr }.ToImmutableList(),
+                genericTypeArgument: errorType);
             
             // Десериализуем в nullable тип
             var nullableErrorType = new NullableTypeNode(errorType);
@@ -1848,7 +2295,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var responseMessageUsingResource = new CallExpressionNode(
             target: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
             arguments: ImmutableList<ExpressionNode>.Empty,
-            metadata: new Dictionary<string, object> { ["IsUsingVariable"] = true, ["VariableDeclaration"] = responseMessageVar });
+            isUsingVariable: true,
+            variableDeclaration: responseMessageVar);
         var responseMessageUsing = new UsingStatementNode(
             resource: responseMessageUsingResource,
             body: responseMessageUsingBlock);
@@ -1861,7 +2309,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var requestMessageUsingResource = new CallExpressionNode(
             target: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
             arguments: ImmutableList<ExpressionNode>.Empty,
-            metadata: new Dictionary<string, object> { ["IsUsingVariable"] = true, ["VariableDeclaration"] = requestMessageVar });
+            isUsingVariable: true,
+            variableDeclaration: requestMessageVar);
         var requestMessageUsing = new UsingStatementNode(
             resource: requestMessageUsingResource,
             body: requestMessageUsingBlock);
@@ -2136,10 +2585,40 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             isOptional: false);
     }
     
+    /// <summary>
+    /// Строит InterfaceDeclarationNode из IrClient
+    /// </summary>
+    private InterfaceDeclarationNode BuildClientInterface(IrClient client)
+    {
+        var interfaceName = new IdentifierNode($"I{client.Name}");
+        // IrClient не имеет Description, используем null
+        CommentNode? comment = null;
+        
+        // Методы интерфейса (без тела, с документацией)
+        var interfaceMethods = client.Operations
+            .Select(BuildInterfaceMethod)
+            .ToList<DeclarationNode>();
+        
+        return new InterfaceDeclarationNode(
+            name: interfaceName,
+            accessModifier: AccessModifier.Public,
+            baseTypes: ImmutableList<TypeNode>.Empty,
+            members: interfaceMethods.ToImmutableList(),
+            documentation: comment);
+    }
+    
     private ClassDeclarationNode BuildClientClass(IrClient client)
     {
         var name = new IdentifierNode(client.Name);
         var members = new List<DeclarationNode>();
+        
+        // Определяем базовые типы (интерфейсы)
+        var baseTypes = new List<TypeNode>();
+        if (_options.GenerateInterfaces)
+        {
+            var interfaceType = new SimpleTypeNode(new IdentifierNode($"I{client.Name}"), isPrimitive: false);
+            baseTypes.Add(interfaceType);
+        }
         
         // Добавляем поле _httpClient
         var httpClientField = new FieldDeclarationNode(
@@ -2159,16 +2638,11 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 isRequired: true)
         };
         
-        // Создаем присваивание через BinaryExpression с Add (временно, будет обработано в рендерере как присваивание)
-        // Или используем простой expression statement - в C# присваивание это statement, не expression
-        // Пока создаем пустое тело, присваивание будет сделано в рендерере через специальную логику
-        // Или используем BinaryExpression с кастомным оператором через metadata
-        var assignmentMetadata = new Dictionary<string, object> { ["IsAssignment"] = true };
+        // _httpClient = httpClient;
         var assignmentExpr = new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("_httpClient")),
-            @operator: BinaryOperator.Add, // Временно, будет заменено в рендерере
-            right: new IdentifierExpressionNode(new IdentifierNode("httpClient")),
-            metadata: assignmentMetadata);
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("httpClient")));
         
         var constructorBody = new BlockNode(new List<StatementNode>
         {
@@ -2182,17 +2656,37 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             accessModifier: AccessModifier.Public);
         members.Add(constructor);
         
-        // Добавляем методы
-        var methods = client.Operations.Select(BuildMethod).ToList<DeclarationNode>();
+        // Добавляем методы (без документации, будет inheritdoc)
+        var methods = client.Operations
+            .Select(op =>
+            {
+                var method = BuildMethod(op, includeBody: true, includeDocumentation: false);
+                
+                // Создаем новый метод с UseInheritDoc = true
+                return new MethodDeclarationNode(
+                    name: method.Name,
+                    returnType: method.ReturnType,
+                    parameters: method.Parameters,
+                    body: method.Body,
+                    isAsync: method.IsAsync,
+                    accessModifier: method.AccessModifier,
+                    documentation: method.Documentation,
+                    attributes: method.Attributes,
+                    metadata: method.Metadata,
+                    isInterfaceMethod: method.IsInterfaceMethod,
+                    useInheritDoc: true);
+            })
+            .ToList<DeclarationNode>();
+        
         members.AddRange(methods);
         
         return new ClassDeclarationNode(
             name: name,
-            accessModifier: AccessModifier.Public,
+            accessModifier: _options.ClientAccessModifier,
             isSealed: _options.UseSealed,
             isStatic: false,
             isPartial: false,
-            baseTypes: ImmutableList<TypeNode>.Empty,
+            baseTypes: baseTypes.ToImmutableList(),
             members: members.ToImmutableList());
     }
     
@@ -2292,16 +2786,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         var constructor1Body = new BlockNode(new List<StatementNode>
         {
-            new ExpressionStatementNode(new BinaryExpressionNode(
-                left: new IdentifierExpressionNode(new IdentifierNode("base")),
-                @operator: BinaryOperator.Add,
-                right: new IdentifierExpressionNode(new IdentifierNode("message")),
-                metadata: new Dictionary<string, object> { ["IsConstructorBaseCall"] = true, ["ConstructorArguments"] = new[] { new IdentifierExpressionNode(new IdentifierNode("message")) } })),
+            new ExpressionStatementNode(new CallExpressionNode(
+                target: new IdentifierExpressionNode(new IdentifierNode("base")),
+                arguments: new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("message")) }.ToImmutableList(),
+                isConstructorBaseCall: true)),
             new ExpressionStatementNode(new BinaryExpressionNode(
                 left: new IdentifierExpressionNode(new IdentifierNode("StatusCode")),
-                @operator: BinaryOperator.Add,
-                right: new IdentifierExpressionNode(new IdentifierNode("statusCode")),
-                metadata: new Dictionary<string, object> { ["IsAssignment"] = true }))
+                @operator: BinaryOperator.Assign,
+                right: new IdentifierExpressionNode(new IdentifierNode("statusCode"))))
         }.ToImmutableList());
         
         var constructor1 = new ConstructorDeclarationNode(
@@ -2349,47 +2841,37 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         };
         
         var constructor2BodyStatements = new List<StatementNode>();
-        constructor2BodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
-            left: new IdentifierExpressionNode(new IdentifierNode("base")),
-            @operator: BinaryOperator.Add,
-            right: new IdentifierExpressionNode(new IdentifierNode("message")),
-            metadata: new Dictionary<string, object> { 
-                ["IsConstructorBaseCall"] = true, 
-                ["ConstructorArguments"] = new ExpressionNode[] { 
-                    new IdentifierExpressionNode(new IdentifierNode("message")),
-                    new IdentifierExpressionNode(new IdentifierNode("innerException"))
-                }.ToImmutableList() 
-            })));
+        constructor2BodyStatements.Add(new ExpressionStatementNode(new CallExpressionNode(
+            target: new IdentifierExpressionNode(new IdentifierNode("base")),
+            arguments: new ExpressionNode[] { 
+                new IdentifierExpressionNode(new IdentifierNode("message")),
+                new IdentifierExpressionNode(new IdentifierNode("innerException"))
+            }.ToImmutableList(),
+            isConstructorBaseCall: true)));
         constructor2BodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("RequestUri")),
-            @operator: BinaryOperator.Add,
-            right: new IdentifierExpressionNode(new IdentifierNode("requestUri")),
-            metadata: new Dictionary<string, object> { ["IsAssignment"] = true })));
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("requestUri")))));
         constructor2BodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("HttpMethod")),
-            @operator: BinaryOperator.Add,
-            right: new IdentifierExpressionNode(new IdentifierNode("httpMethod")),
-            metadata: new Dictionary<string, object> { ["IsAssignment"] = true })));
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("httpMethod")))));
         constructor2BodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("StatusCode")),
-            @operator: BinaryOperator.Add,
-            right: new IdentifierExpressionNode(new IdentifierNode("statusCode")),
-            metadata: new Dictionary<string, object> { ["IsAssignment"] = true })));
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("statusCode")))));
         constructor2BodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("ReasonPhrase")),
-            @operator: BinaryOperator.Add,
-            right: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")),
-            metadata: new Dictionary<string, object> { ["IsAssignment"] = true })));
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")))));
         constructor2BodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("Version")),
-            @operator: BinaryOperator.Add,
-            right: new IdentifierExpressionNode(new IdentifierNode("version")),
-            metadata: new Dictionary<string, object> { ["IsAssignment"] = true })));
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("version")))));
         constructor2BodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
             left: new IdentifierExpressionNode(new IdentifierNode("Content")),
-            @operator: BinaryOperator.Add,
-            right: new IdentifierExpressionNode(new IdentifierNode("content")),
-            metadata: new Dictionary<string, object> { ["IsAssignment"] = true })));
+            @operator: BinaryOperator.Assign,
+            right: new IdentifierExpressionNode(new IdentifierNode("content")))));
         
         var constructor2Body = new BlockNode(constructor2BodyStatements.ToImmutableList());
         
@@ -2443,7 +2925,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         return new CallExpressionNode(
             target: apiExceptionType,
             arguments: arguments.ToImmutableList(),
-            metadata: new Dictionary<string, object> { ["IsNewExpression"] = true });
+            isNewExpression: true);
     }
     
     private IReadOnlyList<string> ExtractDependencies(IrClient client)
@@ -2465,5 +2947,446 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // так как модели генерируются в том же namespace и using'и для них не нужны
         
         return dependencies.ToList();
+    }
+    
+    /// <summary>
+    /// Строит InterfaceDeclarationNode для интерфейса IHttpClientMetrics
+    /// </summary>
+    private InterfaceDeclarationNode BuildIHttpClientMetricsInterface()
+    {
+        var interfaceName = new IdentifierNode("IHttpClientMetrics");
+        var members = new List<DeclarationNode>();
+        
+        // Метод Measure<T>
+        var measureMethod = BuildMeasureMethodSignature();
+        members.Add(measureMethod);
+        
+        return new InterfaceDeclarationNode(
+            name: interfaceName,
+            accessModifier: AccessModifier.Public,
+            baseTypes: ImmutableList<TypeNode>.Empty,
+            members: members.ToImmutableList());
+    }
+    
+    /// <summary>
+    /// Строит сигнатуру метода Measure<T> для интерфейса
+    /// </summary>
+    private MethodDeclarationNode BuildMeasureMethodSignature()
+    {
+        var methodName = new IdentifierNode("Measure");
+        
+        // Параметры метода
+        var parameters = new List<ParameterDeclarationNode>
+        {
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("clientName"),
+                type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                isRequired: true),
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("methodName"),
+                type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                isRequired: true),
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("func"),
+                type: new GenericTypeNode(
+                    name: new IdentifierNode("Func"),
+                    typeArguments: new[]
+                    {
+                        new GenericTypeNode(
+                            name: new IdentifierNode("Task"),
+                            typeArguments: new[] { new SimpleTypeNode(new IdentifierNode("T"), isPrimitive: false) }.ToImmutableList(),
+                            isNullable: false)
+                    }.ToImmutableList(),
+                    isNullable: false),
+                isRequired: true)
+        };
+        
+        return new MethodDeclarationNode(
+            name: methodName,
+            returnType: new GenericTypeNode(
+                name: new IdentifierNode("Task"),
+                typeArguments: new[] { new SimpleTypeNode(new IdentifierNode("T"), isPrimitive: false) }.ToImmutableList(),
+                isNullable: false),
+            parameters: parameters.ToImmutableList(),
+            body: null,
+            isAsync: true,
+            accessModifier: AccessModifier.Public,
+            isInterfaceMethod: true,
+            genericTypeParameters: new[] { "T" });
+    }
+    
+    /// <summary>
+    /// Получает название метрики с префиксом ServiceName
+    /// </summary>
+    private string GetMetricName(string metricName)
+    {
+        var serviceName = _options.ServiceName;
+        if (string.IsNullOrWhiteSpace(serviceName))
+        {
+            return metricName;
+        }
+        return $"{serviceName}.{metricName}";
+    }
+    
+    /// <summary>
+    /// Строит ClassDeclarationNode для класса HttpClientMetrics
+    /// </summary>
+    private ClassDeclarationNode BuildHttpClientMetricsClass()
+    {
+        var className = new IdentifierNode("HttpClientMetrics");
+        var members = new List<DeclarationNode>();
+        
+        // Поля для счетчиков
+        var successCounterField = new FieldDeclarationNode(
+            name: new IdentifierNode("_successCounter"),
+            type: new GenericTypeNode(
+                name: new IdentifierNode("Counter"),
+                typeArguments: new[] { new SimpleTypeNode(new IdentifierNode("long"), isPrimitive: true) }.ToImmutableList(),
+                isNullable: false),
+            accessModifier: AccessModifier.Private,
+            isReadOnly: true,
+            defaultValue: null);
+        members.Add(successCounterField);
+        
+        var errorCounterField = new FieldDeclarationNode(
+            name: new IdentifierNode("_errorCounter"),
+            type: new GenericTypeNode(
+                name: new IdentifierNode("Counter"),
+                typeArguments: new[] { new SimpleTypeNode(new IdentifierNode("long"), isPrimitive: true) }.ToImmutableList(),
+                isNullable: false),
+            accessModifier: AccessModifier.Private,
+            isReadOnly: true,
+            defaultValue: null);
+        members.Add(errorCounterField);
+        
+        var durationHistogramField = new FieldDeclarationNode(
+            name: new IdentifierNode("_durationHistogram"),
+            type: new GenericTypeNode(
+                name: new IdentifierNode("Histogram"),
+                typeArguments: new[] { new SimpleTypeNode(new IdentifierNode("double"), isPrimitive: true) }.ToImmutableList(),
+                isNullable: false),
+            accessModifier: AccessModifier.Private,
+            isReadOnly: true,
+            defaultValue: null);
+        members.Add(durationHistogramField);
+        
+        // Конструктор
+        var constructorParams = new List<ParameterDeclarationNode>
+        {
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("meter"),
+                type: new SimpleTypeNode(new IdentifierNode("Meter"), isPrimitive: false),
+                isRequired: true)
+        };
+        
+        var constructorBodyStatements = new List<StatementNode>();
+        
+        // _successCounter = meter.CreateCounter<long>("{serviceName}.requests.success", "requests", "Total number of successful HTTP requests");
+        var successMetricName = GetMetricName("requests.success");
+        var successCounterCreate = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("meter")),
+                member: new IdentifierNode("CreateCounter")),
+            arguments: new ExpressionNode[]
+            {
+                new LiteralExpressionNode(successMetricName, LiteralKind.String),
+                new LiteralExpressionNode("requests", LiteralKind.String),
+                new LiteralExpressionNode("Total number of successful HTTP requests", LiteralKind.String)
+            }.ToImmutableList<ExpressionNode>(),
+            genericTypeArgument: new SimpleTypeNode(new IdentifierNode("long"), isPrimitive: true));
+        
+        var successCounterAssignment = new BinaryExpressionNode(
+            left: new IdentifierExpressionNode(new IdentifierNode("_successCounter")),
+            @operator: BinaryOperator.Assign,
+            right: successCounterCreate);
+        constructorBodyStatements.Add(new ExpressionStatementNode(successCounterAssignment));
+        
+        // _errorCounter = meter.CreateCounter<long>("{serviceName}.requests.error", "requests", "Total number of failed HTTP requests");
+        var errorMetricName = GetMetricName("requests.error");
+        var errorCounterCreate = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("meter")),
+                member: new IdentifierNode("CreateCounter")),
+            arguments: new ExpressionNode[]
+            {
+                new LiteralExpressionNode(errorMetricName, LiteralKind.String),
+                new LiteralExpressionNode("requests", LiteralKind.String),
+                new LiteralExpressionNode("Total number of failed HTTP requests", LiteralKind.String)
+            }.ToImmutableList<ExpressionNode>(),
+            genericTypeArgument: new SimpleTypeNode(new IdentifierNode("long"), isPrimitive: true));
+        
+        var errorCounterAssignment = new BinaryExpressionNode(
+            left: new IdentifierExpressionNode(new IdentifierNode("_errorCounter")),
+            @operator: BinaryOperator.Assign,
+            right: errorCounterCreate);
+        constructorBodyStatements.Add(new ExpressionStatementNode(errorCounterAssignment));
+        
+        // _durationHistogram = meter.CreateHistogram<double>("{serviceName}.request.duration", "seconds", "Duration of HTTP requests");
+        var durationMetricName = GetMetricName("request.duration");
+        var durationHistogramCreate = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("meter")),
+                member: new IdentifierNode("CreateHistogram")),
+            arguments: new ExpressionNode[]
+            {
+                new LiteralExpressionNode(durationMetricName, LiteralKind.String),
+                new LiteralExpressionNode("seconds", LiteralKind.String),
+                new LiteralExpressionNode("Duration of HTTP requests", LiteralKind.String)
+            }.ToImmutableList<ExpressionNode>(),
+            genericTypeArgument: new SimpleTypeNode(new IdentifierNode("double"), isPrimitive: true));
+        
+        var durationHistogramAssignment = new BinaryExpressionNode(
+            left: new IdentifierExpressionNode(new IdentifierNode("_durationHistogram")),
+            @operator: BinaryOperator.Assign,
+            right: durationHistogramCreate);
+        constructorBodyStatements.Add(new ExpressionStatementNode(durationHistogramAssignment));
+        
+        var constructorBody = new BlockNode(constructorBodyStatements.ToImmutableList());
+        var constructor = new ConstructorDeclarationNode(
+            name: className,
+            parameters: constructorParams.ToImmutableList(),
+            body: constructorBody,
+            accessModifier: AccessModifier.Public);
+        members.Add(constructor);
+        
+        // Метод Measure<T>
+        var measureMethod = BuildMeasureMethod();
+        members.Add(measureMethod);
+        
+        // Базовые типы (интерфейс)
+        var baseTypes = new List<TypeNode>
+        {
+            new SimpleTypeNode(new IdentifierNode("IHttpClientMetrics"), isPrimitive: false)
+        };
+        
+        return new ClassDeclarationNode(
+            name: className,
+            accessModifier: AccessModifier.Internal,
+            isSealed: false,
+            isStatic: false,
+            isPartial: false,
+            baseTypes: baseTypes.ToImmutableList(),
+            members: members.ToImmutableList());
+    }
+    
+    /// <summary>
+    /// Строит метод Measure<T> для HttpClientMetrics
+    /// </summary>
+    private MethodDeclarationNode BuildMeasureMethod()
+    {
+        var methodName = new IdentifierNode("Measure");
+        
+        // Параметры метода
+        var parameters = new List<ParameterDeclarationNode>
+        {
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("clientName"),
+                type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                isRequired: true),
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("methodName"),
+                type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                isRequired: true),
+            new ParameterDeclarationNode(
+                name: new IdentifierNode("func"),
+                type: new GenericTypeNode(
+                    name: new IdentifierNode("Func"),
+                    typeArguments: new[]
+                    {
+                        new GenericTypeNode(
+                            name: new IdentifierNode("Task"),
+                            typeArguments: new[] { new SimpleTypeNode(new IdentifierNode("T"), isPrimitive: false) }.ToImmutableList(),
+                            isNullable: false)
+                    }.ToImmutableList(),
+                    isNullable: false),
+                isRequired: true)
+        };
+        
+        // Тело метода
+        var statements = new List<StatementNode>();
+        
+        // var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var stopwatchVar = new IdentifierNode("stopwatch");
+        var stopwatchType = new SimpleTypeNode(new IdentifierNode("System.Diagnostics.Stopwatch"), isPrimitive: false);
+        var stopwatchStartNew = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("System.Diagnostics.Stopwatch")),
+                member: new IdentifierNode("StartNew")),
+            arguments: ImmutableList<ExpressionNode>.Empty);
+        var stopwatchDeclaration = new VariableDeclarationStatementNode(
+            name: stopwatchVar,
+            type: stopwatchType,
+            initializer: stopwatchStartNew);
+        statements.Add(stopwatchDeclaration);
+        
+        // var isSuccess = true;
+        var isSuccessVar = new IdentifierNode("isSuccess");
+        var isSuccessDeclaration = new VariableDeclarationStatementNode(
+            name: isSuccessVar,
+            type: new SimpleTypeNode(new IdentifierNode("bool"), isPrimitive: true),
+            initializer: new LiteralExpressionNode(true, LiteralKind.Boolean));
+        statements.Add(isSuccessDeclaration);
+        
+        // try {
+        var tryStatements = new List<StatementNode>();
+        
+        // var result = await func();
+        var funcCall = new CallExpressionNode(
+            target: new IdentifierExpressionNode(new IdentifierNode("func")),
+            arguments: ImmutableList<ExpressionNode>.Empty);
+        var awaitExpression = new AwaitExpressionNode(funcCall);
+        var resultVar = new IdentifierNode("result");
+        var resultType = new GenericTypeNode(
+            name: new IdentifierNode("T"),
+            typeArguments: ImmutableList<TypeNode>.Empty,
+            isNullable: false);
+        var resultDeclaration = new VariableDeclarationStatementNode(
+            name: resultVar,
+            type: resultType,
+            initializer: awaitExpression);
+        tryStatements.Add(resultDeclaration);
+        
+        // return result;
+        tryStatements.Add(new ReturnStatementNode(new IdentifierExpressionNode(resultVar)));
+        
+        var tryBlock = new BlockNode(tryStatements.ToImmutableList());
+        
+        // catch (Exception) {
+        var catchStatements = new List<StatementNode>();
+        
+        // isSuccess = false;
+        var isSuccessAssignment = new BinaryExpressionNode(
+            left: new IdentifierExpressionNode(isSuccessVar),
+            @operator: BinaryOperator.Assign,
+            right: new LiteralExpressionNode(false, LiteralKind.Boolean));
+        catchStatements.Add(new ExpressionStatementNode(isSuccessAssignment));
+        
+        // throw;
+        catchStatements.Add(new ThrowStatementNode(null));
+        
+        var catchBlock = new BlockNode(catchStatements.ToImmutableList());
+        var catchClause = new CatchClauseNode(
+            body: catchBlock,
+            exceptionType: new SimpleTypeNode(new IdentifierNode("Exception"), isPrimitive: false),
+            exceptionVariable: null);
+        
+        // finally {
+        var finallyStatements = new List<StatementNode>();
+        
+        // var duration = stopwatch.Elapsed.TotalSeconds;
+        var durationVar = new IdentifierNode("duration");
+        var durationType = new SimpleTypeNode(new IdentifierNode("double"), isPrimitive: true);
+        var elapsedTotalSeconds = new MemberAccessExpressionNode(
+            @object: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(stopwatchVar),
+                member: new IdentifierNode("Elapsed")),
+            member: new IdentifierNode("TotalSeconds"));
+        var durationDeclaration = new VariableDeclarationStatementNode(
+            name: durationVar,
+            type: durationType,
+            initializer: elapsedTotalSeconds);
+        finallyStatements.Add(durationDeclaration);
+        
+        // Создаем теги для метрик
+        var clientTag = new CallExpressionNode(
+            target: new IdentifierExpressionNode(new IdentifierNode("KeyValuePair")),
+            arguments: new ExpressionNode[]
+            {
+                new LiteralExpressionNode("client", LiteralKind.String),
+                new IdentifierExpressionNode(new IdentifierNode("clientName"))
+            }.ToImmutableList<ExpressionNode>(),
+            isNewExpression: true,
+            genericTypeName: "KeyValuePair<string, object?>");
+        
+        var methodTag = new CallExpressionNode(
+            target: new IdentifierExpressionNode(new IdentifierNode("KeyValuePair")),
+            arguments: new ExpressionNode[]
+            {
+                new LiteralExpressionNode("method", LiteralKind.String),
+                new IdentifierExpressionNode(new IdentifierNode("methodName"))
+            }.ToImmutableList<ExpressionNode>(),
+            isNewExpression: true,
+            genericTypeName: "KeyValuePair<string, object?>");
+        
+        // _durationHistogram.Record(duration, clientTag, methodTag);
+        var recordCall = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("_durationHistogram")),
+                member: new IdentifierNode("Record")),
+            arguments: new ExpressionNode[]
+            {
+                new IdentifierExpressionNode(durationVar),
+                clientTag,
+                methodTag
+            }.ToImmutableList<ExpressionNode>());
+        finallyStatements.Add(new ExpressionStatementNode(recordCall));
+        
+        // Используем два отдельных счетчика вместо одного с тегами
+        // if (isSuccess) { _successCounter.Add(1, clientTag, methodTag); } else { _errorCounter.Add(1, clientTag, methodTag); }
+        var successCounterAddCall = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("_successCounter")),
+                member: new IdentifierNode("Add")),
+            arguments: new ExpressionNode[]
+            {
+                new LiteralExpressionNode(1L, LiteralKind.Number),
+                clientTag,
+                methodTag
+            }.ToImmutableList<ExpressionNode>());
+        
+        var errorCounterAddCall = new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("_errorCounter")),
+                member: new IdentifierNode("Add")),
+            arguments: new ExpressionNode[]
+            {
+                new LiteralExpressionNode(1L, LiteralKind.Number),
+                clientTag,
+                methodTag
+            }.ToImmutableList<ExpressionNode>());
+        
+        var ifSuccessBlock = new BlockNode(new[] { new ExpressionStatementNode(successCounterAddCall) }.ToImmutableList());
+        var ifErrorBlock = new BlockNode(new[] { new ExpressionStatementNode(errorCounterAddCall) }.ToImmutableList());
+        
+        var ifSuccessStatement = new IfStatementNode(
+            condition: new IdentifierExpressionNode(isSuccessVar),
+            thenBlock: ifSuccessBlock,
+            elseBlock: ifErrorBlock);
+        finallyStatements.Add(ifSuccessStatement);
+        
+        var finallyBlock = new BlockNode(finallyStatements.ToImmutableList());
+        
+        // Создаем try-catch-finally
+        var tryCatchStatement = new TryCatchStatementNode(
+            tryBlock: tryBlock,
+            catchClauses: new[] { catchClause }.ToImmutableList(),
+            finallyBlock: finallyBlock);
+        statements.Add(tryCatchStatement);
+        
+        var methodBody = new BlockNode(statements.ToImmutableList());
+        
+        return new MethodDeclarationNode(
+            name: methodName,
+            returnType: new GenericTypeNode(
+                name: new IdentifierNode("Task"),
+                typeArguments: new[] { new SimpleTypeNode(new IdentifierNode("T"), isPrimitive: false) }.ToImmutableList(),
+                isNullable: false),
+            parameters: parameters.ToImmutableList(),
+            body: methodBody,
+            isAsync: true,
+            accessModifier: AccessModifier.Public,
+            genericTypeParameters: new[] { "T" });
+    }
+    
+    /// <summary>
+    /// Извлекает generic аргумент из типа возврата для использования в generic методах
+    /// </summary>
+    private TypeNode? ExtractReturnTypeGenericArgument(TypeNode? returnType)
+    {
+        if (returnType is GenericTypeNode genericType && genericType.Name.Name == "Task")
+        {
+            return genericType.TypeArguments.FirstOrDefault();
+        }
+        return returnType;
     }
 }

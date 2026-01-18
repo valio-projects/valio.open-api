@@ -42,4 +42,10 @@ public sealed class CommentNode : AstNode
     {
         return new CommentNode(Text, CommentKind, Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var textPreview = Text.Length > 50 ? Text.Substring(0, 50) + "..." : Text;
+        return $"Comment({CommentKind}, \"{textPreview.Replace("\n", "\\n").Replace("\r", "\\r")}\")";
+    }
 }

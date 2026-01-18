@@ -1,3 +1,5 @@
+using ValIO.Core.Ast.Enums;
+
 namespace ValIO.Generators.CSharp.Models;
 
 /// <summary>
@@ -49,6 +51,45 @@ public class CSharpGenerationOptions
     /// Стиль передачи query параметров
     /// </summary>
     public QueryParametersStyle QueryParametersStyle { get; set; } = QueryParametersStyle.IndividualParameters;
+    
+    /// <summary>
+    /// Генерировать интерфейсы для HTTP клиентов
+    /// </summary>
+    public bool GenerateInterfaces { get; set; } = false;
+    
+    /// <summary>
+    /// Стратегия размещения интерфейсов
+    /// </summary>
+    public InterfaceFileStrategy InterfaceFileStrategy { get; set; } = InterfaceFileStrategy.SameFile;
+    
+    /// <summary>
+    /// Модификатор доступа для классов HTTP клиентов
+    /// </summary>
+    public AccessModifier ClientAccessModifier { get; set; } = AccessModifier.Public;
+    
+    /// <summary>
+    /// Генерировать traces (spans, activities) для OpenTelemetry
+    /// </summary>
+    public bool GenerateTraces { get; set; } = false;
+    
+    /// <summary>
+    /// Генерировать metrics для OpenTelemetry
+    /// </summary>
+    public bool GenerateMetrics { get; set; } = false;
+    
+    /// <summary>
+    /// Использовать nullable Activity (Activity?) вместо not nullable (Activity)
+    /// Если true, то _activitySource.StartActivity возвращает Activity?
+    /// Если false, то _activitySource.StartActivity возвращает Activity
+    /// </summary>
+    public bool NullableActivity { get; set; } = true;
+    
+    /// <summary>
+    /// Название сервиса для ActivitySource и метрик
+    /// Используется для префикса метрик (например, "myapi.requests.success") и для ActivitySource
+    /// Если не указано, используется значение по умолчанию
+    /// </summary>
+    public string? ServiceName { get; set; }
 }
 
 /// <summary>
@@ -107,4 +148,20 @@ public enum QueryParametersStyle
     /// Передавать query параметры в виде класса (модели)
     /// </summary>
     ModelClass
+}
+
+/// <summary>
+/// Стратегия размещения интерфейсов
+/// </summary>
+public enum InterfaceFileStrategy
+{
+    /// <summary>
+    /// Генерировать интерфейсы в том же файле, что и реализация
+    /// </summary>
+    SameFile,
+
+    /// <summary>
+    /// Генерировать интерфейсы в отдельном файле
+    /// </summary>
+    SeparateFile
 }

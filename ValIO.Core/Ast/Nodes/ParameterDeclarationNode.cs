@@ -83,4 +83,11 @@ public sealed class ParameterDeclarationNode : DeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var requiredStr = IsRequired ? "" : "?";
+        var defaultValueStr = DefaultValue != null ? $" = {DefaultValue}" : "";
+        return $"{Type}{requiredStr} {Name.Name}{defaultValueStr}";
+    }
 }

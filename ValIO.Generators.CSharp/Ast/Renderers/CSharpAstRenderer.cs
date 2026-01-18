@@ -345,20 +345,40 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var target = Visit(node.Target);
         
-        // Проверяем, есть ли generic type argument в metadata
+        // Проверяем, есть ли generic type argument
         var genericTypeArgStr = "";
-        if (node.Metadata != null && node.Metadata.TryGetValue("GenericTypeArgument", out var genericTypeArgObj) && genericTypeArgObj is TypeNode genericTypeArg)
+        if (node.GenericTypeArgument != null)
         {
-            genericTypeArgStr = $"<{RenderType(genericTypeArg)}>";
+            genericTypeArgStr = $"<{RenderType(node.GenericTypeArgument)}>";
+        }
+        else if (!string.IsNullOrEmpty(node.GenericTypeName))
+        {
+            genericTypeArgStr = $"<{node.GenericTypeName}>";
         }
         
         var args = string.Join(", ", node.Arguments.Select(Visit));
         
-        // Проверяем, является ли это new expression
-        var isNewExpression = node.Metadata != null && node.Metadata.TryGetValue("IsNewExpression", out var isNewObj) && isNewObj is bool isNew && isNew;
-        if (isNewExpression)
+        // Проверяем, является ли это вызовом base() конструктора
+        if (node.IsConstructorBaseCall)
         {
-            return $"new {target}{genericTypeArgStr}({args})";
+            return $"base({args})";
+        }
+        
+        // Проверяем, является ли это new expression
+        if (node.IsNewExpression)
+        {
+            // Если есть GenericTypeName, используем его вместо target
+            var genericTypeName = !string.IsNullOrEmpty(node.GenericTypeName)
+                ? node.GenericTypeName
+                : $"{target}{genericTypeArgStr}";
+            return $"new {genericTypeName}({args})";
+        }
+        
+        // Проверяем, является ли это лямбда-выражением
+        if (node.IsLambda && node.LambdaBody != null)
+        {
+            var lambdaBodyStr = Visit(node.LambdaBody);
+            return $"async () => await {lambdaBodyStr}";
         }
         
         return $"{target}{genericTypeArgStr}({args})";
@@ -403,18 +423,130 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         return $"throw {expr};";
     }
     
+    public override string VisitTryCatchStatement(TryCatchStatementNode node)
+    {
+        var sb = new StringBuilder();
+        var indentLevel = _indentLevel;
+        
+        // try {
+        CodeFormatter.AppendLine(sb, indentLevel, "try");
+        CodeFormatter.AppendLine(sb, indentLevel, "{");
+        
+        // Тело try блока
+        var savedIndent = _indentLevel;
+        _indentLevel = indentLevel + 1;
+        foreach (var stmt in node.TryBlock.Statements)
+        {
+            var rendered = Visit(stmt);
+            if (rendered.Contains('\n'))
+            {
+                sb.Append(rendered);
+                if (!rendered.EndsWith("\n") && !rendered.EndsWith("\r\n"))
+                {
+                    sb.AppendLine();
+                }
+            }
+            else
+            {
+                CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+            }
+        }
+        _indentLevel = savedIndent;
+        CodeFormatter.AppendLine(sb, indentLevel, "}");
+        
+        // catch блоки
+        foreach (var catchClause in node.CatchClauses)
+        {
+            sb.Append(Visit(catchClause));
+        }
+        
+        // finally блок
+        if (node.FinallyBlock != null)
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, "finally");
+            CodeFormatter.AppendLine(sb, indentLevel, "{");
+            _indentLevel = indentLevel + 1;
+            foreach (var stmt in node.FinallyBlock.Statements)
+            {
+                var rendered = Visit(stmt);
+                if (rendered.Contains('\n'))
+                {
+                    sb.Append(rendered);
+                    if (!rendered.EndsWith("\n") && !rendered.EndsWith("\r\n"))
+                    {
+                        sb.AppendLine();
+                    }
+                }
+                else
+                {
+                    CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                }
+            }
+            _indentLevel = savedIndent;
+            CodeFormatter.AppendLine(sb, indentLevel, "}");
+        }
+        
+        return sb.ToString();
+    }
+    
+    public override string VisitCatchClause(CatchClauseNode node)
+    {
+        var sb = new StringBuilder();
+        var indentLevel = _indentLevel;
+        
+        // catch (ExceptionType ex) {
+        if (node.ExceptionType != null && node.ExceptionVariable != null)
+        {
+            var exceptionType = RenderType(node.ExceptionType);
+            CodeFormatter.AppendLine(sb, indentLevel, $"catch ({exceptionType} {node.ExceptionVariable.Name})");
+        }
+        else if (node.ExceptionType != null)
+        {
+            var exceptionType = RenderType(node.ExceptionType);
+            CodeFormatter.AppendLine(sb, indentLevel, $"catch ({exceptionType})");
+        }
+        else
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, "catch");
+        }
+        
+        CodeFormatter.AppendLine(sb, indentLevel, "{");
+        
+        // Тело catch блока
+        var savedIndent = _indentLevel;
+        _indentLevel = indentLevel + 1;
+        foreach (var stmt in node.Body.Statements)
+        {
+            var rendered = Visit(stmt);
+            if (rendered.Contains('\n'))
+            {
+                sb.Append(rendered);
+                if (!rendered.EndsWith("\n") && !rendered.EndsWith("\r\n"))
+                {
+                    sb.AppendLine();
+                }
+            }
+            else
+            {
+                CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+            }
+        }
+        _indentLevel = savedIndent;
+        CodeFormatter.AppendLine(sb, indentLevel, "}");
+        
+        return sb.ToString();
+    }
+    
     public override string VisitUsingStatement(UsingStatementNode node)
     {
         var sb = new StringBuilder();
         
-        // Проверяем, является ли это using с переменной через metadata
+        // Проверяем, является ли это using с переменной
         if (node.Resource is CallExpressionNode callExpr && 
-            callExpr.Metadata != null && 
-            callExpr.Metadata.TryGetValue("IsUsingVariable", out var isUsingVar) && 
-            isUsingVar is bool isUsing && isUsing &&
-            callExpr.Metadata.TryGetValue("VariableDeclaration", out var varDeclObj) &&
-            varDeclObj is VariableDeclarationStatementNode varDecl)
+            callExpr.IsUsingVariable &&
+            callExpr.VariableDeclaration != null)
         {
+            var varDecl = callExpr.VariableDeclaration;
             // Using с переменной: using (var x = ...) { ... }
             if (varDecl.Type != null)
             {
@@ -717,7 +849,12 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     private void RenderMethod(StringBuilder sb, MethodDeclarationNode node, int indentLevel)
     {
         // XML комментарий
-        if (node.Documentation != null)
+        if (node.UseInheritDoc)
+        {
+            // Используем inheritdoc для методов класса
+            CodeFormatter.AppendLine(sb, indentLevel, "/// <inheritdoc />");
+        }
+        else if (node.Documentation != null)
         {
             var paramDocs = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
             CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, paramDocs, null);
@@ -733,12 +870,23 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var asyncKeyword = node.IsAsync ? "async " : "";
         
         // Проверяем, нужно ли добавить override
-        var isOverride = node.Metadata != null && 
-                        node.Metadata.TryGetValue("IsOverride", out var isOverrideObj) && 
-                        isOverrideObj is bool overrideFlag && overrideFlag;
-        var overrideKeyword = isOverride ? "override " : "";
+        var overrideKeyword = node.IsOverride ? "override " : "";
         
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{overrideKeyword}{asyncKeyword}{returnType}{node.Name.Name}({parameters})");
+        // Проверяем, есть ли generic параметры
+        var genericParams = "";
+        if (node.GenericTypeParameters != null && node.GenericTypeParameters.Count > 0)
+        {
+            genericParams = $"<{string.Join(", ", node.GenericTypeParameters)}>";
+        }
+        
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{overrideKeyword}{asyncKeyword}{returnType}{node.Name.Name}{genericParams}({parameters})");
+        
+        // Для методов интерфейса не добавляем тело, только точку с запятой
+        if (node.IsInterfaceMethod)
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, ";");
+            return;
+        }
         
         // Тело метода
         if (node.Body != null && node.Body.Statements.Count > 0)
@@ -847,15 +995,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             {
                 // Проверяем, является ли это вызовом base()
                 if (stmt is ExpressionStatementNode exprStmt &&
-                    exprStmt.Expression is BinaryExpressionNode binaryExpr &&
-                    binaryExpr.Metadata != null &&
-                    binaryExpr.Metadata.TryGetValue("IsConstructorBaseCall", out var isBaseCallObj) &&
-                    isBaseCallObj is bool isBaseCall && isBaseCall &&
-                    binaryExpr.Metadata.TryGetValue("ConstructorArguments", out var baseArgsObj) &&
-                    baseArgsObj is IReadOnlyList<ExpressionNode> baseArgs)
+                    exprStmt.Expression is CallExpressionNode callExpr &&
+                    callExpr.IsConstructorBaseCall)
                 {
                     // Извлекаем аргументы для base()
-                    var baseArgsStr = string.Join(", ", baseArgs.Select(Visit));
+                    var baseArgsStr = string.Join(", ", callExpr.Arguments.Select(Visit));
                     baseCall = $"base({baseArgsStr})";
                 }
                 else
@@ -1172,20 +1316,8 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         var left = Visit(node.Left);
         var right = Visit(node.Right);
         
-        // Проверяем, является ли это вызовом base() конструктора
-        if (node.Metadata != null && 
-            node.Metadata.TryGetValue("IsConstructorBaseCall", out var isBaseCallObj) && 
-            isBaseCallObj is bool isBaseCall && isBaseCall &&
-            node.Metadata.TryGetValue("ConstructorArguments", out var baseArgsObj) &&
-            baseArgsObj is IReadOnlyList<ExpressionNode> baseArgs)
-        {
-            var args = string.Join(", ", baseArgs.Select(Visit));
-            return $"base({args})";
-        }
-        
-        // Проверяем, является ли это присваиванием через metadata
-        var isAssignment = node.Metadata != null && node.Metadata.TryGetValue("IsAssignment", out var isAssignObj) && isAssignObj is bool isAssign && isAssign;
-        if (isAssignment)
+        // Проверяем, является ли это присваиванием (по оператору или по флагу для обратной совместимости)
+        if (node.Operator == BinaryOperator.Assign || node.IsAssignment)
         {
             return $"{left} = {right}";
         }
@@ -1271,9 +1403,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             {
                 // Проверяем, является ли это именованным аргументом
                 if (arg is BinaryExpressionNode binaryExpr && 
-                    binaryExpr.Metadata != null && 
-                    binaryExpr.Metadata.TryGetValue("IsNamedArgument", out var isNamedObj) && 
-                    isNamedObj is bool isNamed && isNamed)
+                    binaryExpr.IsNamedArgument)
                 {
                     // Рендерим как именованный аргумент: Name = Value
                     var name = Visit(binaryExpr.Left);

@@ -53,4 +53,11 @@ public sealed class ArrayTypeNode : TypeNode
             IsOptional,
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var readonlyStr = IsReadOnly ? "readonly " : "";
+        var nullableStr = IsNullable ? "?" : "";
+        return $"{readonlyStr}{ElementType}[]{nullableStr}";
+    }
 }

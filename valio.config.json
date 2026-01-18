@@ -15,7 +15,10 @@
       "useNullable": true,
       "generateValidationConstants": true,
       "generateValidationAttributes": true,
-      "queryParametersStyle": "ModelClass"
+      "queryParametersStyle": "ModelClass",
+      "enableOpenTelemetry": true,
+      "generateTraces": true,
+      "generateMetrics": true
     }
   },
   "fileOrganization": {

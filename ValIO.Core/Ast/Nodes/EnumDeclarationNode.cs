@@ -65,4 +65,11 @@ public sealed class EnumDeclarationNode : TypeDeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var underlyingStr = UnderlyingType != null ? $" : {UnderlyingType}" : "";
+        var membersCount = Members.Count;
+        return $"enum {Name.Name}{underlyingStr} [{membersCount} members]";
+    }
 }

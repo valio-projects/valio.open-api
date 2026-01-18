@@ -38,4 +38,9 @@ public sealed class BlockNode : AstNode
             Statements.Select(s => (StatementNode)s.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        return $"Block({Statements.Count} statements)";
+    }
 }

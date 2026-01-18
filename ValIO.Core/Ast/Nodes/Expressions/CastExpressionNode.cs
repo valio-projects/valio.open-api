@@ -21,6 +21,11 @@ public sealed class CastExpressionNode : ExpressionNode
     /// </summary>
     public ExpressionNode Expression { get; }
     
+    /// <summary>
+    /// Использовать оператор "as" вместо обычного cast (например, "x as Type" вместо "(Type)x")
+    /// </summary>
+    public bool UseAsOperator { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.CastExpression;
     
     public override IReadOnlyList<AstNode> Children
@@ -41,11 +46,13 @@ public sealed class CastExpressionNode : ExpressionNode
         TypeNode targetType,
         ExpressionNode expression,
         TypeNode? type = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        bool useAsOperator = false)
         : base(type, metadata)
     {
         TargetType = targetType ?? throw new ArgumentNullException(nameof(targetType));
         Expression = expression ?? throw new ArgumentNullException(nameof(expression));
+        UseAsOperator = useAsOperator;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -59,6 +66,7 @@ public sealed class CastExpressionNode : ExpressionNode
             (TypeNode)TargetType.Clone(),
             (ExpressionNode)Expression.Clone(),
             Type != null ? (TypeNode)Type.Clone() : null,
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            UseAsOperator);
     }
 }

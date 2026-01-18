@@ -55,4 +55,9 @@ public abstract class DeclarationNode : AstNode
     {
         return visitor.VisitDeclaration(this);
     }
+    
+    public override string ToString()
+    {
+        return $"{Kind}({Name.Name})";
+    }
 }

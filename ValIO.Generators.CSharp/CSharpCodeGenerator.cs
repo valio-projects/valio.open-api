@@ -200,7 +200,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
             var code = astRenderer.Render(compilationUnit);
             
             // Определяем имя файла и категорию на основе содержимого CompilationUnit
-            var (fileName, fileCategory) = DetermineFileNameAndCategory(compilationUnit, config);
+            var (fileName, fileCategory, isInterface) = DetermineFileNameAndCategory(compilationUnit, config);
             var filePath = ResolveFilePath(fileName, config, fileCategory);
             
             files[filePath] = code;
@@ -227,18 +227,24 @@ public class CSharpCodeGenerator : BaseCodeGenerator
     /// </summary>
     /// <param name="compilationUnit">AST узел CompilationUnit</param>
     /// <param name="config">Конфигурация генерации</param>
-    /// <returns>Кортеж (имя файла с расширением .cs, категория файла)</returns>
+    /// <returns>Кортеж (имя файла с расширением .cs, категория файла, является ли интерфейсом)</returns>
     /// <remarks>
-    /// Ищет первую декларацию (класс или enum) в namespace для определения имени файла и категории.
+    /// Ищет первую декларацию (класс, интерфейс или enum) в namespace для определения имени файла и категории.
     /// Клиенты определяются по наличию методов HTTP операций.
     /// </remarks>
-    private (string fileName, FileCategory category) DetermineFileNameAndCategory(CompilationUnitNode compilationUnit, GenerationConfiguration config)
+    private (string fileName, FileCategory category, bool isInterface) DetermineFileNameAndCategory(CompilationUnitNode compilationUnit, GenerationConfiguration config)
     {
         // Ищем первую декларацию в namespace для определения имени файла и категории
         foreach (var namespaceNode in compilationUnit.Namespaces)
         {
             foreach (var declaration in namespaceNode.Declarations)
             {
+                if (declaration is InterfaceDeclarationNode interfaceNode)
+                {
+                    // Интерфейсы для клиентов
+                    var category = FileCategory.Clients;
+                    return ($"{interfaceNode.Name.Name}.cs", category, true);
+                }
                 if (declaration is ClassDeclarationNode classNode)
                 {
                     // Проверяем, является ли это HTTP клиентом (есть методы с async)
@@ -246,16 +252,16 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                         m is MethodDeclarationNode method && method.IsAsync);
                     
                     var category = isClient ? FileCategory.Clients : FileCategory.Models;
-                    return ($"{classNode.Name.Name}.cs", category);
+                    return ($"{classNode.Name.Name}.cs", category, false);
                 }
                 if (declaration is EnumDeclarationNode enumNode)
                 {
-                    return ($"{enumNode.Name.Name}.cs", FileCategory.Models);
+                    return ($"{enumNode.Name.Name}.cs", FileCategory.Models, false);
                 }
             }
         }
         
-        return ("Generated.cs", FileCategory.Models);
+        return ("Generated.cs", FileCategory.Models, false);
     }
 }
 

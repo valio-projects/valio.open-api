@@ -83,4 +83,10 @@ public sealed class PropertyDeclarationNode : DeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var requiredStr = IsRequired ? "required " : "";
+        return $"{Type} {Name.Name} {{ {Accessor} }} [{requiredStr}]";
+    }
 }

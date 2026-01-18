@@ -61,4 +61,11 @@ public sealed class GenericTypeNode : TypeNode
             IsOptional,
             Metadata.ToImmutableDictionary());
     }
+    
+    public override string ToString()
+    {
+        var argsStr = string.Join(", ", TypeArguments);
+        var nullableStr = IsNullable ? "?" : "";
+        return $"{Name.Name}<{argsStr}>{nullableStr}";
+    }
 }
