@@ -28,6 +28,24 @@ public static class CodeFormatter
     }
     
     /// <summary>
+    /// Добавляет отступ в StringBuilder без новой строки
+    /// </summary>
+    /// <param name="sb">StringBuilder для добавления отступа</param>
+    /// <param name="indentLevel">Уровень отступа (количество табов)</param>
+    /// <param name="text">Текст для добавления после отступа</param>
+    public static void Append(StringBuilder sb, int indentLevel, string text = "")
+    {
+        if (sb == null)
+            throw new ArgumentNullException(nameof(sb));
+        
+        if (indentLevel < 0)
+            indentLevel = 0;
+        
+        var indent = new string(' ', indentLevel * 4); // 4 пробела на уровень
+        sb.Append($"{indent}{text}");
+    }
+    
+    /// <summary>
     /// Добавляет пустую строку в StringBuilder
     /// </summary>
     public static void AppendEmptyLine(StringBuilder sb)

@@ -12,6 +12,8 @@ using ValIO.ServiceRegistration;
 
 namespace ValIO;
 
+// generate --schema "C:\Workspace\ValIO\\out\\swagger.json" --output C:\\Workspace\\ValIO\\out --config "C:\\Workspace\\ValIO\\valio.config.json"
+
 class Program
 {
     static async Task<int> Main(string[] args)

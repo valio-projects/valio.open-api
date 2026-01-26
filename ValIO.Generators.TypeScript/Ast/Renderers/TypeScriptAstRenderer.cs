@@ -255,11 +255,11 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitReturnStatement(ReturnStatementNode node)
     {
-        if (node.Expression == null)
+        if (node.Value == null)
         {
             return "return;";
         }
-        var expr = Visit(node.Expression);
+        var expr = Visit(node.Value);
         return $"return {expr};";
     }
 
@@ -272,15 +272,16 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     public override string VisitIfStatement(IfStatementNode node)
     {
         var sb = new StringBuilder();
+        var savedIndent = _indentLevel;
         var condition = Visit(node.Condition);
         CodeFormatter.AppendLine(sb, _indentLevel, $"if ({condition}) {{");
         _indentLevel++;
-        foreach (var stmt in node.ThenStatements)
+        foreach (var stmt in node.ThenBlock.Statements)
         {
             var rendered = Visit(stmt);
             CodeFormatter.AppendLine(sb, _indentLevel, rendered);
         }
-        _indentLevel--;
+        _indentLevel = savedIndent;
         CodeFormatter.AppendLine(sb, _indentLevel, "}");
         return sb.ToString();
     }
@@ -577,8 +578,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // JSDoc комментарий
         if (node.Documentation != null)
         {
-            var parameters = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text, RenderType(p.Type))).ToList();
-            CommentGenerator.GenerateJSDocCommentWithParams(sb, indentLevel, node.Documentation.Text, parameters, node.ReturnType != null ? RenderType(node.ReturnType) : null);
+            var docParams = node.Parameters.Select(p => (Name: p.Name.Name, Description: p.Documentation?.Text, Type: RenderType(p.Type))).ToList();
+            CommentGenerator.GenerateJSDocCommentWithParams(sb, indentLevel, node.Documentation.Text, docParams, node.ReturnType != null ? RenderType(node.ReturnType) : null);
         }
         
         // Модификаторы и объявление функции
@@ -586,7 +587,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var exportKeyword = "";
         var asyncKeyword = node.IsAsync ? "async " : "";
         var functionKeyword = node.IsArrowFunction ? "" : "function ";
-        var parameters = string.Join(", ", node.Parameters.Select(p => VisitParameterDeclaration(p)));
+        var parameters = string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
         var returnType = node.ReturnType != null ? $": {RenderType(node.ReturnType)}" : "";
         
         if (node.IsArrowFunction)
@@ -690,7 +691,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         sb.Append($"{node.Name.Name}{optional}: {type}{defaultValue}");
     }
 
-    private string VisitParameterDeclaration(ParameterDeclarationNode node)
+    private string RenderParameterDeclaration(ParameterDeclarationNode node)
     {
         var sb = new StringBuilder();
         RenderParameter(sb, node);
@@ -753,15 +754,110 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     {
         return node.LiteralKind switch
         {
-            LiteralKind.String => $"\"{CodeEscapeHelper.EscapeTypeScriptString(node.Value)}\"",
-            LiteralKind.Integer => node.Value?.ToString() ?? "0",
-            LiteralKind.Float => node.Value?.ToString() ?? "0.0",
-            LiteralKind.Double => node.Value?.ToString() ?? "0.0",
+            LiteralKind.String => $"\"{CodeEscapeHelper.EscapeTypeScriptString(node.Value?.ToString() ?? "")}\"",
+            LiteralKind.Number => node.Value?.ToString() ?? "0",
             LiteralKind.Boolean => node.Value?.ToString()?.ToLowerInvariant() ?? "false",
             LiteralKind.Null => "null",
-            LiteralKind.Undefined => "undefined",
+            LiteralKind.Character => $"'{node.Value}'",
             _ => node.Value?.ToString() ?? "null"
         };
+    }
+
+    // Реализация недостающих абстрактных методов BaseAstVisitor
+    public override string VisitUsingStatement(UsingStatementNode node)
+    {
+        // TypeScript не имеет using statement в том же смысле, что C#
+        // Можно использовать try-finally или просто игнорировать
+        return VisitDefault(node);
+    }
+    
+    public override string VisitMethodDeclaration(MethodDeclarationNode node)
+    {
+        // TypeScript использует FunctionDeclaration, а не MethodDeclaration
+        // Преобразуем в функцию
+        return VisitDefault(node);
+    }
+    
+    public override string VisitThrowStatement(ThrowStatementNode node)
+    {
+        var exception = node.Expression != null ? Visit(node.Expression) : "";
+        return $"throw {exception};";
+    }
+    
+    public override string VisitVariableDeclarationStatement(VariableDeclarationStatementNode node)
+    {
+        var name = node.Name.Name;
+        var type = node.Type != null ? $": {RenderType(node.Type)}" : "";
+        var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
+        return $"const {name}{type}{initializer};";
+    }
+    
+    public override string VisitTryCatchStatement(TryCatchStatementNode node)
+    {
+        var sb = new StringBuilder();
+        var savedIndent = _indentLevel;
+        CodeFormatter.AppendLine(sb, _indentLevel, "try {");
+        _indentLevel++;
+        foreach (var stmt in node.TryBlock.Statements)
+        {
+            var rendered = Visit(stmt);
+            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+        }
+        _indentLevel = savedIndent;
+        if (node.CatchClauses.Count > 0)
+        {
+            foreach (var catchClause in node.CatchClauses)
+            {
+                var catchCode = VisitCatchClause(catchClause);
+                sb.Append(catchCode);
+            }
+        }
+        if (node.FinallyBlock != null)
+        {
+            CodeFormatter.AppendLine(sb, _indentLevel, "finally {");
+            _indentLevel++;
+            foreach (var stmt in node.FinallyBlock.Statements)
+            {
+                var rendered = Visit(stmt);
+                CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+            }
+            _indentLevel = savedIndent;
+            CodeFormatter.AppendLine(sb, _indentLevel, "}");
+        }
+        return sb.ToString();
+    }
+    
+    public override string VisitAwaitExpression(AwaitExpressionNode node)
+    {
+        var expression = Visit(node.Expression);
+        return $"await {expression}";
+    }
+    
+    public override string VisitCatchClause(CatchClauseNode node)
+    {
+        var sb = new StringBuilder();
+        var savedIndent = _indentLevel;
+        var exceptionVar = node.ExceptionVariable != null ? node.ExceptionVariable.Name : "";
+        var exceptionType = node.ExceptionType != null ? $": {RenderType(node.ExceptionType)}" : "";
+        var exception = !string.IsNullOrEmpty(exceptionVar) ? $"({exceptionVar}{exceptionType})" : "";
+        CodeFormatter.AppendLine(sb, _indentLevel, $"catch {exception} {{");
+        _indentLevel++;
+        foreach (var stmt in node.Body.Statements)
+        {
+            var rendered = Visit(stmt);
+            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+        }
+        _indentLevel = savedIndent;
+        CodeFormatter.AppendLine(sb, _indentLevel, "}");
+        return sb.ToString();
+    }
+    
+    public override string VisitCastExpression(CastExpressionNode node)
+    {
+        var expression = Visit(node.Expression);
+        var targetType = RenderType(node.TargetType);
+        // TypeScript использует as для type assertion
+        return $"({expression} as {targetType})";
     }
 
     #endregion

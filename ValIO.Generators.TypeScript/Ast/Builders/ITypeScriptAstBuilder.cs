@@ -1,5 +1,7 @@
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Http;
+using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
@@ -26,7 +28,7 @@ public interface ITypeScriptAstBuilder
     /// <summary>
     /// Строит Literal Expression
     /// </summary>
-    Expressions.LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo);
+    LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo);
     
     // IR → AST методы
     

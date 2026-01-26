@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Immutable;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
@@ -12,6 +13,9 @@ using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.Renderers;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes;
+using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
+using ValIO.Generators.TypeScript.Zod;
+using ValIO.Generators.TypeScript.TanStackQuery;
 
 namespace ValIO.Generators.TypeScript;
 
@@ -22,59 +26,19 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 {
     private readonly TypeScriptTypeMapper _typescriptTypeMapper;
     private readonly ILoggerFactory _loggerFactory;
-    private readonly IQueryWrapperRenderer? _queryWrapperRenderer;
-    private readonly IModelFormatRenderer? _zodModelRenderer;
-    private readonly IEnumFormatRenderer? _zodEnumRenderer;
 
     public TypeScriptCodeGenerator(
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
         IFileWriter fileWriter,
         ILogger<TypeScriptCodeGenerator> logger,
-        ILoggerFactory loggerFactory,
-        IQueryWrapperRenderer? queryWrapperRenderer = null,
-        IModelFormatRenderer? zodModelRenderer = null,
-        IEnumFormatRenderer? zodEnumRenderer = null)
+        ILoggerFactory loggerFactory)
         : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.TypeScript)
     {
         _typescriptTypeMapper = typeMapper as TypeScriptTypeMapper ?? throw new InvalidOperationException("TypeMapper must be TypeScriptTypeMapper");
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
-        _queryWrapperRenderer = queryWrapperRenderer;
-        _zodModelRenderer = zodModelRenderer;
-        _zodEnumRenderer = zodEnumRenderer;
     }
 
-    /// <summary>
-    /// Создает анализатор зависимостей для TypeScript
-    /// </summary>
-    protected override IDependencyAnalyzer CreateDependencyAnalyzer()
-    {
-        return new Services.TypeScriptDependencyAnalyzer(NamingConverter);
-    }
-
-    /// <summary>
-    /// Создает построитель TypeInfo для TypeScript
-    /// </summary>
-    protected override ITypeInfoBuilder CreateTypeInfoBuilder(ISchemaResolver schemaResolver)
-    {
-        return new Services.TypeScriptTypeInfoBuilder(TypeMapper, schemaResolver);
-    }
-
-    /// <summary>
-    /// Создает извлекатель enum для TypeScript
-    /// </summary>
-    protected override IEnumExtractor CreateEnumExtractor(ISchemaResolver schemaResolver)
-    {
-        return new Services.TypeScriptEnumExtractor(schemaResolver, NamingConverter);
-    }
-
-    /// <summary>
-    /// Создает стратегию именования для операций TypeScript
-    /// </summary>
-    protected override IOperationNamingStrategy CreateOperationNamingStrategy()
-    {
-        return new Services.TypeScriptOperationNamingStrategy();
-    }
 
     public override bool SupportsLanguage(GenerationLanguage language)
     {
@@ -237,34 +201,6 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     // Методы MapModelTypes и MapOperationTypes удалены - маппинг теперь выполняется в extractors
     // Метод GenerateModelsAndEnumsUnifiedAsync удален - теперь используется IR → AST → Code pipeline
 
-    /// <summary>
-    /// Переопределяет BuildOperationCache для более сложной логики с operationId
-    /// </summary>
-    protected override void BuildOperationCache(OpenApiDocument document)
-    {
-        OperationCache = new Dictionary<string, OpenApiOperation>(16 * 1024);
-
-        if (document.Paths == null)
-            return;
-
-        foreach (var pathEntry in document.Paths)
-        {
-            if (pathEntry.Value.Operations == null)
-                continue;
-
-            foreach (var operationEntry in pathEntry.Value.Operations)
-            {
-                var openApiOperation = operationEntry.Value;
-                var operationId = openApiOperation.OperationId ??
-                                  $"{operationEntry.Key.Method.ToLower()}{pathEntry.Key.Replace("/", "").Replace("{", "").Replace("}", "")}";
-
-                var cacheKey = $"{operationId}|{operationEntry.Key.Method}|{pathEntry.Key}";
-                OperationCache[cacheKey] = openApiOperation;
-            }
-        }
-
-        Logger.LogDebug("Built operation cache with {Count} entries", OperationCache.Count);
-    }
 
     // Методы GroupOperations и ExtractRouteGroup удалены - они больше не используются в новом IR → AST → Code pipeline
     // Группировка операций теперь происходит на уровне IR (IrClient) в IrBuilder
@@ -320,32 +256,110 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// 2. IR → AST (TypeScriptAstBuilder) - создает TypeScript специфичное AST
     /// 3. AST → Code (TypeScriptAstRenderer) - рендерит AST в строку кода
     /// 
-    /// В будущем этот метод должен заменить старый подход с TemplateData
+    /// Поддерживает:
+    /// - Генерацию моделей (interfaces/types)
+    /// - Генерацию enum'ов
+    /// - Генерацию HTTP клиентов (Axios/Fetch)
+    /// - Генерацию Zod схем (если ValidationLibrary = Zod)
+    /// - Генерацию TanStack Query hooks (если UseTanStackQuery = true)
     /// </remarks>
     private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config)
     {
         var files = new Dictionary<string, string>();
+        
+        // Получаем TypeScript опции
+        var tsOptions = GetTypeScriptOptions(config);
         
         // 1. OpenAPI → IR
         var schemaResolver = new SchemaResolver(document);
         var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
         var irDocument = irBuilder.BuildFromOpenApi(document);
         
-        // 2. IR → AST
-        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper);
-        var sourceFiles = astBuilder.BuildSourceFiles(irDocument, config.ImportPath);
+        // 2. IR → AST для моделей и enum'ов
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
+        var importPath = ""; // Import path можно добавить в FileOrganization позже, если нужно
+        var sourceFiles = astBuilder.BuildSourceFiles(irDocument, importPath);
         
-        // 3. AST → Code
+        // 3. AST → Code для моделей и enum'ов
         var astRenderer = new TypeScriptAstRenderer();
         
         foreach (var sourceFile in sourceFiles)
         {
             var code = astRenderer.Render(sourceFile);
             
-            // Определяем имя файла на основе содержимого SourceFile
-            var fileName = DetermineFileName(sourceFile, config);
-            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
+            // Определяем имя файла и категорию на основе содержимого SourceFile
+            var (fileName, fileCategory) = DetermineFileNameAndCategory(sourceFile, config);
+            var filePath = ResolveFilePath(fileName, config, fileCategory);
             
+            files[filePath] = code;
+        }
+        
+        // 4. Генерация Zod схем (если ValidationLibrary = Zod)
+        if (tsOptions.ValidationLibrary == ValidationLibrary.Zod)
+        {
+            var zodFiles = GenerateZodSchemas(irDocument, config, tsOptions);
+            foreach (var file in zodFiles)
+            {
+                files[file.Key] = file.Value;
+            }
+        }
+        
+        // 5. Генерация TanStack Query hooks (если UseTanStackQuery = true)
+        if (tsOptions.UseTanStackQuery)
+        {
+            var queryFiles = GenerateTanStackQueryHooks(irDocument, config, tsOptions);
+            foreach (var file in queryFiles)
+            {
+                files[file.Key] = file.Value;
+            }
+        }
+        
+        return files;
+    }
+    
+    /// <summary>
+    /// Генерирует Zod схемы из IR документа
+    /// </summary>
+    /// <param name="irDocument">IR документ</param>
+    /// <param name="config">Конфигурация генерации</param>
+    /// <param name="tsOptions">TypeScript опции</param>
+    /// <returns>Словарь с путями к файлам и их содержимым</returns>
+    private Dictionary<string, string> GenerateZodSchemas(
+        IrDocument irDocument, 
+        GenerationConfiguration config, 
+        TypeScriptGenerationOptions tsOptions)
+    {
+        var files = new Dictionary<string, string>();
+        
+        // Создаем TypeScriptAstBuilder для построения TypeNode из IrType
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
+        
+        // Создаем typeBuilder для ZodAstBuilder
+        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder = 
+            irType => astBuilder.BuildType(irType);
+        
+        // Создаем новый ZodSchemaRenderer с typeBuilder
+        var zodRendererWithBuilder = new ZodSchemaRenderer(
+            NamingConverter,
+            typeBuilder);
+        
+        var importPath = ""; // Import path можно добавить в FileOrganization позже, если нужно
+        
+        // Генерируем Zod схемы для моделей
+        foreach (var model in irDocument.Models)
+        {
+            var code = zodRendererWithBuilder.RenderFromIr(model, importPath);
+            var fileName = $"{GetModelFileNameInternal(model.Name)}.schema.ts";
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Schemas);
+            files[filePath] = code;
+        }
+        
+        // Генерируем Zod схемы для enum'ов
+        foreach (var enumModel in irDocument.Enums)
+        {
+            var code = zodRendererWithBuilder.RenderEnumFromIr(enumModel, importPath);
+            var fileName = $"{GetModelFileNameInternal(enumModel.Name)}.schema.ts";
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Schemas);
             files[filePath] = code;
         }
         
@@ -353,33 +367,132 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     }
     
     /// <summary>
-    /// Определяет имя файла на основе SourceFile
+    /// Генерирует TanStack Query hooks из IR документа
+    /// </summary>
+    /// <param name="irDocument">IR документ</param>
+    /// <param name="config">Конфигурация генерации</param>
+    /// <param name="tsOptions">TypeScript опции</param>
+    /// <returns>Словарь с путями к файлам и их содержимым</returns>
+    private Dictionary<string, string> GenerateTanStackQueryHooks(
+        IrDocument irDocument,
+        GenerationConfiguration config,
+        TypeScriptGenerationOptions tsOptions)
+    {
+        var files = new Dictionary<string, string>();
+        
+        // Создаем typeBuilder для TanStackQueryAstBuilder
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
+        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder = 
+            irType => astBuilder.BuildType(irType);
+        
+        // Создаем TanStackQueryRenderer
+        var queryRenderer = new TanStackQueryRenderer(
+            NamingConverter,
+            typeBuilder);
+        
+        // Генерируем hooks для каждой операции в каждом клиенте
+        foreach (var client in irDocument.Clients)
+        {
+            foreach (var operation in client.Operations)
+            {
+                // Определяем, является ли операция мутацией (POST, PUT, PATCH, DELETE)
+                var isMutation = operation.HttpMethod is 
+                    "POST" or "PUT" or "PATCH" or "DELETE";
+                
+                // Строим вызов функции клиента
+                var clientFunction = BuildClientFunctionCall(operation, astBuilder);
+                
+                // Рендерим hook
+                var hookCode = queryRenderer.RenderHook(operation, clientFunction, isMutation);
+                
+                // Рендерим query key функцию
+                var queryKeyCode = queryRenderer.RenderQueryKeyFunction(operation);
+                
+                // Объединяем код
+                var fullCode = new StringBuilder();
+                fullCode.AppendLine("import { useQuery, useMutation } from '@tanstack/react-query';");
+                fullCode.AppendLine();
+                fullCode.Append(queryKeyCode);
+                fullCode.AppendLine();
+                fullCode.Append(hookCode);
+                
+                var fileName = $"{GetModelFileNameInternal(operation.MethodName)}.hook.ts";
+                var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
+                files[filePath] = fullCode.ToString();
+            }
+        }
+        
+        return files;
+    }
+    
+    /// <summary>
+    /// Строит вызов функции клиента для операции
+    /// </summary>
+    private ValIO.Core.Ast.Nodes.ExpressionNode BuildClientFunctionCall(
+        IrOperation operation,
+        TypeScriptAstBuilder astBuilder)
+    {
+        // Строим вызов функции клиента
+        var functionName = new ValIO.Core.Ast.Nodes.IdentifierNode(operation.MethodName);
+        var arguments = new List<ValIO.Core.Ast.Nodes.ExpressionNode>();
+        
+        // Добавляем параметры
+        foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+        {
+            arguments.Add(new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(
+                new ValIO.Core.Ast.Nodes.IdentifierNode(param.Name)));
+        }
+        
+        // Добавляем request body, если есть
+        if (operation.RequestBody != null)
+        {
+            arguments.Add(new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(
+                new ValIO.Core.Ast.Nodes.IdentifierNode("request")));
+        }
+        
+        var functionCall = new ValIO.Core.Ast.Nodes.Expressions.CallExpressionNode(
+            new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(functionName),
+            arguments.ToImmutableList());
+        
+        return functionCall;
+    }
+    
+    /// <summary>
+    /// Определяет имя файла и категорию на основе SourceFile
     /// </summary>
     /// <param name="sourceFile">AST узел SourceFile</param>
     /// <param name="config">Конфигурация генерации</param>
-    /// <returns>Имя файла с расширением .ts</returns>
+    /// <returns>Кортеж (имя файла с расширением .ts, категория файла)</returns>
     /// <remarks>
-    /// Ищет первую декларацию (интерфейс, type alias или функцию) для определения имени файла
+    /// Ищет первую декларацию (интерфейс, type alias или функцию) для определения имени файла и категории.
+    /// Клиенты определяются по наличию функций (HTTP операций).
     /// </remarks>
-    private string DetermineFileName(SourceFileNode sourceFile, GenerationConfiguration config)
+    private (string fileName, FileCategory category) DetermineFileNameAndCategory(
+        SourceFileNode sourceFile, 
+        GenerationConfiguration config)
     {
-        // Ищем первую декларацию для определения имени файла
+        // Ищем первую декларацию для определения имени файла и категории
         foreach (var declaration in sourceFile.Declarations)
         {
             if (declaration is InterfaceDeclarationNode interfaceNode)
             {
-                return $"{GetModelFileNameInternal(interfaceNode.Name.Name)}.ts";
+                // Интерфейсы могут быть как моделями, так и клиентами
+                // Проверяем наличие методов в интерфейсе (для клиентов)
+                var isClient = interfaceNode.Members.Any(m => m is MethodDeclarationNode); // Проверяем наличие методов
+                var category = isClient ? FileCategory.Clients : FileCategory.Models;
+                return ($"{GetModelFileNameInternal(interfaceNode.Name.Name)}.ts", category);
             }
             if (declaration is TypeAliasDeclarationNode typeAliasNode)
             {
-                return $"{GetModelFileNameInternal(typeAliasNode.Name.Name)}.ts";
+                return ($"{GetModelFileNameInternal(typeAliasNode.Name.Name)}.ts", FileCategory.Models);
             }
             if (declaration is FunctionDeclarationNode functionNode)
             {
-                return $"{GetModelFileNameInternal(functionNode.Name.Name)}.ts";
+                // Функции обычно являются частью клиентов
+                return ($"{GetModelFileNameInternal(functionNode.Name.Name)}.ts", FileCategory.Clients);
             }
         }
         
-        return "generated.ts";
+        return ("generated.ts", FileCategory.Models);
     }
 }

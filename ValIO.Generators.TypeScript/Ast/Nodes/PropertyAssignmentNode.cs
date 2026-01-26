@@ -29,7 +29,7 @@ public sealed class PropertyAssignmentNode : AstNode
     
     public override AstNodeKind Kind => AstNodeKind.PropertyAssignment;
     
-    public override IReadOnlyList<AstNode> Children => new[] { Name, Value };
+    public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Value };
     
     /// <summary>
     /// Конструктор

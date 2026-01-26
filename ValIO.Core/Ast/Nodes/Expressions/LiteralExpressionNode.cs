@@ -27,13 +27,13 @@ public sealed class LiteralExpressionNode : ExpressionNode
     /// Конструктор
     /// </summary>
     public LiteralExpressionNode(
-        object value,
+        object? value,
         LiteralKind kind,
         TypeNode? type = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(type, metadata)
     {
-        Value = value ?? throw new ArgumentNullException(nameof(value));
+        Value = value ?? (kind == LiteralKind.Null ? (object?)null : "");
         LiteralKind = kind;
     }
     

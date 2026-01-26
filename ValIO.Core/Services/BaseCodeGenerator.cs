@@ -127,7 +127,8 @@ public abstract class BaseCodeGenerator : ICodeGenerator
     protected enum FileCategory
     {
         Models,
-        Clients
+        Clients,
+        Schemas
     }
 
     /// <summary>

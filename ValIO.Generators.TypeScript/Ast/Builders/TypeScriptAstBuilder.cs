@@ -13,23 +13,36 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
+using ValIO.Generators.TypeScript.Models;
+using ValIO.Generators.TypeScript.Axios;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
 /// <summary>
 /// Построитель AST для TypeScript (Builder Pattern)
+/// Использует IR для построения AST узлов
 /// </summary>
 public class TypeScriptAstBuilder : ITypeScriptAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     private readonly ITypeMapper _typeMapper;
     private readonly HttpAstBuilder _httpBuilder;
+    private readonly TypeScriptGenerationOptions? _options;
     
-    public TypeScriptAstBuilder(INamingConverter namingConverter, ITypeMapper typeMapper)
+    /// <summary>
+    /// Конструктор
+    /// </summary>
+    /// <param name="namingConverter">Конвертер имен</param>
+    /// <param name="typeMapper">Маппер типов</param>
+    /// <param name="options">Опции генерации TypeScript (опционально)</param>
+    public TypeScriptAstBuilder(
+        INamingConverter namingConverter, 
+        ITypeMapper typeMapper,
+        TypeScriptGenerationOptions? options = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
-        // TODO: Обновить на IR-based API после миграции TypeScript на IR
+        _options = options;
         _httpBuilder = new HttpAstBuilder();
     }
     
@@ -69,7 +82,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         return BuildTypeFromBaseType(typeInfo);
     }
     
-    public LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo)
+    public LiteralExpressionNode BuildLiteral(object? value, TypeInfo typeInfo)
     {
         var literalKind = value switch
         {
@@ -81,7 +94,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             _ => LiteralKind.String
         };
         
-        return new LiteralExpressionNode(value, literalKind);
+        return new LiteralExpressionNode(value ?? (object)"", literalKind);
     }
     
     // Приватные вспомогательные методы
@@ -523,34 +536,67 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         return parameters.ToImmutableList();
     }
     
+    /// <summary>
+    /// Строит тело функции из IrOperation
+    /// </summary>
+    /// <param name="operation">IR операция</param>
+    /// <returns>AST узел блока с statements или null для type-only функции</returns>
     private BlockNode? BuildFunctionBody(IrOperation operation)
     {
-        // TODO: Полная реализация построения тела функции с использованием HTTP узлов
+        // Если HttpClientLibrary = Axios, используем AxiosAstBuilder для построения Axios вызовов
+        if (_options?.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            return BuildAxiosFunctionBody(operation);
+        }
+        
+        // Для Fetch или других библиотек можно добавить соответствующую реализацию
         // Пока возвращаем null для type-only функции
-        // 
-        // В будущем здесь будет построение тела функции с использованием:
-        // - HttpMethodNode - для определения HTTP метода
-        // - RouteNode - для построения пути с path параметрами
-        // - PathParameterNode, QueryParameterNode, HeaderParameterNode - для параметров
-        // - RequestBodyNode - для тела запроса
-        // - ResponseTypeNode - для обработки ответа
-        //
-        // Структура тела функции:
-        // 1. Построение пути (const path = `...`)
-        // 2. Построение query параметров (const queryParams = ...)
-        // 3. Построение headers (const headers = {...})
-        // 4. Построение body (если есть)
-        // 5. Fetch/Axios вызов
-        // 6. Обработка ответа и return
-        //
-        // Для полной реализации потребуется:
-        // - Создание VariableDeclarationNode для промежуточных переменных
-        // - Создание ExpressionStatementNode для вызовов
-        // - Создание ReturnStatementNode для возврата результата
-        // - Использование TemplateLiteralExpressionNode для путей
-        // - Использование ObjectLiteralExpressionNode для headers, body
-        // - Использование CallExpressionNode для fetch/axios вызовов
         return null;
+    }
+    
+    /// <summary>
+    /// Строит тело функции с Axios вызовами
+    /// </summary>
+    /// <param name="operation">IR операция</param>
+    /// <returns>AST узел блока с statements</returns>
+    private BlockNode BuildAxiosFunctionBody(IrOperation operation)
+    {
+        var statements = new List<StatementNode>();
+        
+        // Используем AxiosAstBuilder для построения Axios вызова
+        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(
+            _namingConverter,
+            BuildType);
+        
+        var axiosCall = axiosBuilder.BuildAxiosCall(operation);
+        
+        // Определяем тип возвращаемого значения
+        var returnType = ExtractReturnType(operation.Responses);
+        
+        // Если есть успешный ответ, обрабатываем response.data
+        if (returnType is not SimpleTypeNode { Name.Name: "void" })
+        {
+            // const response = await axios(...)
+            var responseVar = new VariableDeclarationStatementNode(
+                name: new IdentifierNode("response"),
+                type: null, // TypeScript может вывести тип
+                initializer: new AwaitExpressionNode(axiosCall));
+            statements.Add(responseVar);
+            
+            // return response.data
+            var dataAccess = new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("response")),
+                member: new IdentifierNode("data"));
+            statements.Add(new ReturnStatementNode(dataAccess));
+        }
+        else
+        {
+            // Для void просто вызываем axios без возврата
+            statements.Add(new ExpressionStatementNode(
+                new AwaitExpressionNode(axiosCall)));
+        }
+        
+        return new BlockNode(statements.ToImmutableList());
     }
     
     private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
