@@ -1,37 +1,41 @@
 {
-  "language": "CSharp",
-  "outputPath": "C:\\Workspace\\ValIO\\out",
-  "namespace": "Generated",
-  "generateEnums": true,
-  "generateModels": true,
-  "generateClients": true,
-  "options": {
-    "csharp": {
-      "propertyAccessor": "Init",
-      "useRequired": true,
-      "useSealed": true,
-      "modelType": "Class",
-      "generateEqualityMembers": true,
-      "useNullable": true,
-      "generateValidationConstants": true,
-      "generateValidationAttributes": true,
-      "queryParametersStyle": "ModelClass",
-      "enableOpenTelemetry": true,
-      "generateTraces": true,
-      "generateMetrics": true
+  "projects": {
+    "ChessboardApi": {
+      "language": "TypeScript",
+      "schema": "https://bitrix24.bytalent.ru/api/chessboard/swagger/v1/swagger.json",
+      "outputPath": "C:\\Workspace\\ValIO\\out",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "typescript": {
+          "queryParametersStyle": "ModelClass",
+          "modelFormat": "ValidationSchemas",
+          "validationLibrary": "Zod",
+          "httpClientLibrary": "Axios",
+          "useTanStackQuery": true,
+          "serializeWithSchemas": true,
+          "deserializeWithSchemas": true,
+          "enumFormat": "Enum",
+          "useStrictNullChecks": true,
+          "axios": {
+            "customInstancePath": "#shared/api/valioAxios",
+            "customInstanceName": "ValioAxiosClient"
+          }
+        }
+      },
+      "fileOrganization": {
+        "groupingStrategy": "ByTag",
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "endpoints"
+      },
+      "namingConvention": {
+        "models": "PascalCase",
+        "properties": "CamelCase",
+        "methods": "CamelCase",
+        "enums": "PascalCase"
+      }
     }
-  },
-  "fileOrganization": {
-    "groupingStrategy": "SingleFile",
-    "separateModels": true,
-    "separateClients": true,
-    "modelsPath": null,
-    "clientsPath": null
-  },
-  "namingConvention": {
-    "models": "PascalCase",
-    "properties": "PascalCase",
-    "methods": "PascalCase",
-    "enums": "PascalCase"
   }
 }

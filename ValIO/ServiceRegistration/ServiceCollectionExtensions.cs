@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ValIO.Core.Interfaces;
 using ValIO.Generators.CSharp;
+using ValIO.Generators.TypeScript;
 
 namespace ValIO.ServiceRegistration;
 
@@ -40,6 +41,37 @@ public static class ServiceCollectionExtensions
         
         return services;
     }
+    
+    /// <summary>
+    /// Регистрирует все генераторы, мапперы и рендеры для TypeScript
+    /// </summary>
+    public static IServiceCollection AddTypeScriptGenerators(this IServiceCollection services)
+    {
+        // Type Mappers (регистрируем и как интерфейс, и как конкретный тип для фабрики)
+        services.AddSingleton<TypeScriptTypeMapper>();
+        services.AddSingleton<ITypeMapper>(sp => sp.GetRequiredService<TypeScriptTypeMapper>());
+        
+        // Code Generators
+        services.AddSingleton<TypeScriptCodeGenerator>(sp =>
+        {
+            var typeMapper = sp.GetRequiredService<TypeScriptTypeMapper>();
+            var namingConverter = sp.GetRequiredService<INamingConverter>();
+            var fileWriter = sp.GetRequiredService<IFileWriter>();
+            var logger = sp.GetRequiredService<ILogger<TypeScriptCodeGenerator>>();
+            var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+            
+            return new TypeScriptCodeGenerator(
+                typeMapper,
+                namingConverter,
+                fileWriter,
+                logger,
+                loggerFactory);
+        });
+        services.AddSingleton<ICodeGenerator>(sp => sp.GetRequiredService<TypeScriptCodeGenerator>());
+        
+        return services;
+    }
+    
     /*
     /// <summary>
     /// Регистрирует все генераторы, мапперы и рендеры для TypeScript
@@ -132,9 +164,7 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAllGenerators(this IServiceCollection services)
     {
         services.AddCSharpGenerators();
-        //services.AddTypeScriptGenerators();
-        //services.AddZodGenerators();
-        //services.AddTanStackQueryRenderers();
+        services.AddTypeScriptGenerators();
         
         return services;
     }

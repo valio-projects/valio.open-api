@@ -20,6 +20,7 @@
       <ProjectReference Include="..\ValIO.Parsers\ValIO.Parsers.csproj" />
       <ProjectReference Include="..\ValIO.Configuration\ValIO.Configuration.csproj" />
       <ProjectReference Include="..\ValIO.Generators.CSharp\ValIO.Generators.CSharp.csproj" />
+      <ProjectReference Include="..\ValIO.Generators.TypeScript\ValIO.Generators.TypeScript.csproj" />
       <ProjectReference Include="..\ValIO.Generators.Cpp\ValIO.Generators.Cpp.csproj" />
     </ItemGroup>
 

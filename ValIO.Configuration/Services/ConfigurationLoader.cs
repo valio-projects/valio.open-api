@@ -27,7 +27,7 @@ public class ConfigurationLoader : IConfigurationLoader
         };
     }
 
-    public async Task<GenerationConfiguration> LoadFromFileAsync(string filePath)
+    public async Task<ValIOConfig> LoadConfigFromFileAsync(string filePath)
     {
         if (string.IsNullOrWhiteSpace(filePath))
             throw new ArgumentException("File path cannot be null or empty", nameof(filePath));
@@ -40,13 +40,13 @@ public class ConfigurationLoader : IConfigurationLoader
 
         return extension switch
         {
-            ".json" => LoadFromJson(content),
-            ".yaml" or ".yml" => LoadFromYaml(content),
+            ".json" => LoadConfigFromJson(content),
+            ".yaml" or ".yml" => LoadConfigFromYaml(content),
             _ => throw new NotSupportedException($"Configuration file format not supported: {extension}")
         };
     }
 
-    public GenerationConfiguration LoadFromJson(string json)
+    public ValIOConfig LoadConfigFromJson(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
             throw new ArgumentException("JSON content cannot be null or empty", nameof(json));
@@ -57,7 +57,7 @@ public class ConfigurationLoader : IConfigurationLoader
             if (config == null)
                 throw new InvalidOperationException("Failed to deserialize configuration");
 
-            return MapToGenerationConfiguration(config);
+            return config;
         }
         catch (JsonException ex)
         {
@@ -66,7 +66,7 @@ public class ConfigurationLoader : IConfigurationLoader
         }
     }
 
-    public GenerationConfiguration LoadFromYaml(string yaml)
+    public ValIOConfig LoadConfigFromYaml(string yaml)
     {
         if (string.IsNullOrWhiteSpace(yaml))
             throw new ArgumentException("YAML content cannot be null or empty", nameof(yaml));
@@ -77,7 +77,7 @@ public class ConfigurationLoader : IConfigurationLoader
             if (config == null)
                 throw new InvalidOperationException("Failed to deserialize configuration");
 
-            return MapToGenerationConfiguration(config);
+            return config;
         }
         catch (Exception ex)
         {
@@ -86,65 +86,65 @@ public class ConfigurationLoader : IConfigurationLoader
         }
     }
 
-    private GenerationConfiguration MapToGenerationConfiguration(ValIOConfig config)
+    public GenerationConfiguration MapToGenerationConfiguration(ProjectConfig projectConfig)
     {
         var generationConfig = new GenerationConfiguration
         {
-            Language = ParseGenerationLanguage(config.Language),
-            OutputPath = config.OutputPath,
-            Namespace = config.Namespace,
-            GenerateEnums = config.GenerateEnums,
-            GenerateModels = config.GenerateModels,
-            GenerateClients = config.GenerateClients
+            Language = ParseGenerationLanguage(projectConfig.Language),
+            OutputPath = projectConfig.OutputPath,
+            Namespace = projectConfig.Namespace,
+            GenerateModels = projectConfig.GenerateModels,
+            GenerateClients = projectConfig.GenerateClients,
+            GenerateEnums = projectConfig.GenerateModels // Enums объединены с GenerateModels
         };
 
         // Маппинг опций
-        if (config.Options != null)
+        if (projectConfig.Options != null)
         {
             var generationOptions = new GenerationOptions
             {
-                ValidationLibrary = ParseValidationLibrary(config.Options.ValidationLibrary),
-                HttpClientLibrary = ParseHttpClientLibrary(config.Options.HttpClientLibrary),
-                QueryWrapperLibrary = ParseQueryWrapperLibrary(config.Options.QueryWrapperLibrary)
+                ValidationLibrary = ParseValidationLibrary(projectConfig.Options.ValidationLibrary),
+                HttpClientLibrary = ParseHttpClientLibrary(projectConfig.Options.HttpClientLibrary),
+                QueryWrapperLibrary = ParseQueryWrapperLibrary(projectConfig.Options.QueryWrapperLibrary)
             };
             
             // Маппинг C# опций
-            if (config.Options.CSharp != null)
+            if (projectConfig.Options.CSharp != null)
             {
-                generationOptions.CSharpOptions = ParseCSharpOptions(config.Options.CSharp);
+                generationOptions.CSharpOptions = ParseCSharpOptions(projectConfig.Options.CSharp);
             }
             
             // Маппинг TypeScript опций
-            if (config.Options.TypeScript != null)
+            if (projectConfig.Options.TypeScript != null)
             {
-                //generationOptions.TypeScriptOptions = ParseTypeScriptOptions(config.Options.TypeScript, config.Options);
+                generationOptions.TypeScriptOptions = ParseTypeScriptOptions(projectConfig.Options.TypeScript, projectConfig.Options);
             }
             
             generationConfig.Options = generationOptions;
         }
 
         // Маппинг организации файлов
-        if (config.FileOrganization != null)
+        if (projectConfig.FileOrganization != null)
         {
             generationConfig.FileOrganization = new FileOrganization
             {
-                GroupingStrategy = ParseFileGroupingStrategy(config.FileOrganization.GroupingStrategy),
-                SeparateModels = config.FileOrganization.SeparateModels,
-                SeparateClients = config.FileOrganization.SeparateClients,
-                ModelsPath = config.FileOrganization.ModelsPath,
-                ClientsPath = config.FileOrganization.ClientsPath
+                GroupingStrategy = ParseFileGroupingStrategy(projectConfig.FileOrganization.GroupingStrategy),
+                SeparateModels = projectConfig.FileOrganization.SeparateModels,
+                SeparateClients = projectConfig.FileOrganization.SeparateClients,
+                ModelsPath = projectConfig.FileOrganization.ModelsPath,
+                ClientsPath = projectConfig.FileOrganization.ClientsPath
             };
         }
 
         // Маппинг конвенций именования
-        if (config.NamingConvention != null)
+        if (projectConfig.NamingConvention != null)
         {
             generationConfig.NamingConvention = new NamingConventions
             {
-                Models = ParseNamingConvention(config.NamingConvention.Models),
-                Properties = ParseNamingConvention(config.NamingConvention.Properties),
-                Methods = ParseNamingConvention(config.NamingConvention.Methods),
-                Enums = ParseNamingConvention(config.NamingConvention.Enums)
+                Models = ParseNamingConvention(projectConfig.NamingConvention.Models),
+                Properties = ParseNamingConvention(projectConfig.NamingConvention.Properties),
+                Methods = ParseNamingConvention(projectConfig.NamingConvention.Methods),
+                Enums = ParseNamingConvention(projectConfig.NamingConvention.Enums)
             };
         }
 
@@ -222,18 +222,18 @@ public class ConfigurationLoader : IConfigurationLoader
     private static CSharpGenerationOptions ParseCSharpOptions(ConfigCSharpOptions? config)
     {
         if (config == null)
-            return new ValIO.Generators.CSharp.Models.CSharpGenerationOptions();
+            return new CSharpGenerationOptions();
 
-        var options = new ValIO.Generators.CSharp.Models.CSharpGenerationOptions();
+        var options = new CSharpGenerationOptions();
 
         // Парсинг PropertyAccessor
         if (!string.IsNullOrEmpty(config.PropertyAccessor))
         {
             options.PropertyAccessor = config.PropertyAccessor.ToLowerInvariant() switch
             {
-                "init" => ValIO.Generators.CSharp.Models.PropertyAccessorType.Init,
-                "set" => ValIO.Generators.CSharp.Models.PropertyAccessorType.Set,
-                _ => ValIO.Generators.CSharp.Models.PropertyAccessorType.Set
+                "init" => PropertyAccessorType.Init,
+                "set" => PropertyAccessorType.Set,
+                _ => PropertyAccessorType.Set
             };
         }
 
@@ -254,11 +254,11 @@ public class ConfigurationLoader : IConfigurationLoader
         {
             options.ModelType = config.ModelType.ToLowerInvariant() switch
             {
-                "class" => ValIO.Generators.CSharp.Models.ModelType.Class,
-                "record" => ValIO.Generators.CSharp.Models.ModelType.Record,
-                "struct" => ValIO.Generators.CSharp.Models.ModelType.Struct,
-                "recordstruct" or "record-struct" => ValIO.Generators.CSharp.Models.ModelType.RecordStruct,
-                _ => ValIO.Generators.CSharp.Models.ModelType.Class
+                "class" => ModelType.Class,
+                "record" => ModelType.Record,
+                "struct" => ModelType.Struct,
+                "recordstruct" or "record-struct" => ModelType.RecordStruct,
+                _ => ModelType.Class
             };
         }
 
@@ -291,9 +291,9 @@ public class ConfigurationLoader : IConfigurationLoader
         {
             options.QueryParametersStyle = config.QueryParametersStyle.ToLowerInvariant() switch
             {
-                "modelclass" or "model-class" => ValIO.Generators.CSharp.Models.QueryParametersStyle.ModelClass,
-                "individualparameters" or "individual-parameters" => ValIO.Generators.CSharp.Models.QueryParametersStyle.IndividualParameters,
-                _ => ValIO.Generators.CSharp.Models.QueryParametersStyle.IndividualParameters
+                "modelclass" or "model-class" => QueryParametersStyle.ModelClass,
+                "individualparameters" or "individual-parameters" => QueryParametersStyle.IndividualParameters,
+                _ => QueryParametersStyle.IndividualParameters
             };
         }
 
@@ -308,9 +308,9 @@ public class ConfigurationLoader : IConfigurationLoader
         {
             options.InterfaceFileStrategy = config.InterfaceFileStrategy.ToLowerInvariant() switch
             {
-                "samefile" or "same-file" => ValIO.Generators.CSharp.Models.InterfaceFileStrategy.SameFile,
-                "separatefile" or "separate-file" => ValIO.Generators.CSharp.Models.InterfaceFileStrategy.SeparateFile,
-                _ => ValIO.Generators.CSharp.Models.InterfaceFileStrategy.SameFile
+                "samefile" or "same-file" => InterfaceFileStrategy.SameFile,
+                "separatefile" or "separate-file" => InterfaceFileStrategy.SeparateFile,
+                _ => InterfaceFileStrategy.SameFile
             };
         }
 
@@ -340,110 +340,13 @@ public class ConfigurationLoader : IConfigurationLoader
         return options;
     }
 
-    /*
-    private static ValIO.Generators.TypeScript.Models.TypeScriptGenerationOptions ParseTypeScriptOptions(ConfigTypeScriptOptions? config, ConfigOptions? parentOptions = null)
+    private static object? ParseTypeScriptOptions(ConfigTypeScriptOptions? config, ConfigOptions? parentOptions = null)
     {
         if (config == null)
-            return new ValIO.Generators.TypeScript.Models.TypeScriptGenerationOptions();
+            return null;
 
-        var options = new ValIO.Generators.TypeScript.Models.TypeScriptGenerationOptions();
-
-        // Парсинг ModelFormat
-        if (!string.IsNullOrEmpty(config.ModelFormat))
-        {
-            options.ModelFormat = config.ModelFormat.ToLowerInvariant() switch
-            {
-                "interfaces" => TypeScriptModelFormat.Interfaces,
-                "validationschemas" or "validation-schemas" => TypeScriptModelFormat.ValidationSchemas,
-                _ => TypeScriptModelFormat.Interfaces
-            };
-        }
-
-        // Парсинг ValidationLibrary - сначала из TypeScript опций, затем из родительских опций
-        if (!string.IsNullOrEmpty(config.ValidationLibrary))
-        {
-            options.ValidationLibrary = ParseValidationLibrary(config.ValidationLibrary);
-        }
-        else if (parentOptions != null && !string.IsNullOrEmpty(parentOptions.ValidationLibrary))
-        {
-            options.ValidationLibrary = ParseValidationLibrary(parentOptions.ValidationLibrary);
-        }
-
-        // Парсинг HttpClientLibrary - сначала из TypeScript опций, затем из родительских опций
-        if (!string.IsNullOrEmpty(config.HttpClientLibrary))
-        {
-            var httpClientLib = ParseHttpClientLibrary(config.HttpClientLibrary);
-            if (httpClientLib.HasValue)
-            {
-                options.HttpClientLibrary = httpClientLib.Value;
-            }
-        }
-        else if (parentOptions != null && !string.IsNullOrEmpty(parentOptions.HttpClientLibrary))
-        {
-            var httpClientLib = ParseHttpClientLibrary(parentOptions.HttpClientLibrary);
-            if (httpClientLib.HasValue)
-            {
-                options.HttpClientLibrary = httpClientLib.Value;
-            }
-        }
-
-        // Парсинг UseTanStackQuery
-        if (config.UseTanStackQuery.HasValue)
-        {
-            options.UseTanStackQuery = config.UseTanStackQuery.Value;
-        }
-        else if (parentOptions != null && !string.IsNullOrEmpty(parentOptions.QueryWrapperLibrary))
-        {
-            // Если QueryWrapperLibrary задан на верхнем уровне, считаем что UseTanStackQuery = true
-            var queryWrapper = ParseQueryWrapperLibrary(parentOptions.QueryWrapperLibrary);
-            if (queryWrapper == QueryWrapperLibrary.TanStackQuery)
-            {
-                options.UseTanStackQuery = true;
-            }
-        }
-
-        // Парсинг SerializeWithSchemas
-        if (config.SerializeWithSchemas.HasValue)
-        {
-            options.SerializeWithSchemas = config.SerializeWithSchemas.Value;
-        }
-
-        // Парсинг DeserializeWithSchemas
-        if (config.DeserializeWithSchemas.HasValue)
-        {
-            options.DeserializeWithSchemas = config.DeserializeWithSchemas.Value;
-        }
-
-        // Парсинг EnumFormat
-        if (!string.IsNullOrEmpty(config.EnumFormat))
-        {
-            options.EnumFormat = config.EnumFormat.ToLowerInvariant() switch
-            {
-                "enum" => TypeScriptEnumFormat.Enum,
-                "uniontype" or "union-type" => TypeScriptEnumFormat.UnionType,
-                _ => TypeScriptEnumFormat.Enum
-            };
-        }
-
-        // Парсинг UseStrictNullChecks
-        if (config.UseStrictNullChecks.HasValue)
-        {
-            options.UseStrictNullChecks = config.UseStrictNullChecks.Value;
-        }
-
-        // Парсинг Axios опций
-        if (config.Axios != null)
-        {
-            options.Axios = new ValIO.Generators.TypeScript.Models.AxiosOptions
-            {
-                CustomInstancePath = config.Axios.CustomInstancePath,
-                CustomInstanceName = config.Axios.CustomInstanceName
-            };
-        }
-
-        // QueryParametersStyle не используется для TypeScript, query параметры всегда передаются как отдельные параметры
-
-        return options;
-    }*/
+        // TODO: Реализовать парсинг TypeScript опций когда будет готова модель TypeScriptGenerationOptions
+        // Пока возвращаем null, так как TypeScript опции еще не полностью интегрированы
+        return null;
+    }
 }
-

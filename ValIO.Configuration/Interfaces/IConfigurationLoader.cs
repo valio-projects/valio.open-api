@@ -1,3 +1,4 @@
+using ValIO.Configuration.Models;
 using ValIO.Core.Models;
 
 namespace ValIO.Configuration.Interfaces;
@@ -7,8 +8,24 @@ namespace ValIO.Configuration.Interfaces;
 /// </summary>
 public interface IConfigurationLoader
 {
-    Task<GenerationConfiguration> LoadFromFileAsync(string filePath);
-    GenerationConfiguration LoadFromJson(string json);
-    GenerationConfiguration LoadFromYaml(string yaml);
+    /// <summary>
+    /// Загружает конфигурацию из файла
+    /// </summary>
+    Task<ValIOConfig> LoadConfigFromFileAsync(string filePath);
+    
+    /// <summary>
+    /// Загружает конфигурацию из JSON
+    /// </summary>
+    ValIOConfig LoadConfigFromJson(string json);
+    
+    /// <summary>
+    /// Загружает конфигурацию из YAML
+    /// </summary>
+    ValIOConfig LoadConfigFromYaml(string yaml);
+    
+    /// <summary>
+    /// Преобразует конфигурацию проекта в GenerationConfiguration
+    /// </summary>
+    GenerationConfiguration MapToGenerationConfiguration(ProjectConfig projectConfig);
 }
 

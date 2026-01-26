@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 using ValIO.Configuration.Interfaces;
+using ValIO.Configuration.Models;
 using ValIO.Core.Models;
 using ValIO.Factories;
 using ValIO.Parsers.Interfaces;
@@ -17,52 +18,46 @@ public class GenerateCommand : Command
     public GenerateCommand(IServiceProvider serviceProvider) 
         : base("generate", "Generate code from OpenAPI schema")
     {
-        var schemaOption = new Option<string>("--schema", "-s")
+        // Опциональные аргументы для прямого указания параметров (без конфига)
+        var schemaOption = new Option<string?>("--schema", "-s")
         {
-            Description = "Path or URL to OpenAPI schema file"
+            Description = "Path or URL to OpenAPI schema file (required if not using config)"
         };
-        schemaOption.Arity = ArgumentArity.ExactlyOne;
 
-        var outputOption = new Option<string>("--output", "-o")
+        var outputOption = new Option<string?>("--output", "-o")
         {
-            Description = "Output directory path"
+            Description = "Output directory path (required if not using config)"
         };
-        outputOption.Arity = ArgumentArity.ExactlyOne;
 
-        var languageOption = new Option<GenerationLanguage>("--language", "-l")
+        var languageOption = new Option<GenerationLanguage?>("--language", "-l")
         {
-            Description = "Target programming language"
+            Description = "Target programming language (required if not using config)"
         };
-        languageOption.Arity = ArgumentArity.ExactlyOne;
 
+        // Обязательный аргумент - путь к конфигу или название проекта
         var configOption = new Option<FileInfo?>("--config", "-c")
         {
             Description = "Path to configuration file (JSON or YAML)"
+        };
+
+        var projectOption = new Option<string?>("--project", "-p")
+        {
+            Description = "Project name from configuration file (required if using config with multiple projects)"
         };
 
         Options.Add(schemaOption);
         Options.Add(outputOption);
         Options.Add(languageOption);
         Options.Add(configOption);
+        Options.Add(projectOption);
 
         SetAction(async (ParseResult parseResult) =>
         {
             var schema = parseResult.GetValue(schemaOption);
             var output = parseResult.GetValue(outputOption);
             var language = parseResult.GetValue(languageOption);
-            var config = parseResult.GetValue(configOption);
-
-            if (string.IsNullOrWhiteSpace(schema))
-            {
-                await Console.Error.WriteLineAsync("Schema path or URL is required");
-                return 1;
-            }
-
-            if (string.IsNullOrWhiteSpace(output))
-            {
-                await Console.Error.WriteLineAsync("Output directory path is required");
-                return 1;
-            }
+            var configFile = parseResult.GetValue(configOption);
+            var projectName = parseResult.GetValue(projectOption);
 
             var logger = serviceProvider.GetRequiredService<ILogger<GenerateCommand>>();
             var parser = serviceProvider.GetRequiredService<IOpenApiDocumentParser>();
@@ -72,23 +67,93 @@ public class GenerateCommand : Command
 
             try
             {
-                // Загрузка конфигурации
+                ProjectConfig? projectConfig = null;
                 GenerationConfiguration generationConfig;
-                if (config != null && config.Exists)
+
+                // Если указан конфиг, загружаем его
+                if (configFile != null && configFile.Exists)
                 {
-                    generationConfig = await configLoader.LoadFromFileAsync(config.FullName);
-                    logger.LogInformation("Configuration loaded from: {ConfigPath}", config.FullName);
+                    var config = await configLoader.LoadConfigFromFileAsync(configFile.FullName);
+                    logger.LogInformation("Configuration loaded from: {ConfigPath}", configFile.FullName);
+
+                    // Определяем какой проект использовать
+                    if (config.Projects.Count == 0)
+                    {
+                        logger.LogError("Configuration file contains no projects");
+                        return 1;
+                    }
+
+                    if (config.Projects.Count == 1)
+                    {
+                        // Если проект один, используем его
+                        projectConfig = config.Projects.Values.First();
+                        projectName = config.Projects.Keys.First();
+                        logger.LogInformation("Using project: {ProjectName}", projectName);
+                    }
+                    else
+                    {
+                        // Если проектов несколько, нужен --project
+                        if (string.IsNullOrWhiteSpace(projectName))
+                        {
+                            logger.LogError("Multiple projects found in configuration. Please specify --project option. Available projects: {Projects}",
+                                string.Join(", ", config.Projects.Keys));
+                            return 1;
+                        }
+
+                        if (!config.Projects.TryGetValue(projectName, out projectConfig))
+                        {
+                            logger.LogError("Project '{ProjectName}' not found in configuration. Available projects: {Projects}",
+                                projectName, string.Join(", ", config.Projects.Keys));
+                            return 1;
+                        }
+
+                        logger.LogInformation("Using project: {ProjectName}", projectName);
+                    }
+
+                    // Используем schema из конфига, если не указан в аргументах
+                    if (string.IsNullOrWhiteSpace(schema))
+                    {
+                        schema = projectConfig.Schema;
+                    }
+
+                    // Используем output из конфига, если не указан в аргументах
+                    if (string.IsNullOrWhiteSpace(output))
+                    {
+                        output = projectConfig.OutputPath;
+                    }
+
+                    // Преобразуем ProjectConfig в GenerationConfiguration
+                    generationConfig = configLoader.MapToGenerationConfiguration(projectConfig);
                 }
                 else
                 {
+                    // Работа без конфига - все параметры обязательны
+                    if (string.IsNullOrWhiteSpace(schema))
+                    {
+                        logger.LogError("Schema path or URL is required (use --schema or --config)");
+                        return 1;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(output))
+                    {
+                        logger.LogError("Output directory path is required (use --output or --config)");
+                        return 1;
+                    }
+
+                    if (!language.HasValue)
+                    {
+                        logger.LogError("Language is required (use --language or --config)");
+                        return 1;
+                    }
+
                     // Создание конфигурации по умолчанию
                     generationConfig = new GenerationConfiguration
                     {
-                        Language = language,
+                        Language = language.Value,
                         OutputPath = output,
-                        GenerateEnums = true,
                         GenerateModels = true,
-                        GenerateClients = true
+                        GenerateClients = true,
+                        GenerateEnums = true
                     };
                     logger.LogInformation("Using default configuration");
                 }
@@ -168,4 +233,3 @@ public class GenerateCommand : Command
         });
     }
 }
-

@@ -578,7 +578,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // JSDoc комментарий
         if (node.Documentation != null)
         {
-            var docParams = node.Parameters.Select(p => (Name: p.Name.Name, Description: p.Documentation?.Text, Type: RenderType(p.Type))).ToList();
+            var docParams = node.Parameters.Select(p => (Name: p.Name.Name, Description: p.Documentation?.Text, Type: (string?)RenderType(p.Type))).ToList();
             CommentGenerator.GenerateJSDocCommentWithParams(sb, indentLevel, node.Documentation.Text, docParams, node.ReturnType != null ? RenderType(node.ReturnType) : null);
         }
         

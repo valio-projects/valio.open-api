@@ -1,28 +1,41 @@
 {
-  "language": "CSharp",
-  "outputPath": "C:\\Workspace\\ValIO\\out",
-  "namespace": "Generated",
-  "generateEnums": true,
-  "generateModels": true,
-  "generateClients": true,
-  "options": {
-    "csharp": {
-      "propertyAccessor": "Init",
-      "useRequired": true,
-      "useSealed": true,
-      "modelType": "Class",
-      "generateEqualityMembers": true
+  "projects": {
+    "MyApi": {
+      "language": "CSharp",
+      "schema": "https://api.example.com/swagger/v1/swagger.json",
+      "outputPath": "C:\\Workspace\\MyProject\\Generated",
+      "namespace": "MyProject.Generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "csharp": {
+          "propertyAccessor": "Init",
+          "useRequired": true,
+          "useSealed": true,
+          "modelType": "Class",
+          "generateEqualityMembers": true,
+          "useNullable": true,
+          "generateValidationConstants": true,
+          "generateValidationAttributes": true,
+          "queryParametersStyle": "ModelClass",
+          "enableOpenTelemetry": true,
+          "generateTraces": true,
+          "generateMetrics": true
+        }
+      },
+      "fileOrganization": {
+        "groupingStrategy": "SingleFile",
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": null,
+        "clientsPath": null
+      },
+      "namingConvention": {
+        "models": "PascalCase",
+        "properties": "PascalCase",
+        "methods": "PascalCase",
+        "enums": "PascalCase"
+      }
     }
-  },
-  "fileOrganization": {
-    "groupingStrategy": "SingleFile",
-    "separateModels": true,
-    "separateClients": true
-  },
-  "namingConvention": {
-    "models": "PascalCase",
-    "properties": "PascalCase",
-    "methods": "PascalCase",
-    "enums": "PascalCase"
   }
 }
