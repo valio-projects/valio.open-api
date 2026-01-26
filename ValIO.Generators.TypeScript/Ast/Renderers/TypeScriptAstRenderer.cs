@@ -575,11 +575,78 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     private void RenderFunction(StringBuilder sb, FunctionDeclarationNode node, int indentLevel)
     {
-        // JSDoc комментарий
-        if (node.Documentation != null)
+        // Формируем расширенный JSDoc комментарий
+        var jsDocLines = new List<string>();
+        
+        // Добавляем описание (@description)
+        if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
         {
-            var docParams = node.Parameters.Select(p => (Name: p.Name.Name, Description: p.Documentation?.Text, Type: (string?)RenderType(p.Type))).ToList();
-            CommentGenerator.GenerateJSDocCommentWithParams(sb, indentLevel, node.Documentation.Text, docParams, node.ReturnType != null ? RenderType(node.ReturnType) : null);
+            jsDocLines.Add($"@description {node.Documentation.Text}");
+        }
+        
+        // Добавляем @function для явного указания, что это функция
+        jsDocLines.Add("@function");
+        
+        // Добавляем @async для асинхронных функций
+        if (node.IsAsync)
+        {
+            jsDocLines.Add("@async");
+        }
+        
+        // Добавляем @deprecated если функция deprecated
+        if (node.Metadata.TryGetValue("IsDeprecated", out var isDeprecatedObj) && isDeprecatedObj is bool isDeprecated && isDeprecated)
+        {
+            jsDocLines.Add("@deprecated");
+        }
+        
+        // Добавляем параметры (@param)
+        foreach (var param in node.Parameters)
+        {
+            var paramType = RenderType(param.Type);
+            var paramDescription = param.Documentation?.Text ?? "";
+            var paramName = param.Name.Name;
+            var optionalMarker = !param.IsRequired ? "?" : "";
+            
+            if (!string.IsNullOrWhiteSpace(paramDescription))
+            {
+                jsDocLines.Add($"@param {{{paramType}}} {optionalMarker}{paramName} {paramDescription}");
+            }
+            else
+            {
+                jsDocLines.Add($"@param {{{paramType}}} {optionalMarker}{paramName}");
+            }
+        }
+        
+        // Добавляем тип возвращаемого значения (@returns)
+        if (node.ReturnType != null)
+        {
+            var returnTypeStr = RenderType(node.ReturnType);
+            jsDocLines.Add($"@returns {{{returnTypeStr}}}");
+        }
+        
+        // Добавляем @example если есть в metadata
+        if (node.Metadata.TryGetValue("Example", out var exampleObj) && exampleObj != null)
+        {
+            var exampleStr = exampleObj.ToString() ?? "";
+            jsDocLines.Add($"@example {exampleStr}");
+        }
+        
+        // Добавляем @todo если есть в metadata
+        if (node.Metadata.TryGetValue("Todo", out var todoObj) && todoObj != null)
+        {
+            var todoStr = todoObj.ToString() ?? "";
+            jsDocLines.Add($"@todo {todoStr}");
+        }
+        
+        // Генерируем JSDoc комментарий
+        if (jsDocLines.Count > 0)
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, "/**");
+            foreach (var line in jsDocLines)
+            {
+                CodeFormatter.AppendLine(sb, indentLevel, $" * {line}");
+            }
+            CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
         
         // Модификаторы и объявление функции
@@ -669,10 +736,134 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     private void RenderProperty(StringBuilder sb, PropertyDeclarationNode node, int indentLevel)
     {
-        // JSDoc комментарий
-        if (node.Documentation != null)
+        // Проверяем, является ли тип nullable или optional
+        var isNullable = IsTypeNullable(node.Type);
+        var isOptional = !node.IsRequired || IsTypeOptional(node.Type);
+        
+        // Получаем constraints из metadata
+        var constraints = node.Metadata.TryGetValue("Constraints", out var constraintsObj) 
+            && constraintsObj is ValIO.Core.IR.Constraints.IrPropertyConstraints constraintsValue
+            ? constraintsValue
+            : null;
+        
+        // Формируем JSDoc комментарий
+        var jsDocLines = new List<string>();
+        
+        // Добавляем описание из документации (@description)
+        if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
         {
-            RenderComment(sb, node.Documentation, indentLevel);
+            jsDocLines.Add($"@description {node.Documentation.Text}");
+        }
+        
+        // Добавляем @type для явного указания типа
+        var typeString = RenderType(node.Type);
+        jsDocLines.Add($"@type {{{typeString}}}");
+        
+        // Добавляем @nullable для nullable типов
+        if (isNullable)
+        {
+            jsDocLines.Add("@nullable");
+        }
+        
+        // Добавляем @optional для optional свойств
+        if (isOptional && !node.IsRequired)
+        {
+            jsDocLines.Add("@optional");
+        }
+        
+        // Добавляем @readonly если свойство readonly (можно добавить через metadata)
+        if (node.Metadata.TryGetValue("IsReadOnly", out var isReadOnlyObj) && isReadOnlyObj is bool isReadOnly && isReadOnly)
+        {
+            jsDocLines.Add("@readonly");
+        }
+        
+        // Добавляем @deprecated если свойство deprecated (можно добавить через metadata)
+        if (node.Metadata.TryGetValue("IsDeprecated", out var isDeprecatedObj) && isDeprecatedObj is bool isDeprecated && isDeprecated)
+        {
+            jsDocLines.Add("@deprecated");
+        }
+        
+        // Добавляем constraints из IrPropertyConstraints
+        if (constraints != null)
+        {
+            // Минимальная длина для строк
+            if (constraints.MinLength.HasValue)
+            {
+                jsDocLines.Add($"@minLength {constraints.MinLength.Value}");
+            }
+            
+            // Максимальная длина для строк
+            if (constraints.MaxLength.HasValue)
+            {
+                jsDocLines.Add($"@maxLength {constraints.MaxLength.Value}");
+            }
+            
+            // Минимальное значение для чисел
+            if (constraints.Min.HasValue)
+            {
+                jsDocLines.Add($"@min {constraints.Min.Value}");
+            }
+            
+            // Максимальное значение для чисел
+            if (constraints.Max.HasValue)
+            {
+                jsDocLines.Add($"@max {constraints.Max.Value}");
+            }
+            
+            // Исключающее минимальное значение
+            if (constraints.ExclusiveMin.HasValue)
+            {
+                jsDocLines.Add($"@exclusiveMin {constraints.ExclusiveMin.Value}");
+            }
+            
+            // Исключающее максимальное значение
+            if (constraints.ExclusiveMax.HasValue)
+            {
+                jsDocLines.Add($"@exclusiveMax {constraints.ExclusiveMax.Value}");
+            }
+            
+            // Регулярное выражение
+            if (!string.IsNullOrWhiteSpace(constraints.Pattern))
+            {
+                jsDocLines.Add($"@pattern {constraints.Pattern}");
+            }
+            
+            // Значение по умолчанию
+            if (constraints.DefaultValue != null)
+            {
+                var defaultValueStr = RenderDefaultValue(constraints.DefaultValue);
+                jsDocLines.Add($"@default {defaultValueStr}");
+            }
+        }
+        
+        // Добавляем @example если есть в metadata
+        if (node.Metadata.TryGetValue("Example", out var exampleObj) && exampleObj != null)
+        {
+            var exampleStr = RenderDefaultValue(exampleObj);
+            jsDocLines.Add($"@example {exampleStr}");
+        }
+        
+        // Добавляем @enum если тип является enum (можно определить через metadata)
+        if (node.Metadata.TryGetValue("IsEnum", out var isEnumObj) && isEnumObj is bool isEnum && isEnum)
+        {
+            jsDocLines.Add("@enum");
+        }
+        
+        // Добавляем @constant если свойство является константой (можно добавить через metadata)
+        if (node.Metadata.TryGetValue("IsConstant", out var isConstantObj) && isConstantObj is bool isConstant && isConstant)
+        {
+            jsDocLines.Add("@constant");
+        }
+        
+        // Генерируем JSDoc комментарий, если есть что добавить
+        if (jsDocLines.Count > 0)
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, "/**");
+            foreach (var line in jsDocLines)
+            {
+                CodeFormatter.AppendLine(sb, indentLevel, $" * {line}");
+            }
+            CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
         
         // Объявление свойства
@@ -681,6 +872,59 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var isReadonly = ""; // Можно добавить через metadata позже
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{isReadonly}{node.Name.Name}{optional}: {type};");
+    }
+    
+    /// <summary>
+    /// Рендерит значение по умолчанию для JSDoc
+    /// </summary>
+    private string RenderDefaultValue(object? value)
+    {
+        if (value == null)
+            return "null";
+        
+        return value switch
+        {
+            string str => $"\"{str.Replace("\"", "\\\"")}\"",
+            bool b => b ? "true" : "false",
+            int or long or short or byte => value.ToString() ?? "0",
+            float or double or decimal => value.ToString() ?? "0",
+            _ => value.ToString() ?? "null"
+        };
+    }
+    
+    /// <summary>
+    /// Проверяет, является ли тип nullable
+    /// </summary>
+    private bool IsTypeNullable(TypeNode type)
+    {
+        return type switch
+        {
+            NullableTypeNode => true,
+            UnionTypeNode union when union.Types.Any(t => t is SimpleTypeNode st && st.Name.Name == "null") => true,
+            SimpleTypeNode simple when simple.IsNullable => true,
+            ArrayTypeNode array when array.IsNullable => true,
+            GenericTypeNode generic when generic.IsNullable => true,
+            DictionaryTypeNode dict when dict.IsNullable => true,
+            IntersectionTypeNode intersection when intersection.IsNullable => true,
+            _ => false
+        };
+    }
+    
+    /// <summary>
+    /// Проверяет, является ли тип optional
+    /// </summary>
+    private bool IsTypeOptional(TypeNode type)
+    {
+        return type switch
+        {
+            OptionalTypeNode => true,
+            SimpleTypeNode simple when simple.IsOptional => true,
+            ArrayTypeNode array when array.IsOptional => true,
+            GenericTypeNode generic when generic.IsOptional => true,
+            DictionaryTypeNode dict when dict.IsOptional => true,
+            IntersectionTypeNode intersection when intersection.IsOptional => true,
+            _ => false
+        };
     }
 
     private void RenderParameter(StringBuilder sb, ParameterDeclarationNode node)

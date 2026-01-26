@@ -101,8 +101,54 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     private IReadOnlyList<ImportNode> BuildImports(IReadOnlyList<string> dependencies, string? importPath)
     {
-        // TODO: Реализовать построение импортов на основе зависимостей
-        return ImmutableList<ImportNode>.Empty;
+        if (dependencies.Count == 0 || string.IsNullOrEmpty(importPath))
+        {
+            return ImmutableList<ImportNode>.Empty;
+        }
+        
+        // Группируем зависимости по файлам (модели и enum'ы в одном файле)
+        var importsByFile = new Dictionary<string, List<string>>();
+        
+        foreach (var dependency in dependencies.Distinct().OrderBy(d => d))
+        {
+            // Определяем имя файла для зависимости (без расширения .ts)
+            var fileName = GetModelFileName(dependency);
+            // Путь импорта без расширения .ts (TypeScript автоматически разрешает .ts файлы)
+            var importPathForFile = $"{importPath}/{fileName}";
+            
+            if (!importsByFile.ContainsKey(importPathForFile))
+            {
+                importsByFile[importPathForFile] = new List<string>();
+            }
+            
+            importsByFile[importPathForFile].Add(dependency);
+        }
+        
+        // Создаем ImportNode для каждой группы
+        var imports = new List<ImportNode>();
+        foreach (var kvp in importsByFile.OrderBy(kvp => kvp.Key))
+        {
+            var items = kvp.Value.Select(name => new IdentifierNode(name)).ToImmutableList();
+            var importNode = new ImportNode(
+                items: items,
+                from: kvp.Key,
+                kind: ImportKind.Named);
+            imports.Add(importNode);
+        }
+        
+        return imports;
+    }
+    
+    /// <summary>
+    /// Получает имя файла для модели или enum'а
+    /// </summary>
+    private string GetModelFileName(string typeName)
+    {
+        if (string.IsNullOrEmpty(typeName))
+            return string.Empty;
+        
+        // Преобразуем PascalCase в camelCase для имени файла
+        return _namingConverter.ToCamelCase(typeName);
     }
     
     private TypeNode BuildTypeFromBaseType(TypeInfo typeInfo)
@@ -146,7 +192,10 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null)
     {
-        var imports = BuildImports(ExtractDependencies(model), importPath);
+        var dependencies = ExtractDependencies(model);
+        // Исключаем текущую модель из зависимостей
+        dependencies = dependencies.Where(d => d != model.Name).ToList();
+        var imports = BuildImports(dependencies, importPath);
         var declarations = new[] { (DeclarationNode)BuildInterface(model) };
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
@@ -201,13 +250,21 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             ? BuildLiteral(property.Constraints.DefaultValue, InferTypeInfo(property.Type))
             : null;
         
+        // Передаем constraints через metadata для использования в JSDoc генерации
+        var metadata = new Dictionary<string, object>();
+        if (property.Constraints != null)
+        {
+            metadata["Constraints"] = property.Constraints;
+        }
+        
         return new PropertyDeclarationNode(
             name: name,
             type: type,
             isRequired: property.IsRequired,
             accessor: PropertyAccessorKind.Get,
             defaultValue: defaultValue,
-            documentation: comment);
+            documentation: comment,
+            metadata: metadata);
     }
     
     /// <summary>
