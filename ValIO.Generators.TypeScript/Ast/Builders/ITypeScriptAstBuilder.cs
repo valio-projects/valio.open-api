@@ -6,6 +6,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -40,7 +41,7 @@ public interface ITypeScriptAstBuilder
     /// <summary>
     /// Строит SourceFile из IrModel
     /// </summary>
-    SourceFileNode BuildSourceFile(IrModel model, string? importPath = null);
+    SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null);
     
     /// <summary>
     /// Строит InterfaceDeclarationNode из IrModel
@@ -55,7 +56,7 @@ public interface ITypeScriptAstBuilder
     /// <summary>
     /// Строит SourceFile из IrEnum
     /// </summary>
-    SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null);
+    SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null, FileOrganization? fileOrganization = null);
     
     /// <summary>
     /// Строит FunctionDeclarationNode из IrOperation
@@ -65,10 +66,10 @@ public interface ITypeScriptAstBuilder
     /// <summary>
     /// Строит SourceFile из IrClient
     /// </summary>
-    SourceFileNode BuildSourceFile(IrClient client, string? importPath = null);
+    SourceFileNode BuildSourceFile(IrClient client, string? importPath = null, FileOrganization? fileOrganization = null);
     
     /// <summary>
     /// Строит список SourceFile из IrDocument (все модели, enum'ы и клиенты)
     /// </summary>
-    IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null);
+    IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null, FileOrganization? fileOrganization = null);
 }

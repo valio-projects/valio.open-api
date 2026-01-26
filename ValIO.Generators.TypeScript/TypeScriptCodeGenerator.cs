@@ -277,8 +277,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         
         // 2. IR → AST для моделей и enum'ов
         var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
-        var importPath = ""; // Import path можно добавить в FileOrganization позже, если нужно
-        var sourceFiles = astBuilder.BuildSourceFiles(irDocument, importPath);
+        var sourceFiles = astBuilder.BuildSourceFiles(irDocument, importPath: null, fileOrganization: config.FileOrganization);
         
         // 3. AST → Code для моделей и enum'ов
         var astRenderer = new TypeScriptAstRenderer();

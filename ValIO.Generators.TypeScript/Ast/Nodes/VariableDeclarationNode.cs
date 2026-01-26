@@ -26,6 +26,26 @@ public sealed class VariableDeclarationNode : DeclarationNode
     /// </summary>
     public VariableDeclarationKind DeclarationKind { get; }
     
+    /// <summary>
+    /// Является ли переменная экспортируемой (export)
+    /// </summary>
+    public bool IsExported { get; }
+    
+    /// <summary>
+    /// Использовать ли "as const" assertion
+    /// </summary>
+    public bool AsConstAssertion { get; }
+    
+    /// <summary>
+    /// Использовать ли "as const satisfies" assertion для строгой типизации
+    /// </summary>
+    public bool AsConstSatisfies { get; }
+    
+    /// <summary>
+    /// Тип для "as const satisfies" assertion (если AsConstSatisfies = true)
+    /// </summary>
+    public TypeNode? SatisfiesType { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.VariableDeclaration;
     
     public override IReadOnlyList<AstNode> Children
@@ -54,12 +74,20 @@ public sealed class VariableDeclarationNode : DeclarationNode
         ExpressionNode? initializer = null,
         CommentNode? documentation = null,
         IReadOnlyList<AttributeNode>? attributes = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        bool isExported = false,
+        bool asConstAssertion = false,
+        bool asConstSatisfies = false,
+        TypeNode? satisfiesType = null)
         : base(name, documentation, attributes, metadata)
     {
         DeclarationKind = declarationKind;
         Type = type;
         Initializer = initializer;
+        IsExported = isExported;
+        AsConstAssertion = asConstAssertion;
+        AsConstSatisfies = asConstSatisfies;
+        SatisfiesType = satisfiesType;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -80,6 +108,10 @@ public sealed class VariableDeclarationNode : DeclarationNode
             Initializer != null ? (ExpressionNode)Initializer.Clone() : null,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            IsExported,
+            AsConstAssertion,
+            AsConstSatisfies,
+            SatisfiesType != null ? (TypeNode)SatisfiesType.Clone() : null);
     }
 }

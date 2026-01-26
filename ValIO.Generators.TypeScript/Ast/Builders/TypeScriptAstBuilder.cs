@@ -11,6 +11,7 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Models;
@@ -24,6 +25,16 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// </summary>
 public class TypeScriptAstBuilder : ITypeScriptAstBuilder
 {
+    /// <summary>
+    /// Категория файла для определения пути импорта
+    /// </summary>
+    private enum FileCategory
+    {
+        Models,
+        Clients,
+        Schemas
+    }
+    
     private readonly INamingConverter _namingConverter;
     private readonly ITypeMapper _typeMapper;
     private readonly HttpAstBuilder _httpBuilder;
@@ -99,9 +110,13 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     // Приватные вспомогательные методы
     
-    private IReadOnlyList<ImportNode> BuildImports(IReadOnlyList<string> dependencies, string? importPath)
+    private IReadOnlyList<ImportNode> BuildImports(
+        IReadOnlyList<string> dependencies, 
+        string? importPath,
+        FileOrganization? fileOrganization = null,
+        FileCategory? currentFileCategory = null)
     {
-        if (dependencies.Count == 0 || string.IsNullOrEmpty(importPath))
+        if (dependencies.Count == 0)
         {
             return ImmutableList<ImportNode>.Empty;
         }
@@ -109,12 +124,43 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         // Группируем зависимости по файлам (модели и enum'ы в одном файле)
         var importsByFile = new Dictionary<string, List<string>>();
         
+        // Определяем базовый путь для текущего файла
+        var currentBasePath = currentFileCategory switch
+        {
+            FileCategory.Models => fileOrganization?.ModelsPath ?? "./models",
+            FileCategory.Clients => fileOrganization?.ClientsPath ?? "./api",
+            FileCategory.Schemas => "./schemas",
+            _ => "./"
+        };
+        
         foreach (var dependency in dependencies.Distinct().OrderBy(d => d))
         {
             // Определяем имя файла для зависимости (без расширения .ts)
             var fileName = GetModelFileName(dependency);
-            // Путь импорта без расширения .ts (TypeScript автоматически разрешает .ts файлы)
-            var importPathForFile = $"{importPath}/{fileName}";
+            
+            // Зависимости всегда находятся в папке models (модели и enum'ы)
+            var dependencyBasePath = fileOrganization?.ModelsPath ?? "./models";
+            
+            // Вычисляем относительный путь от текущего файла к зависимости
+            string importPathForFile;
+            if (!string.IsNullOrEmpty(importPath))
+            {
+                // Если передан importPath, используем его
+                importPathForFile = $"{importPath}/{fileName}";
+            }
+            else if (currentBasePath == dependencyBasePath)
+            {
+                // Если файлы в одной папке, используем относительный путь
+                importPathForFile = $"./{fileName}";
+            }
+            else
+            {
+                // Если файлы в разных папках, вычисляем относительный путь
+                importPathForFile = CalculateRelativePath(currentBasePath, dependencyBasePath, fileName);
+            }
+            
+            // Нормализуем путь (убираем двойные слеши, заменяем обратные слеши)
+            importPathForFile = NormalizePath(importPathForFile);
             
             if (!importsByFile.ContainsKey(importPathForFile))
             {
@@ -137,6 +183,89 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         }
         
         return imports;
+    }
+    
+    /// <summary>
+    /// Вычисляет относительный путь между двумя папками
+    /// </summary>
+    private string CalculateRelativePath(string fromPath, string toPath, string fileName)
+    {
+        // Нормализуем пути
+        fromPath = NormalizePath(fromPath);
+        toPath = NormalizePath(toPath);
+        
+        // Если пути одинаковые, используем относительный путь в той же папке
+        if (fromPath == toPath)
+        {
+            return $"./{fileName}";
+        }
+        
+        // Разбиваем пути на части
+        var fromParts = fromPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var toParts = toPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        
+        // Находим общий префикс
+        int commonLength = 0;
+        int minLength = Math.Min(fromParts.Length, toParts.Length);
+        while (commonLength < minLength && fromParts[commonLength] == toParts[commonLength])
+        {
+            commonLength++;
+        }
+        
+        // Вычисляем количество уровней вверх
+        int upLevels = fromParts.Length - commonLength;
+        
+        // Формируем относительный путь
+        var relativeParts = new List<string>();
+        
+        // Добавляем уровни вверх
+        for (int i = 0; i < upLevels; i++)
+        {
+            relativeParts.Add("..");
+        }
+        
+        // Добавляем оставшиеся части пути к целевой папке
+        for (int i = commonLength; i < toParts.Length; i++)
+        {
+            relativeParts.Add(toParts[i]);
+        }
+        
+        // Добавляем имя файла
+        relativeParts.Add(fileName);
+        
+        return string.Join("/", relativeParts);
+    }
+    
+    /// <summary>
+    /// Нормализует путь (убирает двойные слеши, заменяет обратные слеши)
+    /// </summary>
+    private string NormalizePath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return "./";
+        
+        // Заменяем обратные слеши на прямые
+        path = path.Replace("\\", "/");
+        
+        // Убираем двойные слеши
+        while (path.Contains("//"))
+        {
+            path = path.Replace("//", "/");
+        }
+        
+        // Убираем начальный слеш, если это не абсолютный путь
+        if (path.StartsWith("/") && !path.StartsWith("//") && !path.StartsWith("http"))
+        {
+            path = path.Substring(1);
+        }
+        
+        // Убираем конечный слеш
+        if (path.EndsWith("/") && path.Length > 1)
+        {
+            path = path.Substring(0, path.Length - 1);
+        }
+        
+        return path;
     }
     
     /// <summary>
@@ -190,12 +319,12 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// <summary>
     /// Строит SourceFile из IrModel
     /// </summary>
-    public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null)
+    public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         var dependencies = ExtractDependencies(model);
         // Исключаем текущую модель из зависимостей
         dependencies = dependencies.Where(d => d != model.Name).ToList();
-        var imports = BuildImports(dependencies, importPath);
+        var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Models);
         var declarations = new[] { (DeclarationNode)BuildInterface(model) };
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
@@ -250,13 +379,6 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             ? BuildLiteral(property.Constraints.DefaultValue, InferTypeInfo(property.Type))
             : null;
         
-        // Передаем constraints через metadata для использования в JSDoc генерации
-        var metadata = new Dictionary<string, object>();
-        if (property.Constraints != null)
-        {
-            metadata["Constraints"] = property.Constraints;
-        }
-        
         return new PropertyDeclarationNode(
             name: name,
             type: type,
@@ -264,15 +386,15 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             accessor: PropertyAccessorKind.Get,
             defaultValue: defaultValue,
             documentation: comment,
-            metadata: metadata);
+            constraints: property.Constraints);
     }
     
     /// <summary>
     /// Строит SourceFile из IrEnum
     /// </summary>
-    public SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null)
+    public SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null, FileOrganization? fileOrganization = null)
     {
-        var imports = BuildImports(Array.Empty<string>(), importPath);
+        var imports = BuildImports(Array.Empty<string>(), importPath, fileOrganization, FileCategory.Models);
         var declarations = BuildEnumDeclaration(enumModel);
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
@@ -284,35 +406,193 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     /// <summary>
     /// Строит DeclarationNode из IrEnum (может быть TypeAlias для union или enum)
+    /// Также генерирует массив значений enum'а
     /// </summary>
     private IReadOnlyList<DeclarationNode> BuildEnumDeclaration(IrEnum enumModel)
     {
-        // Для TypeScript enum может быть либо union type, либо enum
-        // Используем union type для строковых enum'ов
+        var declarations = new List<DeclarationNode>();
+        
+        // Генерируем union type или enum
         if (enumModel.BaseType == IrEnumBaseType.String)
         {
             var unionType = BuildEnumUnionType(enumModel);
-            return new[] { (DeclarationNode)BuildTypeAlias(enumModel.Name, unionType) };
+            declarations.Add(BuildTypeAlias(enumModel.Name, unionType));
+        }
+        else
+        {
+            // TODO: Реализовать построение TypeScript enum для числовых значений
+            // Пока возвращаем union type
+            var numericUnionType = BuildEnumUnionType(enumModel);
+            declarations.Add(BuildTypeAlias(enumModel.Name, numericUnionType));
         }
         
-        // TODO: Реализовать построение TypeScript enum для числовых значений
-        // Пока возвращаем union type
-        var numericUnionType = BuildEnumUnionType(enumModel);
-        return new[] { (DeclarationNode)BuildTypeAlias(enumModel.Name, numericUnionType) };
+        // Генерируем массив значений enum'а
+        var valuesArray = BuildEnumValuesArray(enumModel);
+        declarations.Add(valuesArray);
+        
+        // Генерируем helper функцию для проверки значений enum'а
+        var typeGuardFunction = BuildEnumTypeGuard(enumModel);
+        declarations.Add(typeGuardFunction);
+        
+        return declarations;
+    }
+    
+    /// <summary>
+    /// Строит VariableDeclarationNode с массивом значений enum'а
+    /// Например: export const ChessboardProjectPropertyTypeValues = ["Property", "Apartment", ...] as const;
+    /// </summary>
+    private VariableDeclarationNode BuildEnumValuesArray(IrEnum enumModel)
+    {
+        // Создаем массив литералов для значений enum'а
+        var elements = enumModel.Values.Select(v =>
+        {
+            // Получаем строковое представление значения
+            var valueStr = v.Value?.ToString()?.Trim() ?? "";
+            
+            if (enumModel.BaseType == IrEnumBaseType.String)
+            {
+                // Для строковых enum'ов создаем строковый литерал
+                return new LiteralExpressionNode(valueStr, LiteralKind.String) as ExpressionNode;
+            }
+            else
+            {
+                // Для числовых enum'ов создаем числовой литерал
+                if (long.TryParse(valueStr, out var longValue))
+                {
+                    return new LiteralExpressionNode(longValue, LiteralKind.Number) as ExpressionNode;
+                }
+                return new LiteralExpressionNode(valueStr, LiteralKind.String) as ExpressionNode;
+            }
+        }).ToImmutableList();
+        
+        // Создаем ArrayLiteralExpressionNode
+        var arrayLiteral = new ArrayLiteralExpressionNode(elements);
+        
+        // Создаем тип массива (readonly array)
+        var elementType = enumModel.BaseType == IrEnumBaseType.String
+            ? new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true)
+            : new SimpleTypeNode(new IdentifierNode("number"), isPrimitive: true);
+        var arrayType = new ArrayTypeNode(elementType, isReadOnly: true);
+        
+        // Имя переменной: EnumName + "Values"
+        var variableName = $"{enumModel.Name}Values";
+        
+        // Создаем VariableDeclarationNode с const, export и "as const satisfies" assertion
+        // Используем "as const satisfies readonly EnumType[]" для максимально строгой типизации
+        var enumTypeNode = new SimpleTypeNode(new IdentifierNode(enumModel.Name), isPrimitive: false);
+        var satisfiesType = new ArrayTypeNode(enumTypeNode, isReadOnly: true);
+        
+        return new VariableDeclarationNode(
+            name: new IdentifierNode(variableName),
+            declarationKind: VariableDeclarationKind.Const,
+            type: arrayType,
+            initializer: arrayLiteral,
+            isExported: true,
+            asConstSatisfies: true,
+            satisfiesType: satisfiesType);
     }
     
     private UnionTypeNode BuildEnumUnionType(IrEnum enumModel)
     {
         var types = enumModel.Values.Select(v =>
         {
-            if (v.Value is string strValue)
-                return new SimpleTypeNode(new IdentifierNode($"\"{strValue}\""), isPrimitive: true) as TypeNode;
-            if (v.Value is int or long or short or byte)
-                return new SimpleTypeNode(new IdentifierNode(v.Value.ToString() ?? "0"), isPrimitive: true) as TypeNode;
+            // Получаем строковое представление значения
+            // v.Value может быть IOpenApiAny или другим типом, поэтому используем ToString()
+            var valueStr = v.Value?.ToString()?.Trim() ?? "";
+            
+            if (enumModel.BaseType == IrEnumBaseType.String)
+            {
+                // Для строковых enum'ов создаем литеральный тип
+                // Храним чистое значение в metadata, без экранирования и кавычек
+                return new SimpleTypeNode(
+                    new IdentifierNode("string"), // Имя типа для идентификации
+                    isPrimitive: true,
+                    metadata: new Dictionary<string, object> 
+                    { 
+                        { "IsLiteralString", true },
+                        { "LiteralValue", valueStr } // Храним чистое значение
+                    }) as TypeNode;
+            }
+            
+            // Для числовых enum'ов создаем числовой литерал
+            if (enumModel.BaseType == IrEnumBaseType.Integer)
+            {
+                // Пытаемся преобразовать в число
+                if (long.TryParse(valueStr, out var longValue))
+                {
+                    return new SimpleTypeNode(
+                        new IdentifierNode("number"), // Имя типа для идентификации
+                        isPrimitive: true,
+                        metadata: new Dictionary<string, object> 
+                        { 
+                            { "IsLiteralNumber", true },
+                            { "LiteralValue", longValue } // Храним чистое значение
+                        }) as TypeNode;
+                }
+            }
+            
+            // Fallback - используем строку (не должно происходить для правильно определенных enum'ов)
             return BuildSimpleType("string");
         }).ToImmutableList();
         
         return new UnionTypeNode(types);
+    }
+    
+    /// <summary>
+    /// Строит helper функцию для проверки значений enum'а (type guard)
+    /// Например: export const isChangeSource = (value: unknown): value is ChangeSource => ChangeSourceValues.includes(value as ChangeSource);
+    /// </summary>
+    private FunctionDeclarationNode BuildEnumTypeGuard(IrEnum enumModel)
+    {
+        // Имя функции: is{EnumName}
+        var functionName = $"is{enumModel.Name}";
+        
+        // Параметр: value: unknown
+        var valueParameter = new ParameterDeclarationNode(
+            name: new IdentifierNode("value"),
+            type: new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true));
+        
+        // Возвращаемый тип: value is EnumType (type predicate)
+        var enumTypeNode = new SimpleTypeNode(new IdentifierNode(enumModel.Name), isPrimitive: false);
+        
+        // Тело функции: ChangeSourceValues.includes(value as ChangeSource)
+        // 1. ChangeSourceValues - идентификатор массива значений
+        var valuesArrayIdentifier = new IdentifierExpressionNode(new IdentifierNode($"{enumModel.Name}Values"));
+        
+        // 2. .includes - доступ к методу
+        var includesMember = new MemberAccessExpressionNode(
+            @object: valuesArrayIdentifier,
+            member: new IdentifierNode("includes"));
+        
+        // 3. value as ChangeSource - приведение типа
+        var valueIdentifier = new IdentifierExpressionNode(new IdentifierNode("value"));
+        var castExpression = new CastExpressionNode(
+            targetType: enumTypeNode,
+            expression: valueIdentifier,
+            useAsOperator: true); // Используем "as" оператор для TypeScript
+        
+        // 4. .includes(value as ChangeSource) - вызов метода
+        var includesCall = new CallExpressionNode(
+            target: includesMember,
+            arguments: new[] { castExpression as ExpressionNode }.ToImmutableList());
+        
+        // 5. return ChangeSourceValues.includes(value as ChangeSource);
+        var returnStatement = new ReturnStatementNode(value: includesCall);
+        
+        // 6. Блок с return statement
+        var body = new BlockNode(statements: new[] { returnStatement }.ToImmutableList());
+        
+        // Создаем функцию как arrow function
+        return new FunctionDeclarationNode(
+            name: new IdentifierNode(functionName),
+            returnType: enumTypeNode,
+            parameters: new[] { valueParameter }.ToImmutableList(),
+            body: body,
+            isArrowFunction: true,
+            documentation: new CommentNode($"Type guard function to check if a value is a valid {enumModel.Name}."),
+            isExported: true,
+            isTypePredicate: true,
+            typePredicateParameterName: "value");
     }
     
     // Приватные вспомогательные методы для IR
@@ -489,7 +769,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// <summary>
     /// Строит список SourceFile из IrDocument (все модели, enum'ы и клиенты)
     /// </summary>
-    public IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null)
+    public IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         var sourceFiles = new List<SourceFileNode>();
         
@@ -501,7 +781,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         {
             if (modelsByName.TryGetValue(modelName, out var model))
             {
-                sourceFiles.Add(BuildSourceFile(model, importPath));
+                sourceFiles.Add(BuildSourceFile(model, importPath, fileOrganization));
             }
         }
         
@@ -510,20 +790,20 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         {
             if (!orderedModelNames.Contains(model.Name))
             {
-                sourceFiles.Add(BuildSourceFile(model, importPath));
+                sourceFiles.Add(BuildSourceFile(model, importPath, fileOrganization));
             }
         }
         
         // Генерируем enum'ы
         foreach (var enumModel in document.Enums)
         {
-            sourceFiles.Add(BuildSourceFile(enumModel, importPath));
+            sourceFiles.Add(BuildSourceFile(enumModel, importPath, fileOrganization));
         }
         
         // Генерируем клиенты
         foreach (var client in document.Clients)
         {
-            sourceFiles.Add(BuildSourceFile(client, importPath));
+            sourceFiles.Add(BuildSourceFile(client, importPath, fileOrganization));
         }
         
         return sourceFiles;
@@ -532,9 +812,9 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// <summary>
     /// Строит SourceFile из IrClient
     /// </summary>
-    public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null)
+    public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null, FileOrganization? fileOrganization = null)
     {
-        var imports = BuildImports(ExtractDependencies(client), importPath);
+        var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients);
         var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunction(op)).ToList();
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         

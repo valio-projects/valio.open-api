@@ -18,6 +18,7 @@ public interface ITypeScriptAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitFunctionDeclaration(FunctionDeclarationNode node);
     TResult VisitVariableDeclaration(VariableDeclarationNode node);
     TResult VisitObjectLiteralExpression(ObjectLiteralExpressionNode node);
+    TResult VisitArrayLiteralExpression(ArrayLiteralExpressionNode node);
     TResult VisitPropertyAssignment(PropertyAssignmentNode node);
     TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node);
     TResult VisitGenericParameter(GenericParameterNode node);

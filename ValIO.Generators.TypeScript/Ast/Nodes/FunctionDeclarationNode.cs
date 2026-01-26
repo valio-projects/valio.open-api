@@ -36,6 +36,26 @@ public sealed class FunctionDeclarationNode : DeclarationNode
     /// </summary>
     public bool IsAsync { get; }
     
+    /// <summary>
+    /// Является ли функция экспортируемой (export)
+    /// </summary>
+    public bool IsExported { get; }
+    
+    /// <summary>
+    /// Является ли функция type predicate (value is Type)
+    /// </summary>
+    public bool IsTypePredicate { get; }
+    
+    /// <summary>
+    /// Имя параметра для type predicate (если IsTypePredicate = true)
+    /// </summary>
+    public string? TypePredicateParameterName { get; }
+    
+    /// <summary>
+    /// Является ли функция устаревшей (deprecated)
+    /// </summary>
+    public bool IsDeprecated { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.FunctionDeclaration;
     
     public override IReadOnlyList<AstNode> Children
@@ -67,7 +87,11 @@ public sealed class FunctionDeclarationNode : DeclarationNode
         bool isAsync = false,
         CommentNode? documentation = null,
         IReadOnlyList<AttributeNode>? attributes = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        bool isExported = false,
+        bool isTypePredicate = false,
+        string? typePredicateParameterName = null,
+        bool isDeprecated = false)
         : base(name, documentation, attributes, metadata)
     {
         ReturnType = returnType;
@@ -75,6 +99,10 @@ public sealed class FunctionDeclarationNode : DeclarationNode
         Body = body;
         IsArrowFunction = isArrowFunction;
         IsAsync = isAsync;
+        IsExported = isExported;
+        IsTypePredicate = isTypePredicate;
+        TypePredicateParameterName = typePredicateParameterName;
+        IsDeprecated = isDeprecated;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -97,6 +125,10 @@ public sealed class FunctionDeclarationNode : DeclarationNode
             IsAsync,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            IsExported,
+            IsTypePredicate,
+            TypePredicateParameterName,
+            IsDeprecated);
     }
 }

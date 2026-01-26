@@ -40,7 +40,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendEmptyLine(_sb);
         }
         
-        // Рендерим declarations
+        // Рендерим declarations (export уже добавлен в RenderInterface, RenderEnum, RenderTypeAlias)
         foreach (var declaration in node.Declarations)
         {
             var rendered = RenderDeclaration(declaration);
@@ -175,7 +175,39 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitSimpleType(SimpleTypeNode node)
     {
-        return node.Name.Name;
+        // Проверяем metadata для литеральных строк
+        var isLiteralString = node.Metadata.TryGetValue("IsLiteralString", out var literalStrObj) 
+            && literalStrObj is bool isLiteral && isLiteral;
+        
+        if (isLiteralString && node.Metadata.TryGetValue("LiteralValue", out var literalValue))
+        {
+            // Это литеральная строка - рендерим значение в кавычках с экранированием
+            // Экранирование и форматирование делается ТОЛЬКО здесь, в renderer
+            var valueStr = literalValue?.ToString() ?? "";
+            var escapedValue = CodeEscapeHelper.EscapeTypeScriptString(valueStr);
+            
+            var nullableStr = node.IsNullable ? " | null" : "";
+            var optionalStr = node.IsOptional ? "?" : "";
+            return $"\"{escapedValue}\"{optionalStr}{nullableStr}";
+        }
+        
+        // Проверяем metadata для литеральных чисел
+        var isLiteralNumber = node.Metadata.TryGetValue("IsLiteralNumber", out var literalNumObj) 
+            && literalNumObj is bool isLiteralNum && isLiteralNum;
+        
+        if (isLiteralNumber && node.Metadata.TryGetValue("LiteralValue", out var literalNumValue))
+        {
+            // Это литеральное число - рендерим значение как есть
+            var nullableStr = node.IsNullable ? " | null" : "";
+            var optionalStr = node.IsOptional ? "?" : "";
+            return $"{literalNumValue}{optionalStr}{nullableStr}";
+        }
+        
+        // Обычный тип
+        var typeName = node.Name.Name;
+        var nullableStr2 = node.IsNullable ? " | null" : "";
+        var optionalStr2 = node.IsOptional ? "?" : "";
+        return $"{typeName}{optionalStr2}{nullableStr2}";
     }
 
     public override string VisitNullableType(NullableTypeNode node)
@@ -190,7 +222,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitArrayType(ArrayTypeNode node)
     {
-        return $"{RenderType(node.ElementType)}[]";
+        var readonlyStr = node.IsReadOnly ? "readonly " : "";
+        return $"{readonlyStr}{RenderType(node.ElementType)}[]";
     }
 
     public override string VisitGenericType(GenericTypeNode node)
@@ -245,6 +278,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     {
         var properties = string.Join(", ", node.Properties.Select(p => VisitPropertyAssignment(p)));
         return $"{{ {properties} }}";
+    }
+    
+    public override string VisitArrayLiteralExpression(ArrayLiteralExpressionNode node)
+    {
+        var elements = string.Join(", ", node.Elements.Select(Visit));
+        return $"[{elements}]";
     }
 
     public override string VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node)
@@ -513,9 +552,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         else
         {
-            // Named imports: import { a, b } from "module"
+            // Named imports: import type { a, b } from "module" (TypeScript type imports)
             var namedImports = string.Join(", ", import.Items.Select(i => i.Name));
-            CodeFormatter.AppendLine(_sb, 0, $"import {{ {namedImports} }}{from};");
+            CodeFormatter.AppendLine(_sb, 0, $"import type {{ {namedImports} }}{from};");
         }
     }
 
@@ -541,8 +580,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // Модификаторы и объявление interface
-        // Для TypeScript interface всегда export (если нужно, можно добавить флаг позже)
-        var exportKeyword = ""; // InterfaceDeclarationNode не имеет IsExported, используем пустую строку
+        // Для TypeScript interface всегда export
+        var exportKeyword = "export "; // Всегда экспортируем интерфейсы
         var baseTypes = node.BaseTypes.Count > 0 ? $" extends {string.Join(", ", node.BaseTypes.Select(RenderType))}" : "";
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}interface {node.Name.Name}{baseTypes} {{");
         
@@ -567,8 +606,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // Модификаторы и объявление type alias
-        // TypeAliasDeclarationNode не имеет IsExported, используем пустую строку
-        var exportKeyword = "";
+        // Для TypeScript type alias всегда export
+        var exportKeyword = "export "; // Всегда экспортируем type aliases
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
     }
@@ -594,7 +633,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // Добавляем @deprecated если функция deprecated
-        if (node.Metadata.TryGetValue("IsDeprecated", out var isDeprecatedObj) && isDeprecatedObj is bool isDeprecated && isDeprecated)
+        if (node.IsDeprecated)
         {
             jsDocLines.Add("@deprecated");
         }
@@ -618,10 +657,20 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // Добавляем тип возвращаемого значения (@returns)
+        // Проверяем, является ли это type predicate (value is Type)
         if (node.ReturnType != null)
         {
-            var returnTypeStr = RenderType(node.ReturnType);
-            jsDocLines.Add($"@returns {{{returnTypeStr}}}");
+            if (node.IsTypePredicate && !string.IsNullOrEmpty(node.TypePredicateParameterName))
+            {
+                // Type predicate: value is Type
+                var returnTypeStr = RenderType(node.ReturnType);
+                jsDocLines.Add($"@returns {{{node.TypePredicateParameterName} is {returnTypeStr}}}");
+            }
+            else
+            {
+                var returnTypeStr = RenderType(node.ReturnType);
+                jsDocLines.Add($"@returns {{{returnTypeStr}}}");
+            }
         }
         
         // Добавляем @example если есть в metadata
@@ -650,40 +699,81 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // Модификаторы и объявление функции
-        // FunctionDeclarationNode не имеет IsExported, используем пустую строку
-        var exportKeyword = "";
+        var exportKeyword = node.IsExported ? "export " : "";
         var asyncKeyword = node.IsAsync ? "async " : "";
         var functionKeyword = node.IsArrowFunction ? "" : "function ";
         var parameters = string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
-        var returnType = node.ReturnType != null ? $": {RenderType(node.ReturnType)}" : "";
+        
+        // Проверяем, является ли это type predicate (value is Type)
+        string returnType;
+        if (node.ReturnType != null)
+        {
+            if (node.IsTypePredicate && !string.IsNullOrEmpty(node.TypePredicateParameterName))
+            {
+                // Type predicate: value is Type
+                var returnTypeStr = RenderType(node.ReturnType);
+                returnType = $": {node.TypePredicateParameterName} is {returnTypeStr}";
+            }
+            else
+            {
+                returnType = $": {RenderType(node.ReturnType)}";
+            }
+        }
+        else
+        {
+            returnType = "";
+        }
         
         if (node.IsArrowFunction)
         {
-            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parameters}){returnType} => {{");
-        }
-        else
-        {
-            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Name}({parameters}){returnType} {{");
-        }
-        
-        // Тело функции
-        if (node.Body != null && node.Body.Statements.Count > 0)
-        {
-            var savedIndent = _indentLevel;
-            _indentLevel = indentLevel + 1;
-            foreach (var stmt in node.Body.Statements)
+            // Arrow function: const fn = (params) => body
+            // Для arrow function тело может быть выражением или блоком
+            if (node.Body != null && node.Body.Statements.Count == 1 && node.Body.Statements[0] is ReturnStatementNode returnStmt && returnStmt.Value != null)
             {
-                var rendered = Visit(stmt);
-                CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                // Если тело состоит из одного return statement, рендерим как выражение
+                var bodyExpression = Visit(returnStmt.Value);
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parameters}){returnType} => {bodyExpression};");
             }
-            _indentLevel = savedIndent;
+            else
+            {
+                // Arrow function с блоком
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parameters}){returnType} => {{");
+                if (node.Body != null && node.Body.Statements.Count > 0)
+                {
+                    var savedIndent = _indentLevel;
+                    _indentLevel = indentLevel + 1;
+                    foreach (var stmt in node.Body.Statements)
+                    {
+                        var rendered = Visit(stmt);
+                        CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                    }
+                    _indentLevel = savedIndent;
+                }
+                CodeFormatter.AppendLine(sb, indentLevel, "};");
+            }
         }
         else
         {
-            CodeFormatter.AppendLine(sb, indentLevel + 1, "// Empty function body");
+            // Обычная функция: function fn(params): returnType { body }
+            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Name}({parameters}){returnType} {{");
+            if (node.Body != null && node.Body.Statements.Count > 0)
+            {
+                var savedIndent = _indentLevel;
+                _indentLevel = indentLevel + 1;
+                foreach (var stmt in node.Body.Statements)
+                {
+                    var rendered = Visit(stmt);
+                    CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                }
+                _indentLevel = savedIndent;
+            }
+            else
+            {
+                // Type-only функция (без тела)
+                CodeFormatter.AppendLine(sb, indentLevel + 1, "// Empty function body");
+            }
+            CodeFormatter.AppendLine(sb, indentLevel, "}");
         }
-        
-        CodeFormatter.AppendLine(sb, indentLevel, "};");
     }
 
     private void RenderVariable(StringBuilder sb, VariableDeclarationNode node, int indentLevel)
@@ -695,8 +785,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // Модификаторы и объявление переменной
-        // VariableDeclarationNode не имеет IsExported, используем пустую строку
-        var exportKeyword = "";
+        var exportKeyword = node.IsExported ? "export " : "";
+        
         var constKeyword = node.DeclarationKind switch
         {
             VariableDeclarationKind.Const => "const",
@@ -706,7 +796,22 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         };
         var type = node.Type != null ? $": {RenderType(node.Type)}" : "";
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{constKeyword} {node.Name.Name}{type}{initializer};");
+        
+        // Проверяем, нужно ли добавить "as const satisfies" assertion для строгой типизации
+        var asSatisfies = "";
+        if (node.AsConstSatisfies && node.SatisfiesType != null)
+        {
+            // Используем "as const satisfies" для максимально строгой типизации
+            var satisfiesTypeStr = RenderType(node.SatisfiesType);
+            asSatisfies = $" as const satisfies {satisfiesTypeStr}";
+        }
+        // Если нет "as const satisfies", проверяем "as const" (для обратной совместимости)
+        else if (node.AsConstAssertion)
+        {
+            asSatisfies = " as const";
+        }
+        
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{constKeyword} {node.Name.Name}{type}{initializer}{asSatisfies};");
     }
 
     private void RenderEnum(StringBuilder sb, EnumDeclarationNode node, int indentLevel)
@@ -718,8 +823,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         
         // Модификаторы и объявление enum
-        // EnumDeclarationNode не имеет IsExported и IsConstEnum для TypeScript, используем пустые строки
-        var exportKeyword = "";
+        // Для TypeScript enum всегда export
+        var exportKeyword = "export "; // Всегда экспортируем enum'ы
         var constKeyword = ""; // TypeScript const enum можно добавить позже через metadata
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{constKeyword}enum {node.Name.Name} {{");
         
@@ -741,10 +846,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var isOptional = !node.IsRequired || IsTypeOptional(node.Type);
         
         // Получаем constraints из metadata
-        var constraints = node.Metadata.TryGetValue("Constraints", out var constraintsObj) 
-            && constraintsObj is ValIO.Core.IR.Constraints.IrPropertyConstraints constraintsValue
-            ? constraintsValue
-            : null;
+        var constraints = node.Constraints;
         
         // Формируем JSDoc комментарий
         var jsDocLines = new List<string>();

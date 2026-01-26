@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
+using ValIO.Core.IR.Constraints;
 
 namespace ValIO.Core.Ast.Nodes;
 
@@ -30,6 +31,11 @@ public sealed class PropertyDeclarationNode : DeclarationNode
     /// </summary>
     public PropertyAccessorKind Accessor { get; }
     
+    /// <summary>
+    /// Ограничения свойства (minLength, maxLength, pattern и т.д.)
+    /// </summary>
+    public IrPropertyConstraints? Constraints { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.PropertyDeclaration;
     
     public override IReadOnlyList<AstNode> Children
@@ -57,13 +63,15 @@ public sealed class PropertyDeclarationNode : DeclarationNode
         ExpressionNode? defaultValue = null,
         CommentNode? documentation = null,
         IReadOnlyList<AttributeNode>? attributes = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        IrPropertyConstraints? constraints = null)
         : base(name, documentation, attributes, metadata)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
         IsRequired = isRequired;
         Accessor = accessor;
         DefaultValue = defaultValue;
+        Constraints = constraints;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -81,7 +89,8 @@ public sealed class PropertyDeclarationNode : DeclarationNode
             DefaultValue != null ? (ExpressionNode)DefaultValue.Clone() : null,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            Constraints);
     }
     
     public override string ToString()

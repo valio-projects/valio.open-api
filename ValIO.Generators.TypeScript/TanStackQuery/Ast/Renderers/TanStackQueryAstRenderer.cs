@@ -180,6 +180,7 @@ public class TanStackQueryAstRenderer : TanStackQueryAstVisitorBase<string>, ITa
     public override string VisitNullableType(NullableTypeNode node) => VisitDefault(node);
     public override string VisitThrowStatement(ThrowStatementNode node) => VisitDefault(node);
     public override string VisitVariableDeclaration(VariableDeclarationNode node) => VisitDefault(node);
+    public override string VisitArrayLiteralExpression(ArrayLiteralExpressionNode node) => VisitDefault(node);
     public override string VisitIfStatement(IfStatementNode node) => VisitDefault(node);
     public override string VisitDictionaryType(DictionaryTypeNode node) => VisitDefault(node);
     public override string VisitComment(CommentNode node) => VisitDefault(node);
