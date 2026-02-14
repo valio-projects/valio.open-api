@@ -1,39 +1,32 @@
 {
   "projects": {
-    "ChessboardApi": {
-      "language": "TypeScript",
-      "schema": "https://bitrix24.bytalent.ru/api/chessboard/swagger/v1/swagger.json",
-      "outputPath": "C:\\Workspace\\ValIO\\out",
+    "PanoramasAdminApi": {
+      "language": "Cpp",
+      "schema": "https://public-api.bytalent.ru/api/chessboard/panoramas/admin/swagger/v1/swagger.json",
+      "outputPath": "out/cpp/ue",
       "generateModels": true,
       "generateClients": true,
+      "namespace": "Wireframe",
       "options": {
-        "typescript": {
-          "queryParametersStyle": "ModelClass",
-          "modelFormat": "ValidationSchemas",
-          "validationLibrary": "Zod",
-          "httpClientLibrary": "Axios",
-          "useTanStackQuery": true,
-          "serializeWithSchemas": true,
-          "deserializeWithSchemas": true,
-          "enumFormat": "Enum",
-          "useStrictNullChecks": true,
-          "axios": {
-            "customInstancePath": "#shared/api/valioAxios",
-            "customInstanceName": "ValioAxiosClient"
-          }
+        "cpp": {
+          "moduleApiMacro": "WIREFRAME_API",
+          "blueprintCategory": "Wireframe|Panoramas",
+          "copyright": "Copyright Epic Games, Inc. All Rights Reserved.",
+          "baseAsyncActionClassName": "UValIOAsyncActionBase",
+          "baseAsyncActionIncludePath": "Blueprint/ValIOTypedAsyncActionBase.h"
         }
       },
       "fileOrganization": {
         "groupingStrategy": "ByTag",
         "separateModels": true,
         "separateClients": true,
-        "modelsPath": "models",
-        "clientsPath": "endpoints"
+        "modelsPath": "Models",
+        "clientsPath": "Api"
       },
       "namingConvention": {
         "models": "PascalCase",
-        "properties": "CamelCase",
-        "methods": "CamelCase",
+        "properties": "PascalCase",
+        "methods": "PascalCase",
         "enums": "PascalCase"
       }
     }
