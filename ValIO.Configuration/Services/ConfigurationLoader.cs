@@ -4,6 +4,7 @@ using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
 using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Models;
+using ValIO.Generators.Cpp.Models;
 using ValIO.Generators.TypeScript.Models;
 using YamlDotNet.Serialization;
 
@@ -119,6 +120,12 @@ public class ConfigurationLoader : IConfigurationLoader
             if (projectConfig.Options.TypeScript != null)
             {
                 generationOptions.TypeScriptOptions = ParseTypeScriptOptions(projectConfig.Options.TypeScript, projectConfig.Options);
+            }
+            
+            // Маппинг C++/UE опций
+            if (projectConfig.Options.Cpp != null)
+            {
+                generationOptions.CppOptions = ParseCppOptions(projectConfig.Options.Cpp);
             }
             
             generationConfig.Options = generationOptions;
@@ -450,6 +457,34 @@ public class ConfigurationLoader : IConfigurationLoader
 
         // Парсинг QueryParametersStyle (оставлено для обратной совместимости, но не используется)
         // QueryParametersStyle не используется для TypeScript, query параметры всегда передаются как отдельные параметры
+
+        return options;
+    }
+
+    /// <summary>
+    /// Парсит C++/Unreal Engine опции из конфигурации
+    /// </summary>
+    private static CppGenerationOptions ParseCppOptions(ConfigCppOptions? config)
+    {
+        if (config == null)
+            return new CppGenerationOptions();
+
+        var options = new CppGenerationOptions();
+
+        if (!string.IsNullOrEmpty(config.ModuleApiMacro))
+            options.ModuleApiMacro = config.ModuleApiMacro;
+
+        if (!string.IsNullOrEmpty(config.BlueprintCategory))
+            options.BlueprintCategory = config.BlueprintCategory;
+
+        if (!string.IsNullOrEmpty(config.Copyright))
+            options.Copyright = config.Copyright;
+
+        if (!string.IsNullOrEmpty(config.BaseAsyncActionClassName))
+            options.BaseAsyncActionClassName = config.BaseAsyncActionClassName;
+
+        if (!string.IsNullOrEmpty(config.BaseAsyncActionIncludePath))
+            options.BaseAsyncActionIncludePath = config.BaseAsyncActionIncludePath;
 
         return options;
     }

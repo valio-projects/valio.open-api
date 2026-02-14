@@ -125,7 +125,15 @@ public sealed class CppCodeGenerator : BaseCodeGenerator
     /// </summary>
     private static CppGenerationOptions ExtractCppOptions(GenerationConfiguration config)
     {
-        // TODO: извлечь опции из config.Options если они заданы
+        // Если в опциях уже есть CppGenerationOptions — используем их
+        if (config.Options?.CppOptions is CppGenerationOptions cppOptions)
+        {
+            cppOptions.OutputDirectory = config.OutputPath;
+            if (string.IsNullOrEmpty(cppOptions.BlueprintCategory) && !string.IsNullOrEmpty(config.Namespace))
+                cppOptions.BlueprintCategory = config.Namespace;
+            return cppOptions;
+        }
+
         return new CppGenerationOptions
         {
             OutputDirectory = config.OutputPath,

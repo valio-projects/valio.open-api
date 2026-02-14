@@ -1,9 +1,10 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
     <ProjectReference Include="..\ValIO.Generators.CSharp\ValIO.Generators.CSharp.csproj" />
     <ProjectReference Include="..\ValIO.Generators.TypeScript\ValIO.Generators.TypeScript.csproj" />
+    <ProjectReference Include="..\ValIO.Generators.Cpp\ValIO.Generators.Cpp.csproj" />
   </ItemGroup>
 
   <ItemGroup>

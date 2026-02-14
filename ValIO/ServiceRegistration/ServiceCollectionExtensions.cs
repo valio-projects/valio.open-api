@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ValIO.Core.Interfaces;
+using ValIO.Generators.Cpp;
 using ValIO.Generators.CSharp;
 using ValIO.Generators.TypeScript;
 
@@ -159,12 +160,41 @@ public static class ServiceCollectionExtensions
     }*/
     
     /// <summary>
+    /// Регистрирует все генераторы, мапперы для C++/Unreal Engine
+    /// </summary>
+    public static IServiceCollection AddCppGenerators(this IServiceCollection services)
+    {
+        // Type Mappers
+        services.AddSingleton<CppTypeMapper>();
+        services.AddSingleton<ITypeMapper>(sp => sp.GetRequiredService<CppTypeMapper>());
+        
+        // Code Generators
+        services.AddSingleton<CppCodeGenerator>(sp =>
+        {
+            var typeMapper = sp.GetRequiredService<CppTypeMapper>();
+            var namingConverter = sp.GetRequiredService<INamingConverter>();
+            var fileWriter = sp.GetRequiredService<IFileWriter>();
+            var logger = sp.GetRequiredService<ILogger<CppCodeGenerator>>();
+            
+            return new CppCodeGenerator(
+                typeMapper,
+                namingConverter,
+                fileWriter,
+                logger);
+        });
+        services.AddSingleton<ICodeGenerator>(sp => sp.GetRequiredService<CppCodeGenerator>());
+        
+        return services;
+    }
+    
+    /// <summary>
     /// Регистрирует все доступные генераторы, мапперы и рендеры
     /// </summary>
     public static IServiceCollection AddAllGenerators(this IServiceCollection services)
     {
         services.AddCSharpGenerators();
         services.AddTypeScriptGenerators();
+        services.AddCppGenerators();
         
         return services;
     }

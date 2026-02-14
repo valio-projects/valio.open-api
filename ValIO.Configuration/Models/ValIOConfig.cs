@@ -20,6 +20,11 @@ public class ConfigOptions
     /// TypeScript специфичные опции
     /// </summary>
     public ConfigTypeScriptOptions? TypeScript { get; set; }
+    
+    /// <summary>
+    /// C++/Unreal Engine специфичные опции
+    /// </summary>
+    public ConfigCppOptions? Cpp { get; set; }
 }
 
 /// <summary>
@@ -168,6 +173,37 @@ public class ConfigAxiosOptions
     /// Название константы с custom axios instance (например, 'customInstance')
     /// </summary>
     public string? CustomInstanceName { get; set; }
+}
+
+/// <summary>
+/// C++/Unreal Engine специфичные опции конфигурации
+/// </summary>
+public class ConfigCppOptions
+{
+    /// <summary>
+    /// Макрос API модуля UE (например "WIREFRAME_API", "MYPROJECT_API")
+    /// </summary>
+    public string? ModuleApiMacro { get; set; }
+    
+    /// <summary>
+    /// Категория по умолчанию для UPROPERTY/UFUNCTION в Blueprint Editor
+    /// </summary>
+    public string? BlueprintCategory { get; set; }
+    
+    /// <summary>
+    /// Текст copyright в заголовке файлов
+    /// </summary>
+    public string? Copyright { get; set; }
+    
+    /// <summary>
+    /// Имя базового класса для async actions
+    /// </summary>
+    public string? BaseAsyncActionClassName { get; set; }
+    
+    /// <summary>
+    /// Include path для базового async action класса
+    /// </summary>
+    public string? BaseAsyncActionIncludePath { get; set; }
 }
 
 /// <summary>

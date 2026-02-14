@@ -18,5 +18,10 @@ public class GenerationOptions
     /// TypeScript специфичные опции (используется только для TypeScript генератора)
     /// </summary>
     public object? TypeScriptOptions { get; set; }
+    
+    /// <summary>
+    /// C++/Unreal Engine специфичные опции (используется только для C++ генератора)
+    /// </summary>
+    public object? CppOptions { get; set; }
 }
 

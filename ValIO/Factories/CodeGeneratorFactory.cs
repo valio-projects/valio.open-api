@@ -1,8 +1,7 @@
-using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
-using ValIO.Core.Models.TemplateData;
+using ValIO.Generators.Cpp;
 using ValIO.Generators.CSharp;
 using ValIO.Generators.TypeScript;
 
@@ -26,6 +25,7 @@ public class CodeGeneratorFactory
         {
             GenerationLanguage.CSharp => _serviceProvider.GetRequiredService<CSharpCodeGenerator>(),
             GenerationLanguage.TypeScript => _serviceProvider.GetRequiredService<TypeScriptCodeGenerator>(),
+            GenerationLanguage.Cpp => _serviceProvider.GetRequiredService<CppCodeGenerator>(),
             _ => throw new NotSupportedException($"Generator for language {language} is not supported")
         };
     }
