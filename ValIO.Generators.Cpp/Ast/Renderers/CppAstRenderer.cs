@@ -358,7 +358,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
                 ? $" UMETA(DisplayName = \"{val.DisplayName}\")"
                 : "";
             var comma = i < node.Values.Count - 1 ? "," : "";
-            sb.AppendLine($"{Indent()}{val.Name.Name}{comma}{displayMeta}");
+            sb.AppendLine($"{Indent()}{val.Name.Name}{displayMeta}{comma}");
         }
 
         _indentLevel--;

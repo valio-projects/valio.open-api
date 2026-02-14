@@ -158,6 +158,12 @@ public class GenerateCommand : Command
                     logger.LogInformation("Using default configuration");
                 }
 
+                // Переопределение output path при указании -o
+                if (!string.IsNullOrWhiteSpace(output))
+                {
+                    generationConfig.OutputPath = output;
+                }
+
                 // Валидация конфигурации
                 var validationResult = configValidator.Validate(generationConfig);
                 if (!validationResult.IsValid)

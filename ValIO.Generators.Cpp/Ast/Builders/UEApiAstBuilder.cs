@@ -39,46 +39,42 @@ public sealed class UEApiAstBuilder
     }
 
     /// <summary>
-    /// Строит пару (header, source) файлов для клиента
+    /// Строит пару (header, source) файлов для одного endpoint (одна операция).
+    /// Файлы помещаются в папку endpoints/.
     /// </summary>
-    public (CppHeaderFileNode Header, CppSourceFileNode Source) Build(IrClient client)
+    public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildEndpoint(IrClient client, IrOperation operation)
     {
-        var header = BuildHeader(client);
-        var source = BuildSource(client);
+        var header = BuildEndpointHeader(client, operation);
+        var source = BuildEndpointSource(client, operation);
         return (header, source);
     }
 
     /// <summary>
-    /// Строит заголовочный файл (.h) для клиента
+    /// Строит пару (header, source) файлов для PathsLibrary клиента.
     /// </summary>
-    private CppHeaderFileNode BuildHeader(IrClient client)
+    public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildPaths(IrClient client)
     {
-        var headerFileName = _naming.ApiHeaderFileName(client.Name);
-        var declarations = new List<AstNode>();
-        var includes = BuildHeaderIncludes(client, headerFileName);
+        var header = BuildPathsHeader(client);
+        var source = BuildPathsSource(client);
+        return (header, source);
+    }
+
+    /// <summary>
+    /// Строит заголовочный файл (.h) для одного endpoint
+    /// </summary>
+    private CppHeaderFileNode BuildEndpointHeader(IrClient client, IrOperation operation)
+    {
+        var headerFileName = _naming.EndpointHeaderFileName(operation.MethodName);
+        var declarations = new List<AstNode>
+        {
+            BuildDelegateDeclaration(operation),
+            BuildNativeFunctionDeclaration(client.Name, operation),
+            BuildAsyncActionClass(client.Name, operation)
+        };
+
+        var includes = BuildEndpointHeaderIncludes(operation, headerFileName);
         var forwardDecls = BuildForwardDeclarations();
         var usingAliases = BuildUsingAliases();
-
-        // 1. Delegate declarations
-        foreach (var op in client.Operations)
-        {
-            declarations.Add(BuildDelegateDeclaration(op));
-        }
-
-        // 2. Native function declarations
-        foreach (var op in client.Operations)
-        {
-            declarations.Add(BuildNativeFunctionDeclaration(client.Name, op));
-        }
-
-        // 3. Async Action classes
-        foreach (var op in client.Operations)
-        {
-            declarations.Add(BuildAsyncActionClass(client.Name, op));
-        }
-
-        // 4. PathsLibrary class
-        declarations.Add(BuildPathsLibraryClass(client));
 
         return new CppHeaderFileNode(
             fileName: headerFileName,
@@ -90,16 +86,18 @@ public sealed class UEApiAstBuilder
     }
 
     /// <summary>
-    /// Строит файл реализации (.cpp) для клиента
+    /// Строит файл реализации (.cpp) для одного endpoint
     /// </summary>
-    private CppSourceFileNode BuildSource(IrClient client)
+    private CppSourceFileNode BuildEndpointSource(IrClient client, IrOperation operation)
     {
-        var sourceFileName = _naming.ApiSourceFileName(client.Name);
-        var headerFileName = _naming.ApiHeaderFileName(client.Name);
+        var sourceFileName = _naming.EndpointSourceFileName(operation.MethodName);
+        var headerFileName = _naming.EndpointHeaderFileName(operation.MethodName);
+        var pathsIncludePath = $"Api/{_naming.PathsHeaderFileName(client.Name)}";
 
         var includes = new List<CppIncludeDirectiveNode>
         {
             new(headerFileName),
+            new(pathsIncludePath),
             new(_options.ValIOClientIncludePath),
             new(_options.ValIORequestBuilderIncludePath),
             new(_options.ValIOMultipartFormDataIncludePath),
@@ -108,33 +106,10 @@ public sealed class UEApiAstBuilder
             new("Async/Async.h")
         };
 
-        // Anonymous namespace: parse functions
-        var anonymousMembers = new List<AstNode>();
-        foreach (var op in client.Operations)
-        {
-            anonymousMembers.Add(BuildParseFunction(op));
-        }
-
-        // Implementations
+        var anonymousMembers = new List<AstNode> { BuildParseFunction(operation) };
         var implementations = new List<AstNode>();
-
-        // Native function implementations
-        foreach (var op in client.Operations)
-        {
-            implementations.Add(BuildNativeFunctionImplementation(client.Name, op));
-        }
-
-        // Async action method implementations
-        foreach (var op in client.Operations)
-        {
-            implementations.AddRange(BuildAsyncActionImplementations(client.Name, op));
-        }
-
-        // Paths implementations
-        foreach (var op in client.Operations)
-        {
-            implementations.Add(BuildPathMethodImplementation(client.Name, op));
-        }
+        implementations.Add(BuildNativeFunctionImplementation(client.Name, operation));
+        implementations.AddRange(BuildAsyncActionImplementations(client.Name, operation));
 
         return new CppSourceFileNode(
             fileName: sourceFileName,
@@ -144,25 +119,70 @@ public sealed class UEApiAstBuilder
             implementations: implementations);
     }
 
-    // ===== Header building methods =====
+    /// <summary>
+    /// Строит заголовочный файл PathsLibrary
+    /// </summary>
+    private CppHeaderFileNode BuildPathsHeader(IrClient client)
+    {
+        var headerFileName = _naming.PathsHeaderFileName(client.Name);
+        var declarations = new List<AstNode> { BuildPathsLibraryClass(client) };
 
-    private List<CppIncludeDirectiveNode> BuildHeaderIncludes(IrClient client, string headerFileName)
+        var includes = new List<CppIncludeDirectiveNode>
+        {
+            new("CoreMinimal.h"),
+            new("Kismet/BlueprintFunctionLibrary.h"),
+            new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix))
+        };
+
+        return new CppHeaderFileNode(
+            fileName: headerFileName,
+            headerComment: _options.Copyright != null ? new CommentNode(_options.Copyright, CommentKind.MultiLine) : null,
+            includes: includes,
+            forwardDeclarations: ImmutableList<CppForwardDeclarationNode>.Empty,
+            usingAliases: ImmutableList<CppUsingAliasNode>.Empty,
+            declarations: declarations);
+    }
+
+    /// <summary>
+    /// Строит файл реализации PathsLibrary
+    /// </summary>
+    private CppSourceFileNode BuildPathsSource(IrClient client)
+    {
+        var sourceFileName = _naming.PathsSourceFileName(client.Name);
+        var headerFileName = _naming.PathsHeaderFileName(client.Name);
+
+        var includes = new List<CppIncludeDirectiveNode>
+        {
+            new(headerFileName),
+            new(_options.ValIOTypesIncludePath)
+        };
+
+        var implementations = client.Operations
+            .Select(op => BuildPathMethodImplementation(client.Name, op))
+            .Cast<AstNode>()
+            .ToList();
+
+        return new CppSourceFileNode(
+            fileName: sourceFileName,
+            headerComment: _options.Copyright != null ? new CommentNode(_options.Copyright, CommentKind.MultiLine) : null,
+            includes: includes,
+            anonymousNamespaceMembers: ImmutableList<AstNode>.Empty,
+            implementations: implementations);
+    }
+
+    // ===== Include building =====
+
+    private List<CppIncludeDirectiveNode> BuildEndpointHeaderIncludes(IrOperation operation, string headerFileName)
     {
         var includes = new List<CppIncludeDirectiveNode>
         {
             new("CoreMinimal.h"),
             new("Async/Future.h"),
             new(_options.BaseAsyncActionIncludePath),
-            new("Kismet/BlueprintFunctionLibrary.h"),
+            new(_naming.ResultIncludePath(operation.MethodName)),
+            new(_naming.ParamsIncludePath(operation.MethodName)),
             new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix))
         };
-
-        // Add includes for result and params types
-        foreach (var op in client.Operations)
-        {
-            includes.Add(new CppIncludeDirectiveNode(_naming.ResultFileName(op.MethodName)));
-            includes.Add(new CppIncludeDirectiveNode(_naming.ParamsFileName(op.MethodName)));
-        }
 
         return includes;
     }

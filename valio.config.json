@@ -3,7 +3,7 @@
     "PanoramasAdminApi": {
       "language": "Cpp",
       "schema": "https://public-api.bytalent.ru/api/chessboard/panoramas/admin/swagger/v1/swagger.json",
-      "outputPath": "out/cpp/ue",
+      "outputPath": "G:\\gta\\Wireframe\\Source\\Wireframe\\HttpClients",
       "generateModels": true,
       "generateClients": true,
       "namespace": "Wireframe",

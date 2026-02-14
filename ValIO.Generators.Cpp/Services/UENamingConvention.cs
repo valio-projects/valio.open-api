@@ -150,6 +150,14 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
+    /// Путь include для модели (от корня output): Models/F{ModelName}.h
+    /// </summary>
+    public string ModelIncludePath(string modelName)
+    {
+        return $"Models/{ModelFileName(modelName)}";
+    }
+
+    /// <summary>
     /// Имя файла enum: E{EnumName}.h
     /// </summary>
     public string EnumFileName(string enumName)
@@ -171,6 +179,54 @@ public sealed class UENamingConvention
     public string ResultFileName(string operationName)
     {
         return $"{ResultStructName(operationName)}.h";
+    }
+
+    /// <summary>
+    /// Путь include для Result (от корня output): Results/F{OperationName}Result.h
+    /// </summary>
+    public string ResultIncludePath(string operationName)
+    {
+        return $"Results/{ResultFileName(operationName)}";
+    }
+
+    /// <summary>
+    /// Путь include для Params (от корня output): Params/F{OperationName}Params.h
+    /// </summary>
+    public string ParamsIncludePath(string operationName)
+    {
+        return $"Params/{ParamsFileName(operationName)}";
+    }
+
+    /// <summary>
+    /// Имя файла endpoint (один метод = один файл): {MethodName}.h
+    /// </summary>
+    public string EndpointHeaderFileName(string methodName)
+    {
+        return $"{ToPascalCase(methodName)}.h";
+    }
+
+    /// <summary>
+    /// Имя файла реализации endpoint: {MethodName}.cpp
+    /// </summary>
+    public string EndpointSourceFileName(string methodName)
+    {
+        return $"{ToPascalCase(methodName)}.cpp";
+    }
+
+    /// <summary>
+    /// Имя заголовочного файла Paths: {ClientName}Paths.h
+    /// </summary>
+    public string PathsHeaderFileName(string clientName)
+    {
+        return $"{ToPascalCase(clientName)}Paths.h";
+    }
+
+    /// <summary>
+    /// Имя файла реализации Paths: {ClientName}Paths.cpp
+    /// </summary>
+    public string PathsSourceFileName(string clientName)
+    {
+        return $"{ToPascalCase(clientName)}Paths.cpp";
     }
 
     /// <summary>

@@ -61,7 +61,7 @@ public sealed class CppAstBuilder
             result.Files[$"Enums/{headerNode.FileName}"] = headerNode;
         }
 
-        // 3. Per-client: Results, Params, API files
+        // 3. Per-client: Results, Params, endpoints, Paths
         foreach (var client in document.Clients)
         {
             // Results → Results/{ResultName}.h
@@ -78,10 +78,18 @@ public sealed class CppAstBuilder
                 result.Files[$"Params/{paramsNode.FileName}"] = paramsNode;
             }
 
-            // API files → {ClientName}Api.h + {ClientName}Api.cpp
-            var (header, source) = _apiBuilder.Build(client);
-            result.Files[header.FileName] = header;
-            result.Files[source.FileName] = source;
+            // Endpoints → endpoints/{MethodName}.h + endpoints/{MethodName}.cpp (по одному файлу на метод)
+            foreach (var operation in client.Operations)
+            {
+                var (header, source) = _apiBuilder.BuildEndpoint(client, operation);
+                result.Files[$"endpoints/{header.FileName}"] = header;
+                result.Files[$"endpoints/{source.FileName}"] = source;
+            }
+
+            // PathsLibrary → Api/{ClientName}Paths.h + Api/{ClientName}Paths.cpp
+            var (pathsHeader, pathsSource) = _apiBuilder.BuildPaths(client);
+            result.Files[$"Api/{pathsHeader.FileName}"] = pathsHeader;
+            result.Files[$"Api/{pathsSource.FileName}"] = pathsSource;
         }
 
         return result;
