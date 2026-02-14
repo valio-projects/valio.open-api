@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -36,8 +37,10 @@ public class ZodSchemaRenderer
     /// </summary>
     /// <param name="model">IR модель</param>
     /// <param name="importPath">Путь для импортов (опционально)</param>
+    /// <param name="currentFileName">Имя текущего файла (для вычисления относительных путей)</param>
+    /// <param name="schemasPath">Путь к папке со схемами (для вычисления относительных путей)</param>
     /// <returns>TypeScript код Zod схемы</returns>
-    public string RenderFromIr(IrModel model, string? importPath = null)
+    public string RenderFromIr(IrModel model, string? importPath = null, string? currentFileName = null, string? schemasPath = null)
     {
         if (model == null)
             throw new ArgumentNullException(nameof(model));
@@ -56,8 +59,8 @@ public class ZodSchemaRenderer
             foreach (var dep in dependencies.OrderBy(d => d))
             {
                 var depFileName = SchemaNameToFileName(dep);
-                var importPathStr = !string.IsNullOrEmpty(importPath) ? $"{importPath}/" : "./";
-                sb.AppendLine($"import {{ {dep} }} from '{importPathStr}{depFileName}.schema';");
+                var relativePath = CalculateImportPath(currentFileName, depFileName, schemasPath, importPath);
+                sb.AppendLine($"import {{ {dep} }} from '{relativePath}';");
             }
             sb.AppendLine();
         }
@@ -88,7 +91,7 @@ public class ZodSchemaRenderer
     /// <param name="enumModel">IR enum</param>
     /// <param name="importPath">Путь для импортов (опционально)</param>
     /// <returns>TypeScript код Zod enum схемы</returns>
-    public string RenderEnumFromIr(IrEnum enumModel, string? importPath = null)
+    public string RenderEnumFromIr(IrEnum enumModel, string? importPath = null, string? currentFileName = null, string? schemasPath = null)
     {
         if (enumModel == null)
             throw new ArgumentNullException(nameof(enumModel));
@@ -101,6 +104,11 @@ public class ZodSchemaRenderer
         var constArrayName = $"{typeName}Values";
         
         sb.AppendLine("import { z } from 'zod';");
+        
+        // Собираем зависимости из enum (если есть ссылки на другие модели)
+        // Для enum'ов обычно нет зависимостей, но на всякий случай проверяем
+        // TODO: Добавить извлечение зависимостей для enum'ов, если они появятся
+        
         sb.AppendLine();
         
         // Строим Zod AST из IR enum
@@ -238,5 +246,94 @@ public class ZodSchemaRenderer
             return schemaName.ToLowerInvariant();
         
         return _namingConverter.ToCamelCase(typeName);
+    }
+    
+    /// <summary>
+    /// Вычисляет относительный путь для импорта схемы
+    /// </summary>
+    private string CalculateImportPath(string? currentFileName, string dependencyFileName, string? schemasPath, string? importPath)
+    {
+        // Если указан явный importPath, используем его
+        if (!string.IsNullOrEmpty(importPath))
+        {
+            var normalizedPath = NormalizePath(importPath);
+            return $"{normalizedPath}/{dependencyFileName}.schema";
+        }
+        
+        // Если указан schemasPath и currentFileName, вычисляем относительный путь
+        if (!string.IsNullOrEmpty(schemasPath) && !string.IsNullOrEmpty(currentFileName))
+        {
+            var currentBasePath = NormalizePath(schemasPath);
+            var dependencyBasePath = NormalizePath(schemasPath);
+            var relativePath = CalculateRelativePath(currentBasePath, dependencyBasePath, $"{dependencyFileName}.schema");
+            return NormalizePath(relativePath);
+        }
+        
+        // По умолчанию используем относительный путь в той же папке
+        return $"./{dependencyFileName}.schema";
+    }
+    
+    /// <summary>
+    /// Вычисляет относительный путь между двумя файлами
+    /// </summary>
+    private string CalculateRelativePath(string fromPath, string toPath, string fileName)
+    {
+        fromPath = NormalizePath(fromPath);
+        toPath = NormalizePath(toPath);
+        
+        // Если пути одинаковые, возвращаем просто имя файла
+        if (fromPath.Equals(toPath, StringComparison.OrdinalIgnoreCase))
+        {
+            return $"./{fileName}";
+        }
+        
+        // Упрощенная логика: если оба пути в одной папке, используем относительный путь
+        var fromParts = fromPath.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+        var toParts = toPath.Split(new[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+        
+        // Находим общий префикс
+        int commonLength = 0;
+        int minLength = Math.Min(fromParts.Length, toParts.Length);
+        for (int i = 0; i < minLength; i++)
+        {
+            if (fromParts[i].Equals(toParts[i], StringComparison.OrdinalIgnoreCase))
+            {
+                commonLength++;
+            }
+            else
+            {
+                break;
+            }
+        }
+        
+        // Если есть общий префикс, строим относительный путь
+        if (commonLength > 0)
+        {
+            var upLevels = fromParts.Length - commonLength;
+            var downPath = string.Join("/", toParts.Skip(commonLength));
+            var relativePath = string.Join("/", Enumerable.Repeat("..", upLevels));
+            if (!string.IsNullOrEmpty(downPath))
+            {
+                relativePath = string.IsNullOrEmpty(relativePath) ? downPath : $"{relativePath}/{downPath}";
+            }
+            return $"{relativePath}/{fileName}";
+        }
+        
+        // Если нет общего префикса, используем абсолютный путь
+        return $"{toPath}/{fileName}";
+    }
+    
+    /// <summary>
+    /// Нормализует путь (убирает двойные слеши, заменяет обратные слеши)
+    /// </summary>
+    private string NormalizePath(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return "";
+        
+        return path
+            .Replace('\\', '/')
+            .Replace("//", "/")
+            .TrimEnd('/');
     }
 }

@@ -4,6 +4,7 @@ using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
 using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Models;
+using ValIO.Generators.TypeScript.Models;
 using YamlDotNet.Serialization;
 
 namespace ValIO.Configuration.Services;
@@ -345,8 +346,111 @@ public class ConfigurationLoader : IConfigurationLoader
         if (config == null)
             return null;
 
-        // TODO: Реализовать парсинг TypeScript опций когда будет готова модель TypeScriptGenerationOptions
-        // Пока возвращаем null, так как TypeScript опции еще не полностью интегрированы
-        return null;
+        var options = new TypeScriptGenerationOptions();
+
+        // Парсинг ModelFormat
+        if (!string.IsNullOrEmpty(config.ModelFormat))
+        {
+            options.ModelFormat = config.ModelFormat.ToLowerInvariant() switch
+            {
+                "interfaces" => TypeScriptModelFormat.Interfaces,
+                "validationschemas" or "validation-schemas" => TypeScriptModelFormat.ValidationSchemas,
+                _ => TypeScriptModelFormat.Interfaces
+            };
+        }
+
+        // Парсинг ValidationLibrary
+        if (!string.IsNullOrEmpty(config.ValidationLibrary))
+        {
+            options.ValidationLibrary = config.ValidationLibrary.ToLowerInvariant() switch
+            {
+                "zod" => ValidationLibrary.Zod,
+                "yup" => ValidationLibrary.Yup,
+                "valli" => ValidationLibrary.Valli,
+                _ => (ValidationLibrary?)null
+            };
+        }
+        else if (!string.IsNullOrEmpty(parentOptions?.ValidationLibrary))
+        {
+            // Fallback на родительские опции
+            options.ValidationLibrary = parentOptions.ValidationLibrary.ToLowerInvariant() switch
+            {
+                "zod" => ValidationLibrary.Zod,
+                "yup" => ValidationLibrary.Yup,
+                "valli" => ValidationLibrary.Valli,
+                _ => (ValidationLibrary?)null
+            };
+        }
+
+        // Парсинг HttpClientLibrary
+        if (!string.IsNullOrEmpty(config.HttpClientLibrary))
+        {
+            options.HttpClientLibrary = config.HttpClientLibrary.ToLowerInvariant() switch
+            {
+                "fetch" => HttpClientLibrary.Fetch,
+                "axios" => HttpClientLibrary.Axios,
+                _ => HttpClientLibrary.Fetch
+            };
+        }
+        else if (!string.IsNullOrEmpty(parentOptions?.HttpClientLibrary))
+        {
+            // Fallback на родительские опции
+            options.HttpClientLibrary = parentOptions.HttpClientLibrary.ToLowerInvariant() switch
+            {
+                "fetch" => HttpClientLibrary.Fetch,
+                "axios" => HttpClientLibrary.Axios,
+                _ => HttpClientLibrary.Fetch
+            };
+        }
+
+        // Парсинг UseTanStackQuery
+        if (config.UseTanStackQuery.HasValue)
+        {
+            options.UseTanStackQuery = config.UseTanStackQuery.Value;
+        }
+
+        // Парсинг SerializeWithSchemas
+        if (config.SerializeWithSchemas.HasValue)
+        {
+            options.SerializeWithSchemas = config.SerializeWithSchemas.Value;
+        }
+
+        // Парсинг DeserializeWithSchemas
+        if (config.DeserializeWithSchemas.HasValue)
+        {
+            options.DeserializeWithSchemas = config.DeserializeWithSchemas.Value;
+        }
+
+        // Парсинг EnumFormat
+        if (!string.IsNullOrEmpty(config.EnumFormat))
+        {
+            options.EnumFormat = config.EnumFormat.ToLowerInvariant() switch
+            {
+                "enum" => TypeScriptEnumFormat.Enum,
+                "uniontype" or "union-type" or "union" => TypeScriptEnumFormat.UnionType,
+                _ => TypeScriptEnumFormat.Enum
+            };
+        }
+
+        // Парсинг UseStrictNullChecks
+        if (config.UseStrictNullChecks.HasValue)
+        {
+            options.UseStrictNullChecks = config.UseStrictNullChecks.Value;
+        }
+
+        // Парсинг Axios опций
+        if (config.Axios != null)
+        {
+            options.Axios = new AxiosOptions
+            {
+                CustomInstancePath = config.Axios.CustomInstancePath,
+                CustomInstanceName = config.Axios.CustomInstanceName
+            };
+        }
+
+        // Парсинг QueryParametersStyle (оставлено для обратной совместимости, но не используется)
+        // QueryParametersStyle не используется для TypeScript, query параметры всегда передаются как отдельные параметры
+
+        return options;
     }
 }

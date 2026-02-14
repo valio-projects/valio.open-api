@@ -147,10 +147,11 @@ public class ZodAstBuilder
             IrPrimitiveKind.DateTime => ZodSchemaKind.String,
             IrPrimitiveKind.Date => ZodSchemaKind.String,
             IrPrimitiveKind.Time => ZodSchemaKind.String,
-            IrPrimitiveKind.Binary => ZodSchemaKind.InstanceOf,
-            IrPrimitiveKind.ByteArray => ZodSchemaKind.InstanceOf,
+            // Binary, ByteArray, File - используем Any, так как в TypeScript они обычно передаются как any или string
+            IrPrimitiveKind.Binary => ZodSchemaKind.Any,
+            IrPrimitiveKind.ByteArray => ZodSchemaKind.Any,
             IrPrimitiveKind.Uuid => ZodSchemaKind.String,
-            IrPrimitiveKind.File => ZodSchemaKind.InstanceOf,
+            IrPrimitiveKind.File => ZodSchemaKind.Any,
             _ => ZodSchemaKind.Any
         };
         
@@ -162,8 +163,13 @@ public class ZodAstBuilder
     /// </summary>
     private ZodSchemaNode BuildZodModelReference(IrModelReference modelReference)
     {
-        // Ссылка на другую Zod схему - имя схемы будет использовано при рендеринге
-        return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any);
+        // Ссылка на другую Zod схему - сохраняем имя схемы в metadata
+        var schemaName = $"{modelReference.ModelName}Schema";
+        var metadata = new Dictionary<string, object>
+        {
+            { "SchemaReference", schemaName }
+        }.ToImmutableDictionary();
+        return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any, metadata: metadata);
     }
     
     /// <summary>

@@ -27,8 +27,41 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     
     public override string VisitZodSchema(ZodSchemaNode node)
     {
-        // Делегируем конкретному типу узла
-        return Visit((AstNode)node);
+        // Обрабатываем конкретные типы узлов напрямую, чтобы избежать бесконечной рекурсии
+        return node switch
+        {
+            ZodPrimitiveSchemaNode primitive => VisitZodPrimitiveSchema(primitive),
+            ZodObjectNode obj => VisitZodObject(obj),
+            ZodArrayNode array => VisitZodArray(array),
+            ZodUnionNode union => VisitZodUnion(union),
+            ZodIntersectionNode intersection => VisitZodIntersection(intersection),
+            ZodEnumNode enumNode => VisitZodEnum(enumNode),
+            ZodEffectsNode effects => VisitZodEffects(effects),
+            _ => throw new NotSupportedException($"Unsupported ZodSchemaNode type: {node.GetType().Name}")
+        };
+    }
+    
+    /// <summary>
+    /// Рендерит примитивную Zod схему (z.string(), z.number(), и т.д.)
+    /// </summary>
+    private string VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node)
+    {
+        // Проверяем, является ли это ссылкой на другую схему
+        if (node.Metadata.TryGetValue("SchemaReference", out var schemaRef) && schemaRef is string schemaName)
+        {
+            return schemaName;
+        }
+        
+        return node.SchemaKind switch
+        {
+            ZodSchemaKind.String => "z.string()",
+            ZodSchemaKind.Number => "z.number()",
+            ZodSchemaKind.Integer => "z.number().int()",
+            ZodSchemaKind.Boolean => "z.boolean()",
+            ZodSchemaKind.Null => "z.null()",
+            ZodSchemaKind.Any => "z.any()",
+            _ => throw new NotSupportedException($"Unsupported primitive schema kind: {node.SchemaKind}")
+        };
     }
     
     public override string VisitZodObject(ZodObjectNode node)

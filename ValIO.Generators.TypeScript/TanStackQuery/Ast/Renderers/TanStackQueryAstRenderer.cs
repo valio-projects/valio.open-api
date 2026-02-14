@@ -171,8 +171,35 @@ public class TanStackQueryAstRenderer : TanStackQueryAstVisitorBase<string>, ITa
         return $"{obj}.{node.Member.Name}";
     }
     
-    // Реализация всех абстрактных методов BaseAstVisitor через VisitDefault
-    public override string VisitLiteralExpression(LiteralExpressionNode node) => VisitDefault(node);
+    // Реализация всех абстрактных методов BaseAstVisitor
+    
+    public override string VisitLiteralExpression(LiteralExpressionNode node)
+    {
+        return RenderLiteral(node);
+    }
+    
+    /// <summary>
+    /// Рендерит литеральное выражение
+    /// </summary>
+    private string RenderLiteral(LiteralExpressionNode node)
+    {
+        return node.LiteralKind switch
+        {
+            LiteralKind.String => $"\"{EscapeString(node.Value?.ToString() ?? "")}\"",
+            LiteralKind.Number => node.Value?.ToString() ?? "0",
+            LiteralKind.Boolean => node.Value?.ToString()?.ToLowerInvariant() ?? "false",
+            LiteralKind.Null => "null",
+            _ => node.Value?.ToString() ?? "null"
+        };
+    }
+    
+    /// <summary>
+    /// Экранирует строку для TypeScript
+    /// </summary>
+    private string EscapeString(string value)
+    {
+        return ValIO.Core.Utilities.CodeEscapeHelper.EscapeTypeScriptString(value);
+    }
     public override string VisitSimpleType(SimpleTypeNode node) => VisitDefault(node);
     public override string VisitTypeAliasDeclaration(TypeAliasDeclarationNode node) => VisitDefault(node);
     public override string VisitExpressionStatement(ExpressionStatementNode node) => VisitDefault(node);

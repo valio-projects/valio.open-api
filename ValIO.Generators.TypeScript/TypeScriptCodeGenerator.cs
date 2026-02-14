@@ -342,13 +342,25 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             NamingConverter,
             typeBuilder);
         
-        var importPath = ""; // Import path можно добавить в FileOrganization позже, если нужно
+        // Вычисляем путь к папке со схемами для вычисления относительных путей
+        // Используем ResolveFilePath для получения полного пути, затем извлекаем путь к папке
+        var schemasFilePath = ResolveFilePath("dummy.ts", config, FileCategory.Schemas);
+        var schemasPath = "";
+        if (!string.IsNullOrEmpty(schemasFilePath))
+        {
+            var lastSlash = Math.Max(schemasFilePath.LastIndexOf('/'), schemasFilePath.LastIndexOf('\\'));
+            if (lastSlash >= 0)
+            {
+                schemasPath = schemasFilePath.Substring(0, lastSlash);
+            }
+        }
         
         // Генерируем Zod схемы для моделей
         foreach (var model in irDocument.Models)
         {
-            var code = zodRendererWithBuilder.RenderFromIr(model, importPath);
             var fileName = $"{GetModelFileNameInternal(model.Name)}.schema.ts";
+            var currentFileName = GetModelFileNameInternal(model.Name);
+            var code = zodRendererWithBuilder.RenderFromIr(model, importPath: null, currentFileName, schemasPath);
             var filePath = ResolveFilePath(fileName, config, FileCategory.Schemas);
             files[filePath] = code;
         }
@@ -356,8 +368,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         // Генерируем Zod схемы для enum'ов
         foreach (var enumModel in irDocument.Enums)
         {
-            var code = zodRendererWithBuilder.RenderEnumFromIr(enumModel, importPath);
             var fileName = $"{GetModelFileNameInternal(enumModel.Name)}.schema.ts";
+            var currentFileName = GetModelFileNameInternal(enumModel.Name);
+            var code = zodRendererWithBuilder.RenderEnumFromIr(enumModel, importPath: null, currentFileName, schemasPath);
             var filePath = ResolveFilePath(fileName, config, FileCategory.Schemas);
             files[filePath] = code;
         }
