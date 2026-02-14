@@ -105,4 +105,22 @@ public enum AstNodeKind
     QueryOptions,
     MutationOptions,
     QueryKey,
+    
+    // C++ специфичные узлы
+    CppHeaderFile,
+    CppSourceFile,
+    CppIncludeDirective,
+    CppForwardDeclaration,
+    CppUsingAlias,
+    CppFreeFunction,
+    CppParameter,
+    CppMethodImplementation,
+    
+    // Unreal Engine специфичные узлы
+    UStruct,
+    UPropertyField,
+    UClass,
+    UFunction,
+    UDelegate,
+    UEnum,
 }
