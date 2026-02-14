@@ -38,6 +38,7 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitIdentifierExpression(IdentifierExpressionNode node);
     TResult VisitCallExpression(CallExpressionNode node);
     TResult VisitMemberAccessExpression(MemberAccessExpressionNode node);
+    TResult VisitUnaryExpression(UnaryExpressionNode node);
     TResult VisitBinaryExpression(BinaryExpressionNode node);
     TResult VisitConditionalExpression(ConditionalExpressionNode node);
     TResult VisitAwaitExpression(AwaitExpressionNode node);

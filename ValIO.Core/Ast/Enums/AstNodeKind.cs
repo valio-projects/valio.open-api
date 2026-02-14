@@ -28,6 +28,7 @@ public enum AstNodeKind
     IdentifierExpression,
     CallExpression,
     MemberAccessExpression,
+    UnaryExpression,
     BinaryExpression,
     ConditionalExpression,
     AwaitExpression,
@@ -115,6 +116,13 @@ public enum AstNodeKind
     CppFreeFunction,
     CppParameter,
     CppMethodImplementation,
+    CppPathBuilderImplementation,
+    CppParseFunction,
+    CppNativeApiFunction,
+    CppAsyncFactoryImplementation,
+    CppAsyncCompleteImplementation,
+    CppAsyncActivateImplementation,
+    CppLambdaExpression,
     
     // Unreal Engine специфичные узлы
     UStruct,

@@ -24,6 +24,16 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
     /// Использовать как оператор (например, "as" в C# для приведения типов)
     /// </summary>
     public bool UseAsOperator { get; }
+
+    /// <summary>
+    /// Использовать оператор -> вместо . (для C++ pointer member access)
+    /// </summary>
+    public bool UseArrowOperator { get; }
+
+    /// <summary>
+    /// Использовать оператор :: (для C++ scope/static member access: Class::Member)
+    /// </summary>
+    public bool UseScopeOperator { get; }
     
     public override AstNodeKind Kind => AstNodeKind.MemberAccessExpression;
     
@@ -37,12 +47,16 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
         IdentifierNode member,
         TypeNode? type = null,
         IReadOnlyDictionary<string, object>? metadata = null,
-        bool useAsOperator = false)
+        bool useAsOperator = false,
+        bool useArrowOperator = false,
+        bool useScopeOperator = false)
         : base(type, metadata)
     {
         Object = @object ?? throw new ArgumentNullException(nameof(@object));
         Member = member ?? throw new ArgumentNullException(nameof(member));
         UseAsOperator = useAsOperator;
+        UseArrowOperator = useArrowOperator;
+        UseScopeOperator = useScopeOperator;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -57,6 +71,8 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
             (IdentifierNode)Member.Clone(),
             Type != null ? (TypeNode)Type.Clone() : null,
             Metadata.ToImmutableDictionary(),
-            UseAsOperator);
+            UseAsOperator,
+            UseArrowOperator,
+            UseScopeOperator);
     }
 }

@@ -89,13 +89,13 @@ public sealed class UEResultAstBuilder
         {
             new("CoreMinimal.h"),
             new(fileName.Replace(".h", _options.GeneratedHeaderSuffix)),
-            new(_naming.ModelIncludePath("RestApiResponse")) // ErrorBody type
+            new($"../{_naming.ModelIncludePath("RestApiResponse")}") // ErrorBody type
         };
 
         // Include для SuccessBody type если это ссылка на модель
         if (successResponse?.Type is IrModelReference modelRef)
         {
-            includes.Add(new CppIncludeDirectiveNode(_naming.ModelIncludePath(modelRef.ModelName)));
+            includes.Add(new CppIncludeDirectiveNode($"../{_naming.ModelIncludePath(modelRef.ModelName)}"));
         }
 
         return new CppHeaderFileNode(

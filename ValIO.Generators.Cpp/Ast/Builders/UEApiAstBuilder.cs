@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
@@ -40,7 +41,7 @@ public sealed class UEApiAstBuilder
 
     /// <summary>
     /// Строит пару (header, source) файлов для одного endpoint (одна операция).
-    /// Файлы помещаются в папку endpoints/.
+    /// Файлы помещаются в папку Endpoints/.
     /// </summary>
     public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildEndpoint(IrClient client, IrOperation operation)
     {
@@ -92,7 +93,7 @@ public sealed class UEApiAstBuilder
     {
         var sourceFileName = _naming.EndpointSourceFileName(operation.MethodName);
         var headerFileName = _naming.EndpointHeaderFileName(operation.MethodName);
-        var pathsIncludePath = $"Api/{_naming.PathsHeaderFileName(client.Name)}";
+        var pathsIncludePath = $"../Api/{_naming.PathsHeaderFileName(client.Name)}";
 
         var includes = new List<CppIncludeDirectiveNode>
         {
@@ -154,7 +155,8 @@ public sealed class UEApiAstBuilder
         var includes = new List<CppIncludeDirectiveNode>
         {
             new(headerFileName),
-            new(_options.ValIOTypesIncludePath)
+            new(_options.ValIOTypesIncludePath),
+            new("Misc/Guid.h") // EGuidFormats::DigitsWithHyphens для FGuid в path params
         };
 
         var implementations = client.Operations
@@ -179,8 +181,8 @@ public sealed class UEApiAstBuilder
             new("CoreMinimal.h"),
             new("Async/Future.h"),
             new(_options.BaseAsyncActionIncludePath),
-            new(_naming.ResultIncludePath(operation.MethodName)),
-            new(_naming.ParamsIncludePath(operation.MethodName)),
+            new($"../{_naming.ResultIncludePath(operation.MethodName)}"),
+            new($"../{_naming.ParamsIncludePath(operation.MethodName)}"),
             new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix))
         };
 
@@ -400,10 +402,12 @@ public sealed class UEApiAstBuilder
     /// <summary>
     /// Строит Parse-функцию в анонимном namespace
     /// </summary>
-    private CppFreeFunctionNode BuildParseFunction(IrOperation operation)
+    private CppParseFunctionNode BuildParseFunction(IrOperation operation)
     {
         var parseName = _naming.ParseFunctionName(operation.MethodName);
         var resultTypeName = _naming.ResultStructName(operation.MethodName);
+        var hasSuccessBody = _resultBuilder.HasSuccessBody(operation);
+        var successBodyTypeName = GetSuccessBodyTypeName(operation);
 
         var parameters = new List<CppParameterNode>
         {
@@ -412,27 +416,147 @@ public sealed class UEApiAstBuilder
                 isConst: true, isReference: true)
         };
 
-        // Body is represented as a block that the renderer will handle specially
-        // via metadata on the function node
-        return new CppFreeFunctionNode(
+        var statements = new List<StatementNode>();
+
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("Out"),
+            new SimpleTypeNode(new IdentifierNode(resultTypeName))));
+
+        statements.Add(new ExpressionStatementNode(
+            new BinaryExpressionNode(
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("StatusCode")),
+                BinaryOperator.Assign,
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
+                isAssignment: true)));
+
+        var assignErrBody = new ExpressionStatementNode(
+            new BinaryExpressionNode(
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("ErrorBody")),
+                BinaryOperator.Assign,
+                new CallExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Err")), new IdentifierNode("GetValue")),
+                    Array.Empty<ExpressionNode>().ToImmutableList()),
+                isAssignment: true));
+
+        var assignFallback = new ExpressionStatementNode(
+            new BinaryExpressionNode(
+                new MemberAccessExpressionNode(
+                    new MemberAccessExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("ErrorBody")),
+                        new IdentifierNode("Exception")),
+                    new IdentifierNode("message")),
+                BinaryOperator.Assign,
+                new CallExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("GetBodyAsString")),
+                    Array.Empty<ExpressionNode>().ToImmutableList()),
+                isAssignment: true));
+
+        var errIfStatement = new IfStatementNode(
+            new CallExpressionNode(
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Err")), new IdentifierNode("IsSet")),
+                Array.Empty<ExpressionNode>().ToImmutableList()),
+            new BlockNode(new StatementNode[] { assignErrBody }.ToImmutableList()),
+            new BlockNode(new StatementNode[] { assignFallback }.ToImmutableList()));
+
+        var errorBlockStatements = new List<StatementNode>
+        {
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("Err"),
+                new SimpleTypeNode(new IdentifierNode("const TOptional<FRestApiResponse>")),
+                new CallExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("GetBodyAs")),
+                    Array.Empty<ExpressionNode>().ToImmutableList(),
+                    genericTypeName: "FRestApiResponse")),
+            errIfStatement
+        };
+        var errorThenBlock = new BlockNode(errorBlockStatements.ToImmutableList());
+
+        if (hasSuccessBody)
+        {
+            var successThenStatements = new List<StatementNode>
+            {
+                new VariableDeclarationStatementNode(
+                    new IdentifierNode("Dto"),
+                    new SimpleTypeNode(new IdentifierNode($"const TOptional<{successBodyTypeName}>")),
+                    new CallExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("GetBodyAs")),
+                        Array.Empty<ExpressionNode>().ToImmutableList(),
+                        genericTypeName: successBodyTypeName)),
+                new IfStatementNode(
+                    new BinaryExpressionNode(
+                        new CallExpressionNode(
+                            new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Dto")), new IdentifierNode("IsSet")),
+                            Array.Empty<ExpressionNode>().ToImmutableList()),
+                        BinaryOperator.Equal,
+                        new LiteralExpressionNode(true, LiteralKind.Boolean),
+                        isAssignment: false),
+                    new BlockNode(new StatementNode[]
+                    {
+                        new ExpressionStatementNode(
+                            new BinaryExpressionNode(
+                                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("SuccessBody")),
+                                BinaryOperator.Assign,
+                                new CallExpressionNode(
+                                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Dto")), new IdentifierNode("GetValue")),
+                                    Array.Empty<ExpressionNode>().ToImmutableList()),
+                                isAssignment: true))
+                    }.ToImmutableList()))
+            };
+            var successCond = new CallExpressionNode(
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("IsSuccess")),
+                Array.Empty<ExpressionNode>().ToImmutableList());
+            var errorCond = new BinaryExpressionNode(
+                new BinaryExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
+                    BinaryOperator.GreaterThanOrEqual,
+                    new LiteralExpressionNode(400, LiteralKind.Number)),
+                BinaryOperator.LogicalAnd,
+                new BinaryExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
+                    BinaryOperator.LessThan,
+                    new LiteralExpressionNode(600, LiteralKind.Number)));
+            statements.Add(new IfStatementNode(
+                successCond,
+                new BlockNode(successThenStatements.ToImmutableList()),
+                new BlockNode(new StatementNode[] { new IfStatementNode(errorCond, errorThenBlock) }.ToImmutableList())));
+        }
+        else
+        {
+            var notSuccessCond = new BinaryExpressionNode(
+                new BinaryExpressionNode(
+                    new CallExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("IsSuccess")),
+                        Array.Empty<ExpressionNode>().ToImmutableList()),
+                    BinaryOperator.Equal,
+                    new LiteralExpressionNode(false, LiteralKind.Boolean)),
+                BinaryOperator.LogicalAnd,
+                new BinaryExpressionNode(
+                    new BinaryExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
+                        BinaryOperator.GreaterThanOrEqual,
+                        new LiteralExpressionNode(400, LiteralKind.Number)),
+                    BinaryOperator.LogicalAnd,
+                    new BinaryExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
+                        BinaryOperator.LessThan,
+                        new LiteralExpressionNode(600, LiteralKind.Number))));
+            statements.Add(new IfStatementNode(notSuccessCond, errorThenBlock));
+        }
+
+        statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("Out"))));
+
+        var body = new BlockNode(statements.ToImmutableList());
+        return new CppParseFunctionNode(
             name: new IdentifierNode(parseName),
             returnType: new SimpleTypeNode(new IdentifierNode(resultTypeName)),
             parameters: parameters,
-            body: new BlockNode(),
-            isDeclarationOnly: false,
-            metadata: new Dictionary<string, object>
-            {
-                ["ParseFunction"] = true,
-                ["ResultTypeName"] = resultTypeName,
-                ["HasSuccessBody"] = _resultBuilder.HasSuccessBody(operation),
-                ["SuccessBodyTypeName"] = GetSuccessBodyTypeName(operation)
-            }.ToImmutableDictionary());
+            body: body);
     }
 
     /// <summary>
     /// Строит реализацию нативной функции
     /// </summary>
-    private CppFreeFunctionNode BuildNativeFunctionImplementation(string clientName, IrOperation operation)
+    private CppNativeApiFunctionNode BuildNativeFunctionImplementation(string clientName, IrOperation operation)
     {
         var funcName = _naming.NativeFunctionName(clientName, operation.MethodName);
         var resultTypeName = _naming.ResultStructName(operation.MethodName);
@@ -440,6 +564,15 @@ public sealed class UEApiAstBuilder
         var parseFuncName = _naming.ParseFunctionName(operation.MethodName);
         var pathsClassName = _naming.PathsLibraryClassName(clientName);
         var pathMethodName = _naming.PathMethodName(operation.MethodName);
+        var hasMultipleParamGroups = HasMultipleParamGroups(operation);
+        var pathPrefix = hasMultipleParamGroups ? "Params.Route." : "Params.";
+        var queryPrefix = hasMultipleParamGroups ? "Params.Query." : "Params.";
+        var httpVerb = operation.HttpMethod.ToUpperInvariant() switch
+        {
+            "GET" => "Get", "POST" => "Post", "PUT" => "Put", "DELETE" => "Delete",
+            "PATCH" => "Patch", "HEAD" => "Head", "OPTIONS" => "Options",
+            _ => "Get"
+        };
 
         var returnType = new GenericTypeNode(
             new IdentifierNode("TFuture"),
@@ -454,26 +587,88 @@ public sealed class UEApiAstBuilder
                 isConst: true, isReference: true)
         };
 
-        return new CppFreeFunctionNode(
+        var pathArgExprs = operation.PathParameters
+            .Select(p => (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(pathPrefix + _naming.PropertyName(p.Name))))
+            .ToImmutableList();
+        var pathCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode(pathsClassName)),
+                new IdentifierNode(pathMethodName),
+                useScopeOperator: true),
+            pathArgExprs);
+
+        var statements = new List<StatementNode>();
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("Path"),
+            new SimpleTypeNode(new IdentifierNode("const FString")),
+            pathCall));
+
+        ExpressionNode requestChain = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("Client")),
+                new IdentifierNode("NewRequest"),
+                useArrowOperator: true),
+            new ExpressionNode[]
+            {
+                new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("EValIOHttpVerb")),
+                    new IdentifierNode(httpVerb)),
+                new IdentifierExpressionNode(new IdentifierNode("Path"))
+            }.ToImmutableList());
+
+        foreach (var qp in operation.QueryParameters)
+        {
+            var propName = queryPrefix + _naming.PropertyName(qp.Name);
+            requestChain = new CallExpressionNode(
+                new MemberAccessExpressionNode(requestChain, new IdentifierNode("AddQueryParam")),
+                new ExpressionNode[]
+                {
+                    new LiteralExpressionNode(qp.Name, LiteralKind.String),
+                    new CallExpressionNode(
+                        new MemberAccessExpressionNode(
+                            new IdentifierExpressionNode(new IdentifierNode("FString")),
+                            new IdentifierNode("FromInt")),
+                        new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(propName)) }.ToImmutableList())
+                }.ToImmutableList());
+        }
+
+        requestChain = new CallExpressionNode(
+            new MemberAccessExpressionNode(requestChain, new IdentifierNode("SetRequestName")),
+            new ExpressionNode[] { new LiteralExpressionNode(operation.MethodName, LiteralKind.String) }.ToImmutableList());
+
+        requestChain = new CallExpressionNode(
+            new MemberAccessExpressionNode(requestChain, new IdentifierNode("Build")),
+            ImmutableList<ExpressionNode>.Empty);
+
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("Request"),
+            new SimpleTypeNode(new IdentifierNode("FValIORequest")),
+            requestChain));
+
+        var sendCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("Client")),
+                new IdentifierNode("Send"),
+                useArrowOperator: true),
+            new ExpressionNode[]
+            {
+                new CallExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("MoveTemp")),
+                    new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Request")) }.ToImmutableList())
+            }.ToImmutableList());
+
+        var nextCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(sendCall, new IdentifierNode("Next")),
+            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(parseFuncName)) }.ToImmutableList());
+
+        statements.Add(new ReturnStatementNode(nextCall));
+
+        var body = new BlockNode(statements.ToImmutableList());
+        return new CppNativeApiFunctionNode(
             name: new IdentifierNode(funcName),
             returnType: returnType,
             parameters: parameters,
-            body: new BlockNode(),
-            isDeclarationOnly: false,
-            metadata: new Dictionary<string, object>
-            {
-                ["NativeApiFunction"] = true,
-                ["HttpMethod"] = operation.HttpMethod.ToUpperInvariant(),
-                ["PathsClassName"] = pathsClassName,
-                ["PathMethodName"] = pathMethodName,
-                ["ParseFunctionName"] = parseFuncName,
-                ["RequestName"] = operation.MethodName,
-                ["PathParams"] = operation.PathParameters.Select(p => _naming.PropertyName(p.Name)).ToList(),
-                ["QueryParams"] = operation.QueryParameters.Select(p => new { Name = p.Name, PropertyName = _naming.PropertyName(p.Name) }).ToList(),
-                ["HasBody"] = operation.RequestBody != null,
-                ["ContentType"] = operation.RequestBody?.ContentType ?? "",
-                ["HasMultipleParamGroups"] = HasMultipleParamGroups(operation)
-            }.ToImmutableDictionary());
+            body: body);
     }
 
     /// <summary>
@@ -488,8 +683,19 @@ public sealed class UEApiAstBuilder
 
         var implementations = new List<AstNode>();
 
-        // Static factory implementation
-        implementations.Add(new CppMethodImplementationNode(
+        var factoryReturnExpr = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("UValIOAsyncActionBase")),
+                new IdentifierNode("NewAsyncObject"),
+                useScopeOperator: true),
+            new ExpressionNode[]
+            {
+                new IdentifierExpressionNode(new IdentifierNode("WorldContextObject")),
+                new IdentifierExpressionNode(new IdentifierNode("ClientNameArg")),
+                new IdentifierExpressionNode(new IdentifierNode("Params"))
+            }.ToImmutableList(),
+            genericTypeName: className);
+        implementations.Add(new CppAsyncFactoryImplementationNode(
             className: new IdentifierNode(className),
             methodName: new IdentifierNode(operation.MethodName),
             returnType: new SimpleTypeNode(new IdentifierNode($"{className}*")),
@@ -499,15 +705,29 @@ public sealed class UEApiAstBuilder
                 new CppParameterNode(new IdentifierNode("ClientNameArg"), new SimpleTypeNode(new IdentifierNode("FString")), isConst: true, isReference: true),
                 new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
             },
-            body: new BlockNode(),
-            metadata: new Dictionary<string, object>
+            body: new BlockNode(new StatementNode[]
             {
-                ["AsyncFactory"] = true,
-                ["ClassName"] = className
-            }.ToImmutableDictionary()));
+                new ReturnStatementNode(factoryReturnExpr)
+            }.ToImmutableList())));
 
-        // Complete implementation
-        implementations.Add(new CppMethodImplementationNode(
+        var completeStatements = new List<StatementNode>
+        {
+            new ExpressionStatementNode(
+                new BinaryExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("LastResult")),
+                    BinaryOperator.Assign,
+                    new IdentifierExpressionNode(new IdentifierNode("Result")),
+                    isAssignment: true)),
+            new ExpressionStatementNode(
+                new CallExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("OnCompleted")), new IdentifierNode("Broadcast")),
+                    new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Result")) }.ToImmutableList())),
+            new ExpressionStatementNode(
+                new CallExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("this")), new IdentifierNode("SetReadyToDestroy"), useArrowOperator: true),
+                    ImmutableList<ExpressionNode>.Empty))
+        };
+        implementations.Add(new CppAsyncCompleteImplementationNode(
             className: new IdentifierNode(className),
             methodName: new IdentifierNode("Complete"),
             returnType: new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true),
@@ -515,26 +735,35 @@ public sealed class UEApiAstBuilder
             {
                 new CppParameterNode(new IdentifierNode("Result"), new SimpleTypeNode(new IdentifierNode(resultTypeName)), isConst: true, isReference: true)
             },
-            body: new BlockNode(),
-            metadata: new Dictionary<string, object>
-            {
-                ["AsyncComplete"] = true
-            }.ToImmutableDictionary()));
+            body: new BlockNode(completeStatements.ToImmutableList())));
 
-        // Activate implementation
-        implementations.Add(new CppMethodImplementationNode(
+        var lambdaBody = new BlockNode(new StatementNode[]
+        {
+            new ReturnStatementNode(new CallExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode(nativeFuncName)),
+                new ExpressionNode[]
+                {
+                    new IdentifierExpressionNode(new IdentifierNode("Client")),
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("State")), new IdentifierNode("Params"))
+                }.ToImmutableList()))
+        }.ToImmutableList());
+        var activateLambda = new CppLambdaExpressionNode(
+            new[] { "this" },
+            new[] { new CppParameterNode(new IdentifierNode("Client"), new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))) },
+            lambdaBody);
+        var runWithCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("this")),
+                new IdentifierNode("RunWithClientAndComplete"),
+                useArrowOperator: true),
+            new ExpressionNode[] { activateLambda }.ToImmutableList(),
+            genericTypeName: $"{className}, {resultTypeName}");
+        implementations.Add(new CppAsyncActivateImplementationNode(
             className: new IdentifierNode(className),
-            methodName: new IdentifierNode("Activate"),
-            returnType: new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true),
-            parameters: null,
-            body: new BlockNode(),
-            metadata: new Dictionary<string, object>
+            body: new BlockNode(new StatementNode[]
             {
-                ["AsyncActivate"] = true,
-                ["ClassName"] = className,
-                ["ResultTypeName"] = resultTypeName,
-                ["NativeFunctionName"] = nativeFuncName
-            }.ToImmutableDictionary()));
+                new ExpressionStatementNode(runWithCall)
+            }.ToImmutableList())));
 
         return implementations;
     }
@@ -542,7 +771,7 @@ public sealed class UEApiAstBuilder
     /// <summary>
     /// Строит реализацию метода PathsLibrary
     /// </summary>
-    private CppMethodImplementationNode BuildPathMethodImplementation(string clientName, IrOperation operation)
+    private CppPathBuilderImplementationNode BuildPathMethodImplementation(string clientName, IrOperation operation)
     {
         var pathsClassName = _naming.PathsLibraryClassName(clientName);
         var pathMethodName = _naming.PathMethodName(operation.MethodName);
@@ -555,24 +784,70 @@ public sealed class UEApiAstBuilder
                 isReference: IsReferenceType(p.Type)))
             .ToList();
 
-        return new CppMethodImplementationNode(
+        var pathParamSpecs = operation.PathParameters.Select(p =>
+        {
+            var propName = _naming.PropertyName(p.Name);
+            var isGuid = _typeMapper.IsGuidType(p.Type);
+            var intermediateVarName = isGuid ? propName + "Str" : null;
+            var printfArgExpr = _typeMapper.GetPrintfArgumentExpression(p.Type, propName, intermediateVarName);
+
+            return (OriginalName: p.Name, PropertyName: propName, PrintfSpecifier: _typeMapper.GetPrintfSpecifier(p.Type),
+                PrintfArgExpression: printfArgExpr, IsGuid: isGuid, IntermediateVarName: intermediateVarName);
+        }).ToList();
+
+        var statements = new List<StatementNode>();
+
+        foreach (var param in pathParamSpecs)
+        {
+            if (param.IsGuid && param.IntermediateVarName != null)
+            {
+                var toStrCall = new CallExpressionNode(
+                    new MemberAccessExpressionNode(
+                        new IdentifierExpressionNode(new IdentifierNode(param.PropertyName)),
+                        new IdentifierNode("ToString")),
+                    new ExpressionNode[] { new MemberAccessExpressionNode(
+                        new IdentifierExpressionNode(new IdentifierNode("EGuidFormats")),
+                        new IdentifierNode("DigitsWithHyphens"),
+                        useScopeOperator: true) }.ToImmutableList());
+                statements.Add(new VariableDeclarationStatementNode(
+                    new IdentifierNode(param.IntermediateVarName),
+                    new SimpleTypeNode(new IdentifierNode("const FString")),
+                    toStrCall));
+            }
+        }
+
+        var formatStr = pathParamSpecs.Aggregate(operation.Path, (acc, p) =>
+            acc.Replace($"{{{p.OriginalName}}}", p.PrintfSpecifier));
+        var printfArgs = new List<ExpressionNode>
+        {
+            new LiteralExpressionNode(formatStr, LiteralKind.String)
+        };
+        printfArgs.AddRange(pathParamSpecs.Select(p =>
+        {
+            var needsDeref = p.PrintfArgExpression.StartsWith("*");
+            var ident = needsDeref ? p.PrintfArgExpression.TrimStart('*') : p.PrintfArgExpression;
+            var expr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(ident));
+            return needsDeref ? new UnaryExpressionNode(UnaryOperator.Dereference, expr) : expr;
+        }));
+
+        var printfCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("FString")),
+                new IdentifierNode("Printf"),
+                useScopeOperator: true),
+            printfArgs.ToImmutableList());
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("Url"),
+            new SimpleTypeNode(new IdentifierNode("const FString")),
+            printfCall));
+        statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("Url"))));
+
+        var body = new BlockNode(statements.ToImmutableList());
+        return new CppPathBuilderImplementationNode(
             className: new IdentifierNode(pathsClassName),
             methodName: new IdentifierNode(pathMethodName),
-            returnType: new SimpleTypeNode(new IdentifierNode("FString")),
             parameters: parameters,
-            body: new BlockNode(),
-            metadata: new Dictionary<string, object>
-            {
-                ["PathBuilder"] = true,
-                ["UrlTemplate"] = operation.Path,
-                ["PathParams"] = operation.PathParameters.Select(p => new
-                {
-                    OriginalName = p.Name,
-                    PropertyName = _naming.PropertyName(p.Name),
-                    PrintfSpecifier = _typeMapper.GetPrintfSpecifier(p.Type),
-                    NeedsDereference = _typeMapper.NeedsDereference(p.Type)
-                }).ToList<object>()
-            }.ToImmutableDictionary());
+            body: body);
     }
 
     // ===== Helper methods =====

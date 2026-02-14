@@ -21,6 +21,13 @@ public interface ICppAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitCppFreeFunction(CppFreeFunctionNode node);
     TResult VisitCppParameter(CppParameterNode node);
     TResult VisitCppMethodImplementation(CppMethodImplementationNode node);
+    TResult VisitCppPathBuilderImplementation(CppPathBuilderImplementationNode node);
+    TResult VisitCppParseFunction(CppParseFunctionNode node);
+    TResult VisitCppNativeApiFunction(CppNativeApiFunctionNode node);
+    TResult VisitCppAsyncFactoryImplementation(CppAsyncFactoryImplementationNode node);
+    TResult VisitCppAsyncCompleteImplementation(CppAsyncCompleteImplementationNode node);
+    TResult VisitCppAsyncActivateImplementation(CppAsyncActivateImplementationNode node);
+    TResult VisitCppLambdaExpression(CppLambdaExpressionNode node);
 
     // Unreal Engine специфичные узлы
     TResult VisitUStruct(UStructDeclarationNode node);

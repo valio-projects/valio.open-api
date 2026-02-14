@@ -384,6 +384,19 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         return $"{target}{genericTypeArgStr}({args})";
     }
 
+    public override string VisitUnaryExpression(UnaryExpressionNode node)
+    {
+        var op = node.Operator switch
+        {
+            UnaryOperator.Dereference => "*",
+            UnaryOperator.AddressOf => "&",
+            UnaryOperator.LogicalNot => "!",
+            UnaryOperator.Negate => "-",
+            _ => ""
+        };
+        return $"{op}{Visit(node.Operand)}";
+    }
+
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
         var target = Visit(node.Object);

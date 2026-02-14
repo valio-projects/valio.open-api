@@ -76,6 +76,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
             AstNodeKind.IdentifierExpression => VisitIdentifierExpression((IdentifierExpressionNode)node),
             AstNodeKind.CallExpression => VisitCallExpression((CallExpressionNode)node),
             AstNodeKind.MemberAccessExpression => VisitMemberAccessExpression((MemberAccessExpressionNode)node),
+            AstNodeKind.UnaryExpression => VisitUnaryExpression((UnaryExpressionNode)node),
             AstNodeKind.BinaryExpression => VisitBinaryExpression((BinaryExpressionNode)node),
             AstNodeKind.ConditionalExpression => VisitConditionalExpression((ConditionalExpressionNode)node),
             AstNodeKind.AwaitExpression => VisitAwaitExpression((AwaitExpressionNode)node),
@@ -126,6 +127,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitIdentifierExpression(IdentifierExpressionNode node);
     public abstract TResult VisitCallExpression(CallExpressionNode node);
     public abstract TResult VisitMemberAccessExpression(MemberAccessExpressionNode node);
+    public abstract TResult VisitUnaryExpression(UnaryExpressionNode node);
     public abstract TResult VisitBinaryExpression(BinaryExpressionNode node);
     public abstract TResult VisitConditionalExpression(ConditionalExpressionNode node);
     public abstract TResult VisitAwaitExpression(AwaitExpressionNode node);

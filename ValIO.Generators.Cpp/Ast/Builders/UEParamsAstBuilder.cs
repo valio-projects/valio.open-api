@@ -2,6 +2,7 @@ using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Types;
 using ValIO.Generators.Cpp.Ast.Nodes;
 using ValIO.Generators.Cpp.Ast.Nodes.UE;
 using ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
@@ -175,6 +176,22 @@ public sealed class UEParamsAstBuilder
             new(fileName.Replace(".h", _options.GeneratedHeaderSuffix))
         };
 
+        // Includes для моделей (Body/Form Data и параметры, ссылающиеся на модели)
+        var referencedModels = new HashSet<string>();
+        if (operation.RequestBody?.Type != null)
+            CollectModelReferences(operation.RequestBody.Type, referencedModels);
+        foreach (var p in operation.PathParameters)
+            CollectModelReferences(p.Type, referencedModels);
+        foreach (var p in operation.QueryParameters)
+            CollectModelReferences(p.Type, referencedModels);
+        foreach (var p in operation.HeaderParameters)
+            CollectModelReferences(p.Type, referencedModels);
+
+        foreach (var modelName in referencedModels.OrderBy(x => x))
+        {
+            includes.Add(new CppIncludeDirectiveNode($"../{_naming.ModelIncludePath(modelName)}"));
+        }
+
         return new CppHeaderFileNode(
             fileName: fileName,
             headerComment: _options.Copyright != null ? new CommentNode(_options.Copyright, CommentKind.MultiLine) : null,
@@ -235,5 +252,37 @@ public sealed class UEParamsAstBuilder
             defaultValue: defaultValue,
             documentation: !string.IsNullOrWhiteSpace(param.Description)
                 ? new CommentNode(param.Description, CommentKind.MultiLine) : null);
+    }
+
+    /// <summary>
+    /// Рекурсивно собирает ссылки на модели из IrType
+    /// </summary>
+    private static void CollectModelReferences(IrType type, HashSet<string> models)
+    {
+        switch (type)
+        {
+            case IrModelReference modelRef:
+                models.Add(modelRef.ModelName);
+                break;
+            case IrArrayType array:
+                CollectModelReferences(array.ElementType, models);
+                break;
+            case IrDictionaryType dict:
+                CollectModelReferences(dict.KeyType, models);
+                CollectModelReferences(dict.ValueType, models);
+                break;
+            case IrNullableType nullable:
+                CollectModelReferences(nullable.InnerType, models);
+                break;
+            case IrOptionalType optional:
+                CollectModelReferences(optional.InnerType, models);
+                break;
+            case IrUnionType union:
+                foreach (var t in union.Types) CollectModelReferences(t, models);
+                break;
+            case IrIntersectionType intersection:
+                foreach (var t in intersection.Types) CollectModelReferences(t, models);
+                break;
+        }
     }
 }

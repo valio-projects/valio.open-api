@@ -54,7 +54,7 @@ public sealed class UETypeMapper
             IrPrimitiveKind.Time => SimpleType("FString"),
             IrPrimitiveKind.Binary => GenericType("TArray", SimpleType("uint8", isPrimitive: true)),
             IrPrimitiveKind.ByteArray => GenericType("TArray", SimpleType("uint8", isPrimitive: true)),
-            IrPrimitiveKind.Uuid => SimpleType("FString"), // FGuid не поддерживается в BlueprintReadWrite напрямую
+            IrPrimitiveKind.Uuid => SimpleType("FGuid"),
             IrPrimitiveKind.File => GenericType("TArray", SimpleType("uint8", isPrimitive: true)),
             IrPrimitiveKind.Any => SimpleType("FString"),
             IrPrimitiveKind.Void => SimpleType("void", isPrimitive: true),
@@ -175,9 +175,47 @@ public sealed class UETypeMapper
     {
         return irType switch
         {
-            IrPrimitiveType p => p.PrimitiveKind is IrPrimitiveKind.String or IrPrimitiveKind.Uuid,
+            IrPrimitiveType p => p.PrimitiveKind is IrPrimitiveKind.String,
             IrModelReference => false,
             _ => false
+        };
+    }
+
+    /// <summary>
+    /// Является ли тип FGuid (требует промежуточную переменную с DigitsWithHyphens).
+    /// </summary>
+    public bool IsGuidType(IrType irType)
+    {
+        return irType is IrPrimitiveType p && p.PrimitiveKind == IrPrimitiveKind.Uuid;
+    }
+
+    /// <summary>
+    /// Выражение для FGuid: ToString(EGuidFormats::DigitsWithHyphens).
+    /// </summary>
+    public string GetGuidToStringExpression(string propertyName)
+    {
+        return $"{propertyName}.ToString(EGuidFormats::DigitsWithHyphens)";
+    }
+
+    /// <summary>
+    /// Выражение для передачи в FString::Printf.
+    /// Для FGuid — используется промежуточная переменная *VarName.
+    /// </summary>
+    public string GetPrintfArgumentExpression(IrType irType, string propertyName, string? intermediateVarName = null)
+    {
+        if (IsGuidType(irType) && intermediateVarName != null)
+            return $"*{intermediateVarName}";
+
+        return irType switch
+        {
+            IrPrimitiveType p => p.PrimitiveKind switch
+            {
+                IrPrimitiveKind.Uuid => $"*{propertyName}.ToString(EGuidFormats::DigitsWithHyphens)",
+                IrPrimitiveKind.String => $"*{propertyName}",
+                _ => propertyName
+            },
+            IrModelReference => $"*{propertyName}",
+            _ => propertyName
         };
     }
 

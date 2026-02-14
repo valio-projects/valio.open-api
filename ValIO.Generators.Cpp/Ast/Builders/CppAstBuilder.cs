@@ -78,12 +78,12 @@ public sealed class CppAstBuilder
                 result.Files[$"Params/{paramsNode.FileName}"] = paramsNode;
             }
 
-            // Endpoints → endpoints/{MethodName}.h + endpoints/{MethodName}.cpp (по одному файлу на метод)
+            // Endpoints → Endpoints/{MethodName}.h + Endpoints/{MethodName}.cpp (по одному файлу на метод)
             foreach (var operation in client.Operations)
             {
                 var (header, source) = _apiBuilder.BuildEndpoint(client, operation);
-                result.Files[$"endpoints/{header.FileName}"] = header;
-                result.Files[$"endpoints/{source.FileName}"] = source;
+                result.Files[$"Endpoints/{header.FileName}"] = header;
+                result.Files[$"Endpoints/{source.FileName}"] = source;
             }
 
             // PathsLibrary → Api/{ClientName}Paths.h + Api/{ClientName}Paths.cpp
