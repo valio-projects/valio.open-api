@@ -40,10 +40,10 @@ public sealed class UEModelAstBuilder
         var fileName = _naming.ModelFileName(model.Name);
 
         var category = _naming.ModelTypeCategory(_options.BlueprintCategory);
-        var effectiveProperties = GetEffectiveProperties(model, modelLookup);
+        var (baseStructName, baseModelName, propertiesToUse) = GetPropertiesAndBase(model, modelLookup);
         var fields = new List<UPropertyFieldNode>();
         var skippedProperties = new List<SkippedPropertyComment>();
-        foreach (var property in effectiveProperties)
+        foreach (var property in propertiesToUse)
         {
             if (TypeReferencesModel(property.Type, model.Name, enumNames))
             {
@@ -61,9 +61,10 @@ public sealed class UEModelAstBuilder
             specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
             skippedProperties: skippedProperties,
+            baseStructName: baseStructName,
             documentation: BuildDocumentation(model.Description));
 
-        var includes = CollectIncludes(model, fileName, enumNames, effectiveProperties);
+        var includes = CollectIncludes(model, fileName, enumNames, propertiesToUse, baseModelName);
 
         return new CppHeaderFileNode(
             fileName: fileName,
@@ -73,8 +74,29 @@ public sealed class UEModelAstBuilder
     }
 
     /// <summary>
-    /// Возвращает эффективный список свойств модели с раскрытием allOf.
-    /// Для UE USTRUCT (без наследования) все свойства из базовых схем allOf объединяются в один список.
+    /// Определяет, использовать ли наследование C++ для allOf, и возвращает свойства для полей.
+    /// При единственном $ref-базисе — наследование (только собственные свойства).
+    /// Иначе — flatten (объединённые свойства из всех allOf).
+    /// </summary>
+    private (string? BaseStructName, string? BaseModelName, IReadOnlyList<IrProperty> Properties) GetPropertiesAndBase(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
+    {
+        if (model.Composition?.Kind != IrCompositionKind.AllOf || model.Composition.Types.Count == 0)
+            return (null, null, model.Properties);
+
+        // Проверяем, можно ли использовать наследование: ровно один IrModelReference
+        var refBases = model.Composition.Types.OfType<IrModelReference>().ToList();
+        if (refBases.Count == 1 && model.Composition.Types.Count == 1 &&
+            modelLookup.TryGetValue(refBases[0].ModelName, out var baseModel))
+        {
+            var baseStructName = _naming.StructName(baseModel.Name);
+            return (baseStructName, baseModel.Name, model.Properties);
+        }
+
+        return (null, null, GetEffectiveProperties(model, modelLookup));
+    }
+
+    /// <summary>
+    /// Возвращает объединённый список свойств (flatten) при allOf с несколькими базами или inline-схемами.
     /// </summary>
     private static IReadOnlyList<IrProperty> GetEffectiveProperties(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
     {
@@ -130,13 +152,15 @@ public sealed class UEModelAstBuilder
     /// <summary>
     /// Собирает необходимые #include директивы для модели
     /// </summary>
-    private List<CppIncludeDirectiveNode> CollectIncludes(IrModel model, string fileName, IReadOnlySet<string> enumNames, IReadOnlyList<IrProperty> effectiveProperties)
+    private List<CppIncludeDirectiveNode> CollectIncludes(IrModel model, string fileName, IReadOnlySet<string> enumNames, IReadOnlyList<IrProperty> propertiesToUse, string? baseModelName)
     {
         var includes = new List<CppIncludeDirectiveNode> { new("CoreMinimal.h") };
 
         var referencedModels = new HashSet<string>();
         var referencedEnums = new HashSet<string>();
-        foreach (var property in effectiveProperties)
+        if (!string.IsNullOrEmpty(baseModelName))
+            referencedModels.Add(baseModelName);
+        foreach (var property in propertiesToUse)
         {
             if (TypeReferencesModel(property.Type, model.Name, enumNames))
                 continue; // Skip recursive — already excluded from fields

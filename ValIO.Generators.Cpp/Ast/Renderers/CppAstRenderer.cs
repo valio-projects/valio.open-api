@@ -173,7 +173,8 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         if (node.Documentation != null)
             sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
         sb.AppendLine(RenderUStructMacro(node.Specifiers));
-        sb.AppendLine($"struct {node.Name.Name}");
+        var baseStr = !string.IsNullOrEmpty(node.BaseStructName) ? $" : public {node.BaseStructName}" : "";
+        sb.AppendLine($"struct {node.Name.Name}{baseStr}");
         sb.AppendLine("{");
         _indentLevel++;
         sb.AppendLine($"{Indent()}GENERATED_BODY()");

@@ -34,6 +34,12 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
     /// </summary>
     public IReadOnlyList<SkippedPropertyComment> SkippedProperties { get; }
 
+    /// <summary>
+    /// Имя базовой структуры для наследования (allOf с единственным $ref).
+    /// При заданном значении рендерится: struct FDerived : public FBase { ... }
+    /// </summary>
+    public string? BaseStructName { get; }
+
     public override AstNodeKind Kind => AstNodeKind.UStruct;
 
     public override IReadOnlyList<AstNode> Children
@@ -57,6 +63,7 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
         IReadOnlyList<UPropertyFieldNode>? fields = null,
         IReadOnlyList<CppFreeFunctionNode>? inlineMethods = null,
         IReadOnlyList<SkippedPropertyComment>? skippedProperties = null,
+        string? baseStructName = null,
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation: documentation, metadata: metadata)
@@ -65,6 +72,7 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
         Fields = fields?.ToImmutableList() ?? ImmutableList<UPropertyFieldNode>.Empty;
         InlineMethods = inlineMethods?.ToImmutableList() ?? ImmutableList<CppFreeFunctionNode>.Empty;
         SkippedProperties = skippedProperties?.ToImmutableList() ?? ImmutableList<SkippedPropertyComment>.Empty;
+        BaseStructName = baseStructName;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -82,6 +90,7 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
             Fields.Select(f => (UPropertyFieldNode)f.Clone()).ToImmutableList(),
             InlineMethods.Select(m => (CppFreeFunctionNode)m.Clone()).ToImmutableList(),
             SkippedProperties,
+            BaseStructName,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary());
     }
