@@ -55,10 +55,12 @@ public sealed class CppAstBuilder
         var enumNames = document.Enums.Select(e => e.Name).ToHashSet();
         _typeMapper.SetEnumNamesForDocument(enumNames);
 
+        var modelLookup = document.Models.ToDictionary(m => m.Name);
+
         // 1. Модели → Models/{StructName}.h
         foreach (var model in document.Models)
         {
-            var headerNode = _modelBuilder.Build(model, enumNames, result.Warnings);
+            var headerNode = _modelBuilder.Build(model, enumNames, modelLookup, result.Warnings);
             result.Files[$"Models/{headerNode.FileName}"] = headerNode;
         }
 
