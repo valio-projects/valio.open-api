@@ -43,14 +43,17 @@ public sealed class UEEnumAstBuilder
                 displayName: v.Description ?? v.Name))
             .ToList();
 
+        var category = _naming.EnumTypeCategory(_options.BlueprintCategory);
         var enumNode = new UEnumDeclarationNode(
             name: new IdentifierNode(enumName),
             underlyingType: underlyingType,
             values: values,
+            category: category,
             documentation: !string.IsNullOrWhiteSpace(irEnum.Description)
                 ? new CommentNode(irEnum.Description, CommentKind.MultiLine)
                 : null);
 
+        // .generated.h должен быть всегда последним (требование UHT)
         var includes = new List<CppIncludeDirectiveNode>
         {
             new("CoreMinimal.h"),

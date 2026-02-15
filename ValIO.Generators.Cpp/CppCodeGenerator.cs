@@ -102,6 +102,9 @@ public sealed class CppCodeGenerator : BaseCodeGenerator
         var astBuilder = new CppAstBuilder(cppOptions);
         var buildResult = astBuilder.Build(irDocument);
 
+        foreach (var warning in buildResult.Warnings)
+            Logger.LogWarning("{Warning}", warning);
+
         Logger.LogInformation("AST built: {FileCount} files", buildResult.Files.Count);
 
         // 3. AST → Code

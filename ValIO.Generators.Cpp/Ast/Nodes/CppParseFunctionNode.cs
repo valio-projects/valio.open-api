@@ -7,7 +7,7 @@ using ValIO.Generators.Cpp.Ast.Visitors;
 namespace ValIO.Generators.Cpp.Ast.Nodes;
 
 /// <summary>
-/// Parse-функция в анонимном namespace: ResultType ParseXxxResult(const FValIOResponse&amp; R).
+/// Parse-функция в анонимном namespace: ResultType ParseXxxResult(const FValIOResponse&amp; Response).
 /// Тело формируется через AST (BlockNode).
 /// </summary>
 public sealed class CppParseFunctionNode : AstNode

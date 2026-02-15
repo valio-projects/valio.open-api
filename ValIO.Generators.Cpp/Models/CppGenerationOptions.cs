@@ -61,7 +61,7 @@ public sealed class CppGenerationOptions
     public string ValIOTypesIncludePath { get; set; } = "ValIOTypes.h";
 
     /// <summary>
-    /// Include path для ValIO response
+    /// Include path для ValIO response (FValIOResponse)
     /// </summary>
     public string ValIOResponseIncludePath { get; set; } = "Response/ValIOResponse.h";
 }

@@ -60,6 +60,12 @@ public sealed class UEnumDeclarationNode : DeclarationNode
     public TypeNode UnderlyingType { get; }
 
     /// <summary>
+    /// Category для группировки в Blueprint Editor.
+    /// UENUM(BlueprintType, Category = "ValIO|Enums")
+    /// </summary>
+    public string? Category { get; }
+
+    /// <summary>
     /// Значения enum
     /// </summary>
     public IReadOnlyList<UEnumValueNode> Values { get; }
@@ -84,11 +90,13 @@ public sealed class UEnumDeclarationNode : DeclarationNode
         IdentifierNode name,
         TypeNode underlyingType,
         IReadOnlyList<UEnumValueNode>? values = null,
+        string? category = null,
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation, metadata: metadata)
     {
         UnderlyingType = underlyingType ?? throw new ArgumentNullException(nameof(underlyingType));
+        Category = category;
         Values = values?.ToImmutableList() ?? ImmutableList<UEnumValueNode>.Empty;
     }
 
@@ -105,6 +113,7 @@ public sealed class UEnumDeclarationNode : DeclarationNode
             (IdentifierNode)Name.Clone(),
             (TypeNode)UnderlyingType.Clone(),
             Values.Select(v => (UEnumValueNode)v.Clone()).ToImmutableList(),
+            Category,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary());
     }

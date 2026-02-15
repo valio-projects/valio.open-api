@@ -110,6 +110,14 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
+    /// Имя поля тела ответа по status code: Body400, Body404, BodyDefault
+    /// </summary>
+    public string ResultBodyFieldName(string statusCode)
+    {
+        return statusCode == "default" ? "BodyDefault" : $"Body{statusCode}";
+    }
+
+    /// <summary>
     /// Имя Parse-функции: Parse{MethodName}Result
     /// </summary>
     public string ParseFunctionName(string methodName)
@@ -142,15 +150,15 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Имя файла модели: F{ModelName}.h
+    /// Имя файла модели (без F-префикса): {ModelName}.h
     /// </summary>
     public string ModelFileName(string modelName)
     {
-        return $"{StructName(modelName)}.h";
+        return $"{ToPascalCase(modelName)}.h";
     }
 
     /// <summary>
-    /// Путь include для модели (от корня output): Models/F{ModelName}.h
+    /// Путь include для модели (от корня output): Models/{ModelName}.h
     /// </summary>
     public string ModelIncludePath(string modelName)
     {
@@ -158,27 +166,35 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Имя файла enum: E{EnumName}.h
+    /// Путь include для enum (от корня output): Enums/{EnumName}.h
+    /// </summary>
+    public string EnumIncludePath(string enumName)
+    {
+        return $"Enums/{EnumFileName(enumName)}";
+    }
+
+    /// <summary>
+    /// Имя файла enum (без E-префикса): {EnumName}.h
     /// </summary>
     public string EnumFileName(string enumName)
     {
-        return $"{EnumName(enumName)}.h";
+        return $"{ToPascalCase(enumName)}.h";
     }
 
     /// <summary>
-    /// Имя файла Params: F{OperationName}Params.h
+    /// Имя файла Params (без F-префикса): {OperationName}Params.h
     /// </summary>
     public string ParamsFileName(string operationName)
     {
-        return $"{ParamsStructName(operationName)}.h";
+        return $"{ToPascalCase(operationName)}Params.h";
     }
 
     /// <summary>
-    /// Имя файла Result: F{OperationName}Result.h
+    /// Имя файла Result (без F-префикса): {OperationName}Result.h
     /// </summary>
     public string ResultFileName(string operationName)
     {
-        return $"{ResultStructName(operationName)}.h";
+        return $"{ToPascalCase(operationName)}Result.h";
     }
 
     /// <summary>
@@ -244,6 +260,54 @@ public sealed class UENamingConvention
     {
         return $"{ToPascalCase(clientName)}Api.cpp";
     }
+
+    /// <summary>
+    /// Category для Models: BaseCategory|Models
+    /// </summary>
+    public static string ModelCategory(string baseCategory) =>
+        $"{baseCategory}|Models";
+
+    /// <summary>
+    /// Category для Enums: BaseCategory|Enums
+    /// </summary>
+    public static string EnumCategory(string baseCategory) =>
+        $"{baseCategory}|Enums";
+
+    /// <summary>
+    /// Category для Operation-специфичных типов (Result, Params, AsyncAction): BaseCategory|ClientName|OperationId
+    /// </summary>
+    public static string OperationCategory(string baseCategory, string clientName, string operationId) =>
+        $"{baseCategory}|{ToPascalCase(clientName)}|{ToPascalCase(operationId)}";
+
+    /// <summary>
+    /// Category для Paths Library: BaseCategory|ClientName|Paths
+    /// </summary>
+    public static string PathsCategory(string baseCategory, string clientName) =>
+        $"{baseCategory}|{ToPascalCase(clientName)}|Paths";
+
+    /// <summary>
+    /// Формирует Category для типа модели: BlueprintCategory|Models
+    /// </summary>
+    public string ModelTypeCategory(string blueprintCategory) =>
+        $"{blueprintCategory}|Models";
+
+    /// <summary>
+    /// Формирует Category для enum: BlueprintCategory|Enums
+    /// </summary>
+    public string EnumTypeCategory(string blueprintCategory) =>
+        $"{blueprintCategory}|Enums";
+
+    /// <summary>
+    /// Формирует Category для operation-специфичных типов (Result, Params, AsyncAction): BlueprintCategory|ClientName|OperationId
+    /// </summary>
+    public string OperationTypeCategory(string blueprintCategory, string clientName, string operationId) =>
+        $"{blueprintCategory}|{ToPascalCase(clientName)}|{ToPascalCase(operationId)}";
+
+    /// <summary>
+    /// Формирует Category для Paths Library: BlueprintCategory|ClientName|Paths
+    /// </summary>
+    public string PathsTypeCategory(string blueprintCategory, string clientName) =>
+        $"{blueprintCategory}|{ToPascalCase(clientName)}|Paths";
 
     /// <summary>
     /// Конвертирует строку в PascalCase.

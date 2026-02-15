@@ -267,7 +267,7 @@ public sealed class UEApiAstBuilder
         var delegateName = _naming.DelegateName(operation.MethodName);
         var resultTypeName = _naming.ResultStructName(operation.MethodName);
         var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
-        var category = $"{_options.BlueprintCategory}|{UENamingConvention.ToPascalCase(clientName)}";
+        var category = _naming.OperationTypeCategory(_options.BlueprintCategory, clientName, operation.MethodName);
 
         var publicMembers = new List<AstNode>();
         var protectedMembers = new List<AstNode>();
@@ -282,7 +282,7 @@ public sealed class UEApiAstBuilder
         publicMembers.Add(new UPropertyFieldNode(
             name: new IdentifierNode("LastResult"),
             type: new SimpleTypeNode(new IdentifierNode(resultTypeName)),
-            specifiers: UPropertySpecifiers.ResultField(_options.BlueprintCategory)));
+            specifiers: UPropertySpecifiers.ResultField(category)));
 
         // UFUNCTION(BlueprintCallable) static factory method
         var factoryParams = new List<CppParameterNode>
@@ -343,11 +343,12 @@ public sealed class UEApiAstBuilder
         publicMembers.Add(new UPropertyFieldNode(
             name: new IdentifierNode("State"),
             type: stateType,
-            documentation: new CommentNode("Used by UValIOAsyncActionBase::NewAsyncObject.", CommentKind.MultiLine)));
+            documentation: new CommentNode("Used by UValIOAsyncActionBase::NewAsyncObject.", CommentKind.MultiLine),
+            skipUProperty: true));
 
         return new UClassDeclarationNode(
             name: new IdentifierNode(className),
-            specifiers: UClassSpecifiers.AsyncAction(),
+            specifiers: UClassSpecifiers.AsyncAction(category),
             apiMacro: _options.ModuleApiMacro,
             baseTypes: new TypeNode[] { new SimpleTypeNode(new IdentifierNode(_options.BaseAsyncActionClassName)) },
             publicMembers: publicMembers,
@@ -361,7 +362,7 @@ public sealed class UEApiAstBuilder
     private UClassDeclarationNode BuildPathsLibraryClass(IrClient client)
     {
         var className = _naming.PathsLibraryClassName(client.Name);
-        var category = $"{_options.BlueprintCategory}|{UENamingConvention.ToPascalCase(client.Name)}|Paths";
+        var category = _naming.PathsTypeCategory(_options.BlueprintCategory, client.Name);
 
         var publicMembers = new List<AstNode>();
 
@@ -369,6 +370,7 @@ public sealed class UEApiAstBuilder
         {
             var pathMethodName = _naming.PathMethodName(op.MethodName);
             var displayName = FormatDisplayName(pathMethodName);
+            var pathMethodCategory = $"{category}|{UENamingConvention.ToPascalCase(op.MethodName)}";
 
             var parameters = op.PathParameters
                 .Select(p => new CppParameterNode(
@@ -382,13 +384,14 @@ public sealed class UEApiAstBuilder
                 name: new IdentifierNode(pathMethodName),
                 returnType: new SimpleTypeNode(new IdentifierNode("FString")),
                 parameters: parameters,
-                specifiers: UFunctionSpecifiers.PathBuilder(category, displayName),
+                specifiers: UFunctionSpecifiers.PathBuilder(pathMethodCategory, displayName),
                 isStatic: true,
                 documentation: BuildPathDocumentation(op)));
         }
 
         return new UClassDeclarationNode(
             name: new IdentifierNode(className),
+            specifiers: UClassSpecifiers.PathsLibrary(category),
             apiMacro: _options.ModuleApiMacro,
             baseTypes: new TypeNode[] { new SimpleTypeNode(new IdentifierNode("UBlueprintFunctionLibrary")) },
             publicMembers: publicMembers,
@@ -409,9 +412,10 @@ public sealed class UEApiAstBuilder
         var hasSuccessBody = _resultBuilder.HasSuccessBody(operation);
         var successBodyTypeName = GetSuccessBodyTypeName(operation);
 
+        const string ResponseParamName = "Response";
         var parameters = new List<CppParameterNode>
         {
-            new(new IdentifierNode("R"),
+            new(new IdentifierNode(ResponseParamName),
                 new SimpleTypeNode(new IdentifierNode("FValIOResponse")),
                 isConst: true, isReference: true)
         };
@@ -426,50 +430,18 @@ public sealed class UEApiAstBuilder
             new BinaryExpressionNode(
                 new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("StatusCode")),
                 BinaryOperator.Assign,
-                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(ResponseParamName)), new IdentifierNode("StatusCode")),
                 isAssignment: true)));
 
-        var assignErrBody = new ExpressionStatementNode(
+        statements.Add(new ExpressionStatementNode(
             new BinaryExpressionNode(
-                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("ErrorBody")),
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("Response")),
                 BinaryOperator.Assign,
-                new CallExpressionNode(
-                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Err")), new IdentifierNode("GetValue")),
-                    Array.Empty<ExpressionNode>().ToImmutableList()),
-                isAssignment: true));
+                new IdentifierExpressionNode(new IdentifierNode(ResponseParamName)),
+                isAssignment: true)));
 
-        var assignFallback = new ExpressionStatementNode(
-            new BinaryExpressionNode(
-                new MemberAccessExpressionNode(
-                    new MemberAccessExpressionNode(
-                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode("ErrorBody")),
-                        new IdentifierNode("Exception")),
-                    new IdentifierNode("message")),
-                BinaryOperator.Assign,
-                new CallExpressionNode(
-                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("GetBodyAsString")),
-                    Array.Empty<ExpressionNode>().ToImmutableList()),
-                isAssignment: true));
-
-        var errIfStatement = new IfStatementNode(
-            new CallExpressionNode(
-                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Err")), new IdentifierNode("IsSet")),
-                Array.Empty<ExpressionNode>().ToImmutableList()),
-            new BlockNode(new StatementNode[] { assignErrBody }.ToImmutableList()),
-            new BlockNode(new StatementNode[] { assignFallback }.ToImmutableList()));
-
-        var errorBlockStatements = new List<StatementNode>
-        {
-            new VariableDeclarationStatementNode(
-                new IdentifierNode("Err"),
-                new SimpleTypeNode(new IdentifierNode("const TOptional<FRestApiResponse>")),
-                new CallExpressionNode(
-                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("GetBodyAs")),
-                    Array.Empty<ExpressionNode>().ToImmutableList(),
-                    genericTypeName: "FRestApiResponse")),
-            errIfStatement
-        };
-        var errorThenBlock = new BlockNode(errorBlockStatements.ToImmutableList());
+        var nonSuccessResponses = UEResultAstBuilder.GetNonSuccessResponses(operation);
+        BlockNode? nonSuccessChain = BuildNonSuccessResponseChain(operation, nonSuccessResponses, ResponseParamName);
 
         if (hasSuccessBody)
         {
@@ -479,17 +451,17 @@ public sealed class UEApiAstBuilder
                     new IdentifierNode("Dto"),
                     new SimpleTypeNode(new IdentifierNode($"const TOptional<{successBodyTypeName}>")),
                     new CallExpressionNode(
-                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("GetBodyAs")),
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(ResponseParamName)), new IdentifierNode("GetBodyAs")),
                         Array.Empty<ExpressionNode>().ToImmutableList(),
                         genericTypeName: successBodyTypeName)),
+                new VariableDeclarationStatementNode(
+                    new IdentifierNode("bDtoIsSet"),
+                    new SimpleTypeNode(new IdentifierNode("const bool"), isPrimitive: true),
+                    new CallExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Dto")), new IdentifierNode("IsSet")),
+                        Array.Empty<ExpressionNode>().ToImmutableList())),
                 new IfStatementNode(
-                    new BinaryExpressionNode(
-                        new CallExpressionNode(
-                            new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Dto")), new IdentifierNode("IsSet")),
-                            Array.Empty<ExpressionNode>().ToImmutableList()),
-                        BinaryOperator.Equal,
-                        new LiteralExpressionNode(true, LiteralKind.Boolean),
-                        isAssignment: false),
+                    new IdentifierExpressionNode(new IdentifierNode("bDtoIsSet")),
                     new BlockNode(new StatementNode[]
                     {
                         new ExpressionStatementNode(
@@ -502,45 +474,34 @@ public sealed class UEApiAstBuilder
                                 isAssignment: true))
                     }.ToImmutableList()))
             };
-            var successCond = new CallExpressionNode(
-                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("IsSuccess")),
-                Array.Empty<ExpressionNode>().ToImmutableList());
-            var errorCond = new BinaryExpressionNode(
-                new BinaryExpressionNode(
-                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
-                    BinaryOperator.GreaterThanOrEqual,
-                    new LiteralExpressionNode(400, LiteralKind.Number)),
-                BinaryOperator.LogicalAnd,
-                new BinaryExpressionNode(
-                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
-                    BinaryOperator.LessThan,
-                    new LiteralExpressionNode(600, LiteralKind.Number)));
-            statements.Add(new IfStatementNode(
-                successCond,
-                new BlockNode(successThenStatements.ToImmutableList()),
-                new BlockNode(new StatementNode[] { new IfStatementNode(errorCond, errorThenBlock) }.ToImmutableList())));
+            var bIsSuccessDecl = new VariableDeclarationStatementNode(
+                new IdentifierNode("bIsSuccess"),
+                new SimpleTypeNode(new IdentifierNode("const bool"), isPrimitive: true),
+                new CallExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(ResponseParamName)), new IdentifierNode("IsSuccess")),
+                    Array.Empty<ExpressionNode>().ToImmutableList()));
+            statements.Add(bIsSuccessDecl);
+
+            var successCond = new IdentifierExpressionNode(new IdentifierNode("bIsSuccess"));
+
+            if (nonSuccessChain != null)
+            {
+                statements.Add(new IfStatementNode(
+                    successCond,
+                    new BlockNode(successThenStatements.ToImmutableList()),
+                    nonSuccessChain));
+            }
+            else
+            {
+                statements.Add(new IfStatementNode(
+                    successCond,
+                    new BlockNode(successThenStatements.ToImmutableList())));
+            }
         }
-        else
+        else if (nonSuccessChain != null)
         {
-            var notSuccessCond = new BinaryExpressionNode(
-                new BinaryExpressionNode(
-                    new CallExpressionNode(
-                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("IsSuccess")),
-                        Array.Empty<ExpressionNode>().ToImmutableList()),
-                    BinaryOperator.Equal,
-                    new LiteralExpressionNode(false, LiteralKind.Boolean)),
-                BinaryOperator.LogicalAnd,
-                new BinaryExpressionNode(
-                    new BinaryExpressionNode(
-                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
-                        BinaryOperator.GreaterThanOrEqual,
-                        new LiteralExpressionNode(400, LiteralKind.Number)),
-                    BinaryOperator.LogicalAnd,
-                    new BinaryExpressionNode(
-                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("R")), new IdentifierNode("StatusCode")),
-                        BinaryOperator.LessThan,
-                        new LiteralExpressionNode(600, LiteralKind.Number))));
-            statements.Add(new IfStatementNode(notSuccessCond, errorThenBlock));
+            foreach (var s in nonSuccessChain.Statements)
+                statements.Add(s);
         }
 
         statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("Out"))));
@@ -612,7 +573,8 @@ public sealed class UEApiAstBuilder
             {
                 new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("EValIOHttpVerb")),
-                    new IdentifierNode(httpVerb)),
+                    new IdentifierNode(httpVerb),
+                    useScopeOperator: true),
                 new IdentifierExpressionNode(new IdentifierNode("Path"))
             }.ToImmutableList());
 
@@ -627,7 +589,8 @@ public sealed class UEApiAstBuilder
                     new CallExpressionNode(
                         new MemberAccessExpressionNode(
                             new IdentifierExpressionNode(new IdentifierNode("FString")),
-                            new IdentifierNode("FromInt")),
+                            new IdentifierNode("FromInt"),
+                            useScopeOperator: true),
                         new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(propName)) }.ToImmutableList())
                 }.ToImmutableList());
         }
@@ -852,13 +815,122 @@ public sealed class UEApiAstBuilder
 
     // ===== Helper methods =====
 
+    /// <summary>
+    /// Строит цепочку if (Response.StatusCode == X) / else if / else для не-успешных ответов.
+    /// Возвращает BlockNode с одним StatementNode (IfStatement цепочка).
+    /// </summary>
+    private BlockNode? BuildNonSuccessResponseChain(IrOperation operation, IReadOnlyList<IrResponse> nonSuccessResponses, string responseParamName = "Response")
+    {
+        if (nonSuccessResponses.Count == 0) return null;
+
+        var responsesOrdered = nonSuccessResponses
+            .OrderBy(r => r.StatusCode == "default" ? 1 : 0)
+            .ThenBy(r => r.StatusCode)
+            .ToList();
+
+        AstNode? chain = null;
+        for (var i = responsesOrdered.Count - 1; i >= 0; i--)
+        {
+            var r = responsesOrdered[i];
+            var bodyBlock = BuildBodyBlockForResponse(r, responseParamName);
+            if (r.StatusCode == "default")
+            {
+                chain = bodyBlock;
+            }
+            else
+            {
+                if (!int.TryParse(r.StatusCode, out var statusCode))
+                    continue;
+                var cond = new BinaryExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(responseParamName)), new IdentifierNode("StatusCode")),
+                    BinaryOperator.Equal,
+                    new LiteralExpressionNode(statusCode, LiteralKind.Number));
+                var elseBlock = chain != null
+                    ? (chain is BlockNode bn ? bn : new BlockNode(new StatementNode[] { (StatementNode)chain }.ToImmutableList()))
+                    : null;
+                chain = new IfStatementNode(cond, bodyBlock, elseBlock);
+            }
+        }
+
+        if (chain == null) return null;
+        return chain is BlockNode blk ? blk : new BlockNode(new StatementNode[] { (StatementNode)chain }.ToImmutableList());
+    }
+
+    /// <summary>
+    /// Строит блок для одного не-успешного ответа: Response.GetBodyAs&lt;Type&gt;() и присваивание в Out.Body{StatusCode}.
+    /// </summary>
+    private BlockNode BuildBodyBlockForResponse(IrResponse response, string responseParamName = "Response")
+    {
+        var fieldName = _naming.ResultBodyFieldName(response.StatusCode);
+        var typeName = GetResponseBodyTypeName(response);
+
+        if (response.Type != null)
+        {
+            var varName = $"{_naming.ResultBodyFieldName(response.StatusCode)}Opt";
+            var statements = new List<StatementNode>
+            {
+                new VariableDeclarationStatementNode(
+                    new IdentifierNode(varName),
+                    new SimpleTypeNode(new IdentifierNode($"const TOptional<{typeName}>")),
+                    new CallExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(responseParamName)), new IdentifierNode("GetBodyAs")),
+                        Array.Empty<ExpressionNode>().ToImmutableList(),
+                        genericTypeName: typeName)),
+                new IfStatementNode(
+                    new CallExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(varName)), new IdentifierNode("IsSet")),
+                        Array.Empty<ExpressionNode>().ToImmutableList()),
+                    new BlockNode(new StatementNode[]
+                    {
+                        new ExpressionStatementNode(
+                            new BinaryExpressionNode(
+                                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode(fieldName)),
+                                BinaryOperator.Assign,
+                                new CallExpressionNode(
+                                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(varName)), new IdentifierNode("GetValue")),
+                                    Array.Empty<ExpressionNode>().ToImmutableList()),
+                                isAssignment: true))
+                    }.ToImmutableList()))
+            };
+            return new BlockNode(statements.ToImmutableList());
+        }
+        else
+        {
+            var assign = new ExpressionStatementNode(
+                new BinaryExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Out")), new IdentifierNode(fieldName)),
+                    BinaryOperator.Assign,
+                    new CallExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(responseParamName)), new IdentifierNode("GetBodyAsString")),
+                        Array.Empty<ExpressionNode>().ToImmutableList()),
+                    isAssignment: true));
+            return new BlockNode(new StatementNode[] { assign }.ToImmutableList());
+        }
+    }
+
+    private string GetResponseBodyTypeName(IrResponse response)
+    {
+        if (response.Type is IrModelReference modelRef)
+            return _typeMapper.IsEnumReference(modelRef.ModelName)
+                ? _naming.EnumName(modelRef.ModelName)
+                : _naming.StructName(modelRef.ModelName);
+        if (response.Type != null)
+        {
+            var mapped = _typeMapper.MapType(response.Type);
+            return mapped.ToString() ?? "FString";
+        }
+        return "FString";
+    }
+
     private string GetSuccessBodyTypeName(IrOperation operation)
     {
         var successResponse = operation.Responses.FirstOrDefault(r =>
             r.StatusCode.StartsWith('2') && r.Type != null);
 
         if (successResponse?.Type is IrModelReference modelRef)
-            return _naming.StructName(modelRef.ModelName);
+            return _typeMapper.IsEnumReference(modelRef.ModelName)
+                ? _naming.EnumName(modelRef.ModelName)
+                : _naming.StructName(modelRef.ModelName);
 
         if (successResponse?.Type != null)
         {

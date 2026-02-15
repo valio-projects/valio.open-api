@@ -13,10 +13,20 @@ namespace ValIO.Generators.Cpp.Services;
 public sealed class UETypeMapper
 {
     private readonly UENamingConvention _naming;
+    private IReadOnlySet<string>? _enumNames;
 
     public UETypeMapper(UENamingConvention naming)
     {
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
+    }
+
+    /// <summary>
+    /// Устанавливает множество имён enum'ов для текущей сборки.
+    /// Позволяет отличать IrModelReference на enum от ссылки на struct.
+    /// </summary>
+    public void SetEnumNamesForDocument(IEnumerable<string> enumNames)
+    {
+        _enumNames = enumNames?.ToHashSet();
     }
 
     /// <summary>
@@ -63,11 +73,21 @@ public sealed class UETypeMapper
     }
 
     /// <summary>
-    /// Маппит ссылку на модель: IrModelReference → F{ModelName}
+    /// Маппит ссылку на модель/enum: IrModelReference → F{ModelName} или E{EnumName}
     /// </summary>
     public TypeNode MapModelReference(IrModelReference modelRef)
     {
-        return SimpleType(_naming.StructName(modelRef.ModelName));
+        var isEnum = _enumNames != null && _enumNames.Contains(modelRef.ModelName);
+        var typeName = isEnum ? _naming.EnumName(modelRef.ModelName) : _naming.StructName(modelRef.ModelName);
+        return SimpleType(typeName);
+    }
+
+    /// <summary>
+    /// Проверяет, является ли ModelName ссылкой на enum
+    /// </summary>
+    public bool IsEnumReference(string modelName)
+    {
+        return _enumNames != null && _enumNames.Contains(modelName);
     }
 
     /// <summary>

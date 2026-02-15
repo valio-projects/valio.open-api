@@ -33,11 +33,11 @@ public sealed class UEResultAstBuilder
     /// <summary>
     /// Строит CppHeaderFileNode для Result-структуры операции
     /// </summary>
-    public CppHeaderFileNode Build(IrOperation operation)
+    public CppHeaderFileNode Build(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
     {
         var resultName = _naming.ResultStructName(operation.MethodName);
         var fileName = _naming.ResultFileName(operation.MethodName);
-        var category = _options.BlueprintCategory;
+        var category = _naming.OperationTypeCategory(_options.BlueprintCategory, clientName, operation.MethodName);
 
         var fields = new List<UPropertyFieldNode>();
 
@@ -47,6 +47,13 @@ public sealed class UEResultAstBuilder
             type: new SimpleTypeNode(new IdentifierNode("int32"), isPrimitive: true),
             specifiers: UPropertySpecifiers.ResultField(category),
             defaultValue: new LiteralExpressionNode(0, LiteralKind.Number)));
+
+        // Response — всегда присутствует (сырой ответ)
+        fields.Add(new UPropertyFieldNode(
+            name: new IdentifierNode("Response"),
+            type: new SimpleTypeNode(new IdentifierNode("FValIOResponse")),
+            specifiers: UPropertySpecifiers.ResultField(category),
+            documentation: new CommentNode("Raw HTTP response.", CommentKind.MultiLine)));
 
         // SuccessBody — присутствует если есть 2xx ответ с телом
         var successResponse = FindSuccessResponse(operation);
@@ -61,14 +68,20 @@ public sealed class UEResultAstBuilder
                     CommentKind.MultiLine)));
         }
 
-        // ErrorBody — для обработки ошибок 4xx/5xx
-        fields.Add(new UPropertyFieldNode(
-            name: new IdentifierNode("ErrorBody"),
-            type: new SimpleTypeNode(new IdentifierNode("FRestApiResponse")),
-            specifiers: UPropertySpecifiers.ResultField(category),
-            documentation: new CommentNode(
-                "Valid when StatusCode 400 or 500. For 400 use Error.message, for 500 use Exception.message.",
-                CommentKind.MultiLine)));
+        // Body per status code — для каждого не-успешного ответа из схемы
+        var nonSuccessResponses = GetNonSuccessResponses(operation);
+        foreach (var r in nonSuccessResponses)
+        {
+            var fieldName = _naming.ResultBodyFieldName(r.StatusCode);
+            var bodyType = r.Type != null ? _typeMapper.MapType(r.Type) : new SimpleTypeNode(new IdentifierNode("FString"));
+            fields.Add(new UPropertyFieldNode(
+                name: new IdentifierNode(fieldName),
+                type: bodyType,
+                specifiers: UPropertySpecifiers.ResultField(category),
+                documentation: new CommentNode(
+                    $"Valid when StatusCode is {r.StatusCode}.",
+                    CommentKind.MultiLine)));
+        }
 
         // IsSuccess() inline метод
         var isSuccessMethod = new CppFreeFunctionNode(
@@ -78,7 +91,7 @@ public sealed class UEResultAstBuilder
 
         var structNode = new UStructDeclarationNode(
             name: new IdentifierNode(resultName),
-            specifiers: new UStructSpecifiers { BlueprintType = true },
+            specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
             inlineMethods: new[] { isSuccessMethod },
             documentation: new CommentNode(
@@ -88,15 +101,32 @@ public sealed class UEResultAstBuilder
         var includes = new List<CppIncludeDirectiveNode>
         {
             new("CoreMinimal.h"),
-            new(fileName.Replace(".h", _options.GeneratedHeaderSuffix)),
-            new($"../{_naming.ModelIncludePath("RestApiResponse")}") // ErrorBody type
+            new(_options.ValIOResponseIncludePath)
         };
 
-        // Include для SuccessBody type если это ссылка на модель
-        if (successResponse?.Type is IrModelReference modelRef)
+        // Include для SuccessBody type
+        if (successResponse?.Type is IrModelReference successModelRef)
         {
-            includes.Add(new CppIncludeDirectiveNode($"../{_naming.ModelIncludePath(modelRef.ModelName)}"));
+            var path = enumNames.Contains(successModelRef.ModelName)
+                ? _naming.EnumIncludePath(successModelRef.ModelName)
+                : _naming.ModelIncludePath(successModelRef.ModelName);
+            includes.Add(new CppIncludeDirectiveNode($"../{path}"));
         }
+
+        // Include для каждого body-типа не-успешных ответов
+        foreach (var r in nonSuccessResponses)
+        {
+            if (r.Type is IrModelReference modelRef)
+            {
+                var path = enumNames.Contains(modelRef.ModelName)
+                    ? _naming.EnumIncludePath(modelRef.ModelName)
+                    : _naming.ModelIncludePath(modelRef.ModelName);
+                includes.Add(new CppIncludeDirectiveNode($"../{path}"));
+            }
+        }
+
+        // .generated.h должен быть всегда последним (требование UHT)
+        includes.Add(new CppIncludeDirectiveNode(fileName.Replace(".h", _options.GeneratedHeaderSuffix)));
 
         return new CppHeaderFileNode(
             fileName: fileName,
@@ -120,5 +150,15 @@ public sealed class UEResultAstBuilder
     {
         return operation.Responses.FirstOrDefault(r =>
             r.StatusCode.StartsWith('2') && r.Type != null);
+    }
+
+    /// <summary>
+    /// Возвращает все не-успешные ответы (4xx, 5xx, default)
+    /// </summary>
+    public static IReadOnlyList<IrResponse> GetNonSuccessResponses(IrOperation operation)
+    {
+        return operation.Responses
+            .Where(r => !r.StatusCode.StartsWith('2'))
+            .ToList();
     }
 }

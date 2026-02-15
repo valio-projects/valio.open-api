@@ -24,9 +24,14 @@ public sealed class UPropertyFieldNode : DeclarationNode
     public ExpressionNode? DefaultValue { get; }
 
     /// <summary>
-    /// Спецификаторы UPROPERTY
+    /// Спецификаторы UPROPERTY (игнорируются если SkipUProperty = true)
     /// </summary>
     public UPropertySpecifiers Specifiers { get; }
+
+    /// <summary>
+    /// Если true — поле объявляется без UPROPERTY макроса (обычное C++ поле).
+    /// </summary>
+    public bool SkipUProperty { get; }
 
     public override AstNodeKind Kind => AstNodeKind.UPropertyField;
 
@@ -50,12 +55,14 @@ public sealed class UPropertyFieldNode : DeclarationNode
         UPropertySpecifiers? specifiers = null,
         ExpressionNode? defaultValue = null,
         CommentNode? documentation = null,
+        bool skipUProperty = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation, metadata: metadata)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
         Specifiers = specifiers ?? new UPropertySpecifiers();
         DefaultValue = defaultValue;
+        SkipUProperty = skipUProperty;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -73,6 +80,7 @@ public sealed class UPropertyFieldNode : DeclarationNode
             Specifiers,
             DefaultValue != null ? (ExpressionNode)DefaultValue.Clone() : null,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
+            SkipUProperty,
             Metadata.ToImmutableDictionary());
     }
 

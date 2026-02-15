@@ -15,6 +15,12 @@ public sealed record UStructSpecifiers
     public bool BlueprintType { get; init; } = true;
 
     /// <summary>
+    /// Category для группировки в Blueprint Editor и Details Panel.
+    /// USTRUCT(BlueprintType, Category = "ValIO|Models")
+    /// </summary>
+    public string? Category { get; init; }
+
+    /// <summary>
     /// Meta-спецификаторы: meta = (Key = "Value", ...).
     /// Пример: meta = (ShortToolTip = "Result of Get Queue Tasks List")
     /// </summary>

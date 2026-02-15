@@ -11,6 +11,7 @@ namespace ValIO.Generators.Cpp.Ast.Builders;
 /// </summary>
 public sealed class CppAstBuilder
 {
+    private readonly UETypeMapper _typeMapper;
     private readonly UEModelAstBuilder _modelBuilder;
     private readonly UEEnumAstBuilder _enumBuilder;
     private readonly UEResultAstBuilder _resultBuilder;
@@ -20,13 +21,13 @@ public sealed class CppAstBuilder
     public CppAstBuilder(CppGenerationOptions options)
     {
         var naming = new UENamingConvention();
-        var typeMapper = new UETypeMapper(naming);
+        _typeMapper = new UETypeMapper(naming);
 
-        _modelBuilder = new UEModelAstBuilder(typeMapper, naming, options);
+        _modelBuilder = new UEModelAstBuilder(_typeMapper, naming, options);
         _enumBuilder = new UEEnumAstBuilder(naming, options);
-        _resultBuilder = new UEResultAstBuilder(typeMapper, naming, options);
-        _paramsBuilder = new UEParamsAstBuilder(typeMapper, naming, options);
-        _apiBuilder = new UEApiAstBuilder(typeMapper, naming, options, _resultBuilder);
+        _resultBuilder = new UEResultAstBuilder(_typeMapper, naming, options);
+        _paramsBuilder = new UEParamsAstBuilder(_typeMapper, naming, options);
+        _apiBuilder = new UEApiAstBuilder(_typeMapper, naming, options, _resultBuilder);
     }
 
     /// <summary>
@@ -38,6 +39,11 @@ public sealed class CppAstBuilder
         /// Все сгенерированные файлы: относительный путь → AST-узел верхнего уровня
         /// </summary>
         public Dictionary<string, Core.Ast.Nodes.AstNode> Files { get; } = new();
+
+        /// <summary>
+        /// Предупреждения при сборке (например, пропуск рекурсивных свойств)
+        /// </summary>
+        public List<string> Warnings { get; } = new();
     }
 
     /// <summary>
@@ -46,11 +52,13 @@ public sealed class CppAstBuilder
     public BuildResult Build(IrDocument document)
     {
         var result = new BuildResult();
+        var enumNames = document.Enums.Select(e => e.Name).ToHashSet();
+        _typeMapper.SetEnumNamesForDocument(enumNames);
 
         // 1. Модели → Models/{StructName}.h
         foreach (var model in document.Models)
         {
-            var headerNode = _modelBuilder.Build(model);
+            var headerNode = _modelBuilder.Build(model, enumNames, result.Warnings);
             result.Files[$"Models/{headerNode.FileName}"] = headerNode;
         }
 
@@ -67,14 +75,14 @@ public sealed class CppAstBuilder
             // Results → Results/{ResultName}.h
             foreach (var operation in client.Operations)
             {
-                var resultNode = _resultBuilder.Build(operation);
+                var resultNode = _resultBuilder.Build(operation, enumNames, client.Name);
                 result.Files[$"Results/{resultNode.FileName}"] = resultNode;
             }
 
             // Params → Params/{ParamsName}.h
             foreach (var operation in client.Operations)
             {
-                var paramsNode = _paramsBuilder.Build(operation);
+                var paramsNode = _paramsBuilder.Build(operation, enumNames, client.Name);
                 result.Files[$"Params/{paramsNode.FileName}"] = paramsNode;
             }
 

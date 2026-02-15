@@ -196,7 +196,8 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         var sb = new StringBuilder();
         if (node.Documentation != null)
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
-        sb.AppendLine($"{Indent()}{RenderUPropertyMacro(node.Specifiers)}");
+        if (!node.SkipUProperty)
+            sb.AppendLine($"{Indent()}{RenderUPropertyMacro(node.Specifiers)}");
         var typeStr = RenderType(node.Type);
         var defaultStr = node.DefaultValue != null ? $" = {RenderDefaultValue(node.DefaultValue)}" : "";
         sb.AppendLine($"{Indent()}{typeStr} {node.Name.Name}{defaultStr};");
@@ -273,7 +274,9 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         var sb = new StringBuilder();
         if (node.Documentation != null)
             sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
-        sb.AppendLine("UENUM(BlueprintType)");
+        var enumParts = new List<string> { "BlueprintType" };
+        if (!string.IsNullOrEmpty(node.Category)) enumParts.Add($"Category = \"{node.Category}\"");
+        sb.AppendLine($"UENUM({string.Join(", ", enumParts)})");
         sb.AppendLine($"enum class {node.Name.Name} : {RenderType(node.UnderlyingType)}");
         sb.AppendLine("{");
         _indentLevel++;
@@ -437,8 +440,63 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
     public override string VisitVariableDeclarationStatement(VariableDeclarationStatementNode node)
     {
         var type = node.Type != null ? RenderType(node.Type) + " " : "";
-        var init = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
-        return $"{type}{node.Name.Name}{init};";
+        if (node.Initializer == null)
+            return $"{type}{node.Name.Name};";
+        var initRendered = TryRenderChainedExpression(node.Initializer) ?? Visit(node.Initializer);
+        var init = $" = {initRendered}";
+        var result = $"{type}{node.Name.Name}{init};";
+        // VisitBlock добавляет Indent() только для однострочных; для многострочных — добавляем сами
+        if (result.Contains('\n'))
+            result = Indent() + result;
+        return result;
+    }
+
+    /// <summary>
+    /// Рендерит цепочку вызовов (Client->NewRequest(...).AddQueryParam(...).Build()) с переносами строк.
+    /// Возвращает null если выражение не является цепочкой.
+    /// </summary>
+    private string? TryRenderChainedExpression(ExpressionNode expr)
+    {
+        var chain = new List<(string Member, IReadOnlyList<ExpressionNode> Args)>();
+        if (!TryCollectChain(expr, chain, out var head) || head == null)
+            return null;
+        if (chain.Count == 0)
+            return null;
+
+        var sb = new StringBuilder();
+        sb.Append(Visit(head));
+        var continuationIndent = Indent() + IndentChar;
+        foreach (var (member, args) in chain)
+        {
+            var argsStr = string.Join(", ", args.Select(Visit));
+            sb.AppendLine();
+            sb.Append($"{continuationIndent}.{member}({argsStr})");
+        }
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Собирает цепочку вызовов: Call(MemberAccess(Call(...), Member), Args).
+    /// </summary>
+    private static bool TryCollectChain(
+        ExpressionNode expr,
+        List<(string Member, IReadOnlyList<ExpressionNode> Args)> chain,
+        out ExpressionNode? head)
+    {
+        head = null;
+        if (expr is not CallExpressionNode call || call.Target is not MemberAccessExpressionNode mac)
+            return false;
+
+        if (mac.Object is CallExpressionNode inner)
+        {
+            if (!TryCollectChain(inner, chain, out head))
+                return false;
+            chain.Add((mac.Member.Name, call.Arguments));
+            return true;
+        }
+
+        head = call;
+        return true;
     }
 
     public override string VisitReturnStatement(ReturnStatementNode node)
@@ -640,6 +698,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
     private static string RenderUStructMacro(UStructSpecifiers spec)
     {
         var parts = new List<string> { "BlueprintType" };
+        if (!string.IsNullOrEmpty(spec.Category)) parts.Add($"Category = \"{spec.Category}\"");
         foreach (var meta in spec.Meta)
             parts.Add($"meta = ({meta.Key} = \"{meta.Value}\")");
         return $"USTRUCT({string.Join(", ", parts)})";
@@ -664,6 +723,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
     private static string RenderUClassMacro(UClassSpecifiers spec)
     {
         var parts = new List<string>();
+        if (!string.IsNullOrEmpty(spec.Category)) parts.Add($"Category = \"{spec.Category}\"");
         if (spec.Meta.Count > 0)
         {
             var metaParts = spec.Meta.Select(kv => $"{kv.Key} = \"{kv.Value}\"");

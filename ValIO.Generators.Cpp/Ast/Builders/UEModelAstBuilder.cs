@@ -31,22 +31,30 @@ public sealed class UEModelAstBuilder
     /// <summary>
     /// Строит CppHeaderFileNode из IrModel
     /// </summary>
-    public CppHeaderFileNode Build(IrModel model)
+    /// <param name="warnings">Коллекция для записи предупреждений (пропуск рекурсивных свойств)</param>
+    public CppHeaderFileNode Build(IrModel model, IReadOnlySet<string> enumNames, ICollection<string>? warnings = null)
     {
         var structName = _naming.StructName(model.Name);
         var fileName = _naming.ModelFileName(model.Name);
 
-        var fields = model.Properties
-            .Select(BuildField)
-            .ToList();
-
+        var category = _naming.ModelTypeCategory(_options.BlueprintCategory);
+        var fields = new List<UPropertyFieldNode>();
+        foreach (var property in model.Properties)
+        {
+            if (TypeReferencesModel(property.Type, model.Name, enumNames))
+            {
+                warnings?.Add($"Model {structName}: skipping recursive property '{property.Name}' (Unreal Engine does not support recursive types).");
+                continue;
+            }
+            fields.Add(BuildField(property, category));
+        }
         var structNode = new UStructDeclarationNode(
             name: new IdentifierNode(structName),
-            specifiers: new UStructSpecifiers { BlueprintType = true },
+            specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
             documentation: BuildDocumentation(model.Description));
 
-        var includes = CollectIncludes(model, fileName);
+        var includes = CollectIncludes(model, fileName, enumNames);
 
         return new CppHeaderFileNode(
             fileName: fileName,
@@ -58,7 +66,7 @@ public sealed class UEModelAstBuilder
     /// <summary>
     /// Строит UPropertyFieldNode из IrProperty
     /// </summary>
-    private UPropertyFieldNode BuildField(IrProperty property)
+    private UPropertyFieldNode BuildField(IrProperty property, string category)
     {
         var type = _typeMapper.MapType(property.Type);
         var defaultValueStr = _typeMapper.GetDefaultValue(property.Type);
@@ -69,7 +77,7 @@ public sealed class UEModelAstBuilder
         return new UPropertyFieldNode(
             name: new IdentifierNode(_naming.PropertyName(property.Name)),
             type: type,
-            specifiers: UPropertySpecifiers.ModelField(_options.BlueprintCategory),
+            specifiers: UPropertySpecifiers.ModelField(category),
             defaultValue: defaultValue,
             documentation: BuildDocumentation(property.Description));
     }
@@ -77,58 +85,90 @@ public sealed class UEModelAstBuilder
     /// <summary>
     /// Собирает необходимые #include директивы для модели
     /// </summary>
-    private List<CppIncludeDirectiveNode> CollectIncludes(IrModel model, string fileName)
+    private List<CppIncludeDirectiveNode> CollectIncludes(IrModel model, string fileName, IReadOnlySet<string> enumNames)
     {
-        var includes = new List<CppIncludeDirectiveNode>
-        {
-            new("CoreMinimal.h"),
-            new(fileName.Replace(".h", _options.GeneratedHeaderSuffix))
-        };
+        var includes = new List<CppIncludeDirectiveNode> { new("CoreMinimal.h") };
 
-        // Добавляем includes для зависимых моделей
         var referencedModels = new HashSet<string>();
+        var referencedEnums = new HashSet<string>();
         foreach (var property in model.Properties)
         {
-            CollectModelReferences(property.Type, referencedModels);
+            if (TypeReferencesModel(property.Type, model.Name, enumNames))
+                continue; // Skip recursive — already excluded from fields
+            CollectTypeReferences(property.Type, referencedModels, referencedEnums, enumNames);
         }
 
-        foreach (var refModel in referencedModels.OrderBy(x => x))
-        {
-            var refFileName = _naming.ModelFileName(refModel);
-            includes.Add(new CppIncludeDirectiveNode(refFileName));
-        }
+        foreach (var refModel in referencedModels.Where(m => m != model.Name).OrderBy(x => x))
+            includes.Add(new CppIncludeDirectiveNode(_naming.ModelFileName(refModel)));
+
+        foreach (var refEnum in referencedEnums.OrderBy(x => x))
+            includes.Add(new CppIncludeDirectiveNode($"../{_naming.EnumIncludePath(refEnum)}"));
+
+        // .generated.h должен быть всегда последним (требование UHT)
+        includes.Add(new CppIncludeDirectiveNode(fileName.Replace(".h", _options.GeneratedHeaderSuffix)));
 
         return includes;
     }
 
     /// <summary>
-    /// Рекурсивно собирает ссылки на модели из типа
+    /// Проверяет, содержит ли тип ссылку на указанную модель (прямо или через TArray, TMap и т.д.).
+    /// UE не поддерживает рекурсивные типы.
     /// </summary>
-    private static void CollectModelReferences(IrType type, HashSet<string> models)
+    private static bool TypeReferencesModel(IrType type, string modelName, IReadOnlySet<string> enumNames)
     {
         switch (type)
         {
             case IrModelReference modelRef:
-                models.Add(modelRef.ModelName);
+                return !enumNames.Contains(modelRef.ModelName) && modelRef.ModelName == modelName;
+            case IrArrayType array:
+                return TypeReferencesModel(array.ElementType, modelName, enumNames);
+            case IrDictionaryType dict:
+                return TypeReferencesModel(dict.KeyType, modelName, enumNames)
+                    || TypeReferencesModel(dict.ValueType, modelName, enumNames);
+            case IrNullableType nullable:
+                return TypeReferencesModel(nullable.InnerType, modelName, enumNames);
+            case IrOptionalType optional:
+                return TypeReferencesModel(optional.InnerType, modelName, enumNames);
+            case IrUnionType union:
+                return union.Types.Any(t => TypeReferencesModel(t, modelName, enumNames));
+            case IrIntersectionType intersection:
+                return intersection.Types.Any(t => TypeReferencesModel(t, modelName, enumNames));
+            default:
+                return false;
+        }
+    }
+
+    /// <summary>
+    /// Рекурсивно собирает ссылки на модели и enum'ы из типа
+    /// </summary>
+    private static void CollectTypeReferences(IrType type, HashSet<string> models, HashSet<string> enums, IReadOnlySet<string> enumNames)
+    {
+        switch (type)
+        {
+            case IrModelReference modelRef:
+                if (enumNames.Contains(modelRef.ModelName))
+                    enums.Add(modelRef.ModelName);
+                else
+                    models.Add(modelRef.ModelName);
                 break;
             case IrArrayType array:
-                CollectModelReferences(array.ElementType, models);
+                CollectTypeReferences(array.ElementType, models, enums, enumNames);
                 break;
             case IrDictionaryType dict:
-                CollectModelReferences(dict.KeyType, models);
-                CollectModelReferences(dict.ValueType, models);
+                CollectTypeReferences(dict.KeyType, models, enums, enumNames);
+                CollectTypeReferences(dict.ValueType, models, enums, enumNames);
                 break;
             case IrNullableType nullable:
-                CollectModelReferences(nullable.InnerType, models);
+                CollectTypeReferences(nullable.InnerType, models, enums, enumNames);
                 break;
             case IrOptionalType optional:
-                CollectModelReferences(optional.InnerType, models);
+                CollectTypeReferences(optional.InnerType, models, enums, enumNames);
                 break;
             case IrUnionType union:
-                foreach (var t in union.Types) CollectModelReferences(t, models);
+                foreach (var t in union.Types) CollectTypeReferences(t, models, enums, enumNames);
                 break;
             case IrIntersectionType intersection:
-                foreach (var t in intersection.Types) CollectModelReferences(t, models);
+                foreach (var t in intersection.Types) CollectTypeReferences(t, models, enums, enumNames);
                 break;
         }
     }

@@ -32,11 +32,11 @@ public sealed class UEParamsAstBuilder
     /// <summary>
     /// Строит CppHeaderFileNode с Params-структурами для операции
     /// </summary>
-    public CppHeaderFileNode Build(IrOperation operation)
+    public CppHeaderFileNode Build(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
     {
         var paramsName = _naming.ParamsStructName(operation.MethodName);
         var fileName = _naming.ParamsFileName(operation.MethodName);
-        var category = _options.BlueprintCategory;
+        var category = _naming.OperationTypeCategory(_options.BlueprintCategory, clientName, operation.MethodName);
 
         var declarations = new List<AstNode>();
         var aggregateFields = new List<UPropertyFieldNode>();
@@ -50,14 +50,18 @@ public sealed class UEParamsAstBuilder
 
         var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasForm ? 1 : 0) + (hasHeaders ? 1 : 0);
 
+        var methodNamePascal = UENamingConvention.ToPascalCase(operation.MethodName);
+
         // Если одна группа или менее — упрощённая плоская структура
         if (groupCount <= 1)
         {
             var flatFields = BuildFlatFields(operation, category);
+            var flatDoc = BuildParamsStructDocumentation(operation, paramsName, methodNamePascal, hasBody: hasBody || hasForm);
             var flatStruct = new UStructDeclarationNode(
                 name: new IdentifierNode(paramsName),
-                specifiers: new UStructSpecifiers { BlueprintType = true },
-                fields: flatFields);
+                specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
+                fields: flatFields,
+                documentation: flatDoc);
 
             declarations.Add(flatStruct);
         }
@@ -67,51 +71,72 @@ public sealed class UEParamsAstBuilder
             if (hasRoute)
             {
                 var routeName = _naming.RouteParamsStructName(operation.MethodName);
-                var routeFields = BuildParameterFields(operation.PathParameters, "Route");
+                var routeFields = BuildParameterFields(operation.PathParameters, category);
+                var routeDoc = new CommentNode(
+                    $"Path parameters for {methodNamePascal}. Values are substituted into the URL path placeholders (e.g. /api/projects/{{projectId}}).",
+                    CommentKind.MultiLine);
                 var routeStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(routeName),
-                    specifiers: new UStructSpecifiers { BlueprintType = true },
-                    fields: routeFields);
+                    specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
+                    fields: routeFields,
+                    documentation: routeDoc);
                 declarations.Add(routeStruct);
 
                 aggregateFields.Add(new UPropertyFieldNode(
                     name: new IdentifierNode("Route"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(routeName)),
-                    specifiers: UPropertySpecifiers.ParamField("Route")));
+                    specifiers: UPropertySpecifiers.ParamField(category),
+                    documentation: new CommentNode(
+                        "Path/route parameters. Values are substituted into the URL path (e.g. /api/projects/{projectId}).",
+                        CommentKind.MultiLine)));
             }
 
             // Query под-структура
             if (hasQuery)
             {
                 var queryName = _naming.QueryParamsStructName(operation.MethodName);
-                var queryFields = BuildParameterFields(operation.QueryParameters, "Query");
+                var queryFields = BuildParameterFields(operation.QueryParameters, category);
+                var queryDoc = new CommentNode(
+                    $"Query parameters for {methodNamePascal}. Appended to the URL as ?key=value pairs.",
+                    CommentKind.MultiLine);
                 var queryStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(queryName),
-                    specifiers: new UStructSpecifiers { BlueprintType = true },
-                    fields: queryFields);
+                    specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
+                    fields: queryFields,
+                    documentation: queryDoc);
                 declarations.Add(queryStruct);
 
                 aggregateFields.Add(new UPropertyFieldNode(
                     name: new IdentifierNode("Query"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(queryName)),
-                    specifiers: UPropertySpecifiers.ParamField("Query")));
+                    specifiers: UPropertySpecifiers.ParamField(category),
+                    documentation: new CommentNode(
+                        "Query string parameters. Appended to the URL as ?key=value pairs.",
+                        CommentKind.MultiLine)));
             }
 
             // Headers под-структура
             if (hasHeaders)
             {
-                var headerName = $"F{UENamingConvention.ToPascalCase(operation.MethodName)}HeaderParams";
-                var headerFields = BuildParameterFields(operation.HeaderParameters, "Headers");
+                var headerName = $"F{methodNamePascal}HeaderParams";
+                var headerFields = BuildParameterFields(operation.HeaderParameters, category);
+                var headerDoc = new CommentNode(
+                    $"HTTP header parameters for {methodNamePascal}.",
+                    CommentKind.MultiLine);
                 var headerStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(headerName),
-                    specifiers: new UStructSpecifiers { BlueprintType = true },
-                    fields: headerFields);
+                    specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
+                    fields: headerFields,
+                    documentation: headerDoc);
                 declarations.Add(headerStruct);
 
                 aggregateFields.Add(new UPropertyFieldNode(
                     name: new IdentifierNode("Headers"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(headerName)),
-                    specifiers: UPropertySpecifiers.ParamField("Headers")));
+                    specifiers: UPropertySpecifiers.ParamField(category),
+                    documentation: new CommentNode(
+                        "HTTP header parameters.",
+                        CommentKind.MultiLine)));
             }
 
             // Body под-структура (JSON)
@@ -119,23 +144,30 @@ public sealed class UEParamsAstBuilder
             {
                 var bodyName = _naming.BodyParamsStructName(operation.MethodName);
                 var bodyType = _typeMapper.MapType(operation.RequestBody.Type);
+                var bodyDataDoc = BuildRequestBodyFieldDocumentation(operation.RequestBody.Description, "Request body (JSON).");
                 var bodyFields = new List<UPropertyFieldNode>
                 {
                     new(
                         name: new IdentifierNode("Data"),
                         type: bodyType,
-                        specifiers: UPropertySpecifiers.ParamField("Body"))
+                        specifiers: UPropertySpecifiers.ParamField(category),
+                        documentation: bodyDataDoc)
                 };
+                var bodyStructDoc = BuildRequestBodyStructDocumentation(operation.RequestBody.Description, methodNamePascal, "JSON request body");
                 var bodyStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(bodyName),
-                    specifiers: new UStructSpecifiers { BlueprintType = true },
-                    fields: bodyFields);
+                    specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
+                    fields: bodyFields,
+                    documentation: bodyStructDoc);
                 declarations.Add(bodyStruct);
 
                 aggregateFields.Add(new UPropertyFieldNode(
                     name: new IdentifierNode("Body"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(bodyName)),
-                    specifiers: UPropertySpecifiers.ParamField("Body")));
+                    specifiers: UPropertySpecifiers.ParamField(category),
+                    documentation: new CommentNode(
+                        "Request body (JSON). Sent in the HTTP request body.",
+                        CommentKind.MultiLine)));
             }
 
             // Form под-структура (multipart)
@@ -143,54 +175,62 @@ public sealed class UEParamsAstBuilder
             {
                 var formName = _naming.FormParamsStructName(operation.MethodName);
                 var formType = _typeMapper.MapType(operation.RequestBody.Type);
+                var formDataDoc = BuildRequestBodyFieldDocumentation(operation.RequestBody.Description, "Form data (multipart/form-data).");
                 var formFields = new List<UPropertyFieldNode>
                 {
                     new(
                         name: new IdentifierNode("Data"),
                         type: formType,
-                        specifiers: UPropertySpecifiers.ParamField("Form"))
+                        specifiers: UPropertySpecifiers.ParamField(category),
+                        documentation: formDataDoc)
                 };
+                var formStructDoc = BuildRequestBodyStructDocumentation(operation.RequestBody.Description, methodNamePascal, "Form data (multipart/form-data)");
                 var formStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(formName),
-                    specifiers: new UStructSpecifiers { BlueprintType = true },
-                    fields: formFields);
+                    specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
+                    fields: formFields,
+                    documentation: formStructDoc);
                 declarations.Add(formStruct);
 
                 aggregateFields.Add(new UPropertyFieldNode(
                     name: new IdentifierNode("Form"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(formName)),
-                    specifiers: UPropertySpecifiers.ParamField("Form")));
+                    specifiers: UPropertySpecifiers.ParamField(category),
+                    documentation: new CommentNode(
+                        "Form data (multipart/form-data). For file uploads and form submissions.",
+                        CommentKind.MultiLine)));
             }
 
             // Агрегирующая структура
+            var aggregateDoc = BuildParamsStructDocumentation(operation, paramsName, methodNamePascal, hasBody: hasBody || hasForm);
             var aggregateStruct = new UStructDeclarationNode(
                 name: new IdentifierNode(paramsName),
-                specifiers: new UStructSpecifiers { BlueprintType = true },
-                fields: aggregateFields);
+                specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
+                fields: aggregateFields,
+                documentation: aggregateDoc);
             declarations.Add(aggregateStruct);
         }
 
-        var includes = new List<CppIncludeDirectiveNode>
-        {
-            new("CoreMinimal.h"),
-            new(fileName.Replace(".h", _options.GeneratedHeaderSuffix))
-        };
+        var includes = new List<CppIncludeDirectiveNode> { new("CoreMinimal.h") };
 
-        // Includes для моделей (Body/Form Data и параметры, ссылающиеся на модели)
         var referencedModels = new HashSet<string>();
+        var referencedEnums = new HashSet<string>();
         if (operation.RequestBody?.Type != null)
-            CollectModelReferences(operation.RequestBody.Type, referencedModels);
+            CollectTypeReferences(operation.RequestBody.Type, referencedModels, referencedEnums, enumNames);
         foreach (var p in operation.PathParameters)
-            CollectModelReferences(p.Type, referencedModels);
+            CollectTypeReferences(p.Type, referencedModels, referencedEnums, enumNames);
         foreach (var p in operation.QueryParameters)
-            CollectModelReferences(p.Type, referencedModels);
+            CollectTypeReferences(p.Type, referencedModels, referencedEnums, enumNames);
         foreach (var p in operation.HeaderParameters)
-            CollectModelReferences(p.Type, referencedModels);
+            CollectTypeReferences(p.Type, referencedModels, referencedEnums, enumNames);
 
         foreach (var modelName in referencedModels.OrderBy(x => x))
-        {
             includes.Add(new CppIncludeDirectiveNode($"../{_naming.ModelIncludePath(modelName)}"));
-        }
+        foreach (var enumName in referencedEnums.OrderBy(x => x))
+            includes.Add(new CppIncludeDirectiveNode($"../{_naming.EnumIncludePath(enumName)}"));
+
+        // .generated.h должен быть всегда последним (требование UHT)
+        includes.Add(new CppIncludeDirectiveNode(fileName.Replace(".h", _options.GeneratedHeaderSuffix)));
 
         return new CppHeaderFileNode(
             fileName: fileName,
@@ -215,13 +255,47 @@ public sealed class UEParamsAstBuilder
 
         if (operation.RequestBody != null)
         {
+            var bodyDoc = BuildRequestBodyFieldDocumentation(operation.RequestBody.Description, "Request body (JSON). Sent in the HTTP request body.");
             fields.Add(new UPropertyFieldNode(
                 name: new IdentifierNode("Body"),
                 type: _typeMapper.MapType(operation.RequestBody.Type),
-                specifiers: UPropertySpecifiers.ParamField(category)));
+                specifiers: UPropertySpecifiers.ParamField(category),
+                documentation: bodyDoc));
         }
 
         return fields;
+    }
+
+    /// <summary>
+    /// Строит документацию для Params-структуры
+    /// </summary>
+    private static CommentNode BuildParamsStructDocumentation(IrOperation operation, string paramsName, string methodNamePascal, bool hasBody)
+    {
+        var parts = new List<string> { $"Parameters for {methodNamePascal}." };
+        if (!string.IsNullOrWhiteSpace(operation.Summary)) parts.Add(operation.Summary);
+        if (!string.IsNullOrWhiteSpace(operation.Description)) parts.Add(operation.Description);
+        return new CommentNode(string.Join("\n\n", parts), CommentKind.MultiLine);
+    }
+
+    /// <summary>
+    /// Строит документацию для поля Data в Body/Form
+    /// </summary>
+    private static CommentNode? BuildRequestBodyFieldDocumentation(string? schemaDescription, string defaultText)
+    {
+        if (!string.IsNullOrWhiteSpace(schemaDescription))
+            return new CommentNode($"{defaultText}\n\n{schemaDescription}", CommentKind.MultiLine);
+        return new CommentNode(defaultText, CommentKind.MultiLine);
+    }
+
+    /// <summary>
+    /// Строит документацию для BodyParams/FormParams структуры
+    /// </summary>
+    private static CommentNode BuildRequestBodyStructDocumentation(string? schemaDescription, string methodNamePascal, string defaultText)
+    {
+        var parts = new List<string> { $"{defaultText} for {methodNamePascal}." };
+        if (!string.IsNullOrWhiteSpace(schemaDescription))
+            parts.Add(schemaDescription);
+        return new CommentNode(string.Join("\n\n", parts), CommentKind.MultiLine);
     }
 
     /// <summary>
@@ -255,33 +329,36 @@ public sealed class UEParamsAstBuilder
     }
 
     /// <summary>
-    /// Рекурсивно собирает ссылки на модели из IrType
+    /// Рекурсивно собирает ссылки на модели и enum'ы из IrType
     /// </summary>
-    private static void CollectModelReferences(IrType type, HashSet<string> models)
+    private static void CollectTypeReferences(IrType type, HashSet<string> models, HashSet<string> enums, IReadOnlySet<string> enumNames)
     {
         switch (type)
         {
             case IrModelReference modelRef:
-                models.Add(modelRef.ModelName);
+                if (enumNames.Contains(modelRef.ModelName))
+                    enums.Add(modelRef.ModelName);
+                else
+                    models.Add(modelRef.ModelName);
                 break;
             case IrArrayType array:
-                CollectModelReferences(array.ElementType, models);
+                CollectTypeReferences(array.ElementType, models, enums, enumNames);
                 break;
             case IrDictionaryType dict:
-                CollectModelReferences(dict.KeyType, models);
-                CollectModelReferences(dict.ValueType, models);
+                CollectTypeReferences(dict.KeyType, models, enums, enumNames);
+                CollectTypeReferences(dict.ValueType, models, enums, enumNames);
                 break;
             case IrNullableType nullable:
-                CollectModelReferences(nullable.InnerType, models);
+                CollectTypeReferences(nullable.InnerType, models, enums, enumNames);
                 break;
             case IrOptionalType optional:
-                CollectModelReferences(optional.InnerType, models);
+                CollectTypeReferences(optional.InnerType, models, enums, enumNames);
                 break;
             case IrUnionType union:
-                foreach (var t in union.Types) CollectModelReferences(t, models);
+                foreach (var t in union.Types) CollectTypeReferences(t, models, enums, enumNames);
                 break;
             case IrIntersectionType intersection:
-                foreach (var t in intersection.Types) CollectModelReferences(t, models);
+                foreach (var t in intersection.Types) CollectTypeReferences(t, models, enums, enumNames);
                 break;
         }
     }
