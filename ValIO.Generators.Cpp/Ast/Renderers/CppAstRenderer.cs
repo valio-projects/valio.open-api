@@ -173,7 +173,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         if (node.Documentation != null)
             sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
         sb.AppendLine(RenderUStructMacro(node.Specifiers));
-        var baseStr = !string.IsNullOrEmpty(node.BaseStructName) ? $" : public {node.BaseStructName}" : "";
+        var baseStr = node.BaseStruct != null ? $" : public {node.BaseStruct.Name}" : "";
         sb.AppendLine($"struct {node.Name.Name}{baseStr}");
         sb.AppendLine("{");
         _indentLevel++;
@@ -267,7 +267,15 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         var paramsStr = string.Join(", ", node.Parameters.Select(RenderParameterInline));
         var suffix = (node.IsConst ? " const" : "") + (node.IsOverride ? " override" : "");
         var mods = modifiers.Count > 0 ? string.Join(" ", modifiers) + " " : "";
-        sb.AppendLine($"{Indent()}{mods}{returnStr} {node.Name.Name}({paramsStr}){suffix};");
+        if (node.Body != null)
+        {
+            sb.Append($"{Indent()}{mods}{returnStr} {node.Name.Name}({paramsStr}){suffix} ");
+            sb.Append(Visit(node.Body));
+        }
+        else
+        {
+            sb.AppendLine($"{Indent()}{mods}{returnStr} {node.Name.Name}({paramsStr}){suffix};");
+        }
         sb.AppendLine();
         return sb.ToString();
     }

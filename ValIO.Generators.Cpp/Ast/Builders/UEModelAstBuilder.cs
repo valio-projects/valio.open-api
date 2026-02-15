@@ -40,7 +40,7 @@ public sealed class UEModelAstBuilder
         var fileName = _naming.ModelFileName(model.Name);
 
         var category = _naming.ModelTypeCategory(_options.BlueprintCategory);
-        var (baseStructName, baseModelName, propertiesToUse) = GetPropertiesAndBase(model, modelLookup);
+        var (baseStruct, baseModelName, propertiesToUse) = GetPropertiesAndBase(model, modelLookup);
         var fields = new List<UPropertyFieldNode>();
         var skippedProperties = new List<SkippedPropertyComment>();
         foreach (var property in propertiesToUse)
@@ -61,7 +61,7 @@ public sealed class UEModelAstBuilder
             specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
             skippedProperties: skippedProperties,
-            baseStructName: baseStructName,
+            baseStruct: baseStruct,
             documentation: BuildDocumentation(model.Description));
 
         var includes = CollectIncludes(model, fileName, enumNames, propertiesToUse, baseModelName);
@@ -78,7 +78,7 @@ public sealed class UEModelAstBuilder
     /// При единственном $ref-базисе — наследование (только собственные свойства).
     /// Иначе — flatten (объединённые свойства из всех allOf).
     /// </summary>
-    private (string? BaseStructName, string? BaseModelName, IReadOnlyList<IrProperty> Properties) GetPropertiesAndBase(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
+    private (IdentifierNode? BaseStruct, string? BaseModelName, IReadOnlyList<IrProperty> Properties) GetPropertiesAndBase(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
     {
         if (model.Composition?.Kind != IrCompositionKind.AllOf || model.Composition.Types.Count == 0)
             return (null, null, model.Properties);
@@ -89,7 +89,7 @@ public sealed class UEModelAstBuilder
             modelLookup.TryGetValue(refBases[0].ModelName, out var baseModel))
         {
             var baseStructName = _naming.StructName(baseModel.Name);
-            return (baseStructName, baseModel.Name, model.Properties);
+            return (new IdentifierNode(baseStructName), baseModel.Name, model.Properties);
         }
 
         return (null, null, GetEffectiveProperties(model, modelLookup));

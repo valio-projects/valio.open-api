@@ -324,16 +324,41 @@ public sealed class UEApiAstBuilder
                     isConst: true, isReference: true)
             }));
 
-        // protected: GetWorldContext, GetClientName
+        // protected: GetWorldContext, GetClientName (override from UValIOAsyncActionBase)
+        var stateIdent = new IdentifierExpressionNode(new IdentifierNode("State"));
+        var worldContextGet = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new MemberAccessExpressionNode(stateIdent, new IdentifierNode("WorldContext")),
+                new IdentifierNode("Get")),
+            ImmutableList<ExpressionNode>.Empty);
+        var worldContextVar = new IdentifierNode("WorldContextObject");
+        var getWorldContextBody = new BlockNode(new StatementNode[]
+        {
+            new VariableDeclarationStatementNode(
+                worldContextVar,
+                new SimpleTypeNode(new IdentifierNode("UObject*")),
+                worldContextGet),
+            new ExpressionStatementNode(new CallExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("checkf")),
+                new ExpressionNode[]
+                {
+                    new IdentifierExpressionNode(worldContextVar),
+                    new LiteralExpressionNode("Invalid WorldContext", LiteralKind.String)
+                }.ToImmutableList())),
+            new ReturnStatementNode(new IdentifierExpressionNode(worldContextVar))
+        });
         protectedMembers.Add(new UFunctionDeclarationNode(
             name: new IdentifierNode("GetWorldContext"),
             returnType: new SimpleTypeNode(new IdentifierNode("UObject*")),
-            isVirtual: true, isOverride: true, isConst: true));
+            isVirtual: true, isOverride: true, isConst: true,
+            body: getWorldContextBody));
 
+        var clientNameAccess = new MemberAccessExpressionNode(stateIdent, new IdentifierNode("ClientName"));
         protectedMembers.Add(new UFunctionDeclarationNode(
             name: new IdentifierNode("GetClientName"),
             returnType: new SimpleTypeNode(new IdentifierNode("FString")),
-            isVirtual: true, isOverride: true, isConst: true));
+            isVirtual: true, isOverride: true, isConst: true,
+            body: new BlockNode(new StatementNode[] { new ReturnStatementNode(clientNameAccess) })));
 
         // public: State field
         var stateType = new GenericTypeNode(

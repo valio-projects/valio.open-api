@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -48,6 +49,12 @@ public sealed class UFunctionDeclarationNode : DeclarationNode
     /// </summary>
     public bool IsConst { get; }
 
+    /// <summary>
+    /// Inline-тело метода (BlockNode с statements).
+    /// При заданном значении рендерится { ... } вместо ;
+    /// </summary>
+    public BlockNode? Body { get; }
+
     public override AstNodeKind Kind => AstNodeKind.UFunction;
 
     public override IReadOnlyList<AstNode> Children
@@ -57,6 +64,7 @@ public sealed class UFunctionDeclarationNode : DeclarationNode
             var children = new List<AstNode> { Name };
             if (ReturnType != null) children.Add(ReturnType);
             children.AddRange(Parameters);
+            if (Body != null) children.Add(Body);
             if (Documentation != null) children.Add(Documentation);
             return children;
         }
@@ -74,6 +82,7 @@ public sealed class UFunctionDeclarationNode : DeclarationNode
         bool isVirtual = false,
         bool isOverride = false,
         bool isConst = false,
+        BlockNode? body = null,
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation, metadata: metadata)
@@ -85,6 +94,7 @@ public sealed class UFunctionDeclarationNode : DeclarationNode
         IsVirtual = isVirtual;
         IsOverride = isOverride;
         IsConst = isConst;
+        Body = body;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -102,6 +112,7 @@ public sealed class UFunctionDeclarationNode : DeclarationNode
             Parameters.Select(p => (CppParameterNode)p.Clone()).ToImmutableList(),
             Specifiers,
             IsStatic, IsVirtual, IsOverride, IsConst,
+            Body != null ? (BlockNode)Body.Clone() : null,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary());
     }
