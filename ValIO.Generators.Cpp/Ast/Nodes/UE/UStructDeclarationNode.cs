@@ -4,6 +4,7 @@ using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
 using ValIO.Generators.Cpp.Ast.Visitors;
+using ValIO.Generators.Cpp.Models;
 
 namespace ValIO.Generators.Cpp.Ast.Nodes.UE;
 
@@ -28,6 +29,11 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
     /// </summary>
     public IReadOnlyList<CppFreeFunctionNode> InlineMethods { get; }
 
+    /// <summary>
+    /// Пропущенные свойства (например рекурсивные) — выводятся как комментарии.
+    /// </summary>
+    public IReadOnlyList<SkippedPropertyComment> SkippedProperties { get; }
+
     public override AstNodeKind Kind => AstNodeKind.UStruct;
 
     public override IReadOnlyList<AstNode> Children
@@ -50,6 +56,7 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
         UStructSpecifiers? specifiers = null,
         IReadOnlyList<UPropertyFieldNode>? fields = null,
         IReadOnlyList<CppFreeFunctionNode>? inlineMethods = null,
+        IReadOnlyList<SkippedPropertyComment>? skippedProperties = null,
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation: documentation, metadata: metadata)
@@ -57,6 +64,7 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
         Specifiers = specifiers ?? new UStructSpecifiers();
         Fields = fields?.ToImmutableList() ?? ImmutableList<UPropertyFieldNode>.Empty;
         InlineMethods = inlineMethods?.ToImmutableList() ?? ImmutableList<CppFreeFunctionNode>.Empty;
+        SkippedProperties = skippedProperties?.ToImmutableList() ?? ImmutableList<SkippedPropertyComment>.Empty;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -73,6 +81,7 @@ public sealed class UStructDeclarationNode : TypeDeclarationNode
             Specifiers,
             Fields.Select(f => (UPropertyFieldNode)f.Clone()).ToImmutableList(),
             InlineMethods.Select(m => (CppFreeFunctionNode)m.Clone()).ToImmutableList(),
+            SkippedProperties,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary());
     }

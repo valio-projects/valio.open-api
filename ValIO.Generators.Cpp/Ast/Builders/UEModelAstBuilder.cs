@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -39,11 +40,16 @@ public sealed class UEModelAstBuilder
 
         var category = _naming.ModelTypeCategory(_options.BlueprintCategory);
         var fields = new List<UPropertyFieldNode>();
+        var skippedProperties = new List<SkippedPropertyComment>();
         foreach (var property in model.Properties)
         {
             if (TypeReferencesModel(property.Type, model.Name, enumNames))
             {
-                warnings?.Add($"Model {structName}: skipping recursive property '{property.Name}' (Unreal Engine does not support recursive types).");
+                var typeNode = _typeMapper.MapType(property.Type);
+                var propName = _naming.PropertyName(property.Name);
+                var reason = "Unreal Engine does not support recursive types";
+                skippedProperties.Add(new SkippedPropertyComment(propName, typeNode, reason));
+                warnings?.Add($"Model {structName}: skipping recursive property '{property.Name}' ({reason}).");
                 continue;
             }
             fields.Add(BuildField(property, category));
@@ -52,6 +58,7 @@ public sealed class UEModelAstBuilder
             name: new IdentifierNode(structName),
             specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
+            skippedProperties: skippedProperties,
             documentation: BuildDocumentation(model.Description));
 
         var includes = CollectIncludes(model, fileName, enumNames);

@@ -177,6 +177,16 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         sb.AppendLine("{");
         _indentLevel++;
         sb.AppendLine($"{Indent()}GENERATED_BODY()");
+        if (node.SkippedProperties.Count > 0)
+        {
+            sb.AppendLine();
+            foreach (var skipped in node.SkippedProperties)
+            {
+                var typeStr = RenderType(skipped.Type);
+                var text = $"{typeStr} {skipped.PropertyName} — not supported: {skipped.Reason}";
+                sb.AppendLine($"{Indent()}{RenderDoxygenComment(text)}");
+            }
+        }
         if (node.Fields.Count > 0) sb.AppendLine();
         foreach (var field in node.Fields)
             sb.Append(Visit(field));
