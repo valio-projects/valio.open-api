@@ -97,11 +97,10 @@ public sealed class UEResultAstBuilder
             inlineMethods: new[] { isSuccessMethod },
             documentation: new CommentNode(DoxygenCommentBuilder.BuildResultStructDocumentation(operation, resultName), CommentKind.MultiLine));
 
-        var includes = new List<CppIncludeDirectiveNode>
-        {
-            new("CoreMinimal.h"),
-            new(_options.ValIOResponseIncludePath)
-        };
+        var includes = new List<CppIncludeDirectiveNode>();
+        if (_options.AddUnrealEngineIncludesInHeaders)
+            includes.Add(new("CoreMinimal.h"));
+        includes.Add(new(_options.ValIOResponseIncludePath)); // Result использует FValIOResponse — всегда нужен
 
         // Result в Public/Endpoints/{OpId}/, Models/Enums в Public/Models, Public/Enums
         if (successResponse?.Type is IrModelReference successModelRef)

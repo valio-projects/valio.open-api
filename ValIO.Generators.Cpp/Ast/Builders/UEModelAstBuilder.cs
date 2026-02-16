@@ -154,7 +154,9 @@ public sealed class UEModelAstBuilder
     /// </summary>
     private List<CppIncludeDirectiveNode> CollectIncludes(IrModel model, string fileName, IReadOnlySet<string> enumNames, IReadOnlyList<IrProperty> propertiesToUse, string? baseModelName)
     {
-        var includes = new List<CppIncludeDirectiveNode> { new("CoreMinimal.h") };
+        var includes = new List<CppIncludeDirectiveNode>();
+        if (_options.AddUnrealEngineIncludesInHeaders)
+            includes.Add(new("CoreMinimal.h"));
 
         var referencedModels = new HashSet<string>();
         var referencedEnums = new HashSet<string>();

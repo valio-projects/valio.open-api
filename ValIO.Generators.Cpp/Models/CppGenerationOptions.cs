@@ -64,4 +64,11 @@ public sealed class CppGenerationOptions
     /// Include path для ValIO response (FValIOResponse)
     /// </summary>
     public string ValIOResponseIncludePath { get; set; } = "Response/ValIOResponse.h";
+
+    /// <summary>
+    /// Добавлять UE-инклюды (CoreMinimal, Async/Future, ValIOResponse) в headers.
+    /// Если true — добавляются в endpoint headers; CoreMinimal — в enums, models, params, result.
+    /// Если false — не добавляются (предполагается PCH или явные инклюды в проекте).
+    /// </summary>
+    public bool AddUnrealEngineIncludesInHeaders { get; set; } = true;
 }

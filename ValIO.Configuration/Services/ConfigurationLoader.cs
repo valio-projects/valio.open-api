@@ -486,6 +486,8 @@ public class ConfigurationLoader : IConfigurationLoader
         if (!string.IsNullOrEmpty(config.BaseAsyncActionIncludePath))
             options.BaseAsyncActionIncludePath = config.BaseAsyncActionIncludePath;
 
+        options.AddUnrealEngineIncludesInHeaders = config.AddUnrealEngineIncludesInHeaders;
+
         return options;
     }
 }

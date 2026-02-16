@@ -203,7 +203,9 @@ public sealed class UEParamsAstBuilder
             declarations.Add(aggregateStruct);
         }
 
-        var includes = new List<CppIncludeDirectiveNode> { new("CoreMinimal.h") };
+        var includes = new List<CppIncludeDirectiveNode>();
+        if (_options.AddUnrealEngineIncludesInHeaders)
+            includes.Add(new("CoreMinimal.h"));
 
         var referencedModels = new HashSet<string>();
         var referencedEnums = new HashSet<string>();

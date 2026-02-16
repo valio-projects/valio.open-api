@@ -117,16 +117,19 @@ public sealed class UEApiAstBuilder
 
     private List<CppIncludeDirectiveNode> BuildEndpointHeaderIncludes(IrOperation operation, string headerFileName)
     {
-        // Params и Result в той же папке Public/Endpoints/{OpId}/
-        var includes = new List<CppIncludeDirectiveNode>
+        var includes = new List<CppIncludeDirectiveNode>();
+
+        if (_options.AddUnrealEngineIncludesInHeaders)
         {
-            new("CoreMinimal.h"),
-            new("Async/Future.h"),
-            new(_options.BaseAsyncActionIncludePath),
-            new(_naming.ResultIncludePath(operation.MethodName)),
-            new(_naming.ParamsIncludePath(operation.MethodName)),
-            new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix))
-        };
+            includes.Add(new("CoreMinimal.h"));
+            includes.Add(new("Async/Future.h"));
+            includes.Add(new(_options.ValIOResponseIncludePath));
+        }
+
+        includes.Add(new(_options.BaseAsyncActionIncludePath));
+        includes.Add(new(_naming.ResultIncludePath(operation.MethodName)));
+        includes.Add(new(_naming.ParamsIncludePath(operation.MethodName)));
+        includes.Add(new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix)));
 
         return includes;
     }

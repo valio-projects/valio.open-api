@@ -302,13 +302,13 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Путь include для endpoint header (из .cpp в Private/Endpoints): Public/Endpoints/{OpId}/{OpId}.h
-    /// Предполагается, что корень output добавлен в include path.
+    /// Путь include для endpoint header (из .cpp в Private/Endpoints): Endpoints/{OpId}/{OpId}.h
+    /// Предполагается, что Public добавлен в include path.
     /// </summary>
     public string EndpointHeaderIncludePath(string operationName)
     {
         var opId = ToPascalCase(operationName);
-        return $"Public/Endpoints/{opId}/{EndpointHeaderFileName(operationName)}";
+        return $"Endpoints/{opId}/{EndpointHeaderFileName(operationName)}";
     }
 
     /// <summary>

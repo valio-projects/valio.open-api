@@ -3,17 +3,18 @@
     "PanoramasAdminApi": {
       "language": "Cpp",
       "schema": "https://lk-api.bytalent.ru/api/chessboard/swagger/v1/swagger.json",
-      "outputPath": "G:\\gta\\Wireframe\\Source\\Wireframe\\HttpClients",
+      "outputPath": "G:\\gta\\Wireframe\\Source\\ChessboardHttpClients",
       "generateModels": true,
       "generateClients": true,
       "namespace": "Wireframe",
       "options": {
         "cpp": {
-          "moduleApiMacro": "WIREFRAME_API",
-          "blueprintCategory": "Wireframe|Panoramas",
+          "moduleApiMacro": "CHESSBOARDHTTPCLIENTS_API",
+          "blueprintCategory": "Talent|Chessboard",
           "copyright": "Copyright Epic Games, Inc. All Rights Reserved.",
           "baseAsyncActionClassName": "UValIOAsyncActionBase",
-          "baseAsyncActionIncludePath": "Blueprint/ValIOTypedAsyncActionBase.h"
+          "baseAsyncActionIncludePath": "Blueprint/ValIOTypedAsyncActionBase.h",
+          "addUnrealEngineIncludesInHeaders": false
         }
       },
       "fileOrganization": {

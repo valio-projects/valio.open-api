@@ -53,12 +53,10 @@ public sealed class UEEnumAstBuilder
                 ? new CommentNode(irEnum.Description, CommentKind.MultiLine)
                 : null);
 
-        // .generated.h должен быть всегда последним (требование UHT)
-        var includes = new List<CppIncludeDirectiveNode>
-        {
-            new("CoreMinimal.h"),
-            new(fileName.Replace(".h", _options.GeneratedHeaderSuffix))
-        };
+        var includes = new List<CppIncludeDirectiveNode>();
+        if (_options.AddUnrealEngineIncludesInHeaders)
+            includes.Add(new("CoreMinimal.h"));
+        includes.Add(new(fileName.Replace(".h", _options.GeneratedHeaderSuffix))); // .generated.h последним (UHT)
 
         return new CppHeaderFileNode(
             fileName: fileName,

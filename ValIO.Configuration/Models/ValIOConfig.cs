@@ -204,6 +204,11 @@ public class ConfigCppOptions
     /// Include path для базового async action класса
     /// </summary>
     public string? BaseAsyncActionIncludePath { get; set; }
+
+    /// <summary>
+    /// Добавлять UE-инклюды (CoreMinimal, Async/Future, ValIOResponse) в headers.
+    /// </summary>
+    public bool AddUnrealEngineIncludesInHeaders { get; set; } = true;
 }
 
 /// <summary>
