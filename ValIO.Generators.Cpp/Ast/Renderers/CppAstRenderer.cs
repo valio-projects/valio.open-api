@@ -466,7 +466,11 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
         var result = $"{type}{node.Name.Name}{init};";
         // VisitBlock добавляет Indent() только для однострочных; для многострочных — добавляем сами
         if (result.Contains('\n'))
+        {
             result = Indent() + result;
+            if (!result.EndsWith('\n'))
+                result += Environment.NewLine;
+        }
         return result;
     }
 

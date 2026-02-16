@@ -110,6 +110,22 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
+    /// Имя функции Build (создание FValIORequest): {ClientName}_Build{MethodName}Request
+    /// </summary>
+    public string BuildRequestFunctionName(string clientName, string methodName)
+    {
+        return $"{ToPascalCase(clientName)}_Build{ToPascalCase(methodName)}Request";
+    }
+
+    /// <summary>
+    /// Имя функции Send (отправка запроса): {ClientName}_Send{MethodName}
+    /// </summary>
+    public string SendFunctionName(string clientName, string methodName)
+    {
+        return $"{ToPascalCase(clientName)}_Send{ToPascalCase(methodName)}";
+    }
+
+    /// <summary>
     /// Имя поля тела ответа по status code: Body400, Body404, BodyDefault
     /// </summary>
     public string ResultBodyFieldName(string statusCode)

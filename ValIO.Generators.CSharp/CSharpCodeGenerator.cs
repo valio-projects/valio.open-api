@@ -73,7 +73,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
 
             try
             {
-                var files = GenerateCodeFromIr(document, config);
+                var files = GenerateCodeFromIr(document, config, generationWarnings);
                 foreach (var file in files)
                 {
                     generatedFiles[file.Key] = file.Value;
@@ -84,12 +84,18 @@ public class CSharpCodeGenerator : BaseCodeGenerator
                 HandleGenerationError(ex, "code generation", generationErrors, 0);
             }
 
-            // Добавляем ошибки генерации
+            // Добавляем ошибки и предупреждения генерации
             if (generationErrors.Count > 0)
             {
                 var errors = result.Errors.ToList();
                 errors.AddRange(generationErrors);
                 result.Errors = errors;
+            }
+            if (generationWarnings.Count > 0)
+            {
+                var warnings = result.Warnings.ToList();
+                warnings.AddRange(generationWarnings);
+                result.Warnings = warnings;
             }
 
             // Записываем файлы
@@ -176,7 +182,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
     /// 
     /// В будущем этот метод должен заменить старый подход с TemplateData
     /// </remarks>
-    private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config)
+    private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config, ICollection<string> warnings)
     {
         var files = new Dictionary<string, string>();
         
@@ -185,7 +191,7 @@ public class CSharpCodeGenerator : BaseCodeGenerator
         // Используем CSharpNamingConverter для обработки зарезервированных ключевых слов на этапе IR
         var csharpNamingConverter = new Services.CSharpNamingConverter();
         var irBuilder = new IrBuilder(schemaResolver, csharpNamingConverter);
-        var irDocument = irBuilder.BuildFromOpenApi(document);
+        var irDocument = irBuilder.BuildFromOpenApi(document, warnings);
         
             // 2. IR → AST
             var csharpOptions = GetCSharpOptions(config.Options);

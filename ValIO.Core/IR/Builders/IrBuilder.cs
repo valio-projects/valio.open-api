@@ -7,6 +7,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 using ValIO.Core.Utilities;
 
 namespace ValIO.Core.IR.Builders;
@@ -32,7 +33,9 @@ public class IrBuilder
     /// <summary>
     /// Строит IR из OpenAPI документа
     /// </summary>
-    public IrDocument BuildFromOpenApi(OpenApiDocument document)
+    /// <param name="document">OpenAPI документ</param>
+    /// <param name="warnings">Опциональная коллекция для записи предупреждений (дубликаты параметров и т.д.)</param>
+    public IrDocument BuildFromOpenApi(OpenApiDocument document, ICollection<string>? warnings = null)
     {
         if (document == null)
             throw new ArgumentNullException(nameof(document));
@@ -43,7 +46,7 @@ public class IrBuilder
         
         var models = ExtractModels(document);
         var enums = ExtractEnums(document);
-        var clients = ExtractClients(document);
+        var clients = ExtractClients(document, warnings);
         
         // Добавляем inline модели к основным моделям
         var allModels = models.Concat(_inlineModels.Values).ToList();
@@ -612,7 +615,7 @@ public class IrBuilder
     /// <summary>
     /// Извлекает клиенты из путей
     /// </summary>
-    private IReadOnlyList<IrClient> ExtractClients(OpenApiDocument document)
+    private IReadOnlyList<IrClient> ExtractClients(OpenApiDocument document, ICollection<string>? warnings = null)
     {
         var operations = new List<IrOperation>();
         
@@ -635,7 +638,7 @@ public class IrBuilder
                 if (openApiOperation == null)
                     continue;
                 
-                var operation = BuildOperation(path, httpMethod, openApiOperation, document);
+                var operation = BuildOperation(path, httpMethod, openApiOperation, document, warnings);
                 operations.Add(operation);
             }
         }
@@ -696,7 +699,8 @@ public class IrBuilder
         string path,
         HttpMethod httpMethod,
         OpenApiOperation openApiOperation,
-        OpenApiDocument document)
+        OpenApiDocument document,
+        ICollection<string>? warnings = null)
     {
         var operationId = openApiOperation.OperationId ?? 
             $"{httpMethod.Method.ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
@@ -727,6 +731,8 @@ public class IrBuilder
                 }
             }
         }
+
+        ValidateAndDeduplicateParameters(methodName, pathParameters, queryParameters, warnings);
         
         // Извлекаем request body (передаем operationId для генерации FormModel)
         IrRequestBody? requestBody = null;
@@ -771,6 +777,72 @@ public class IrBuilder
         };
     }
     
+    /// <summary>
+    /// Проверяет уникальность параметров и выводит предупреждения о дубликатах.
+    /// Удаляет дубликаты: при пересечении path/query по имени — оставляет path, удаляет query.
+    /// </summary>
+    private static void ValidateAndDeduplicateParameters(
+        string methodName,
+        List<IrParameter> pathParameters,
+        List<IrParameter> queryParameters,
+        ICollection<string>? warnings)
+    {
+        if (warnings == null) return;
+
+        // Дубликаты внутри path — оставляем первое вхождение
+        var pathNames = new Dictionary<string, (IrParameter Param, int Index)>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < pathParameters.Count; i++)
+        {
+            var p = pathParameters[i];
+            if (pathNames.TryGetValue(p.Name, out var existing))
+            {
+                var typesDiffer = !IrTypeComparer.AreSemanticallyEqual(p.Type, existing.Param.Type);
+                var msg = typesDiffer
+                    ? $"Operation {methodName}: duplicate path parameter '{p.Name}' with different types (keeping first, removing duplicate)."
+                    : $"Operation {methodName}: duplicate path parameter '{p.Name}' (keeping first, removing duplicate).";
+                warnings.Add(msg);
+                pathParameters.RemoveAt(i);
+                i--;
+            }
+            else
+                pathNames[p.Name] = (p, i);
+        }
+
+        // Дубликаты внутри query — оставляем первое вхождение
+        var queryNames = new Dictionary<string, (IrParameter Param, int Index)>(StringComparer.OrdinalIgnoreCase);
+        for (var i = 0; i < queryParameters.Count; i++)
+        {
+            var p = queryParameters[i];
+            if (queryNames.TryGetValue(p.Name, out var existing))
+            {
+                var typesDiffer = !IrTypeComparer.AreSemanticallyEqual(p.Type, existing.Param.Type);
+                var msg = typesDiffer
+                    ? $"Operation {methodName}: duplicate query parameter '{p.Name}' with different types (keeping first, removing duplicate)."
+                    : $"Operation {methodName}: duplicate query parameter '{p.Name}' (keeping first, removing duplicate).";
+                warnings.Add(msg);
+                queryParameters.RemoveAt(i);
+                i--;
+            }
+            else
+                queryNames[p.Name] = (p, i);
+        }
+
+        // Пересечение path и query — оставляем path, удаляем из query
+        foreach (var pathName in pathNames.Keys.ToList())
+        {
+            if (queryNames.TryGetValue(pathName, out var queryParam))
+            {
+                var pathParam = pathNames[pathName].Param;
+                var typesDiffer = !IrTypeComparer.AreSemanticallyEqual(pathParam.Type, queryParam.Param.Type);
+                var msg = typesDiffer
+                    ? $"Operation {methodName}: parameter '{pathName}' exists in both path and query with different types (keeping path parameter, removing from query)."
+                    : $"Operation {methodName}: parameter '{pathName}' exists in both path and query (keeping path parameter, removing from query).";
+                warnings.Add(msg);
+                queryParameters.RemoveAll(q => string.Equals(q.Name, pathName, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+    }
+
     /// <summary>
     /// Строит IrParameter из OpenAPI параметра
     /// </summary>

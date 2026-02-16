@@ -82,7 +82,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
             try
             {
-                var files = GenerateCodeFromIr(document, config);
+                var files = GenerateCodeFromIr(document, config, generationWarnings);
                 foreach (var file in files)
                 {
                     generatedFiles[file.Key] = file.Value;
@@ -93,12 +93,18 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 HandleGenerationError(ex, "code generation", generationErrors, 0);
             }
 
-            // Добавляем ошибки генерации
+            // Добавляем ошибки и предупреждения генерации
             if (generationErrors.Count > 0)
             {
                 var errors = result.Errors.ToList();
                 errors.AddRange(generationErrors);
                 result.Errors = errors;
+            }
+            if (generationWarnings.Count > 0)
+            {
+                var warnings = result.Warnings.ToList();
+                warnings.AddRange(generationWarnings);
+                result.Warnings = warnings;
             }
 
             // Записываем файлы
@@ -263,7 +269,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     /// - Генерацию Zod схем (если ValidationLibrary = Zod)
     /// - Генерацию TanStack Query hooks (если UseTanStackQuery = true)
     /// </remarks>
-    private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config)
+    private Dictionary<string, string> GenerateCodeFromIr(OpenApiDocument document, GenerationConfiguration config, ICollection<string> warnings)
     {
         var files = new Dictionary<string, string>();
         
@@ -273,7 +279,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         // 1. OpenAPI → IR
         var schemaResolver = new SchemaResolver(document);
         var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
-        var irDocument = irBuilder.BuildFromOpenApi(document);
+        var irDocument = irBuilder.BuildFromOpenApi(document, warnings);
         
         // 2. IR → AST для моделей и enum'ов
         var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);

@@ -90,7 +90,8 @@ public sealed class CppCodeGenerator : BaseCodeGenerator
         // 1. OpenAPI → IR
         var schemaResolver = new Core.Services.SchemaResolver(document);
         var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
-        var irDocument = irBuilder.BuildFromOpenApi(document);
+        var irWarnings = new List<string>();
+        var irDocument = irBuilder.BuildFromOpenApi(document, irWarnings);
 
         Logger.LogInformation(
             "IR built: {ModelCount} models, {EnumCount} enums, {ClientCount} clients",
@@ -102,7 +103,7 @@ public sealed class CppCodeGenerator : BaseCodeGenerator
         var astBuilder = new CppAstBuilder(cppOptions);
         var buildResult = astBuilder.Build(irDocument);
 
-        foreach (var warning in buildResult.Warnings)
+        foreach (var warning in irWarnings.Concat(buildResult.Warnings))
             Logger.LogWarning("{Warning}", warning);
 
         Logger.LogInformation("AST built: {FileCount} files", buildResult.Files.Count);
