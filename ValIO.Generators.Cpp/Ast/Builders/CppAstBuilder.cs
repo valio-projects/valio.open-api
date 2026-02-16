@@ -55,45 +55,39 @@ public sealed class CppAstBuilder
         var enumNames = document.Enums.Select(e => e.Name).ToHashSet();
         _typeMapper.SetEnumNamesForDocument(enumNames);
 
+        var naming = new UENamingConvention();
         var modelLookup = document.Models.ToDictionary(m => m.Name);
 
-        // 1. Модели → Models/{StructName}.h
+        // 1. Модели → Public/Models/{StructName}.h
         foreach (var model in document.Models)
         {
             var headerNode = _modelBuilder.Build(model, enumNames, modelLookup, result.Warnings);
-            result.Files[$"Models/{headerNode.FileName}"] = headerNode;
+            result.Files[naming.ModelFullPath(model.Name)] = headerNode;
         }
 
-        // 2. Enums → Enums/{EnumName}.h
+        // 2. Enums → Public/Enums/{EnumName}.h
         foreach (var irEnum in document.Enums)
         {
             var headerNode = _enumBuilder.Build(irEnum);
-            result.Files[$"Enums/{headerNode.FileName}"] = headerNode;
+            result.Files[naming.EnumFullPath(irEnum.Name)] = headerNode;
         }
 
-        // 3. Per-client: Results, Params, endpoints, Paths
+        // 3. Per-client: Results, Params, endpoints
         foreach (var client in document.Clients)
         {
-            // Results → Results/{ResultName}.h
             foreach (var operation in client.Operations)
             {
-                var resultNode = _resultBuilder.Build(operation, enumNames, client.Name);
-                result.Files[$"Results/{resultNode.FileName}"] = resultNode;
-            }
-
-            // Params → Params/{ParamsName}.h
-            foreach (var operation in client.Operations)
-            {
+                var opId = operation.MethodName;
+                // Params, Result, endpoint header → Public/Endpoints/{OpId}/
                 var paramsNode = _paramsBuilder.Build(operation, enumNames, client.Name);
-                result.Files[$"Params/{paramsNode.FileName}"] = paramsNode;
-            }
+                result.Files[naming.ParamsFullPath(opId)] = paramsNode;
 
-            // Endpoints → Endpoints/{MethodName}.h + Endpoints/{MethodName}.cpp (по одному файлу на метод)
-            foreach (var operation in client.Operations)
-            {
+                var resultNode = _resultBuilder.Build(operation, enumNames, client.Name);
+                result.Files[naming.ResultFullPath(opId)] = resultNode;
+
                 var (header, source) = _apiBuilder.BuildEndpoint(client, operation);
-                result.Files[$"Endpoints/{header.FileName}"] = header;
-                result.Files[$"Endpoints/{source.FileName}"] = source;
+                result.Files[naming.EndpointHeaderFullPath(opId)] = header;
+                result.Files[naming.EndpointSourceFullPath(opId)] = source;
             }
         }
 

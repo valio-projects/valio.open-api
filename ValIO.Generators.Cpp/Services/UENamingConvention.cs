@@ -182,7 +182,23 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Путь include для модели (от корня output): Models/{ModelName}.h
+    /// Полный путь к модели: Public/Models/{ModelName}.h
+    /// </summary>
+    public string ModelFullPath(string modelName)
+    {
+        return $"Public/Models/{ModelFileName(modelName)}";
+    }
+
+    /// <summary>
+    /// Полный путь к enum: Public/Enums/{EnumName}.h
+    /// </summary>
+    public string EnumFullPath(string enumName)
+    {
+        return $"Public/Enums/{EnumFileName(enumName)}";
+    }
+
+    /// <summary>
+    /// Путь include для модели (от папки Public): Models/{ModelName}.h
     /// </summary>
     public string ModelIncludePath(string modelName)
     {
@@ -190,11 +206,27 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Путь include для enum (от корня output): Enums/{EnumName}.h
+    /// Путь include для enum (от папки Public): Enums/{EnumName}.h
     /// </summary>
     public string EnumIncludePath(string enumName)
     {
         return $"Enums/{EnumFileName(enumName)}";
+    }
+
+    /// <summary>
+    /// Путь include для модели из файла в Public/Endpoints/{OpId}/: ../../Models/{ModelName}.h
+    /// </summary>
+    public string ModelIncludePathFromEndpoint(string modelName)
+    {
+        return $"../../{ModelIncludePath(modelName)}";
+    }
+
+    /// <summary>
+    /// Путь include для enum из файла в Public/Endpoints/{OpId}/: ../../Enums/{EnumName}.h
+    /// </summary>
+    public string EnumIncludePathFromEndpoint(string enumName)
+    {
+        return $"../../{EnumIncludePath(enumName)}";
     }
 
     /// <summary>
@@ -222,23 +254,65 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Путь include для Result (от корня output): Results/F{OperationName}Result.h
+    /// Путь include для Result (в папке endpoint): {OperationName}Result.h (тот же каталог, что и OperationId.h)
     /// </summary>
     public string ResultIncludePath(string operationName)
     {
-        return $"Results/{ResultFileName(operationName)}";
+        return ResultFileName(operationName);
     }
 
     /// <summary>
-    /// Путь include для Params (от корня output): Params/F{OperationName}Params.h
+    /// Путь include для Params (в папке endpoint): {OperationName}Params.h
     /// </summary>
     public string ParamsIncludePath(string operationName)
     {
-        return $"Params/{ParamsFileName(operationName)}";
+        return ParamsFileName(operationName);
     }
 
     /// <summary>
-    /// Имя файла endpoint (один метод = один файл): {MethodName}.h
+    /// Полный путь к Result (от корня output): Public/Endpoints/{OperationId}/{OperationName}Result.h
+    /// </summary>
+    public string ResultFullPath(string operationName)
+    {
+        return $"Public/Endpoints/{ToPascalCase(operationName)}/{ResultFileName(operationName)}";
+    }
+
+    /// <summary>
+    /// Полный путь к Params (от корня output): Public/Endpoints/{OperationId}/{OperationName}Params.h
+    /// </summary>
+    public string ParamsFullPath(string operationName)
+    {
+        return $"Public/Endpoints/{ToPascalCase(operationName)}/{ParamsFileName(operationName)}";
+    }
+
+    /// <summary>
+    /// Полный путь к endpoint header: Public/Endpoints/{OperationId}/{OperationId}.h
+    /// </summary>
+    public string EndpointHeaderFullPath(string operationName)
+    {
+        return $"Public/Endpoints/{ToPascalCase(operationName)}/{EndpointHeaderFileName(operationName)}";
+    }
+
+    /// <summary>
+    /// Полный путь к endpoint source: Private/Endpoints/{OperationId}.cpp
+    /// </summary>
+    public string EndpointSourceFullPath(string operationName)
+    {
+        return $"Private/Endpoints/{EndpointSourceFileName(operationName)}";
+    }
+
+    /// <summary>
+    /// Путь include для endpoint header (из .cpp в Private/Endpoints): Public/Endpoints/{OpId}/{OpId}.h
+    /// Предполагается, что корень output добавлен в include path.
+    /// </summary>
+    public string EndpointHeaderIncludePath(string operationName)
+    {
+        var opId = ToPascalCase(operationName);
+        return $"Public/Endpoints/{opId}/{EndpointHeaderFileName(operationName)}";
+    }
+
+    /// <summary>
+    /// Имя файла endpoint header: {MethodName}.h
     /// </summary>
     public string EndpointHeaderFileName(string methodName)
     {

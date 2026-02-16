@@ -81,11 +81,12 @@ public sealed class UEApiAstBuilder
     private CppSourceFileNode BuildEndpointSource(IrClient client, IrOperation operation)
     {
         var sourceFileName = _naming.EndpointSourceFileName(operation.MethodName);
-        var headerFileName = _naming.EndpointHeaderFileName(operation.MethodName);
+        // Header в Public/Endpoints/{OpId}/, source в Private/Endpoints/
+        var headerIncludePath = _naming.EndpointHeaderIncludePath(operation.MethodName);
 
         var includes = new List<CppIncludeDirectiveNode>
         {
-            new(headerFileName),
+            new(headerIncludePath),
             new(_options.ValIOClientIncludePath),
             new(_options.ValIORequestBuilderIncludePath),
             new("Blueprint/ValIORequestBuilder.h"),
@@ -116,13 +117,14 @@ public sealed class UEApiAstBuilder
 
     private List<CppIncludeDirectiveNode> BuildEndpointHeaderIncludes(IrOperation operation, string headerFileName)
     {
+        // Params и Result в той же папке Public/Endpoints/{OpId}/
         var includes = new List<CppIncludeDirectiveNode>
         {
             new("CoreMinimal.h"),
             new("Async/Future.h"),
             new(_options.BaseAsyncActionIncludePath),
-            new($"../{_naming.ResultIncludePath(operation.MethodName)}"),
-            new($"../{_naming.ParamsIncludePath(operation.MethodName)}"),
+            new(_naming.ResultIncludePath(operation.MethodName)),
+            new(_naming.ParamsIncludePath(operation.MethodName)),
             new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix))
         };
 
@@ -181,18 +183,19 @@ public sealed class UEApiAstBuilder
         var category = _naming.OperationTypeCategory(_options.BlueprintCategory, clientName, operation.MethodName);
 
         var publicMembers = new List<AstNode>();
+        var (pathParamTypeName, pathParamName) = GetBuildPathUrlParamInfo(operation);
 
-        // BuildPathUrl(Params) -> FString
+        // BuildPathUrl(Params | RouteParams) -> FString
         publicMembers.Add(new UFunctionDeclarationNode(
             name: new IdentifierNode(pathMethodName),
             returnType: new SimpleTypeNode(new IdentifierNode("FString")),
             parameters: new[]
             {
-                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+                new CppParameterNode(new IdentifierNode(pathParamName), new SimpleTypeNode(new IdentifierNode(pathParamTypeName)), isConst: true, isReference: true)
             },
             specifiers: UFunctionSpecifiers.PathBuilder($"{category}|Path", FormatDisplayName(pathMethodName)),
             isStatic: true,
-            documentation: new CommentNode(DoxygenCommentBuilder.BuildBuildPathUrlDocumentation(operation, paramsTypeName), CommentKind.MultiLine)));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildBuildPathUrlDocumentation(operation, pathParamTypeName), CommentKind.MultiLine)));
 
         // Parse(Response) -> FResult
         publicMembers.Add(new UFunctionDeclarationNode(
@@ -429,13 +432,12 @@ public sealed class UEApiAstBuilder
     /// </summary>
     private (List<CppParameterNode> Parameters, BlockNode Body) BuildPathMethodParametersAndBody(IrOperation operation)
     {
-        var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
-        var hasMultipleParamGroups = HasMultipleParamGroups(operation);
-        var pathPrefix = hasMultipleParamGroups ? "Params.Route." : "Params.";
+        var (pathParamTypeName, pathParamName) = GetBuildPathUrlParamInfo(operation);
+        var pathPrefix = pathParamName + ".";
 
         var parameters = new List<CppParameterNode>
         {
-            new(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            new(new IdentifierNode(pathParamName), new SimpleTypeNode(new IdentifierNode(pathParamTypeName)), isConst: true, isReference: true)
         };
 
         var pathParamSpecs = operation.PathParameters.Select(p =>
@@ -527,9 +529,10 @@ public sealed class UEApiAstBuilder
             _ => "Get"
         };
 
+        var pathCallArg = GetBuildPathUrlCallArgument(operation);
         var pathCall = new CallExpressionNode(
             new IdentifierExpressionNode(new IdentifierNode(pathMethodName)),
-            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Params")) }.ToImmutableList());
+            new ExpressionNode[] { pathCallArg }.ToImmutableList());
 
         var statements = new List<StatementNode>();
         statements.Add(new VariableDeclarationStatementNode(
@@ -1082,6 +1085,30 @@ public sealed class UEApiAstBuilder
         if (operation.HeaderParameters.Count > 0) count++;
         if (operation.RequestBody != null) count++;
         return count > 1;
+    }
+
+    /// <summary>
+    /// Возвращает тип и имя параметра для BuildPathUrl.
+    /// Flat Params: (FxxxParams, "Params"); nested: (FxxxRouteParams, "RouteParams").
+    /// </summary>
+    private (string TypeName, string ParamName) GetBuildPathUrlParamInfo(IrOperation operation)
+    {
+        if (HasMultipleParamGroups(operation) && operation.PathParameters.Count > 0)
+            return (_naming.RouteParamsStructName(operation.MethodName), "RouteParams");
+        return (_naming.ParamsStructName(operation.MethodName), "Params");
+    }
+
+    /// <summary>
+    /// Возвращает выражение для вызова BuildPathUrl из Build.
+    /// Flat: Params; nested: Params.Route.
+    /// </summary>
+    private ExpressionNode GetBuildPathUrlCallArgument(IrOperation operation)
+    {
+        if (HasMultipleParamGroups(operation) && operation.PathParameters.Count > 0)
+            return new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("Params")),
+                new IdentifierNode("Route"));
+        return new IdentifierExpressionNode(new IdentifierNode("Params"));
     }
 
     private static bool IsReferenceType(IrType type)

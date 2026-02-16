@@ -216,10 +216,11 @@ public sealed class UEParamsAstBuilder
         foreach (var p in operation.HeaderParameters)
             CollectTypeReferences(p.Type, referencedModels, referencedEnums, enumNames);
 
+        // Params в Public/Endpoints/{OpId}/, Models/Enums в Public/Models, Public/Enums
         foreach (var modelName in referencedModels.OrderBy(x => x))
-            includes.Add(new CppIncludeDirectiveNode($"../{_naming.ModelIncludePath(modelName)}"));
+            includes.Add(new CppIncludeDirectiveNode(_naming.ModelIncludePathFromEndpoint(modelName)));
         foreach (var enumName in referencedEnums.OrderBy(x => x))
-            includes.Add(new CppIncludeDirectiveNode($"../{_naming.EnumIncludePath(enumName)}"));
+            includes.Add(new CppIncludeDirectiveNode(_naming.EnumIncludePathFromEndpoint(enumName)));
 
         // .generated.h должен быть всегда последним (требование UHT)
         includes.Add(new CppIncludeDirectiveNode(fileName.Replace(".h", _options.GeneratedHeaderSuffix)));

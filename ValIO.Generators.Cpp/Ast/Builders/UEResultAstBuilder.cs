@@ -103,24 +103,23 @@ public sealed class UEResultAstBuilder
             new(_options.ValIOResponseIncludePath)
         };
 
-        // Include для SuccessBody type
+        // Result в Public/Endpoints/{OpId}/, Models/Enums в Public/Models, Public/Enums
         if (successResponse?.Type is IrModelReference successModelRef)
         {
             var path = enumNames.Contains(successModelRef.ModelName)
-                ? _naming.EnumIncludePath(successModelRef.ModelName)
-                : _naming.ModelIncludePath(successModelRef.ModelName);
-            includes.Add(new CppIncludeDirectiveNode($"../{path}"));
+                ? _naming.EnumIncludePathFromEndpoint(successModelRef.ModelName)
+                : _naming.ModelIncludePathFromEndpoint(successModelRef.ModelName);
+            includes.Add(new CppIncludeDirectiveNode(path));
         }
 
-        // Include для каждого body-типа не-успешных ответов
         foreach (var r in nonSuccessResponses)
         {
             if (r.Type is IrModelReference modelRef)
             {
                 var path = enumNames.Contains(modelRef.ModelName)
-                    ? _naming.EnumIncludePath(modelRef.ModelName)
-                    : _naming.ModelIncludePath(modelRef.ModelName);
-                includes.Add(new CppIncludeDirectiveNode($"../{path}"));
+                    ? _naming.EnumIncludePathFromEndpoint(modelRef.ModelName)
+                    : _naming.ModelIncludePathFromEndpoint(modelRef.ModelName);
+                includes.Add(new CppIncludeDirectiveNode(path));
             }
         }
 
