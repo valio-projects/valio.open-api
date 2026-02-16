@@ -88,6 +88,7 @@ public sealed class UEApiAstBuilder
             new(headerFileName),
             new(_options.ValIOClientIncludePath),
             new(_options.ValIORequestBuilderIncludePath),
+            new("Blueprint/ValIORequestBuilder.h"),
             new(_options.ValIOMultipartFormDataIncludePath),
             new(_options.ValIOTypesIncludePath),
             new(_options.ValIOResponseIncludePath),
@@ -133,7 +134,8 @@ public sealed class UEApiAstBuilder
         return new List<CppForwardDeclarationNode>
         {
             new(CppForwardDeclarationKind.Class, new IdentifierNode("FValIOClient")),
-            new(CppForwardDeclarationKind.Struct, new IdentifierNode("FValIOResponse"))
+            new(CppForwardDeclarationKind.Struct, new IdentifierNode("FValIOResponse")),
+            new(CppForwardDeclarationKind.Class, new IdentifierNode("UValIORequestBuilder"))
         };
     }
 
@@ -180,21 +182,17 @@ public sealed class UEApiAstBuilder
 
         var publicMembers = new List<AstNode>();
 
-        // Path(Params) -> FString
-        var pathParams = operation.PathParameters
-            .Select(p => new CppParameterNode(
-                new IdentifierNode(_naming.PropertyName(p.Name)),
-                _typeMapper.MapType(p.Type),
-                isConst: IsReferenceType(p.Type),
-                isReference: IsReferenceType(p.Type)))
-            .ToList();
+        // BuildPathUrl(Params) -> FString
         publicMembers.Add(new UFunctionDeclarationNode(
             name: new IdentifierNode(pathMethodName),
             returnType: new SimpleTypeNode(new IdentifierNode("FString")),
-            parameters: pathParams,
+            parameters: new[]
+            {
+                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            },
             specifiers: UFunctionSpecifiers.PathBuilder($"{category}|Path", FormatDisplayName(pathMethodName)),
             isStatic: true,
-            documentation: BuildPathDocumentation(operation)));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildBuildPathUrlDocumentation(operation, paramsTypeName), CommentKind.MultiLine)));
 
         // Parse(Response) -> FResult
         publicMembers.Add(new UFunctionDeclarationNode(
@@ -209,7 +207,7 @@ public sealed class UEApiAstBuilder
             },
             specifiers: new UFunctionSpecifiers { BlueprintPure = true, Category = $"{category}|Parse" },
             isStatic: true,
-            documentation: new CommentNode($"Parses FValIOResponse into {resultTypeName}.", CommentKind.SingleLine)));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildParseDocumentation(operation, resultTypeName), CommentKind.MultiLine)));
 
         // Build(Params) -> FValIORequestBuilder — без UFUNCTION (временно)
         publicMembers.Add(new UFunctionDeclarationNode(
@@ -221,7 +219,19 @@ public sealed class UEApiAstBuilder
             },
             specifiers: new UFunctionSpecifiers(),
             isStatic: true,
-            documentation: new CommentNode($"Builds FValIORequestBuilder. Path, query params, verb, request name.", CommentKind.SingleLine)));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildBuildDocumentation(operation, paramsTypeName), CommentKind.MultiLine)));
+
+        // BuildRequestBuilder(Params) -> UValIORequestBuilder* (Blueprint)
+        publicMembers.Add(new UFunctionDeclarationNode(
+            name: new IdentifierNode("BuildRequestBuilder"),
+            returnType: new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder*")),
+            parameters: new[]
+            {
+                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            },
+            specifiers: UFunctionSpecifiers.BuildRequestBuilder($"{category}|Build", "Build Request Builder"),
+            isStatic: true,
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildBuildRequestBuilderDocumentation(operation, paramsTypeName), CommentKind.MultiLine)));
 
         // Send(Client, Params) -> TFuture<FResult> — без UFUNCTION
         publicMembers.Add(new UFunctionDeclarationNode(
@@ -234,7 +244,7 @@ public sealed class UEApiAstBuilder
             },
             specifiers: new UFunctionSpecifiers(),
             isStatic: true,
-            documentation: new CommentNode($"Sends request and returns TFuture with parsed result.", CommentKind.SingleLine)));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildSendDocumentation(operation, resultTypeName, paramsTypeName, className), CommentKind.MultiLine)));
 
         return new UClassDeclarationNode(
             name: new IdentifierNode(className),
@@ -242,7 +252,7 @@ public sealed class UEApiAstBuilder
             apiMacro: _options.ModuleApiMacro,
             baseTypes: new TypeNode[] { new SimpleTypeNode(new IdentifierNode("UBlueprintFunctionLibrary")) },
             publicMembers: publicMembers,
-            documentation: new CommentNode($"Blueprint Function Library for {operation.MethodName}. Path, Parse, Build, Send.", CommentKind.MultiLine));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildLibraryClassDocumentation(operation, clientName), CommentKind.MultiLine));
     }
 
     /// <summary>
@@ -291,7 +301,8 @@ public sealed class UEApiAstBuilder
             returnType: new SimpleTypeNode(new IdentifierNode($"{className}*")),
             parameters: factoryParams,
             specifiers: UFunctionSpecifiers.AsyncFactory(category, displayName),
-            isStatic: true));
+            isStatic: true,
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildAsyncFactoryDocumentation(operation, paramsTypeName), CommentKind.MultiLine)));
 
         // virtual void Activate() override;
         publicMembers.Add(new UFunctionDeclarationNode(
@@ -355,7 +366,7 @@ public sealed class UEApiAstBuilder
         publicMembers.Add(new UPropertyFieldNode(
             name: new IdentifierNode("State"),
             type: stateType,
-            documentation: new CommentNode("Used by UValIOAsyncActionBase::NewAsyncObject.", CommentKind.MultiLine),
+            documentation: new CommentNode("@brief Internal state for NewAsyncObject.\n@details Used by UValIOAsyncActionBase::NewAsyncObject.", CommentKind.MultiLine),
             skipUProperty: true));
 
         return new UClassDeclarationNode(
@@ -365,7 +376,7 @@ public sealed class UEApiAstBuilder
             baseTypes: new TypeNode[] { new SimpleTypeNode(new IdentifierNode(_options.BaseAsyncActionClassName)) },
             publicMembers: publicMembers,
             protectedMembers: protectedMembers,
-            documentation: new CommentNode($"Async action for {operation.MethodName}.", CommentKind.MultiLine));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildAsyncClassDocumentation(operation, clientName), CommentKind.MultiLine));
     }
 
     // ===== Source (.cpp) building methods =====
@@ -390,6 +401,9 @@ public sealed class UEApiAstBuilder
         // Build implementation
         implementations.Add(BuildBuildMethodImplementation(libraryClassName, pathMethodName, operation));
 
+        // BuildRequestBuilder implementation
+        implementations.Add(BuildBuildRequestBuilderMethodImplementation(libraryClassName, paramsTypeName));
+
         // Send implementation
         implementations.Add(BuildSendMethodImplementation(libraryClassName, resultTypeName, paramsTypeName));
 
@@ -411,25 +425,27 @@ public sealed class UEApiAstBuilder
     }
 
     /// <summary>
-    /// Строит параметры и тело метода Path (общая логика)
+    /// Строит параметры и тело метода BuildPathUrl (Params вместо отдельных аргументов)
     /// </summary>
     private (List<CppParameterNode> Parameters, BlockNode Body) BuildPathMethodParametersAndBody(IrOperation operation)
     {
-        var parameters = operation.PathParameters
-            .Select(p => new CppParameterNode(
-                new IdentifierNode(_naming.PropertyName(p.Name)),
-                _typeMapper.MapType(p.Type),
-                isConst: IsReferenceType(p.Type),
-                isReference: IsReferenceType(p.Type)))
-            .ToList();
+        var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
+        var hasMultipleParamGroups = HasMultipleParamGroups(operation);
+        var pathPrefix = hasMultipleParamGroups ? "Params.Route." : "Params.";
+
+        var parameters = new List<CppParameterNode>
+        {
+            new(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+        };
 
         var pathParamSpecs = operation.PathParameters.Select(p =>
         {
             var propName = _naming.PropertyName(p.Name);
+            var pathValueAccess = pathPrefix + propName;
             var isGuid = _typeMapper.IsGuidType(p.Type);
             var intermediateVarName = isGuid ? propName + "Str" : null;
-            var printfArgExpr = _typeMapper.GetPrintfArgumentExpression(p.Type, propName, intermediateVarName);
-            return (OriginalName: p.Name, PropertyName: propName, PrintfSpecifier: _typeMapper.GetPrintfSpecifier(p.Type),
+            var printfArgExpr = _typeMapper.GetPrintfArgumentExpression(p.Type, pathValueAccess, intermediateVarName);
+            return (OriginalName: p.Name, PathValueAccess: pathValueAccess, PropertyName: propName, PrintfSpecifier: _typeMapper.GetPrintfSpecifier(p.Type),
                 PrintfArgExpression: printfArgExpr, IsGuid: isGuid, IntermediateVarName: intermediateVarName);
         }).ToList();
 
@@ -438,10 +454,9 @@ public sealed class UEApiAstBuilder
         {
             if (param.IsGuid && param.IntermediateVarName != null)
             {
+                var pathExpr = BuildExpressionFromPath(param.PathValueAccess);
                 var toStrCall = new CallExpressionNode(
-                    new MemberAccessExpressionNode(
-                        new IdentifierExpressionNode(new IdentifierNode(param.PropertyName)),
-                        new IdentifierNode("ToString")),
+                    new MemberAccessExpressionNode(pathExpr, new IdentifierNode("ToString")),
                     new ExpressionNode[] { new MemberAccessExpressionNode(
                         new IdentifierExpressionNode(new IdentifierNode("EGuidFormats")),
                         new IdentifierNode("DigitsWithHyphens"),
@@ -458,8 +473,8 @@ public sealed class UEApiAstBuilder
         printfArgs.AddRange(pathParamSpecs.Select(p =>
         {
             var needsDeref = p.PrintfArgExpression.StartsWith("*");
-            var ident = needsDeref ? p.PrintfArgExpression.TrimStart('*') : p.PrintfArgExpression;
-            var expr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(ident));
+            var pathOrIdent = needsDeref ? p.PrintfArgExpression.TrimStart('*') : p.PrintfArgExpression;
+            var expr = BuildExpressionFromPath(pathOrIdent);
             return needsDeref ? new UnaryExpressionNode(UnaryOperator.Dereference, expr) : expr;
         }));
         var printfCall = new CallExpressionNode(
@@ -504,7 +519,6 @@ public sealed class UEApiAstBuilder
     {
         var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
         var hasMultipleParamGroups = HasMultipleParamGroups(operation);
-        var pathPrefix = hasMultipleParamGroups ? "Params.Route." : "Params.";
         var queryPrefix = hasMultipleParamGroups ? "Params.Query." : "Params.";
         var httpVerb = operation.HttpMethod.ToUpperInvariant() switch
         {
@@ -513,12 +527,9 @@ public sealed class UEApiAstBuilder
             _ => "Get"
         };
 
-        var pathArgExprs = operation.PathParameters
-            .Select(p => (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(pathPrefix + _naming.PropertyName(p.Name))))
-            .ToImmutableList();
         var pathCall = new CallExpressionNode(
             new IdentifierExpressionNode(new IdentifierNode(pathMethodName)),
-            pathArgExprs);
+            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Params")) }.ToImmutableList());
 
         var statements = new List<StatementNode>();
         statements.Add(new VariableDeclarationStatementNode(
@@ -580,16 +591,53 @@ public sealed class UEApiAstBuilder
     }
 
     /// <summary>
+    /// Строит реализацию метода BuildRequestBuilder для OperationLibrary
+    /// </summary>
+    private CppAsyncFactoryImplementationNode BuildBuildRequestBuilderMethodImplementation(
+        string libraryClassName, string paramsTypeName)
+    {
+        var buildCall = new CallExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode("Build")),
+            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Params")) }.ToImmutableList());
+        var fromCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("UValIORequestBuilder")),
+                new IdentifierNode("From"),
+                useScopeOperator: true),
+            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")) }.ToImmutableList());
+
+        var statements = new List<StatementNode>
+        {
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("RequestBuilder"),
+                new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
+                buildCall),
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("BlueprintRequestBuilder"),
+                new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder*")),
+                fromCall),
+            new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("BlueprintRequestBuilder")))
+        };
+
+        return new CppAsyncFactoryImplementationNode(
+            className: new IdentifierNode(libraryClassName),
+            methodName: new IdentifierNode("BuildRequestBuilder"),
+            returnType: new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder*")),
+            parameters: new[]
+            {
+                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            },
+            body: new BlockNode(statements.ToImmutableList()));
+    }
+
+    /// <summary>
     /// Строит реализацию метода Send для OperationLibrary
     /// </summary>
     private CppAsyncFactoryImplementationNode BuildSendMethodImplementation(
         string libraryClassName, string resultTypeName, string paramsTypeName)
     {
         var buildCall = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode(libraryClassName)),
-                new IdentifierNode("Build"),
-                useScopeOperator: true),
+            new IdentifierExpressionNode(new IdentifierNode("Build")),
             new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Params")) }.ToImmutableList());
 
         var requestBuilderBuildCall = new CallExpressionNode(
@@ -605,11 +653,10 @@ public sealed class UEApiAstBuilder
                 useArrowOperator: true),
             new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Request")) }.ToImmutableList());
 
-        // Next(&Library::Parse) - static method as callable
-        var parseRef = new MemberAccessExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode(libraryClassName)),
-            new IdentifierNode("Parse"),
-            useScopeOperator: true);
+        // Next(&Parse) - static method as callable (unqualified, same class)
+        var parseRef = new UnaryExpressionNode(
+            UnaryOperator.AddressOf,
+            new IdentifierExpressionNode(new IdentifierNode("Parse")));
         var nextCall = new CallExpressionNode(
             new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("ResponseFuture")),
@@ -792,10 +839,7 @@ public sealed class UEApiAstBuilder
         var implementations = new List<AstNode>();
 
         var factoryReturnExpr = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("UValIOAsyncActionBase")),
-                new IdentifierNode("NewAsyncObject"),
-                useScopeOperator: true),
+            new IdentifierExpressionNode(new IdentifierNode("NewAsyncObject")),
             new ExpressionNode[]
             {
                 new IdentifierExpressionNode(new IdentifierNode("WorldContextObject")),
@@ -1052,25 +1096,22 @@ public sealed class UEApiAstBuilder
         };
     }
 
-    private CommentNode? BuildOperationDocumentation(IrOperation operation)
-    {
-        var text = $"{operation.HttpMethod.ToUpperInvariant()} {operation.Path}";
-        if (!string.IsNullOrWhiteSpace(operation.Summary))
-            text = $"{operation.Summary}\n{text}";
-        return new CommentNode(text, CommentKind.MultiLine);
-    }
-
-    private CommentNode? BuildPathDocumentation(IrOperation operation)
-    {
-        return new CommentNode(
-            $"{operation.HttpMethod.ToUpperInvariant()} {operation.Path}",
-            CommentKind.MultiLine);
-    }
-
     private static string FormatDisplayName(string methodName)
     {
         // Convert PascalCase to "Pascal Case"
         return System.Text.RegularExpressions.Regex.Replace(
             methodName, "(?<=[a-z])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])", " ");
+    }
+
+    /// <summary>
+    /// Строит ExpressionNode из пути вида "Params.BuildingId" или "Params.Route.BuildingId".
+    /// </summary>
+    private static ExpressionNode BuildExpressionFromPath(string path)
+    {
+        var parts = path.Split('.');
+        ExpressionNode expr = new IdentifierExpressionNode(new IdentifierNode(parts[0]));
+        for (var i = 1; i < parts.Length; i++)
+            expr = new MemberAccessExpressionNode(expr, new IdentifierNode(parts[i]));
+        return expr;
     }
 }

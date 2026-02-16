@@ -56,7 +56,7 @@ public sealed class UEParamsAstBuilder
         if (groupCount <= 1)
         {
             var flatFields = BuildFlatFields(operation, category);
-            var flatDoc = BuildParamsStructDocumentation(operation, paramsName, methodNamePascal, hasBody: hasBody || hasForm);
+            var flatDoc = new CommentNode(DoxygenCommentBuilder.BuildParamsStructDocumentation(operation, paramsName, methodNamePascal, hasBody: hasBody || hasForm), CommentKind.MultiLine);
             var flatStruct = new UStructDeclarationNode(
                 name: new IdentifierNode(paramsName),
                 specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
@@ -72,9 +72,7 @@ public sealed class UEParamsAstBuilder
             {
                 var routeName = _naming.RouteParamsStructName(operation.MethodName);
                 var routeFields = BuildParameterFields(operation.PathParameters, category);
-                var routeDoc = new CommentNode(
-                    $"Path parameters for {methodNamePascal}. Values are substituted into the URL path placeholders (e.g. /api/projects/{{projectId}}).",
-                    CommentKind.MultiLine);
+                var routeDoc = new CommentNode(DoxygenCommentBuilder.BuildRouteParamsDocumentation(operation, methodNamePascal), CommentKind.MultiLine);
                 var routeStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(routeName),
                     specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
@@ -86,9 +84,7 @@ public sealed class UEParamsAstBuilder
                     name: new IdentifierNode("Route"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(routeName)),
                     specifiers: UPropertySpecifiers.ParamField(category),
-                    documentation: new CommentNode(
-                        "Path/route parameters. Values are substituted into the URL path (e.g. /api/projects/{projectId}).",
-                        CommentKind.MultiLine)));
+                    documentation: new CommentNode("@brief Path/route parameters.\n@details Values are substituted into the URL path (e.g. /api/projects/{projectId}).\n@see Params.Route", CommentKind.MultiLine)));
             }
 
             // Query под-структура
@@ -96,9 +92,7 @@ public sealed class UEParamsAstBuilder
             {
                 var queryName = _naming.QueryParamsStructName(operation.MethodName);
                 var queryFields = BuildParameterFields(operation.QueryParameters, category);
-                var queryDoc = new CommentNode(
-                    $"Query parameters for {methodNamePascal}. Appended to the URL as ?key=value pairs.",
-                    CommentKind.MultiLine);
+                var queryDoc = new CommentNode(DoxygenCommentBuilder.BuildQueryParamsDocumentation(operation, methodNamePascal), CommentKind.MultiLine);
                 var queryStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(queryName),
                     specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
@@ -110,9 +104,7 @@ public sealed class UEParamsAstBuilder
                     name: new IdentifierNode("Query"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(queryName)),
                     specifiers: UPropertySpecifiers.ParamField(category),
-                    documentation: new CommentNode(
-                        "Query string parameters. Appended to the URL as ?key=value pairs.",
-                        CommentKind.MultiLine)));
+                    documentation: new CommentNode("@brief Query string parameters.\n@details Appended to the URL as ?key=value pairs.\n@see Params.Query", CommentKind.MultiLine)));
             }
 
             // Headers под-структура
@@ -120,9 +112,7 @@ public sealed class UEParamsAstBuilder
             {
                 var headerName = $"F{methodNamePascal}HeaderParams";
                 var headerFields = BuildParameterFields(operation.HeaderParameters, category);
-                var headerDoc = new CommentNode(
-                    $"HTTP header parameters for {methodNamePascal}.",
-                    CommentKind.MultiLine);
+                var headerDoc = new CommentNode($"@brief HTTP header parameters for {methodNamePascal}.\n@see Params.Headers", CommentKind.MultiLine);
                 var headerStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(headerName),
                     specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
@@ -134,9 +124,7 @@ public sealed class UEParamsAstBuilder
                     name: new IdentifierNode("Headers"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(headerName)),
                     specifiers: UPropertySpecifiers.ParamField(category),
-                    documentation: new CommentNode(
-                        "HTTP header parameters.",
-                        CommentKind.MultiLine)));
+                    documentation: new CommentNode("@brief HTTP header parameters.\n@see Params.Headers", CommentKind.MultiLine)));
             }
 
             // Body под-структура (JSON)
@@ -144,7 +132,11 @@ public sealed class UEParamsAstBuilder
             {
                 var bodyName = _naming.BodyParamsStructName(operation.MethodName);
                 var bodyType = _typeMapper.MapType(operation.RequestBody.Type);
-                var bodyDataDoc = BuildRequestBodyFieldDocumentation(operation.RequestBody.Description, "Request body (JSON).");
+                var bodyDataDoc = new CommentNode(
+                    string.IsNullOrWhiteSpace(operation.RequestBody.Description)
+                        ? "@brief Request body (JSON).\n@details Sent in the HTTP request body."
+                        : $"@brief Request body (JSON).\n@details Sent in the HTTP request body.\n\n{operation.RequestBody.Description}",
+                    CommentKind.MultiLine);
                 var bodyFields = new List<UPropertyFieldNode>
                 {
                     new(
@@ -153,7 +145,7 @@ public sealed class UEParamsAstBuilder
                         specifiers: UPropertySpecifiers.ParamField(category),
                         documentation: bodyDataDoc)
                 };
-                var bodyStructDoc = BuildRequestBodyStructDocumentation(operation.RequestBody.Description, methodNamePascal, "JSON request body");
+                var bodyStructDoc = new CommentNode(DoxygenCommentBuilder.BuildBodyParamsDocumentation(operation.RequestBody.Description, methodNamePascal, "JSON request body"), CommentKind.MultiLine);
                 var bodyStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(bodyName),
                     specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
@@ -165,9 +157,7 @@ public sealed class UEParamsAstBuilder
                     name: new IdentifierNode("Body"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(bodyName)),
                     specifiers: UPropertySpecifiers.ParamField(category),
-                    documentation: new CommentNode(
-                        "Request body (JSON). Sent in the HTTP request body.",
-                        CommentKind.MultiLine)));
+                    documentation: new CommentNode("@brief Request body (JSON).\n@details Sent in the HTTP request body.\n@see Params.Body", CommentKind.MultiLine)));
             }
 
             // Form под-структура (multipart)
@@ -175,7 +165,11 @@ public sealed class UEParamsAstBuilder
             {
                 var formName = _naming.FormParamsStructName(operation.MethodName);
                 var formType = _typeMapper.MapType(operation.RequestBody.Type);
-                var formDataDoc = BuildRequestBodyFieldDocumentation(operation.RequestBody.Description, "Form data (multipart/form-data).");
+                var formDataDoc = new CommentNode(
+                    string.IsNullOrWhiteSpace(operation.RequestBody.Description)
+                        ? "@brief Form data (multipart/form-data).\n@details For file uploads and form submissions."
+                        : $"@brief Form data (multipart/form-data).\n@details For file uploads and form submissions.\n\n{operation.RequestBody.Description}",
+                    CommentKind.MultiLine);
                 var formFields = new List<UPropertyFieldNode>
                 {
                     new(
@@ -184,7 +178,7 @@ public sealed class UEParamsAstBuilder
                         specifiers: UPropertySpecifiers.ParamField(category),
                         documentation: formDataDoc)
                 };
-                var formStructDoc = BuildRequestBodyStructDocumentation(operation.RequestBody.Description, methodNamePascal, "Form data (multipart/form-data)");
+                var formStructDoc = new CommentNode(DoxygenCommentBuilder.BuildBodyParamsDocumentation(operation.RequestBody.Description, methodNamePascal, "Form data (multipart/form-data)"), CommentKind.MultiLine);
                 var formStruct = new UStructDeclarationNode(
                     name: new IdentifierNode(formName),
                     specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
@@ -196,13 +190,11 @@ public sealed class UEParamsAstBuilder
                     name: new IdentifierNode("Form"),
                     type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(formName)),
                     specifiers: UPropertySpecifiers.ParamField(category),
-                    documentation: new CommentNode(
-                        "Form data (multipart/form-data). For file uploads and form submissions.",
-                        CommentKind.MultiLine)));
+                    documentation: new CommentNode("@brief Form data (multipart/form-data).\n@details For file uploads and form submissions.\n@see Params.Form", CommentKind.MultiLine)));
             }
 
             // Агрегирующая структура
-            var aggregateDoc = BuildParamsStructDocumentation(operation, paramsName, methodNamePascal, hasBody: hasBody || hasForm);
+            var aggregateDoc = new CommentNode(DoxygenCommentBuilder.BuildParamsStructDocumentation(operation, paramsName, methodNamePascal, hasBody: hasBody || hasForm), CommentKind.MultiLine);
             var aggregateStruct = new UStructDeclarationNode(
                 name: new IdentifierNode(paramsName),
                 specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
@@ -255,7 +247,11 @@ public sealed class UEParamsAstBuilder
 
         if (operation.RequestBody != null)
         {
-            var bodyDoc = BuildRequestBodyFieldDocumentation(operation.RequestBody.Description, "Request body (JSON). Sent in the HTTP request body.");
+            var bodyDoc = new CommentNode(
+                string.IsNullOrWhiteSpace(operation.RequestBody.Description)
+                    ? "@brief Request body (JSON).\n@details Sent in the HTTP request body."
+                    : $"@brief Request body (JSON).\n@details Sent in the HTTP request body.\n\n{operation.RequestBody.Description}",
+                CommentKind.MultiLine);
             fields.Add(new UPropertyFieldNode(
                 name: new IdentifierNode("Body"),
                 type: _typeMapper.MapType(operation.RequestBody.Type),
@@ -264,38 +260,6 @@ public sealed class UEParamsAstBuilder
         }
 
         return fields;
-    }
-
-    /// <summary>
-    /// Строит документацию для Params-структуры
-    /// </summary>
-    private static CommentNode BuildParamsStructDocumentation(IrOperation operation, string paramsName, string methodNamePascal, bool hasBody)
-    {
-        var parts = new List<string> { $"Parameters for {methodNamePascal}." };
-        if (!string.IsNullOrWhiteSpace(operation.Summary)) parts.Add(operation.Summary);
-        if (!string.IsNullOrWhiteSpace(operation.Description)) parts.Add(operation.Description);
-        return new CommentNode(string.Join("\n\n", parts), CommentKind.MultiLine);
-    }
-
-    /// <summary>
-    /// Строит документацию для поля Data в Body/Form
-    /// </summary>
-    private static CommentNode? BuildRequestBodyFieldDocumentation(string? schemaDescription, string defaultText)
-    {
-        if (!string.IsNullOrWhiteSpace(schemaDescription))
-            return new CommentNode($"{defaultText}\n\n{schemaDescription}", CommentKind.MultiLine);
-        return new CommentNode(defaultText, CommentKind.MultiLine);
-    }
-
-    /// <summary>
-    /// Строит документацию для BodyParams/FormParams структуры
-    /// </summary>
-    private static CommentNode BuildRequestBodyStructDocumentation(string? schemaDescription, string methodNamePascal, string defaultText)
-    {
-        var parts = new List<string> { $"{defaultText} for {methodNamePascal}." };
-        if (!string.IsNullOrWhiteSpace(schemaDescription))
-            parts.Add(schemaDescription);
-        return new CommentNode(string.Join("\n\n", parts), CommentKind.MultiLine);
     }
 
     /// <summary>
@@ -325,7 +289,7 @@ public sealed class UEParamsAstBuilder
             specifiers: UPropertySpecifiers.ParamField(category),
             defaultValue: defaultValue,
             documentation: !string.IsNullOrWhiteSpace(param.Description)
-                ? new CommentNode(param.Description, CommentKind.MultiLine) : null);
+                ? new CommentNode($"@brief {param.Description}", CommentKind.MultiLine) : null);
     }
 
     /// <summary>

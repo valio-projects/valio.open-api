@@ -48,6 +48,18 @@ public sealed record UFunctionSpecifiers
     }
 
     /// <summary>
+    /// Предустановка: BlueprintCallable BuildRequestBuilder
+    /// </summary>
+    public static UFunctionSpecifiers BuildRequestBuilder(string category, string? displayName = null) => new()
+    {
+        BlueprintCallable = true,
+        Category = category,
+        Meta = displayName != null
+            ? new Dictionary<string, string> { ["DisplayName"] = displayName }.ToImmutableDictionary()
+            : ImmutableDictionary<string, string>.Empty
+    };
+
+    /// <summary>
     /// Предустановка: BlueprintCallable async factory method
     /// </summary>
     public static UFunctionSpecifiers AsyncFactory(string category, string? displayName = null) => new()

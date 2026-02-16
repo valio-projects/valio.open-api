@@ -46,14 +46,15 @@ public sealed class UEResultAstBuilder
             name: new IdentifierNode("StatusCode"),
             type: new SimpleTypeNode(new IdentifierNode("int32"), isPrimitive: true),
             specifiers: UPropertySpecifiers.ResultField(category),
-            defaultValue: new LiteralExpressionNode(0, LiteralKind.Number)));
+            defaultValue: new LiteralExpressionNode(0, LiteralKind.Number),
+            documentation: new CommentNode("@brief HTTP status code.\n@details Use IsSuccess() to check if 2xx.", CommentKind.MultiLine)));
 
         // Response — всегда присутствует (сырой ответ)
         fields.Add(new UPropertyFieldNode(
             name: new IdentifierNode("Response"),
             type: new SimpleTypeNode(new IdentifierNode("FValIOResponse")),
             specifiers: UPropertySpecifiers.ResultField(category),
-            documentation: new CommentNode("Raw HTTP response.", CommentKind.MultiLine)));
+            documentation: new CommentNode("@brief Raw HTTP response.\n@details Contains StatusCode, headers, body.", CommentKind.MultiLine)));
 
         // SuccessBody — присутствует если есть 2xx ответ с телом
         var successResponse = FindSuccessResponse(operation);
@@ -64,7 +65,7 @@ public sealed class UEResultAstBuilder
                 type: _typeMapper.MapType(successResponse.Type),
                 specifiers: UPropertySpecifiers.ResultField(category),
                 documentation: new CommentNode(
-                    $"Valid when StatusCode is 2xx ({successResponse.StatusCode}).",
+                    $"@brief Success response body.\n@details Valid when StatusCode is 2xx ({successResponse.StatusCode}).",
                     CommentKind.MultiLine)));
         }
 
@@ -79,7 +80,7 @@ public sealed class UEResultAstBuilder
                 type: bodyType,
                 specifiers: UPropertySpecifiers.ResultField(category),
                 documentation: new CommentNode(
-                    $"Valid when StatusCode is {r.StatusCode}.",
+                    $"@brief Error response body.\n@details Valid when StatusCode is {r.StatusCode}.{(string.IsNullOrWhiteSpace(r.Description) ? "" : $" {r.Description}")}",
                     CommentKind.MultiLine)));
         }
 
@@ -94,9 +95,7 @@ public sealed class UEResultAstBuilder
             specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
             inlineMethods: new[] { isSuccessMethod },
-            documentation: new CommentNode(
-                $"Typed result for {operation.MethodName}.",
-                CommentKind.MultiLine));
+            documentation: new CommentNode(DoxygenCommentBuilder.BuildResultStructDocumentation(operation, resultName), CommentKind.MultiLine));
 
         var includes = new List<CppIncludeDirectiveNode>
         {
