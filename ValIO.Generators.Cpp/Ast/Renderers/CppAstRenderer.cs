@@ -97,38 +97,42 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
 
         if (node.Implementations.Count > 0)
         {
-            var nativeFuncs = node.Implementations.OfType<CppNativeApiFunctionNode>().ToList();
-            if (nativeFuncs.Count > 0)
+            // Operation Library: Path (CppPathBuilderImplementationNode) + Parse, Build, Raw (CppAsyncFactoryImplementationNode)
+            var pathImpls = node.Implementations.OfType<CppPathBuilderImplementationNode>().ToList();
+            var libraryMethodImpls = node.Implementations
+                .OfType<CppAsyncFactoryImplementationNode>()
+                .Where(n => n.ClassName.Name.EndsWith("Library", StringComparison.Ordinal))
+                .ToList();
+            if (pathImpls.Count > 0 || libraryMethodImpls.Count > 0)
             {
-                sb.AppendLine(RenderSeparator("API methods"));
+                sb.AppendLine(RenderSeparator("Operation Library"));
                 sb.AppendLine();
-                foreach (var impl in nativeFuncs)
+                foreach (var impl in pathImpls)
+                {
+                    sb.Append(Visit(impl));
+                    sb.AppendLine();
+                }
+                foreach (var impl in libraryMethodImpls)
                 {
                     sb.Append(Visit(impl));
                     sb.AppendLine();
                 }
             }
 
+            // Blueprint async actions: AsyncAction::Create, Completed, Activate
             var asyncImpls = node.Implementations
-                .Where(n => n is CppAsyncFactoryImplementationNode or CppAsyncCompleteImplementationNode or CppAsyncActivateImplementationNode)
+                .Where(n =>
+                {
+                    if (n is CppAsyncFactoryImplementationNode factory)
+                        return factory.ClassName.Name.EndsWith("Async", StringComparison.Ordinal);
+                    return n is CppAsyncCompleteImplementationNode or CppAsyncActivateImplementationNode;
+                })
                 .ToList();
             if (asyncImpls.Count > 0)
             {
                 sb.AppendLine(RenderSeparator("Blueprint async actions"));
                 sb.AppendLine();
                 foreach (var impl in asyncImpls)
-                {
-                    sb.Append(Visit(impl));
-                    sb.AppendLine();
-                }
-            }
-
-            var pathImpls = node.Implementations.OfType<CppPathBuilderImplementationNode>().ToList();
-            if (pathImpls.Count > 0)
-            {
-                sb.AppendLine(RenderSeparator("Path builders"));
-                sb.AppendLine();
-                foreach (var impl in pathImpls)
                 {
                     sb.Append(Visit(impl));
                     sb.AppendLine();

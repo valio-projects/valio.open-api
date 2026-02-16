@@ -150,11 +150,19 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Имя PathsLibrary класса: U{ClientName}PathsLibrary
+    /// Имя PathsLibrary класса: U{ClientName}PathsLibrary (deprecated, use OperationLibraryClassName)
     /// </summary>
     public string PathsLibraryClassName(string clientName)
     {
         return $"U{ToPascalCase(clientName)}PathsLibrary";
+    }
+
+    /// <summary>
+    /// Имя OperationLibrary класса (BlueprintFunctionLibrary для одного endpoint): U{ClientName}{MethodName}Library
+    /// </summary>
+    public string OperationLibraryClassName(string clientName, string methodName)
+    {
+        return $"U{ToPascalCase(clientName)}{ToPascalCase(methodName)}Library";
     }
 
     /// <summary>

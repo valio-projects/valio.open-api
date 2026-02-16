@@ -17,8 +17,7 @@ namespace ValIO.Generators.Cpp.Ast.Builders;
 
 /// <summary>
 /// Строитель AST для API файлов (.h + .cpp) из IrClient.
-/// Генерирует: делегаты, native TFuture-функции, Blueprint Async Actions,
-/// PathsLibrary, Parse-функции, реализации методов.
+/// Генерирует: делегаты, OperationLibrary (Path, Parse, Build, Raw), Blueprint Async Actions.
 /// </summary>
 public sealed class UEApiAstBuilder
 {
@@ -51,16 +50,6 @@ public sealed class UEApiAstBuilder
     }
 
     /// <summary>
-    /// Строит пару (header, source) файлов для PathsLibrary клиента.
-    /// </summary>
-    public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildPaths(IrClient client)
-    {
-        var header = BuildPathsHeader(client);
-        var source = BuildPathsSource(client);
-        return (header, source);
-    }
-
-    /// <summary>
     /// Строит заголовочный файл (.h) для одного endpoint
     /// </summary>
     private CppHeaderFileNode BuildEndpointHeader(IrClient client, IrOperation operation)
@@ -69,8 +58,7 @@ public sealed class UEApiAstBuilder
         var declarations = new List<AstNode>
         {
             BuildDelegateDeclaration(operation),
-            BuildBuildRequestFunctionDeclaration(client.Name, operation),
-            BuildNativeFunctionDeclaration(client.Name, operation),
+            BuildOperationLibraryClass(client.Name, operation),
             BuildAsyncActionClass(client.Name, operation)
         };
 
@@ -94,77 +82,22 @@ public sealed class UEApiAstBuilder
     {
         var sourceFileName = _naming.EndpointSourceFileName(operation.MethodName);
         var headerFileName = _naming.EndpointHeaderFileName(operation.MethodName);
-        var pathsIncludePath = $"../Api/{_naming.PathsHeaderFileName(client.Name)}";
 
         var includes = new List<CppIncludeDirectiveNode>
         {
             new(headerFileName),
-            new(pathsIncludePath),
             new(_options.ValIOClientIncludePath),
             new(_options.ValIORequestBuilderIncludePath),
             new(_options.ValIOMultipartFormDataIncludePath),
             new(_options.ValIOTypesIncludePath),
             new(_options.ValIOResponseIncludePath),
-            new("Async/Async.h")
+            new("Async/Async.h"),
+            new("Misc/Guid.h")
         };
 
-        var anonymousMembers = new List<AstNode> { BuildParseFunction(operation) };
         var implementations = new List<AstNode>();
-        implementations.Add(BuildBuildRequestImplementation(client.Name, operation));
-        implementations.Add(BuildNativeFunctionImplementation(client.Name, operation));
+        implementations.AddRange(BuildOperationLibraryImplementations(client.Name, operation));
         implementations.AddRange(BuildAsyncActionImplementations(client.Name, operation));
-
-        return new CppSourceFileNode(
-            fileName: sourceFileName,
-            headerComment: _options.Copyright != null ? new CommentNode(_options.Copyright, CommentKind.MultiLine) : null,
-            includes: includes,
-            anonymousNamespaceMembers: anonymousMembers,
-            implementations: implementations);
-    }
-
-    /// <summary>
-    /// Строит заголовочный файл PathsLibrary
-    /// </summary>
-    private CppHeaderFileNode BuildPathsHeader(IrClient client)
-    {
-        var headerFileName = _naming.PathsHeaderFileName(client.Name);
-        var declarations = new List<AstNode> { BuildPathsLibraryClass(client) };
-
-        var includes = new List<CppIncludeDirectiveNode>
-        {
-            new("CoreMinimal.h"),
-            new("Kismet/BlueprintFunctionLibrary.h"),
-            new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix))
-        };
-
-        return new CppHeaderFileNode(
-            fileName: headerFileName,
-            headerComment: _options.Copyright != null ? new CommentNode(_options.Copyright, CommentKind.MultiLine) : null,
-            includes: includes,
-            forwardDeclarations: ImmutableList<CppForwardDeclarationNode>.Empty,
-            usingAliases: ImmutableList<CppUsingAliasNode>.Empty,
-            declarations: declarations);
-    }
-
-    /// <summary>
-    /// Строит файл реализации PathsLibrary
-    /// </summary>
-    private CppSourceFileNode BuildPathsSource(IrClient client)
-    {
-        var sourceFileName = _naming.PathsSourceFileName(client.Name);
-        var headerFileName = _naming.PathsHeaderFileName(client.Name);
-
-        var includes = new List<CppIncludeDirectiveNode>
-        {
-            new(headerFileName),
-            new(_options.ValIOTypesIncludePath),
-            new("Misc/Guid.h") // EGuidFormats::DigitsWithHyphens для FGuid в path params
-        };
-
-        var implementations = client.Operations
-            .Select(op => BuildPathMethodImplementation(client.Name, op))
-            .Cast<AstNode>()
-            .ToList();
 
         return new CppSourceFileNode(
             fileName: sourceFileName,
@@ -231,58 +164,82 @@ public sealed class UEApiAstBuilder
     }
 
     /// <summary>
-    /// Строит объявление нативной TFuture функции для .h
+    /// Строит OperationLibrary класс (UBlueprintFunctionLibrary) с Path, Parse, Build, Raw
     /// </summary>
-    private CppFreeFunctionNode BuildNativeFunctionDeclaration(string clientName, IrOperation operation)
+    private UClassDeclarationNode BuildOperationLibraryClass(string clientName, IrOperation operation)
     {
-        var funcName = _naming.NativeFunctionName(clientName, operation.MethodName);
+        var className = _naming.OperationLibraryClassName(clientName, operation.MethodName);
         var resultTypeName = _naming.ResultStructName(operation.MethodName);
         var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
+        var pathMethodName = _naming.PathMethodName(operation.MethodName);
+        var category = _naming.OperationTypeCategory(_options.BlueprintCategory, clientName, operation.MethodName);
 
-        var returnType = new GenericTypeNode(
-            new IdentifierNode("TFuture"),
-            new TypeNode[] { new SimpleTypeNode(new IdentifierNode(resultTypeName)) });
+        var publicMembers = new List<AstNode>();
 
-        var parameters = new List<CppParameterNode>
-        {
-            new(new IdentifierNode("Client"),
-                new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
-            new(new IdentifierNode("Params"),
-                new SimpleTypeNode(new IdentifierNode(paramsTypeName)),
-                isConst: true, isReference: true)
-        };
+        // Path(Params) -> FString
+        var pathParams = operation.PathParameters
+            .Select(p => new CppParameterNode(
+                new IdentifierNode(_naming.PropertyName(p.Name)),
+                _typeMapper.MapType(p.Type),
+                isConst: IsReferenceType(p.Type),
+                isReference: IsReferenceType(p.Type)))
+            .ToList();
+        publicMembers.Add(new UFunctionDeclarationNode(
+            name: new IdentifierNode(pathMethodName),
+            returnType: new SimpleTypeNode(new IdentifierNode("FString")),
+            parameters: pathParams,
+            specifiers: UFunctionSpecifiers.PathBuilder($"{category}|Path", FormatDisplayName(pathMethodName)),
+            isStatic: true,
+            documentation: BuildPathDocumentation(operation)));
 
-        return new CppFreeFunctionNode(
-            name: new IdentifierNode(funcName),
-            returnType: returnType,
-            parameters: parameters,
-            isDeclarationOnly: true,
-            documentation: BuildOperationDocumentation(operation));
-    }
+        // Parse(Response) -> FResult
+        publicMembers.Add(new UFunctionDeclarationNode(
+            name: new IdentifierNode("Parse"),
+            returnType: new SimpleTypeNode(new IdentifierNode(resultTypeName)),
+            parameters: new[]
+            {
+                new CppParameterNode(
+                    new IdentifierNode("Response"),
+                    new SimpleTypeNode(new IdentifierNode("FValIOResponse")),
+                    isConst: true, isReference: true)
+            },
+            specifiers: new UFunctionSpecifiers { BlueprintPure = true, Category = $"{category}|Parse" },
+            isStatic: true,
+            documentation: new CommentNode($"Parses FValIOResponse into {resultTypeName}.", CommentKind.SingleLine)));
 
-    /// <summary>
-    /// Строит объявление функции Build (создание FValIORequest)
-    /// </summary>
-    private CppFreeFunctionNode BuildBuildRequestFunctionDeclaration(string clientName, IrOperation operation)
-    {
-        var funcName = _naming.BuildRequestFunctionName(clientName, operation.MethodName);
-        var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
-
-        var parameters = new List<CppParameterNode>
-        {
-            new(new IdentifierNode("Client"),
-                new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
-            new(new IdentifierNode("Params"),
-                new SimpleTypeNode(new IdentifierNode(paramsTypeName)),
-                isConst: true, isReference: true)
-        };
-
-        return new CppFreeFunctionNode(
-            name: new IdentifierNode(funcName),
+        // Build(Client, Params) -> FValIORequestBuilder
+        publicMembers.Add(new UFunctionDeclarationNode(
+            name: new IdentifierNode("Build"),
             returnType: new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
-            parameters: parameters,
-            isDeclarationOnly: true,
-            documentation: new CommentNode($"Builds FValIORequestBuilder for {operation.MethodName}. Path, query params, verb, request name.", CommentKind.MultiLine));
+            parameters: new[]
+            {
+                new CppParameterNode(new IdentifierNode("Client"), new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
+                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            },
+            specifiers: new UFunctionSpecifiers { BlueprintPure = true, Category = $"{category}|Build" },
+            isStatic: true,
+            documentation: new CommentNode($"Builds FValIORequestBuilder. Path, query params, verb, request name.", CommentKind.SingleLine)));
+
+        // Raw(Client, Params) -> TFuture<FResult>
+        publicMembers.Add(new UFunctionDeclarationNode(
+            name: new IdentifierNode("Raw"),
+            returnType: new GenericTypeNode(new IdentifierNode("TFuture"), new TypeNode[] { new SimpleTypeNode(new IdentifierNode(resultTypeName)) }),
+            parameters: new[]
+            {
+                new CppParameterNode(new IdentifierNode("Client"), new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
+                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            },
+            specifiers: new UFunctionSpecifiers { BlueprintCallable = true, Category = $"{category}|Raw" },
+            isStatic: true,
+            documentation: new CommentNode($"Sends request and returns TFuture with parsed result.", CommentKind.SingleLine)));
+
+        return new UClassDeclarationNode(
+            name: new IdentifierNode(className),
+            specifiers: UClassSpecifiers.PathsLibrary(category),
+            apiMacro: _options.ModuleApiMacro,
+            baseTypes: new TypeNode[] { new SimpleTypeNode(new IdentifierNode("UBlueprintFunctionLibrary")) },
+            publicMembers: publicMembers,
+            documentation: new CommentNode($"Blueprint Function Library for {operation.MethodName}. Path, Parse, Build, Raw.", CommentKind.MultiLine));
     }
 
     /// <summary>
@@ -408,54 +365,301 @@ public sealed class UEApiAstBuilder
             documentation: new CommentNode($"Async action for {operation.MethodName}.", CommentKind.MultiLine));
     }
 
-    /// <summary>
-    /// Строит PathsLibrary класс (UBlueprintFunctionLibrary)
-    /// </summary>
-    private UClassDeclarationNode BuildPathsLibraryClass(IrClient client)
-    {
-        var className = _naming.PathsLibraryClassName(client.Name);
-        var category = _naming.PathsTypeCategory(_options.BlueprintCategory, client.Name);
-
-        var publicMembers = new List<AstNode>();
-
-        foreach (var op in client.Operations)
-        {
-            var pathMethodName = _naming.PathMethodName(op.MethodName);
-            var displayName = FormatDisplayName(pathMethodName);
-            var pathMethodCategory = $"{category}|{UENamingConvention.ToPascalCase(op.MethodName)}";
-
-            var parameters = op.PathParameters
-                .Select(p => new CppParameterNode(
-                    new IdentifierNode(_naming.PropertyName(p.Name)),
-                    _typeMapper.MapType(p.Type),
-                    isConst: IsReferenceType(p.Type),
-                    isReference: IsReferenceType(p.Type)))
-                .ToList();
-
-            publicMembers.Add(new UFunctionDeclarationNode(
-                name: new IdentifierNode(pathMethodName),
-                returnType: new SimpleTypeNode(new IdentifierNode("FString")),
-                parameters: parameters,
-                specifiers: UFunctionSpecifiers.PathBuilder(pathMethodCategory, displayName),
-                isStatic: true,
-                documentation: BuildPathDocumentation(op)));
-        }
-
-        return new UClassDeclarationNode(
-            name: new IdentifierNode(className),
-            specifiers: UClassSpecifiers.PathsLibrary(category),
-            apiMacro: _options.ModuleApiMacro,
-            baseTypes: new TypeNode[] { new SimpleTypeNode(new IdentifierNode("UBlueprintFunctionLibrary")) },
-            publicMembers: publicMembers,
-            documentation: new CommentNode(
-                $"Blueprint Function Library for {client.Name} API path construction.",
-                CommentKind.MultiLine));
-    }
-
     // ===== Source (.cpp) building methods =====
 
     /// <summary>
-    /// Строит Parse-функцию в анонимном namespace
+    /// Строит реализации методов OperationLibrary: Path, Parse, Build, Raw
+    /// </summary>
+    private List<AstNode> BuildOperationLibraryImplementations(string clientName, IrOperation operation)
+    {
+        var libraryClassName = _naming.OperationLibraryClassName(clientName, operation.MethodName);
+        var pathMethodName = _naming.PathMethodName(operation.MethodName);
+        var resultTypeName = _naming.ResultStructName(operation.MethodName);
+        var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
+        var implementations = new List<AstNode>();
+
+        // Path implementation
+        implementations.Add(BuildPathMethodImplementationForLibrary(libraryClassName, operation));
+
+        // Parse implementation
+        implementations.Add(BuildParseMethodImplementation(libraryClassName, operation));
+
+        // Build implementation
+        implementations.Add(BuildBuildMethodImplementation(libraryClassName, pathMethodName, clientName, operation));
+
+        // Raw implementation
+        implementations.Add(BuildRawMethodImplementation(libraryClassName, resultTypeName, paramsTypeName));
+
+        return implementations;
+    }
+
+    /// <summary>
+    /// Строит реализацию метода Path для OperationLibrary
+    /// </summary>
+    private CppPathBuilderImplementationNode BuildPathMethodImplementationForLibrary(string libraryClassName, IrOperation operation)
+    {
+        var pathMethodName = _naming.PathMethodName(operation.MethodName);
+        var (parameters, body) = BuildPathMethodParametersAndBody(operation);
+        return new CppPathBuilderImplementationNode(
+            className: new IdentifierNode(libraryClassName),
+            methodName: new IdentifierNode(pathMethodName),
+            parameters: parameters,
+            body: body);
+    }
+
+    /// <summary>
+    /// Строит параметры и тело метода Path (общая логика)
+    /// </summary>
+    private (List<CppParameterNode> Parameters, BlockNode Body) BuildPathMethodParametersAndBody(IrOperation operation)
+    {
+        var parameters = operation.PathParameters
+            .Select(p => new CppParameterNode(
+                new IdentifierNode(_naming.PropertyName(p.Name)),
+                _typeMapper.MapType(p.Type),
+                isConst: IsReferenceType(p.Type),
+                isReference: IsReferenceType(p.Type)))
+            .ToList();
+
+        var pathParamSpecs = operation.PathParameters.Select(p =>
+        {
+            var propName = _naming.PropertyName(p.Name);
+            var isGuid = _typeMapper.IsGuidType(p.Type);
+            var intermediateVarName = isGuid ? propName + "Str" : null;
+            var printfArgExpr = _typeMapper.GetPrintfArgumentExpression(p.Type, propName, intermediateVarName);
+            return (OriginalName: p.Name, PropertyName: propName, PrintfSpecifier: _typeMapper.GetPrintfSpecifier(p.Type),
+                PrintfArgExpression: printfArgExpr, IsGuid: isGuid, IntermediateVarName: intermediateVarName);
+        }).ToList();
+
+        var statements = new List<StatementNode>();
+        foreach (var param in pathParamSpecs)
+        {
+            if (param.IsGuid && param.IntermediateVarName != null)
+            {
+                var toStrCall = new CallExpressionNode(
+                    new MemberAccessExpressionNode(
+                        new IdentifierExpressionNode(new IdentifierNode(param.PropertyName)),
+                        new IdentifierNode("ToString")),
+                    new ExpressionNode[] { new MemberAccessExpressionNode(
+                        new IdentifierExpressionNode(new IdentifierNode("EGuidFormats")),
+                        new IdentifierNode("DigitsWithHyphens"),
+                        useScopeOperator: true) }.ToImmutableList());
+                statements.Add(new VariableDeclarationStatementNode(
+                    new IdentifierNode(param.IntermediateVarName),
+                    new SimpleTypeNode(new IdentifierNode("const FString")),
+                    toStrCall));
+            }
+        }
+        var formatStr = pathParamSpecs.Aggregate(operation.Path, (acc, p) =>
+            acc.Replace($"{{{p.OriginalName}}}", p.PrintfSpecifier));
+        var printfArgs = new List<ExpressionNode> { new LiteralExpressionNode(formatStr, LiteralKind.String) };
+        printfArgs.AddRange(pathParamSpecs.Select(p =>
+        {
+            var needsDeref = p.PrintfArgExpression.StartsWith("*");
+            var ident = needsDeref ? p.PrintfArgExpression.TrimStart('*') : p.PrintfArgExpression;
+            var expr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(ident));
+            return needsDeref ? new UnaryExpressionNode(UnaryOperator.Dereference, expr) : expr;
+        }));
+        var printfCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("FString")),
+                new IdentifierNode("Printf"),
+                useScopeOperator: true),
+            printfArgs.ToImmutableList());
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("Url"),
+            new SimpleTypeNode(new IdentifierNode("const FString")),
+            printfCall));
+        statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("Url"))));
+        return (parameters, new BlockNode(statements.ToImmutableList()));
+    }
+
+    /// <summary>
+    /// Строит реализацию метода Parse для OperationLibrary
+    /// </summary>
+    private CppAsyncFactoryImplementationNode BuildParseMethodImplementation(string libraryClassName, IrOperation operation)
+    {
+        var parseBody = BuildParseMethodBody(operation);
+        var parameters = new List<CppParameterNode>
+        {
+            new(new IdentifierNode("Response"),
+                new SimpleTypeNode(new IdentifierNode("FValIOResponse")),
+                isConst: true, isReference: true)
+        };
+        return new CppAsyncFactoryImplementationNode(
+            className: new IdentifierNode(libraryClassName),
+            methodName: new IdentifierNode("Parse"),
+            returnType: new SimpleTypeNode(new IdentifierNode(_naming.ResultStructName(operation.MethodName))),
+            parameters: parameters,
+            body: parseBody);
+    }
+
+    /// <summary>
+    /// Строит реализацию метода Build для OperationLibrary
+    /// </summary>
+    private CppAsyncFactoryImplementationNode BuildBuildMethodImplementation(
+        string libraryClassName, string pathMethodName, string clientName, IrOperation operation)
+    {
+        var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
+        var hasMultipleParamGroups = HasMultipleParamGroups(operation);
+        var pathPrefix = hasMultipleParamGroups ? "Params.Route." : "Params.";
+        var queryPrefix = hasMultipleParamGroups ? "Params.Query." : "Params.";
+        var httpVerb = operation.HttpMethod.ToUpperInvariant() switch
+        {
+            "GET" => "Get", "POST" => "Post", "PUT" => "Put", "DELETE" => "Delete",
+            "PATCH" => "Patch", "HEAD" => "Head", "OPTIONS" => "Options",
+            _ => "Get"
+        };
+
+        var pathArgExprs = operation.PathParameters
+            .Select(p => (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(pathPrefix + _naming.PropertyName(p.Name))))
+            .ToImmutableList();
+        var pathCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode(libraryClassName)),
+                new IdentifierNode(pathMethodName),
+                useScopeOperator: true),
+            pathArgExprs);
+
+        var statements = new List<StatementNode>();
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("Path"),
+            new SimpleTypeNode(new IdentifierNode("const FString")),
+            pathCall));
+
+        ExpressionNode requestChain = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("Client")),
+                new IdentifierNode("NewRequest"),
+                useArrowOperator: true),
+            new ExpressionNode[]
+            {
+                new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("EValIOHttpVerb")),
+                    new IdentifierNode(httpVerb),
+                    useScopeOperator: true),
+                new IdentifierExpressionNode(new IdentifierNode("Path"))
+            }.ToImmutableList());
+
+        foreach (var qp in operation.QueryParameters)
+        {
+            var propName = queryPrefix + _naming.PropertyName(qp.Name);
+            var valueExpr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(propName));
+            var methodName = IsQueryParamEnum(qp) ? "AddQueryParamEnumAsString" : "AddQueryParam";
+            requestChain = new CallExpressionNode(
+                new MemberAccessExpressionNode(requestChain, new IdentifierNode(methodName)),
+                new ExpressionNode[]
+                {
+                    new LiteralExpressionNode(qp.Name, LiteralKind.String),
+                    valueExpr
+                }.ToImmutableList());
+        }
+        requestChain = new CallExpressionNode(
+            new MemberAccessExpressionNode(requestChain, new IdentifierNode("SetRequestName")),
+            new ExpressionNode[] { new LiteralExpressionNode(operation.MethodName, LiteralKind.String) }.ToImmutableList());
+
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("RequestBuilder"),
+            new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
+            requestChain));
+        statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("RequestBuilder"))));
+
+        return new CppAsyncFactoryImplementationNode(
+            className: new IdentifierNode(libraryClassName),
+            methodName: new IdentifierNode("Build"),
+            returnType: new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
+            parameters: new[]
+            {
+                new CppParameterNode(new IdentifierNode("Client"), new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
+                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            },
+            body: new BlockNode(statements.ToImmutableList()));
+    }
+
+    /// <summary>
+    /// Строит реализацию метода Raw для OperationLibrary
+    /// </summary>
+    private CppAsyncFactoryImplementationNode BuildRawMethodImplementation(
+        string libraryClassName, string resultTypeName, string paramsTypeName)
+    {
+        var buildCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode(libraryClassName)),
+                new IdentifierNode("Build"),
+                useScopeOperator: true),
+            new ExpressionNode[]
+            {
+                new IdentifierExpressionNode(new IdentifierNode("Client")),
+                new IdentifierExpressionNode(new IdentifierNode("Params"))
+            }.ToImmutableList());
+
+        var requestBuilderBuildCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
+                new IdentifierNode("Build")),
+            ImmutableList<ExpressionNode>.Empty);
+
+        var sendCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("Client")),
+                new IdentifierNode("Send"),
+                useArrowOperator: true),
+            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Request")) }.ToImmutableList());
+
+        // Next(&Library::Parse) - static method as callable
+        var parseRef = new MemberAccessExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode(libraryClassName)),
+            new IdentifierNode("Parse"),
+            useScopeOperator: true);
+        var nextCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("ResponseFuture")),
+                new IdentifierNode("Next")),
+            new ExpressionNode[] { parseRef }.ToImmutableList());
+
+        var statements = new List<StatementNode>
+        {
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("RequestBuilder"),
+                new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
+                buildCall),
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("Request"),
+                new SimpleTypeNode(new IdentifierNode("FValIORequest")),
+                requestBuilderBuildCall),
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("ResponseFuture"),
+                new GenericTypeNode(new IdentifierNode("TFuture"), new TypeNode[] { new SimpleTypeNode(new IdentifierNode("FValIOResponse")) }),
+                sendCall),
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("ResultFuture"),
+                new GenericTypeNode(new IdentifierNode("TFuture"), new TypeNode[] { new SimpleTypeNode(new IdentifierNode(resultTypeName)) }),
+                nextCall),
+            new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("ResultFuture")))
+        };
+
+        return new CppAsyncFactoryImplementationNode(
+            className: new IdentifierNode(libraryClassName),
+            methodName: new IdentifierNode("Raw"),
+            returnType: new GenericTypeNode(new IdentifierNode("TFuture"), new TypeNode[] { new SimpleTypeNode(new IdentifierNode(resultTypeName)) }),
+            parameters: new[]
+            {
+                new CppParameterNode(new IdentifierNode("Client"), new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
+                new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
+            },
+            body: new BlockNode(statements.ToImmutableList()));
+    }
+
+    /// <summary>
+    /// Строит тело метода Parse (Response -> Result)
+    /// </summary>
+    private BlockNode BuildParseMethodBody(IrOperation operation)
+    {
+        var parseNode = BuildParseFunction(operation);
+        return parseNode.Body;
+    }
+
+    /// <summary>
+    /// Строит Parse-функцию (используется для извлечения тела)
     /// </summary>
     private CppParseFunctionNode BuildParseFunction(IrOperation operation)
     {
@@ -577,176 +781,6 @@ public sealed class UEApiAstBuilder
     }
 
     /// <summary>
-    /// Строит реализацию функции Build (создание FValIORequest)
-    /// </summary>
-    private CppNativeApiFunctionNode BuildBuildRequestImplementation(string clientName, IrOperation operation)
-    {
-        var funcName = _naming.BuildRequestFunctionName(clientName, operation.MethodName);
-        var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
-        var pathsClassName = _naming.PathsLibraryClassName(clientName);
-        var pathMethodName = _naming.PathMethodName(operation.MethodName);
-        var hasMultipleParamGroups = HasMultipleParamGroups(operation);
-        var pathPrefix = hasMultipleParamGroups ? "Params.Route." : "Params.";
-        var queryPrefix = hasMultipleParamGroups ? "Params.Query." : "Params.";
-        var httpVerb = operation.HttpMethod.ToUpperInvariant() switch
-        {
-            "GET" => "Get", "POST" => "Post", "PUT" => "Put", "DELETE" => "Delete",
-            "PATCH" => "Patch", "HEAD" => "Head", "OPTIONS" => "Options",
-            _ => "Get"
-        };
-
-        var parameters = new List<CppParameterNode>
-        {
-            new(new IdentifierNode("Client"),
-                new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
-            new(new IdentifierNode("Params"),
-                new SimpleTypeNode(new IdentifierNode(paramsTypeName)),
-                isConst: true, isReference: true)
-        };
-
-        var pathArgExprs = operation.PathParameters
-            .Select(p => (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(pathPrefix + _naming.PropertyName(p.Name))))
-            .ToImmutableList();
-        var pathCall = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode(pathsClassName)),
-                new IdentifierNode(pathMethodName),
-                useScopeOperator: true),
-            pathArgExprs);
-
-        var statements = new List<StatementNode>();
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("Path"),
-            new SimpleTypeNode(new IdentifierNode("const FString")),
-            pathCall));
-
-        ExpressionNode requestChain = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("Client")),
-                new IdentifierNode("NewRequest"),
-                useArrowOperator: true),
-            new ExpressionNode[]
-            {
-                new MemberAccessExpressionNode(
-                    new IdentifierExpressionNode(new IdentifierNode("EValIOHttpVerb")),
-                    new IdentifierNode(httpVerb),
-                    useScopeOperator: true),
-                new IdentifierExpressionNode(new IdentifierNode("Path"))
-            }.ToImmutableList());
-
-        foreach (var qp in operation.QueryParameters)
-        {
-            var propName = queryPrefix + _naming.PropertyName(qp.Name);
-            var valueExpr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(propName));
-            var methodName = IsQueryParamEnum(qp) ? "AddQueryParamEnumAsString" : "AddQueryParam";
-            requestChain = new CallExpressionNode(
-                new MemberAccessExpressionNode(requestChain, new IdentifierNode(methodName)),
-                new ExpressionNode[]
-                {
-                    new LiteralExpressionNode(qp.Name, LiteralKind.String),
-                    valueExpr
-                }.ToImmutableList());
-        }
-
-        requestChain = new CallExpressionNode(
-            new MemberAccessExpressionNode(requestChain, new IdentifierNode("SetRequestName")),
-            new ExpressionNode[] { new LiteralExpressionNode(operation.MethodName, LiteralKind.String) }.ToImmutableList());
-
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("RequestBuilder"),
-            new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
-            requestChain));
-        statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("RequestBuilder"))));
-
-        var body = new BlockNode(statements.ToImmutableList());
-        return new CppNativeApiFunctionNode(
-            name: new IdentifierNode(funcName),
-            returnType: new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
-            parameters: parameters,
-            body: body);
-    }
-
-    /// <summary>
-    /// Строит реализацию нативной функции: Build -> RequestBuilder.Build() -> Client->Send -> Next(ParseResult)
-    /// </summary>
-    private CppNativeApiFunctionNode BuildNativeFunctionImplementation(string clientName, IrOperation operation)
-    {
-        var funcName = _naming.NativeFunctionName(clientName, operation.MethodName);
-        var resultTypeName = _naming.ResultStructName(operation.MethodName);
-        var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
-        var buildFuncName = _naming.BuildRequestFunctionName(clientName, operation.MethodName);
-        var parseFuncName = _naming.ParseFunctionName(operation.MethodName);
-
-        var returnType = new GenericTypeNode(
-            new IdentifierNode("TFuture"),
-            new TypeNode[] { new SimpleTypeNode(new IdentifierNode(resultTypeName)) });
-
-        var parameters = new List<CppParameterNode>
-        {
-            new(new IdentifierNode("Client"),
-                new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))),
-            new(new IdentifierNode("Params"),
-                new SimpleTypeNode(new IdentifierNode(paramsTypeName)),
-                isConst: true, isReference: true)
-        };
-
-        var buildCall = new CallExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode(buildFuncName)),
-            new ExpressionNode[]
-            {
-                new IdentifierExpressionNode(new IdentifierNode("Client")),
-                new IdentifierExpressionNode(new IdentifierNode("Params"))
-            }.ToImmutableList());
-
-        var requestBuilderBuildCall = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
-                new IdentifierNode("Build")),
-            ImmutableList<ExpressionNode>.Empty);
-
-        var sendCall = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("Client")),
-                new IdentifierNode("Send"),
-                useArrowOperator: true),
-            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("Request")) }.ToImmutableList());
-
-        var nextCall = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("ResponseFuture")),
-                new IdentifierNode("Next")),
-            new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(parseFuncName)) }.ToImmutableList());
-
-        var statements = new List<StatementNode>
-        {
-            new VariableDeclarationStatementNode(
-                new IdentifierNode("RequestBuilder"),
-                new SimpleTypeNode(new IdentifierNode("FValIORequestBuilder")),
-                buildCall),
-            new VariableDeclarationStatementNode(
-                new IdentifierNode("Request"),
-                new SimpleTypeNode(new IdentifierNode("FValIORequest")),
-                requestBuilderBuildCall),
-            new VariableDeclarationStatementNode(
-                new IdentifierNode("ResponseFuture"),
-                new GenericTypeNode(new IdentifierNode("TFuture"), new TypeNode[] { new SimpleTypeNode(new IdentifierNode("FValIOResponse")) }),
-                sendCall),
-            new VariableDeclarationStatementNode(
-                new IdentifierNode("ResultFuture"),
-                new GenericTypeNode(new IdentifierNode("TFuture"), new TypeNode[] { new SimpleTypeNode(new IdentifierNode(resultTypeName)) }),
-                nextCall),
-            new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("ResultFuture")))
-        };
-
-        var body = new BlockNode(statements.ToImmutableList());
-        return new CppNativeApiFunctionNode(
-            name: new IdentifierNode(funcName),
-            returnType: returnType,
-            parameters: parameters,
-            body: body);
-    }
-
-    /// <summary>
     /// Строит реализации методов Async Action класса
     /// </summary>
     private List<AstNode> BuildAsyncActionImplementations(string clientName, IrOperation operation)
@@ -754,7 +788,6 @@ public sealed class UEApiAstBuilder
         var className = _naming.AsyncActionClassName(clientName, operation.MethodName);
         var resultTypeName = _naming.ResultStructName(operation.MethodName);
         var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
-        var nativeFuncName = _naming.NativeFunctionName(clientName, operation.MethodName);
 
         var implementations = new List<AstNode>();
 
@@ -812,15 +845,20 @@ public sealed class UEApiAstBuilder
             },
             body: new BlockNode(completeStatements.ToImmutableList())));
 
+        var libraryClassName = _naming.OperationLibraryClassName(clientName, operation.MethodName);
+        var rawCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode(libraryClassName)),
+                new IdentifierNode("Raw"),
+                useScopeOperator: true),
+            new ExpressionNode[]
+            {
+                new IdentifierExpressionNode(new IdentifierNode("Client")),
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("State")), new IdentifierNode("Params"))
+            }.ToImmutableList());
         var lambdaBody = new BlockNode(new StatementNode[]
         {
-            new ReturnStatementNode(new CallExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode(nativeFuncName)),
-                new ExpressionNode[]
-                {
-                    new IdentifierExpressionNode(new IdentifierNode("Client")),
-                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("State")), new IdentifierNode("Params"))
-                }.ToImmutableList()))
+            new ReturnStatementNode(rawCall)
         }.ToImmutableList());
         var activateLambda = new CppLambdaExpressionNode(
             new[] { "this" },
@@ -841,88 +879,6 @@ public sealed class UEApiAstBuilder
             }.ToImmutableList())));
 
         return implementations;
-    }
-
-    /// <summary>
-    /// Строит реализацию метода PathsLibrary
-    /// </summary>
-    private CppPathBuilderImplementationNode BuildPathMethodImplementation(string clientName, IrOperation operation)
-    {
-        var pathsClassName = _naming.PathsLibraryClassName(clientName);
-        var pathMethodName = _naming.PathMethodName(operation.MethodName);
-
-        var parameters = operation.PathParameters
-            .Select(p => new CppParameterNode(
-                new IdentifierNode(_naming.PropertyName(p.Name)),
-                _typeMapper.MapType(p.Type),
-                isConst: IsReferenceType(p.Type),
-                isReference: IsReferenceType(p.Type)))
-            .ToList();
-
-        var pathParamSpecs = operation.PathParameters.Select(p =>
-        {
-            var propName = _naming.PropertyName(p.Name);
-            var isGuid = _typeMapper.IsGuidType(p.Type);
-            var intermediateVarName = isGuid ? propName + "Str" : null;
-            var printfArgExpr = _typeMapper.GetPrintfArgumentExpression(p.Type, propName, intermediateVarName);
-
-            return (OriginalName: p.Name, PropertyName: propName, PrintfSpecifier: _typeMapper.GetPrintfSpecifier(p.Type),
-                PrintfArgExpression: printfArgExpr, IsGuid: isGuid, IntermediateVarName: intermediateVarName);
-        }).ToList();
-
-        var statements = new List<StatementNode>();
-
-        foreach (var param in pathParamSpecs)
-        {
-            if (param.IsGuid && param.IntermediateVarName != null)
-            {
-                var toStrCall = new CallExpressionNode(
-                    new MemberAccessExpressionNode(
-                        new IdentifierExpressionNode(new IdentifierNode(param.PropertyName)),
-                        new IdentifierNode("ToString")),
-                    new ExpressionNode[] { new MemberAccessExpressionNode(
-                        new IdentifierExpressionNode(new IdentifierNode("EGuidFormats")),
-                        new IdentifierNode("DigitsWithHyphens"),
-                        useScopeOperator: true) }.ToImmutableList());
-                statements.Add(new VariableDeclarationStatementNode(
-                    new IdentifierNode(param.IntermediateVarName),
-                    new SimpleTypeNode(new IdentifierNode("const FString")),
-                    toStrCall));
-            }
-        }
-
-        var formatStr = pathParamSpecs.Aggregate(operation.Path, (acc, p) =>
-            acc.Replace($"{{{p.OriginalName}}}", p.PrintfSpecifier));
-        var printfArgs = new List<ExpressionNode>
-        {
-            new LiteralExpressionNode(formatStr, LiteralKind.String)
-        };
-        printfArgs.AddRange(pathParamSpecs.Select(p =>
-        {
-            var needsDeref = p.PrintfArgExpression.StartsWith("*");
-            var ident = needsDeref ? p.PrintfArgExpression.TrimStart('*') : p.PrintfArgExpression;
-            var expr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(ident));
-            return needsDeref ? new UnaryExpressionNode(UnaryOperator.Dereference, expr) : expr;
-        }));
-
-        var printfCall = new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("FString")),
-                new IdentifierNode("Printf"),
-                useScopeOperator: true),
-            printfArgs.ToImmutableList());
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("Url"),
-            new SimpleTypeNode(new IdentifierNode("const FString")),
-            printfCall));
-        statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("Url"))));
-
-        var body = new BlockNode(statements.ToImmutableList());
-        return new CppPathBuilderImplementationNode(
-            className: new IdentifierNode(pathsClassName),
-            methodName: new IdentifierNode(pathMethodName),
-            parameters: parameters,
-            body: body);
     }
 
     // ===== Helper methods =====

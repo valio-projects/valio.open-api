@@ -95,11 +95,6 @@ public sealed class CppAstBuilder
                 result.Files[$"Endpoints/{header.FileName}"] = header;
                 result.Files[$"Endpoints/{source.FileName}"] = source;
             }
-
-            // PathsLibrary → Api/{ClientName}Paths.h + Api/{ClientName}Paths.cpp
-            var (pathsHeader, pathsSource) = _apiBuilder.BuildPaths(client);
-            result.Files[$"Api/{pathsHeader.FileName}"] = pathsHeader;
-            result.Files[$"Api/{pathsSource.FileName}"] = pathsSource;
         }
 
         return result;
