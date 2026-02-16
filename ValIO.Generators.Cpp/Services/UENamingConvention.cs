@@ -166,11 +166,11 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Имя метода построения пути: Path{MethodName}
+    /// Имя метода построения пути: BuildPathUrl
     /// </summary>
     public string PathMethodName(string methodName)
     {
-        return $"Path{ToPascalCase(methodName)}";
+        return "BuildPathUrl";
     }
 
     /// <summary>
