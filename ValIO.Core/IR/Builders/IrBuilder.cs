@@ -639,7 +639,7 @@ public class IrBuilder
                 if (openApiOperation == null)
                     continue;
                 
-                var operation = BuildOperation(path, httpMethod, openApiOperation, document, warnings);
+                var operation = BuildOperation(path, httpMethod, pathItem, openApiOperation, document, warnings);
                 operations.Add(operation);
             }
         }
@@ -699,6 +699,7 @@ public class IrBuilder
     private IrOperation BuildOperation(
         string path,
         HttpMethod httpMethod,
+        IOpenApiPathItem pathItem,
         OpenApiOperation openApiOperation,
         OpenApiDocument document,
         ICollection<string>? warnings = null)
@@ -707,14 +708,13 @@ public class IrBuilder
             $"{httpMethod.Method.ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
         var methodName = _namingConverter.SanitizeIdentifier(operationId);
         
-        // Извлекаем параметры
+        // Извлекаем параметры: объединяем path-level и operation-level (operation переопределяет path)
+        var effectiveParameters = GetEffectiveParameters(pathItem, openApiOperation);
         var pathParameters = new List<IrParameter>();
         var queryParameters = new List<IrParameter>();
         var headerParameters = new List<IrParameter>();
         
-        if (openApiOperation.Parameters != null)
-        {
-            foreach (var parameter in openApiOperation.Parameters)
+        foreach (var parameter in effectiveParameters)
             {
                 var irParameter = BuildParameter(parameter, document);
                 
@@ -730,7 +730,6 @@ public class IrBuilder
                         headerParameters.Add(irParameter);
                         break;
                 }
-            }
         }
 
         ValidateAndDeduplicateParameters(methodName, pathParameters, queryParameters, warnings);
@@ -782,6 +781,27 @@ public class IrBuilder
         };
     }
     
+    /// <summary>
+    /// Объединяет параметры Path Item и Operation. Параметры операции переопределяют path-level (по name+location).
+    /// </summary>
+    private static IReadOnlyList<IOpenApiParameter> GetEffectiveParameters(IOpenApiPathItem pathItem, OpenApiOperation openApiOperation)
+    {
+        var byKey = new Dictionary<string, IOpenApiParameter>(StringComparer.OrdinalIgnoreCase);
+        string Key(IOpenApiParameter p) => $"{p.In}:{p.Name}";
+
+        if (pathItem.Parameters != null)
+            foreach (var p in pathItem.Parameters)
+                if (p.Name != null && p.In.HasValue)
+                    byKey[Key(p)] = p;
+
+        if (openApiOperation.Parameters != null)
+            foreach (var p in openApiOperation.Parameters)
+                if (p.Name != null && p.In.HasValue)
+                    byKey[Key(p)] = p;
+
+        return byKey.Values.ToList();
+    }
+
     /// <summary>
     /// Извлекает имена path-параметров из шаблона пути в порядке их появления.
     /// Например: "/api/projects/{projectId}/plans/{planId}" → ["projectId", "planId"].
@@ -896,13 +916,32 @@ public class IrBuilder
     }
 
     /// <summary>
+    /// Разрешает schema параметра из components/parameters при $ref, если parameter.Schema == null.
+    /// </summary>
+    private static IOpenApiSchema? ResolveParameterSchemaFromReference(IOpenApiParameter parameter, OpenApiDocument document)
+    {
+        if (parameter.Schema != null) return null;
+        if (document.Components?.Parameters == null) return null;
+
+        string? refId = null;
+        if (parameter is OpenApiParameterReference paramRef)
+            refId = paramRef.Reference?.Id;
+
+        if (string.IsNullOrEmpty(refId) || !document.Components.Parameters.TryGetValue(refId, out var resolved))
+            return null;
+
+        return resolved.Schema;
+    }
+
+    /// <summary>
     /// Строит IrParameter из OpenAPI параметра
     /// </summary>
     private IrParameter BuildParameter(IOpenApiParameter parameter, OpenApiDocument document)
     {
         var name = _namingConverter.SanitizeIdentifier(parameter.Name ?? "param");
         var defaultSchema = new OpenApiSchema { Type = JsonSchemaType.String };
-        var type = BuildType(parameter.Schema ?? defaultSchema, document);
+        var schema = parameter.Schema ?? ResolveParameterSchemaFromReference(parameter, document) ?? defaultSchema;
+        var type = BuildType(schema, document);
         var isRequired = parameter.Required;
         
         return new IrParameter
