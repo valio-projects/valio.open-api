@@ -78,65 +78,34 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
             sb.AppendLine(Visit(include));
         if (node.Includes.Count > 0) sb.AppendLine();
 
-        if (node.AnonymousNamespaceMembers.Count > 0)
+        foreach (var section in node.Sections)
         {
-            sb.AppendLine(RenderSeparator("Response parsing"));
-            sb.AppendLine();
-            sb.AppendLine("namespace");
-            sb.AppendLine("{");
-            _indentLevel++;
-            foreach (var member in node.AnonymousNamespaceMembers)
+            if (section.Members.Count == 0) continue;
+
+            if (section.Title != null)
+            {
+                sb.AppendLine(RenderSeparator(section.Title));
+                sb.AppendLine();
+            }
+
+            if (section.WrapInAnonymousNamespace)
+            {
+                sb.AppendLine("namespace");
+                sb.AppendLine("{");
+                _indentLevel++;
+            }
+
+            foreach (var member in section.Members)
             {
                 sb.Append(Visit(member));
                 sb.AppendLine();
             }
-            _indentLevel--;
-            sb.AppendLine("}");
-            sb.AppendLine();
-        }
 
-        if (node.Implementations.Count > 0)
-        {
-            // Operation Library: Path (CppPathBuilderImplementationNode) + Parse, Build, Raw (CppAsyncFactoryImplementationNode)
-            var pathImpls = node.Implementations.OfType<CppPathBuilderImplementationNode>().ToList();
-            var libraryMethodImpls = node.Implementations
-                .OfType<CppAsyncFactoryImplementationNode>()
-                .Where(n => n.ClassName.Name.EndsWith("Library", StringComparison.Ordinal))
-                .ToList();
-            if (pathImpls.Count > 0 || libraryMethodImpls.Count > 0)
+            if (section.WrapInAnonymousNamespace)
             {
-                sb.AppendLine(RenderSeparator("Operation Library"));
+                _indentLevel--;
+                sb.AppendLine("}");
                 sb.AppendLine();
-                foreach (var impl in pathImpls)
-                {
-                    sb.Append(Visit(impl));
-                    sb.AppendLine();
-                }
-                foreach (var impl in libraryMethodImpls)
-                {
-                    sb.Append(Visit(impl));
-                    sb.AppendLine();
-                }
-            }
-
-            // Blueprint async actions: AsyncAction::Create, Completed, Activate
-            var asyncImpls = node.Implementations
-                .Where(n =>
-                {
-                    if (n is CppAsyncFactoryImplementationNode factory)
-                        return factory.ClassName.Name.EndsWith("Async", StringComparison.Ordinal);
-                    return n is CppAsyncCompleteImplementationNode or CppAsyncActivateImplementationNode;
-                })
-                .ToList();
-            if (asyncImpls.Count > 0)
-            {
-                sb.AppendLine(RenderSeparator("Blueprint async actions"));
-                sb.AppendLine();
-                foreach (var impl in asyncImpls)
-                {
-                    sb.Append(Visit(impl));
-                    sb.AppendLine();
-                }
             }
         }
 

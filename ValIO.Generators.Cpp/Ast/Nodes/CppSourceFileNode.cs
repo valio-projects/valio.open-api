@@ -8,7 +8,8 @@ namespace ValIO.Generators.Cpp.Ast.Nodes;
 
 /// <summary>
 /// Узел файла реализации (.cpp) C++.
-/// Содержит #include директивы, анонимный namespace с parse-функциями, реализации методов.
+/// Содержит #include директивы и секции (с заголовками и разделителями).
+/// Структура полностью задаётся builder'ом, рендерер только выводит.
 /// </summary>
 public sealed class CppSourceFileNode : AstNode
 {
@@ -28,14 +29,9 @@ public sealed class CppSourceFileNode : AstNode
     public IReadOnlyList<CppIncludeDirectiveNode> Includes { get; }
 
     /// <summary>
-    /// Содержимое анонимного namespace (parse-функции, внутренние хелперы)
+    /// Секции файла (заголовок, обёртка namespace, члены). Builder формирует структуру.
     /// </summary>
-    public IReadOnlyList<AstNode> AnonymousNamespaceMembers { get; }
-
-    /// <summary>
-    /// Реализации функций и методов (свободные функции, ClassName::Method)
-    /// </summary>
-    public IReadOnlyList<AstNode> Implementations { get; }
+    public IReadOnlyList<CppSourceSection> Sections { get; }
 
     public override AstNodeKind Kind => AstNodeKind.CppSourceFile;
 
@@ -46,8 +42,8 @@ public sealed class CppSourceFileNode : AstNode
             var children = new List<AstNode>();
             if (HeaderComment != null) children.Add(HeaderComment);
             children.AddRange(Includes);
-            children.AddRange(AnonymousNamespaceMembers);
-            children.AddRange(Implementations);
+            foreach (var section in Sections)
+                children.AddRange(section.Members);
             return children;
         }
     }
@@ -59,16 +55,14 @@ public sealed class CppSourceFileNode : AstNode
         string fileName,
         CommentNode? headerComment = null,
         IReadOnlyList<CppIncludeDirectiveNode>? includes = null,
-        IReadOnlyList<AstNode>? anonymousNamespaceMembers = null,
-        IReadOnlyList<AstNode>? implementations = null,
+        IReadOnlyList<CppSourceSection>? sections = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
         FileName = fileName ?? throw new ArgumentNullException(nameof(fileName));
         HeaderComment = headerComment;
         Includes = includes?.ToImmutableList() ?? ImmutableList<CppIncludeDirectiveNode>.Empty;
-        AnonymousNamespaceMembers = anonymousNamespaceMembers?.ToImmutableList() ?? ImmutableList<AstNode>.Empty;
-        Implementations = implementations?.ToImmutableList() ?? ImmutableList<AstNode>.Empty;
+        Sections = sections?.ToImmutableList() ?? ImmutableList<CppSourceSection>.Empty;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -80,17 +74,21 @@ public sealed class CppSourceFileNode : AstNode
 
     public override AstNode Clone()
     {
+        var clonedSections = Sections.Select(s => new CppSourceSection(
+            s.Title,
+            s.WrapInAnonymousNamespace,
+            s.Members.Select(m => m.Clone()).ToImmutableList())).ToImmutableList();
         return new CppSourceFileNode(
             FileName,
             HeaderComment != null ? (CommentNode)HeaderComment.Clone() : null,
             Includes.Select(i => (CppIncludeDirectiveNode)i.Clone()).ToImmutableList(),
-            AnonymousNamespaceMembers.Select(m => m.Clone()).ToImmutableList(),
-            Implementations.Select(i => i.Clone()).ToImmutableList(),
+            clonedSections,
             Metadata.ToImmutableDictionary());
     }
 
     public override string ToString()
     {
-        return $"CppSourceFile({FileName}, {Implementations.Count} implementations)";
+        var total = Sections.Sum(s => s.Members.Count);
+        return $"CppSourceFile({FileName}, {Sections.Count} sections, {total} members)";
     }
 }

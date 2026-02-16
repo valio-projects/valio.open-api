@@ -95,16 +95,20 @@ public sealed class UEApiAstBuilder
             new("Misc/Guid.h")
         };
 
-        var implementations = new List<AstNode>();
-        implementations.AddRange(BuildOperationLibraryImplementations(client.Name, operation));
-        implementations.AddRange(BuildAsyncActionImplementations(client.Name, operation));
+        var libraryMembers = BuildOperationLibraryImplementations(client.Name, operation);
+        var asyncMembers = BuildAsyncActionImplementations(client.Name, operation);
+
+        var sections = new List<CppSourceSection>
+        {
+            new("Operation Library", wrapInAnonymousNamespace: false, libraryMembers),
+            new("Blueprint async actions", wrapInAnonymousNamespace: false, asyncMembers)
+        };
 
         return new CppSourceFileNode(
             fileName: sourceFileName,
             headerComment: _options.Copyright != null ? new CommentNode(_options.Copyright, CommentKind.MultiLine) : null,
             includes: includes,
-            anonymousNamespaceMembers: ImmutableList<AstNode>.Empty,
-            implementations: implementations);
+            sections: sections);
     }
 
     // ===== Include building =====
