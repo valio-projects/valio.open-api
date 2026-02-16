@@ -36,7 +36,8 @@ public static class DoxygenCommentBuilder
     /// <summary>
     /// Builds documentation for BuildPathUrl method.
     /// </summary>
-    public static string BuildBuildPathUrlDocumentation(IrOperation operation, string paramsTypeName)
+    /// <param name="paramsTypeName">Null if no path params (static path).</param>
+    public static string BuildBuildPathUrlDocumentation(IrOperation operation, string? paramsTypeName)
     {
         var sb = new StringBuilder();
         var httpMethod = operation.HttpMethod.ToUpperInvariant();
@@ -44,11 +45,21 @@ public static class DoxygenCommentBuilder
 
         AppendLine(sb, "@brief Builds the URL path for this operation.");
         AppendLine(sb, "");
-        AppendLine(sb, "@details Substitutes path parameters from Params into {0} {1}", httpMethod, path);
-        AppendParam(sb, "Params", $"Parameters for {operation.MethodName} operation (Route or flat path fields)");
+        if (paramsTypeName != null)
+        {
+            AppendLine(sb, "@details Substitutes path parameters from Params into {0} {1}", httpMethod, path);
+            AppendParam(sb, "Params", $"Parameters for {operation.MethodName} operation (Route or flat path fields)");
+        }
+        else
+        {
+            AppendLine(sb, "@details Returns static path for {0} {1}", httpMethod, path);
+        }
         AppendReturn(sb, "The constructed path string");
-        AppendLine(sb, "");
-        AppendLine(sb, "@see {0}", paramsTypeName);
+        if (paramsTypeName != null)
+        {
+            AppendLine(sb, "");
+            AppendLine(sb, "@see {0}", paramsTypeName);
+        }
         return sb.ToString();
     }
 
