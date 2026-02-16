@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using System.Net.Http;
+using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.OpenApi;
@@ -733,6 +734,10 @@ public class IrBuilder
         }
 
         ValidateAndDeduplicateParameters(methodName, pathParameters, queryParameters, warnings);
+
+        // Порядок path-параметров в OpenAPI может отличаться от порядка плейсхолдеров в path.
+        // Для Printf и аналогов аргументы должны идти в порядке {paramName} в path.
+        ReorderPathParametersToMatchPath(pathParameters, path);
         
         // Извлекаем request body (передаем operationId для генерации FormModel)
         IrRequestBody? requestBody = null;
@@ -777,6 +782,53 @@ public class IrBuilder
         };
     }
     
+    /// <summary>
+    /// Извлекает имена path-параметров из шаблона пути в порядке их появления.
+    /// Например: "/api/projects/{projectId}/plans/{planId}" → ["projectId", "planId"].
+    /// </summary>
+    private static IReadOnlyList<string> ExtractPathParameterNamesInOrder(string path)
+    {
+        var matches = PathParamRegex.Matches(path);
+        var result = new List<string>(matches.Count);
+        foreach (Match m in matches)
+        {
+            if (m.Success && m.Groups.Count > 1)
+                result.Add(m.Groups[1].Value);
+        }
+        return result;
+    }
+
+    private static readonly Regex PathParamRegex = new(@"\{([^}]+)\}", RegexOptions.Compiled);
+
+    /// <summary>
+    /// Переупорядочивает path-параметры в соответствии с порядком плейсхолдеров в path.
+    /// Это необходимо для корректной передачи аргументов в Printf и аналогичные функции.
+    /// </summary>
+    private static void ReorderPathParametersToMatchPath(List<IrParameter> pathParameters, string path)
+    {
+        if (pathParameters.Count == 0) return;
+
+        var pathOrder = ExtractPathParameterNamesInOrder(path);
+        if (pathOrder.Count == 0) return;
+
+        var byName = pathParameters.ToDictionary(p => p.Name, p => p, StringComparer.OrdinalIgnoreCase);
+        var reordered = new List<IrParameter>(pathParameters.Count);
+        foreach (var name in pathOrder)
+        {
+            if (byName.TryGetValue(name, out var param))
+            {
+                reordered.Add(param);
+                byName.Remove(name);
+            }
+        }
+        // Параметры из spec, которых нет в path (edge case) — добавляем в конец
+        foreach (var param in byName.Values)
+            reordered.Add(param);
+
+        pathParameters.Clear();
+        pathParameters.AddRange(reordered);
+    }
+
     /// <summary>
     /// Проверяет уникальность параметров и выводит предупреждения о дубликатах.
     /// Удаляет дубликаты: при пересечении path/query по имени — оставляет path, удаляет query.
