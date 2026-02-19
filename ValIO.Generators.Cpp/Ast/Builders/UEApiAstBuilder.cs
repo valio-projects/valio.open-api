@@ -42,10 +42,14 @@ public sealed class UEApiAstBuilder
     /// Строит пару (header, source) файлов для одного endpoint (одна операция).
     /// Файлы помещаются в папку Endpoints/.
     /// </summary>
-    public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildEndpoint(IrClient client, IrOperation operation)
+    /// <param name="modelLookup">Словарь моделей по имени (для разрешения form model при multipart).</param>
+    public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildEndpoint(
+        IrClient client,
+        IrOperation operation,
+        IReadOnlyDictionary<string, IrModel> modelLookup)
     {
         var header = BuildEndpointHeader(client, operation);
-        var source = BuildEndpointSource(client, operation);
+        var source = BuildEndpointSource(client, operation, modelLookup);
         return (header, source);
     }
 
@@ -78,7 +82,10 @@ public sealed class UEApiAstBuilder
     /// <summary>
     /// Строит файл реализации (.cpp) для одного endpoint
     /// </summary>
-    private CppSourceFileNode BuildEndpointSource(IrClient client, IrOperation operation)
+    private CppSourceFileNode BuildEndpointSource(
+        IrClient client,
+        IrOperation operation,
+        IReadOnlyDictionary<string, IrModel> modelLookup)
     {
         var sourceFileName = _naming.EndpointSourceFileName(operation.MethodName);
         // Header в Public/Endpoints/{OpId}/, source в Private/Endpoints/
@@ -94,10 +101,11 @@ public sealed class UEApiAstBuilder
             new(_options.ValIOTypesIncludePath),
             new(_options.ValIOResponseIncludePath),
             new("Async/Async.h"),
-            new("Misc/Guid.h")
+            new("Misc/Guid.h"),
+            new("Misc/Lex.h")
         };
 
-        var libraryMembers = BuildOperationLibraryImplementations(client.Name, operation);
+        var libraryMembers = BuildOperationLibraryImplementations(client.Name, operation, modelLookup);
         var asyncMembers = BuildAsyncActionImplementations(client.Name, operation);
 
         var sections = new List<CppSourceSection>
@@ -391,7 +399,10 @@ public sealed class UEApiAstBuilder
     /// <summary>
     /// Строит реализации методов OperationLibrary: Path, Parse, Build, Send
     /// </summary>
-    private List<AstNode> BuildOperationLibraryImplementations(string clientName, IrOperation operation)
+    private List<AstNode> BuildOperationLibraryImplementations(
+        string clientName,
+        IrOperation operation,
+        IReadOnlyDictionary<string, IrModel> modelLookup)
     {
         var libraryClassName = _naming.OperationLibraryClassName(clientName, operation.MethodName);
         var pathMethodName = _naming.PathMethodName(operation.MethodName);
@@ -406,7 +417,7 @@ public sealed class UEApiAstBuilder
         implementations.Add(BuildParseMethodImplementation(libraryClassName, operation));
 
         // Build implementation
-        implementations.Add(BuildBuildMethodImplementation(libraryClassName, pathMethodName, operation));
+        implementations.Add(BuildBuildMethodImplementation(libraryClassName, pathMethodName, operation, modelLookup));
 
         // BuildRequestBuilder implementation
         implementations.Add(BuildBuildRequestBuilderMethodImplementation(libraryClassName, paramsTypeName));
@@ -520,11 +531,19 @@ public sealed class UEApiAstBuilder
     /// Строит реализацию метода Build для OperationLibrary
     /// </summary>
     private CppAsyncFactoryImplementationNode BuildBuildMethodImplementation(
-        string libraryClassName, string pathMethodName, IrOperation operation)
+        string libraryClassName,
+        string pathMethodName,
+        IrOperation operation,
+        IReadOnlyDictionary<string, IrModel> modelLookup)
     {
         var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
         var hasMultipleParamGroups = HasMultipleParamGroups(operation);
         var queryPrefix = hasMultipleParamGroups ? "Params.Query." : "Params.";
+        var hasBody = operation.RequestBody != null &&
+                      operation.RequestBody.ContentType is "application/json" or null;
+        var hasForm = operation.RequestBody?.ContentType is "multipart/form-data" or "application/x-www-form-urlencoded";
+        var isMultipart = operation.RequestBody?.ContentType == "multipart/form-data";
+
         var httpVerb = operation.HttpMethod.ToUpperInvariant() switch
         {
             "GET" => "Get", "POST" => "Post", "PUT" => "Put", "DELETE" => "Delete",
@@ -579,6 +598,10 @@ public sealed class UEApiAstBuilder
             statements.Add(new ExpressionStatementNode(addQueryCall));
         }
 
+        // Body: JSON, multipart/form-data, application/x-www-form-urlencoded
+        var bodyStatements = BuildRequestBodyStatements(operation, hasMultipleParamGroups, hasBody, hasForm, isMultipart, modelLookup);
+        statements.AddRange(bodyStatements);
+
         var setRequestNameCall = new CallExpressionNode(
             new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
@@ -597,6 +620,192 @@ public sealed class UEApiAstBuilder
                 new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
             },
             body: new BlockNode(statements.ToImmutableList()));
+    }
+
+    /// <summary>
+    /// Строит операторы для установки body: JSON, multipart/form-data, application/x-www-form-urlencoded.
+    /// </summary>
+    private List<StatementNode> BuildRequestBodyStatements(
+        IrOperation operation,
+        bool hasMultipleParamGroups,
+        bool hasBody,
+        bool hasForm,
+        bool isMultipart,
+        IReadOnlyDictionary<string, IrModel> modelLookup)
+    {
+        var statements = new List<StatementNode>();
+        if (operation.RequestBody == null) return statements;
+
+        var formDataPath = hasMultipleParamGroups ? "Params.Form.Data" : "Params.Body";
+        var bodyDataPath = hasMultipleParamGroups ? "Params.Body.Data" : "Params.Body";
+
+        if (hasBody)
+        {
+            var bodyTypeName = GetRequestBodyTypeName(operation.RequestBody.Type);
+            var setJsonCall = new CallExpressionNode(
+                new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
+                    new IdentifierNode("SetJsonBodyFromStruct")),
+                new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(bodyDataPath)) }.ToImmutableList(),
+                genericTypeName: bodyTypeName);
+            statements.Add(new ExpressionStatementNode(setJsonCall));
+            return statements;
+        }
+
+        if (hasForm && isMultipart && operation.RequestBody.Type is IrModelReference modelRef &&
+            modelLookup.TryGetValue(modelRef.ModelName, out var formModel))
+        {
+            statements.Add(new VariableDeclarationStatementNode(
+                new IdentifierNode("FormData"),
+                new SimpleTypeNode(new IdentifierNode("FValIOMultipartFormData")),
+                new CallExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("FValIOMultipartFormData")),
+                    ImmutableList<ExpressionNode>.Empty)));
+
+            foreach (var prop in formModel.Properties)
+            {
+                var fieldName = prop.OriginalName;
+                var propName = _naming.PropertyName(prop.Name);
+                var dataAccessPath = $"{formDataPath}.{propName}";
+
+                if (UETypeMapper.IsFileOrBinaryType(prop.Type))
+                {
+                    var bytesCopyVar = $"BytesCopy_{propName}";
+                    statements.Add(new VariableDeclarationStatementNode(
+                        new IdentifierNode(bytesCopyVar),
+                        new SimpleTypeNode(new IdentifierNode("TArray<uint8>")),
+                        BuildExpressionFromPath(dataAccessPath)));
+                    var addFileCall = new CallExpressionNode(
+                        new MemberAccessExpressionNode(
+                            new IdentifierExpressionNode(new IdentifierNode("FormData")),
+                            new IdentifierNode("AddFile")),
+                        new ExpressionNode[]
+                        {
+                            new LiteralExpressionNode(fieldName, LiteralKind.String),
+                            GetFormFileFileNameExpression(formModel, prop, formDataPath),
+                            new CallExpressionNode(
+                                new IdentifierExpressionNode(new IdentifierNode("MoveTemp")),
+                                new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(bytesCopyVar)) }.ToImmutableList()),
+                            GetFormFileMimeTypeExpression(formModel, prop, formDataPath)
+                        }.ToImmutableList());
+                    statements.Add(new ExpressionStatementNode(addFileCall));
+                }
+                else
+                {
+                    var valueExpr = GetFormFieldValueExpression(prop, formDataPath);
+                    var addFieldCall = new CallExpressionNode(
+                        new MemberAccessExpressionNode(
+                            new IdentifierExpressionNode(new IdentifierNode("FormData")),
+                            new IdentifierNode("AddField")),
+                        new ExpressionNode[]
+                        {
+                            new LiteralExpressionNode(fieldName, LiteralKind.String),
+                            valueExpr
+                        }.ToImmutableList());
+                    statements.Add(new ExpressionStatementNode(addFieldCall));
+                }
+            }
+
+            var setMultipartCall = new CallExpressionNode(
+                new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
+                    new IdentifierNode("SetMultipartBody")),
+                new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("FormData")) }.ToImmutableList());
+            statements.Add(new ExpressionStatementNode(setMultipartCall));
+        }
+        else if (hasForm && !isMultipart && operation.RequestBody.Type is IrModelReference urlEncModelRef &&
+                 modelLookup.TryGetValue(urlEncModelRef.ModelName, out var urlEncFormModel))
+        {
+            statements.Add(new VariableDeclarationStatementNode(
+                new IdentifierNode("FormMap"),
+                new GenericTypeNode(new IdentifierNode("TMap"), new TypeNode[] { new SimpleTypeNode(new IdentifierNode("FString")), new SimpleTypeNode(new IdentifierNode("FString")) })));
+
+            foreach (var prop in urlEncFormModel.Properties)
+            {
+                var fieldName = prop.OriginalName;
+                var propName = _naming.PropertyName(prop.Name);
+                var valueExpr = GetFormFieldValueExpression(prop, formDataPath);
+                var addCall = new CallExpressionNode(
+                    new MemberAccessExpressionNode(
+                        new IdentifierExpressionNode(new IdentifierNode("FormMap")),
+                        new IdentifierNode("Add")),
+                    new ExpressionNode[]
+                    {
+                        new LiteralExpressionNode(fieldName, LiteralKind.String),
+                        valueExpr
+                    }.ToImmutableList());
+                statements.Add(new ExpressionStatementNode(addCall));
+            }
+
+            var setFormBodyCall = new CallExpressionNode(
+                new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
+                    new IdentifierNode("SetFormBody")),
+                new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("FormMap")) }.ToImmutableList());
+            statements.Add(new ExpressionStatementNode(setFormBodyCall));
+        }
+
+        return statements;
+    }
+
+    /// <summary>
+    /// Возвращает выражение для FileName при AddFile. Ищет {Prop}FileName, затем общий FileName, иначе — литерал.
+    /// </summary>
+    private ExpressionNode GetFormFileFileNameExpression(IrModel formModel, IrProperty fileProp, string formDataPath)
+    {
+        var propPascal = _naming.PropertyName(fileProp.Name);
+        var fileNamePropName = propPascal + "FileName";
+        var hasPropFileName = formModel.Properties.Any(p => _naming.PropertyName(p.Name).Equals(fileNamePropName, StringComparison.Ordinal));
+        if (hasPropFileName)
+            return BuildExpressionFromPath($"{formDataPath}.{fileNamePropName}");
+        var hasFileName = formModel.Properties.Any(p => _naming.PropertyName(p.Name).Equals("FileName", StringComparison.Ordinal));
+        if (hasFileName)
+            return BuildExpressionFromPath($"{formDataPath}.FileName");
+        return new LiteralExpressionNode("upload.dat", LiteralKind.String);
+    }
+
+    /// <summary>
+    /// Возвращает выражение для MimeType при AddFile. Ищет {Prop}MimeType, затем общий MimeType, иначе — "application/octet-stream".
+    /// </summary>
+    private ExpressionNode GetFormFileMimeTypeExpression(IrModel formModel, IrProperty fileProp, string formDataPath)
+    {
+        var propPascal = _naming.PropertyName(fileProp.Name);
+        var mimePropName = propPascal + "MimeType";
+        var hasPropMimeType = formModel.Properties.Any(p => _naming.PropertyName(p.Name).Equals(mimePropName, StringComparison.Ordinal));
+        if (hasPropMimeType)
+            return BuildExpressionFromPath($"{formDataPath}.{mimePropName}");
+        var hasMimeType = formModel.Properties.Any(p => _naming.PropertyName(p.Name).Equals("MimeType", StringComparison.Ordinal));
+        if (hasMimeType)
+            return BuildExpressionFromPath($"{formDataPath}.MimeType");
+        return new LiteralExpressionNode("application/octet-stream", LiteralKind.String);
+    }
+
+    /// <summary>
+    /// Возвращает выражение значения для AddField (конвертирует числа в строку через LexToString при необходимости).
+    /// </summary>
+    private ExpressionNode GetFormFieldValueExpression(IrProperty prop, string formDataPath)
+    {
+        var propName = _naming.PropertyName(prop.Name);
+        var accessExpr = BuildExpressionFromPath($"{formDataPath}.{propName}");
+        var needsLexToString = prop.Type is IrPrimitiveType p && p.PrimitiveKind is IrPrimitiveKind.Integer or IrPrimitiveKind.Number or IrPrimitiveKind.Boolean;
+        if (needsLexToString)
+        {
+            return new CallExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("LexToString")),
+                new ExpressionNode[] { accessExpr }.ToImmutableList());
+        }
+        return accessExpr;
+    }
+
+    private string GetRequestBodyTypeName(IrType type)
+    {
+        return type switch
+        {
+            IrModelReference modelRef => _typeMapper.IsEnumReference(modelRef.ModelName)
+                ? _naming.EnumName(modelRef.ModelName)
+                : _naming.StructName(modelRef.ModelName),
+            _ => "FString"
+        };
     }
 
     /// <summary>

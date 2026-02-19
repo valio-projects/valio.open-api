@@ -85,7 +85,7 @@ public sealed class CppAstBuilder
                 var resultNode = _resultBuilder.Build(operation, enumNames, client.Name);
                 result.Files[naming.ResultFullPath(opId)] = resultNode;
 
-                var (header, source) = _apiBuilder.BuildEndpoint(client, operation);
+                var (header, source) = _apiBuilder.BuildEndpoint(client, operation, modelLookup);
                 result.Files[naming.EndpointHeaderFullPath(opId)] = header;
                 result.Files[naming.EndpointSourceFullPath(opId)] = source;
             }

@@ -202,6 +202,26 @@ public sealed class UETypeMapper
     }
 
     /// <summary>
+    /// Является ли IR тип файловым/бинарным (TArray&lt;uint8&gt; в UE).
+    /// Используется для генерации AddFile в multipart/form-data.
+    /// </summary>
+    public static bool IsFileOrBinaryType(IrType irType)
+    {
+        var unwrapped = irType;
+        while (unwrapped is IrNullableType n)
+            unwrapped = n.InnerType;
+        while (unwrapped is IrOptionalType o)
+            unwrapped = o.InnerType;
+
+        return unwrapped switch
+        {
+            IrPrimitiveType p => p.PrimitiveKind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
+            IrArrayType a when a.ElementType is IrPrimitiveType ep => ep.PrimitiveKind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
+            _ => false
+        };
+    }
+
+    /// <summary>
     /// Является ли тип FGuid (требует промежуточную переменную с DigitsWithHyphens).
     /// </summary>
     public bool IsGuidType(IrType irType)
