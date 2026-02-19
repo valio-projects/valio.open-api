@@ -96,13 +96,12 @@ public sealed class UEApiAstBuilder
             new(headerIncludePath),
             new(_options.ValIOClientIncludePath),
             new(_options.ValIORequestBuilderIncludePath),
-            new("Blueprint/ValIORequestBuilder.h"),
+            new("Blueprint/UValIORequestBuilder.h"),
             new(_options.ValIOMultipartFormDataIncludePath),
             new(_options.ValIOTypesIncludePath),
             new(_options.ValIOResponseIncludePath),
             new("Async/Async.h"),
-            new("Misc/Guid.h"),
-            new("Misc/Lex.h")
+            new("Misc/Guid.h")
         };
 
         var libraryMembers = BuildOperationLibraryImplementations(client.Name, operation, modelLookup);
@@ -636,8 +635,8 @@ public sealed class UEApiAstBuilder
         var statements = new List<StatementNode>();
         if (operation.RequestBody == null) return statements;
 
-        var formDataPath = hasMultipleParamGroups ? "Params.Form.Data" : "Params.Body";
-        var bodyDataPath = hasMultipleParamGroups ? "Params.Body.Data" : "Params.Body";
+        var formDataPath = hasMultipleParamGroups ? "Params.Form" : "Params.Body";
+        var bodyDataPath = "Params.Body";
 
         if (hasBody)
         {

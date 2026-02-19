@@ -86,22 +86,6 @@ public sealed class UENamingConvention
     }
 
     /// <summary>
-    /// Имя под-структуры Params для body: F{OperationName}BodyParams
-    /// </summary>
-    public string BodyParamsStructName(string operationName)
-    {
-        return $"F{ToPascalCase(operationName)}BodyParams";
-    }
-
-    /// <summary>
-    /// Имя под-структуры Params для form: F{OperationName}FormParams
-    /// </summary>
-    public string FormParamsStructName(string operationName)
-    {
-        return $"F{ToPascalCase(operationName)}FormParams";
-    }
-
-    /// <summary>
     /// Имя нативной free-функции: {ClientName}_{MethodName}
     /// </summary>
     public string NativeFunctionName(string clientName, string methodName)

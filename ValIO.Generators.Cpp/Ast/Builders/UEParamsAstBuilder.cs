@@ -127,70 +127,36 @@ public sealed class UEParamsAstBuilder
                     documentation: new CommentNode("@brief HTTP header parameters.\n@see Params.Headers", CommentKind.MultiLine)));
             }
 
-            // Body под-структура (JSON)
+            // Body (JSON) — напрямую в Params, без обёртки BodyParams
             if (hasBody && operation.RequestBody != null)
             {
-                var bodyName = _naming.BodyParamsStructName(operation.MethodName);
                 var bodyType = _typeMapper.MapType(operation.RequestBody.Type);
-                var bodyDataDoc = new CommentNode(
+                var bodyDoc = new CommentNode(
                     string.IsNullOrWhiteSpace(operation.RequestBody.Description)
                         ? "@brief Request body (JSON).\n@details Sent in the HTTP request body."
                         : $"@brief Request body (JSON).\n@details Sent in the HTTP request body.\n\n{operation.RequestBody.Description}",
                     CommentKind.MultiLine);
-                var bodyFields = new List<UPropertyFieldNode>
-                {
-                    new(
-                        name: new IdentifierNode("Data"),
-                        type: bodyType,
-                        specifiers: UPropertySpecifiers.ParamField(category),
-                        documentation: bodyDataDoc)
-                };
-                var bodyStructDoc = new CommentNode(DoxygenCommentBuilder.BuildBodyParamsDocumentation(operation.RequestBody.Description, methodNamePascal, "JSON request body"), CommentKind.MultiLine);
-                var bodyStruct = new UStructDeclarationNode(
-                    name: new IdentifierNode(bodyName),
-                    specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
-                    fields: bodyFields,
-                    documentation: bodyStructDoc);
-                declarations.Add(bodyStruct);
-
                 aggregateFields.Add(new UPropertyFieldNode(
                     name: new IdentifierNode("Body"),
-                    type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(bodyName)),
+                    type: bodyType,
                     specifiers: UPropertySpecifiers.ParamField(category),
-                    documentation: new CommentNode("@brief Request body (JSON).\n@details Sent in the HTTP request body.\n@see Params.Body", CommentKind.MultiLine)));
+                    documentation: bodyDoc));
             }
 
-            // Form под-структура (multipart)
+            // Form (multipart/form-data) — напрямую в Params, без обёртки FormParams
             if (hasForm && operation.RequestBody != null)
             {
-                var formName = _naming.FormParamsStructName(operation.MethodName);
                 var formType = _typeMapper.MapType(operation.RequestBody.Type);
-                var formDataDoc = new CommentNode(
+                var formDoc = new CommentNode(
                     string.IsNullOrWhiteSpace(operation.RequestBody.Description)
                         ? "@brief Form data (multipart/form-data).\n@details For file uploads and form submissions."
                         : $"@brief Form data (multipart/form-data).\n@details For file uploads and form submissions.\n\n{operation.RequestBody.Description}",
                     CommentKind.MultiLine);
-                var formFields = new List<UPropertyFieldNode>
-                {
-                    new(
-                        name: new IdentifierNode("Data"),
-                        type: formType,
-                        specifiers: UPropertySpecifiers.ParamField(category),
-                        documentation: formDataDoc)
-                };
-                var formStructDoc = new CommentNode(DoxygenCommentBuilder.BuildBodyParamsDocumentation(operation.RequestBody.Description, methodNamePascal, "Form data (multipart/form-data)"), CommentKind.MultiLine);
-                var formStruct = new UStructDeclarationNode(
-                    name: new IdentifierNode(formName),
-                    specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
-                    fields: formFields,
-                    documentation: formStructDoc);
-                declarations.Add(formStruct);
-
                 aggregateFields.Add(new UPropertyFieldNode(
                     name: new IdentifierNode("Form"),
-                    type: new Core.Ast.Nodes.Types.SimpleTypeNode(new IdentifierNode(formName)),
+                    type: formType,
                     specifiers: UPropertySpecifiers.ParamField(category),
-                    documentation: new CommentNode("@brief Form data (multipart/form-data).\n@details For file uploads and form submissions.\n@see Params.Form", CommentKind.MultiLine)));
+                    documentation: formDoc));
             }
 
             // Агрегирующая структура
