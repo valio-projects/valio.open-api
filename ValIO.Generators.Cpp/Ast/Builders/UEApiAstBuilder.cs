@@ -539,10 +539,10 @@ public sealed class UEApiAstBuilder
         var paramsTypeName = _naming.ParamsStructName(operation.MethodName);
         var hasMultipleParamGroups = HasMultipleParamGroups(operation);
         var queryPrefix = hasMultipleParamGroups ? "Params.Query." : "Params.";
-        var hasBody = operation.RequestBody != null &&
-                      operation.RequestBody.ContentType is "application/json" or null;
-        var hasForm = operation.RequestBody?.ContentType is "multipart/form-data" or "application/x-www-form-urlencoded";
-        var isMultipart = operation.RequestBody?.ContentType == "multipart/form-data";
+        var rb = operation.RequestBody;
+        var hasBody = rb != null && rb.IsJson;
+        var hasForm = rb != null && rb.IsForm;
+        var isMultipart = rb != null && rb.IsMultipartFormData;
 
         var httpVerb = operation.HttpMethod.ToUpperInvariant() switch
         {

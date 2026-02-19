@@ -113,6 +113,26 @@ public sealed record IrRequestBody
     /// Описание
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>
+    /// True когда content type — application/json или null.
+    /// </summary>
+    public bool IsJson => ContentType is null or "application/json";
+
+    /// <summary>
+    /// True когда content type — multipart/form-data или application/x-www-form-urlencoded.
+    /// </summary>
+    public bool IsForm => ContentType is "multipart/form-data" or "application/x-www-form-urlencoded";
+
+    /// <summary>
+    /// True когда content type — multipart/form-data.
+    /// </summary>
+    public bool IsMultipartFormData => ContentType == "multipart/form-data";
+
+    /// <summary>
+    /// True когда content type — application/x-www-form-urlencoded.
+    /// </summary>
+    public bool IsFormUrlEncoded => ContentType == "application/x-www-form-urlencoded";
 }
 
 /// <summary>

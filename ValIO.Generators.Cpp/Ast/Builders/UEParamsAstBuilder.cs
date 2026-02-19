@@ -43,9 +43,9 @@ public sealed class UEParamsAstBuilder
 
         var hasRoute = operation.PathParameters.Count > 0;
         var hasQuery = operation.QueryParameters.Count > 0;
-        var hasBody = operation.RequestBody != null &&
-                      operation.RequestBody.ContentType is "application/json" or null;
-        var hasForm = operation.RequestBody?.ContentType is "multipart/form-data" or "application/x-www-form-urlencoded";
+        var rb = operation.RequestBody;
+        var hasBody = rb != null && rb.IsJson;
+        var hasForm = rb != null && rb.IsForm;
         var hasHeaders = operation.HeaderParameters.Count > 0;
 
         var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasForm ? 1 : 0) + (hasHeaders ? 1 : 0);
