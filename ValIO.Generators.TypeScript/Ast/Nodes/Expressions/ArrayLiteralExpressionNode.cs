@@ -17,6 +17,11 @@ public sealed class ArrayLiteralExpressionNode : ExpressionNode
     /// Элементы массива
     /// </summary>
     public IReadOnlyList<ExpressionNode> Elements { get; }
+
+    /// <summary>
+    /// Рендерить массив с переносами строк для каждого элемента (для query keys и т.д.)
+    /// </summary>
+    public bool PreferMultilineFormat { get; }
     
     public override AstNodeKind Kind => AstNodeKind.ObjectLiteralExpression; // Временно используем ObjectLiteralExpression, можно добавить ArrayLiteralExpression позже
     
@@ -28,10 +33,12 @@ public sealed class ArrayLiteralExpressionNode : ExpressionNode
     public ArrayLiteralExpressionNode(
         IReadOnlyList<ExpressionNode> elements,
         TypeNode? type = null,
+        bool preferMultilineFormat = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(type, metadata)
     {
         Elements = elements?.ToImmutableList() ?? ImmutableList<ExpressionNode>.Empty;
+        PreferMultilineFormat = preferMultilineFormat;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -49,6 +56,7 @@ public sealed class ArrayLiteralExpressionNode : ExpressionNode
         return new ArrayLiteralExpressionNode(
             Elements.Select(e => (ExpressionNode)e.Clone()).ToImmutableList(),
             Type != null ? (TypeNode)Type.Clone() : null,
+            PreferMultilineFormat,
             Metadata.ToImmutableDictionary());
     }
 }

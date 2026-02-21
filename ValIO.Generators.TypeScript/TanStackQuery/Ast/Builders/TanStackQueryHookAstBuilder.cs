@@ -186,9 +186,12 @@ public sealed class TanStackQueryHookAstBuilder
             new IdentifierNode(name),
             returnType: null,
             parameters: parameters,
-            body: new BlockNode(new[] { new ReturnStatementNode(new ArrayLiteralExpressionNode(elements.ToImmutableList())) }.ToImmutableList()),
+            body: new BlockNode(new[] { new ReturnStatementNode(new ArrayLiteralExpressionNode(elements.ToImmutableList(), preferMultilineFormat: true)) }.ToImmutableList()),
             isArrowFunction: true,
             isAsync: false,
+            documentation: new CommentNode(includeInfinite
+                ? "Query key for useInfiniteQuery. Includes 'infinite' prefix for pagination."
+                : "Query key for useQuery. Used as cache identifier.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -284,6 +287,10 @@ public sealed class TanStackQueryHookAstBuilder
             parameters: parameters.ToImmutableList(),
             body: new BlockNode(statements.ToImmutableList()),
             isArrowFunction: true,
+            documentation: new CommentNode(getQueryOptionsFnName.Contains("Infinite")
+                ? "Options for useInfiniteQuery. Adds pagination (initialPageParam, getNextPageParam)."
+                : "Options for useQuery. Contains queryKey and queryFn.",
+                CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -322,6 +329,7 @@ public sealed class TanStackQueryHookAstBuilder
             parameters: parameters,
             body: body,
             isArrowFunction: true,
+            documentation: new CommentNode("Fetches and caches data. Use for one-time or refetch-on-mount.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -352,6 +360,7 @@ public sealed class TanStackQueryHookAstBuilder
             parameters: BuildUseQueryParams(paramsTypeName, hasParams),
             body: body,
             isArrowFunction: true,
+            documentation: new CommentNode("Fetches paginated data. Use for infinite scroll / load more.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -383,7 +392,11 @@ public sealed class TanStackQueryHookAstBuilder
         };
         if (hasParams && paramsTypeName != null)
             parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true));
-        parameters.Add(new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true), isRequired: false));
+        parameters.Add(new ParameterDeclarationNode(
+            new IdentifierNode("options"),
+            new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true),
+            isRequired: false,
+            documentation: new CommentNode("Optional. UseQueryOptions (query) + request options (request)", CommentKind.JSDoc)));
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"prefetch{hookBaseName}Query"),
@@ -392,6 +405,7 @@ public sealed class TanStackQueryHookAstBuilder
             body: body,
             isArrowFunction: true,
             isAsync: true,
+            documentation: new CommentNode("Prefetches data into cache. Call before navigation for instant display.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -423,7 +437,11 @@ public sealed class TanStackQueryHookAstBuilder
         };
         if (hasParams && paramsTypeName != null)
             parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true));
-        parameters.Add(new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true), isRequired: false));
+        parameters.Add(new ParameterDeclarationNode(
+            new IdentifierNode("options"),
+            new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true),
+            isRequired: false,
+            documentation: new CommentNode("Optional. UseQueryOptions (query) + request options (request)", CommentKind.JSDoc)));
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"prefetch{hookBaseName}InfiniteQuery"),
@@ -432,6 +450,7 @@ public sealed class TanStackQueryHookAstBuilder
             body: body,
             isArrowFunction: true,
             isAsync: true,
+            documentation: new CommentNode("Prefetches infinite query data. Use for preloading next pages.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -458,6 +477,7 @@ public sealed class TanStackQueryHookAstBuilder
             parameters: parameters,
             body: body,
             isArrowFunction: true,
+            documentation: new CommentNode("Returns true if this query is currently fetching.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -466,8 +486,16 @@ public sealed class TanStackQueryHookAstBuilder
         var list = new List<ParameterDeclarationNode>();
         if (hasParams && paramsTypeName != null)
             list.Add(new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true));
-        list.Add(new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true), isRequired: false));
-        list.Add(new ParameterDeclarationNode(new IdentifierNode("queryClient"), new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false, isOptional: true), isRequired: false));
+        list.Add(new ParameterDeclarationNode(
+            new IdentifierNode("options"),
+            new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true),
+            isRequired: false,
+            documentation: new CommentNode("Optional. UseQueryOptions (query) + request options (request)", CommentKind.JSDoc)));
+        list.Add(new ParameterDeclarationNode(
+            new IdentifierNode("queryClient"),
+            new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false, isOptional: true),
+            isRequired: false,
+            documentation: new CommentNode("Optional. Uses default QueryClient if not provided", CommentKind.JSDoc)));
         return list;
     }
 
@@ -508,9 +536,17 @@ public sealed class TanStackQueryHookAstBuilder
         return new FunctionDeclarationNode(
             new IdentifierNode($"get{hookBaseName}MutationOptions"),
             returnType: null,
-            parameters: new ParameterDeclarationNode[] { new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true), isRequired: false) }.ToImmutableList(),
+            parameters: new[]
+            {
+                new ParameterDeclarationNode(
+                    new IdentifierNode("options"),
+                    new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true),
+                    isRequired: false,
+                    documentation: new CommentNode("Optional. Mutation options + request options", CommentKind.JSDoc))
+            }.ToImmutableList(),
             body: body,
             isArrowFunction: true,
+            documentation: new CommentNode("Options for useMutation. Contains mutationKey and mutationFn.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -535,11 +571,20 @@ public sealed class TanStackQueryHookAstBuilder
             returnType: null,
             parameters: new ParameterDeclarationNode[]
             {
-                new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true), isRequired: false),
-                new ParameterDeclarationNode(new IdentifierNode("queryClient"), new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false, isOptional: true), isRequired: false)
+                new ParameterDeclarationNode(
+                    new IdentifierNode("options"),
+                    new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false, isOptional: true),
+                    isRequired: false,
+                    documentation: new CommentNode("Optional. Mutation options", CommentKind.JSDoc)),
+                new ParameterDeclarationNode(
+                    new IdentifierNode("queryClient"),
+                    new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false, isOptional: true),
+                    isRequired: false,
+                    documentation: new CommentNode("Optional. Uses default QueryClient if not provided", CommentKind.JSDoc))
             }.ToImmutableList(),
             body: body,
             isArrowFunction: true,
+            documentation: new CommentNode("Mutation hook. Returns mutate function and status.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -561,6 +606,7 @@ public sealed class TanStackQueryHookAstBuilder
             parameters: ImmutableList<ParameterDeclarationNode>.Empty,
             body: body,
             isArrowFunction: true,
+            documentation: new CommentNode("Returns true if this mutation is in progress.", CommentKind.JSDoc),
             isExported: true);
     }
 }

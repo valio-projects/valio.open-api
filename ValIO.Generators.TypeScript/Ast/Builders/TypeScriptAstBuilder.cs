@@ -939,11 +939,13 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             axiosParams.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode("options"),
                 type: axiosConfigType,
-                isRequired: false));
+                isRequired: false,
+                documentation: new CommentNode("Optional Axios request config (headers, timeout, etc.)", CommentKind.JSDoc)));
             axiosParams.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode("signal"),
                 type: new SimpleTypeNode(new IdentifierNode("AbortSignal"), isPrimitive: false, isNullable: false, isOptional: false),
-                isRequired: false));
+                isRequired: false,
+                documentation: new CommentNode("Optional AbortSignal for request cancellation", CommentKind.JSDoc)));
             return axiosParams.ToImmutableList();
         }
 

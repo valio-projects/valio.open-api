@@ -270,6 +270,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     
     public override string VisitArrayLiteralExpression(ArrayLiteralExpressionNode node)
     {
+        if (node.PreferMultilineFormat && node.Elements.Count > 1)
+        {
+            var indent = new string(' ', (_indentLevel + 1) * 4);
+            var closingIndent = new string(' ', _indentLevel * 4);
+            var elementLines = node.Elements.Select(e => indent + Visit(e));
+            return "[\n" + string.Join(",\n", elementLines) + "\n" + closingIndent + "]";
+        }
         var elements = string.Join(", ", node.Elements.Select(Visit));
         return $"[{elements}]";
     }
@@ -668,21 +675,20 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             jsDocLines.Add("@deprecated");
         }
         
-        // Добавляем параметры (@param)
+        // Добавляем параметры (@param). Для optional — [name], не ?name (? это спецификатор типа в сигнатуре)
         foreach (var param in node.Parameters)
         {
             var paramType = RenderType(param.Type);
             var paramDescription = param.Documentation?.Text ?? "";
-            var paramName = param.Name.Name;
-            var optionalMarker = !param.IsRequired ? "?" : "";
+            var paramNameFormatted = param.IsRequired ? param.Name.Name : $"[{param.Name.Name}]";
             
             if (!string.IsNullOrWhiteSpace(paramDescription))
             {
-                jsDocLines.Add($"@param {{{paramType}}} {optionalMarker}{paramName} {paramDescription}");
+                jsDocLines.Add($"@param {{{paramType}}} {paramNameFormatted} {paramDescription}");
             }
             else
             {
-                jsDocLines.Add($"@param {{{paramType}}} {optionalMarker}{paramName}");
+                jsDocLines.Add($"@param {{{paramType}}} {paramNameFormatted}");
             }
         }
         
