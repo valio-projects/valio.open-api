@@ -256,6 +256,7 @@ public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<st
     }
     
     // Реализация всех абстрактных методов BaseAstVisitor через VisitDefault
+    public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
     public override string VisitSimpleType(SimpleTypeNode node) => VisitDefault(node);
     public override string VisitTypeAliasDeclaration(TypeAliasDeclarationNode node) => VisitDefault(node);
     public override string VisitExpressionStatement(ExpressionStatementNode node) => VisitDefault(node);

@@ -173,6 +173,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return sb.ToString();
     }
 
+    public override string VisitRawType(RawTypeNode node)
+    {
+        var suffix = node.IsNullable ? " | null" : "";
+        suffix += node.IsOptional ? "?" : "";
+        return node.RawTypeString + suffix;
+    }
+
     public override string VisitSimpleType(SimpleTypeNode node)
     {
         if (node.LiteralValue != null)
@@ -259,7 +266,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
         var target = Visit(node.Object);
-        return $"{target}.{node.Member.Name}";
+        var op = node.UseOptionalChaining ? "?." : ".";
+        return $"{target}{op}{node.Member.Name}";
     }
 
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
@@ -1089,6 +1097,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     {
         return type.Kind switch
         {
+            AstNodeKind.RawType => Visit((RawTypeNode)type),
             AstNodeKind.SimpleType => Visit((SimpleTypeNode)type),
             AstNodeKind.NullableType => Visit((NullableTypeNode)type),
             AstNodeKind.OptionalType => Visit((OptionalTypeNode)type),

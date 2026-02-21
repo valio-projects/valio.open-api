@@ -53,6 +53,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     {
         return node.Kind switch
         {
+            AstNodeKind.RawType => VisitRawType((RawTypeNode)node),
             AstNodeKind.SimpleType => VisitSimpleType((SimpleTypeNode)node),
             AstNodeKind.GenericType => VisitGenericType((GenericTypeNode)node),
             AstNodeKind.NullableType => VisitNullableType((NullableTypeNode)node),
@@ -114,6 +115,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitExport(ExportNode node);
     
     // Типы
+    public abstract TResult VisitRawType(RawTypeNode node);
     public abstract TResult VisitSimpleType(SimpleTypeNode node);
     public abstract TResult VisitGenericType(GenericTypeNode node);
     public abstract TResult VisitNullableType(NullableTypeNode node);

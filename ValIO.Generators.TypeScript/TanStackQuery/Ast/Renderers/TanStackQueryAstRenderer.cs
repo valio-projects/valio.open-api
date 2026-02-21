@@ -168,7 +168,8 @@ public class TanStackQueryAstRenderer : TanStackQueryAstVisitorBase<string>, ITa
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
         var obj = Visit(node.Object);
-        return $"{obj}.{node.Member.Name}";
+        var op = node.UseOptionalChaining ? "?." : ".";
+        return $"{obj}{op}{node.Member.Name}";
     }
     
     // Реализация всех абстрактных методов BaseAstVisitor
@@ -200,6 +201,7 @@ public class TanStackQueryAstRenderer : TanStackQueryAstVisitorBase<string>, ITa
     {
         return ValIO.Core.Utilities.CodeEscapeHelper.EscapeTypeScriptString(value);
     }
+    public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
     public override string VisitSimpleType(SimpleTypeNode node) => VisitDefault(node);
     public override string VisitTypeAliasDeclaration(TypeAliasDeclarationNode node) => VisitDefault(node);
     public override string VisitExpressionStatement(ExpressionStatementNode node) => VisitDefault(node);

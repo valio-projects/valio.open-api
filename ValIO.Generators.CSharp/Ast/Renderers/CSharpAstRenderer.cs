@@ -303,6 +303,8 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         return sb.ToString();
     }
 
+    public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
+
     public override string VisitSimpleType(SimpleTypeNode node)
     {
         return node.Name.Name;
@@ -1177,6 +1179,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         return type.Kind switch
         {
+            AstNodeKind.RawType => Visit((RawTypeNode)type),
             AstNodeKind.SimpleType => Visit((SimpleTypeNode)type),
             AstNodeKind.NullableType => Visit((NullableTypeNode)type),
             AstNodeKind.ArrayType => Visit((ArrayTypeNode)type),

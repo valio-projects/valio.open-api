@@ -1,0 +1,167 @@
+using System.Collections.Immutable;
+using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.Interfaces;
+using ValIO.Core.Models;
+using ValIO.Core.IR;
+using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.Nodes;
+
+namespace ValIO.Generators.TypeScript.Ast.Builders;
+
+/// <summary>
+/// Строитель AST для Result типов (discriminated union по status codes).
+/// По аналогии с UE C++: каждый status code → свой variant { status: N; body: T }.
+/// </summary>
+public sealed class TypeScriptResultsAstBuilder
+{
+    private readonly INamingConverter _namingConverter;
+    private readonly Func<IrType, TypeNode> _typeBuilder;
+
+    public TypeScriptResultsAstBuilder(
+        INamingConverter namingConverter,
+        Func<IrType, TypeNode> typeBuilder)
+    {
+        _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
+    }
+
+    /// <summary>
+    /// Имя Result типа: {OperationName}Result
+    /// </summary>
+    public string ResultTypeName(string operationName)
+    {
+        return $"{_namingConverter.ToPascalCase(operationName)}Result";
+    }
+
+    /// <summary>
+    /// Имя variant интерфейса: {OperationName}Result{StatusCode}
+    /// </summary>
+    public string ResultVariantInterfaceName(string operationName, string statusCode)
+    {
+        var suffix = statusCode == "default" ? "Default" : statusCode;
+        return $"{_namingConverter.ToPascalCase(operationName)}Result{suffix}";
+    }
+
+    /// <summary>
+    /// Строит SourceFileNode с Result type (discriminated union) для операции
+    /// </summary>
+    public SourceFileNode BuildResultsSourceFile(
+        IrOperation operation,
+        string? importPath,
+        FileOrganization? fileOrganization,
+        string currentOperationName)
+    {
+        var declarations = new List<DeclarationNode>();
+        var imports = new List<ImportNode>();
+
+        var resultTypeName = ResultTypeName(currentOperationName);
+        var responsesWithType = operation.Responses.Where(r => r.Type != null).ToList();
+
+        if (responsesWithType.Count == 0)
+        {
+            var voidAlias = new TypeAliasDeclarationNode(
+                new IdentifierNode(resultTypeName),
+                new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true),
+                new CommentNode($"Result type for {currentOperationName}. No response body defined."));
+            declarations.Add(voidAlias);
+        }
+        else
+        {
+            var variantTypes = new List<TypeNode>();
+
+            foreach (var response in responsesWithType)
+            {
+                var statusLiteral = ParseStatusCodeLiteral(response.StatusCode);
+                var bodyType = _typeBuilder(response.Type!);
+
+                var variantInterfaceName = ResultVariantInterfaceName(currentOperationName, response.StatusCode);
+                var variantInterface = new InterfaceDeclarationNode(
+                    name: new IdentifierNode(variantInterfaceName),
+                    accessModifier: AccessModifier.Public,
+                    baseTypes: ImmutableList<TypeNode>.Empty,
+                    members: new List<DeclarationNode>
+                    {
+                        new PropertySignatureNode(
+                            new IdentifierNode("status"),
+                            statusLiteral,
+                            isRequired: true,
+                            documentation: new CommentNode($"HTTP {response.StatusCode}")),
+                        new PropertySignatureNode(
+                            new IdentifierNode("body"),
+                            bodyType,
+                            isRequired: true,
+                            documentation: new CommentNode(response.Description ?? $"Response body for {response.StatusCode}"))
+                    }.ToImmutableList(),
+                    documentation: new CommentNode($"Response variant for status {response.StatusCode}"));
+
+                declarations.Add(variantInterface);
+                variantTypes.Add(new SimpleTypeNode(new IdentifierNode(variantInterfaceName), isPrimitive: false));
+            }
+
+            var unionType = variantTypes.Count == 1
+                ? variantTypes[0]
+                : new UnionTypeNode(variantTypes);
+
+            var resultTypeAlias = new TypeAliasDeclarationNode(
+                new IdentifierNode(resultTypeName),
+                unionType,
+                new CommentNode($"Discriminated union result for {currentOperationName}. Check status to narrow type."));
+            declarations.Add(resultTypeAlias);
+
+            var modelRefs = responsesWithType
+                .Select(r => r.Type)
+                .OfType<IrModelReference>()
+                .Select(m => m.ModelName)
+                .Distinct()
+                .ToList();
+
+            var modelsPath = fileOrganization?.ModelsPath ?? "models";
+            foreach (var modelName in modelRefs)
+            {
+                var modelFileName = _namingConverter.ToCamelCase(modelName);
+                var relativePath = $"../../{modelsPath}/{modelFileName}/{modelFileName}";
+                imports.Add(new ImportNode(
+                    items: new[] { new IdentifierNode(modelName) }.ToImmutableList(),
+                    from: relativePath,
+                    kind: ImportKind.Named,
+                    isTypeOnly: true));
+            }
+        }
+
+        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+
+        return new SourceFileNode(
+            imports: imports.ToImmutableList(),
+            exports: exports,
+            declarations: declarations.ToImmutableList());
+    }
+
+    /// <summary>
+    /// Парсит status code в TypeNode для literal (200, 400, или number для default)
+    /// </summary>
+    private static TypeNode ParseStatusCodeLiteral(string statusCode)
+    {
+        if (statusCode == "default")
+            return new SimpleTypeNode(new IdentifierNode("number"), isPrimitive: true);
+
+        if (int.TryParse(statusCode, out var code))
+        {
+            return new SimpleTypeNode(
+                new IdentifierNode("number"),
+                isPrimitive: true,
+                literalValue: code);
+        }
+
+        return new SimpleTypeNode(new IdentifierNode("number"), isPrimitive: true);
+    }
+
+    /// <summary>
+    /// Есть ли у операции ответы с телом (для генерации results)
+    /// </summary>
+    public bool HasResponsesWithBody(IrOperation operation)
+    {
+        return operation.Responses.Any(r => r.Type != null);
+    }
+}

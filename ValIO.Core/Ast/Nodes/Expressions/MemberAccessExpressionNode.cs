@@ -34,6 +34,11 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
     /// Использовать оператор :: (для C++ scope/static member access: Class::Member)
     /// </summary>
     public bool UseScopeOperator { get; }
+
+    /// <summary>
+    /// Use optional chaining (?.) for TypeScript: obj?.member instead of obj.member
+    /// </summary>
+    public bool UseOptionalChaining { get; }
     
     public override AstNodeKind Kind => AstNodeKind.MemberAccessExpression;
     
@@ -49,7 +54,8 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
         IReadOnlyDictionary<string, object>? metadata = null,
         bool useAsOperator = false,
         bool useArrowOperator = false,
-        bool useScopeOperator = false)
+        bool useScopeOperator = false,
+        bool useOptionalChaining = false)
         : base(type, metadata)
     {
         Object = @object ?? throw new ArgumentNullException(nameof(@object));
@@ -57,6 +63,7 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
         UseAsOperator = useAsOperator;
         UseArrowOperator = useArrowOperator;
         UseScopeOperator = useScopeOperator;
+        UseOptionalChaining = useOptionalChaining;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -73,6 +80,7 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
             Metadata.ToImmutableDictionary(),
             UseAsOperator,
             UseArrowOperator,
-            UseScopeOperator);
+            UseScopeOperator,
+            UseOptionalChaining);
     }
 }

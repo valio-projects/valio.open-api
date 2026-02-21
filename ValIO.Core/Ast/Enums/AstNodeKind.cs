@@ -14,6 +14,7 @@ public enum AstNodeKind
     Export,
     
     // Типы
+    RawType,
     SimpleType,
     GenericType,
     NullableType,

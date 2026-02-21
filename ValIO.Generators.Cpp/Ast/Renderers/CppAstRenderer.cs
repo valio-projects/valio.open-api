@@ -602,6 +602,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>
     public override string VisitImport(ImportNode node) => "";
     public override string VisitExport(ExportNode node) => "";
 
+    public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
     public override string VisitSimpleType(SimpleTypeNode node) => node.Name.Name;
     public override string VisitGenericType(GenericTypeNode node)
     {

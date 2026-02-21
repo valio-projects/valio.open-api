@@ -730,7 +730,11 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var name = new IdentifierNode(operation.MethodName);
         
-        var returnType = ExtractReturnType(operation.Responses);
+        var useResultType = _options?.HttpClientLibrary == HttpClientLibrary.Axios
+            && operation.Responses.Any(r => r.Type != null);
+        var returnType = useResultType
+            ? new SimpleTypeNode(new IdentifierNode($"{_namingConverter.ToPascalCase(operation.MethodName)}Result"), isPrimitive: false)
+            : ExtractReturnType(operation.Responses);
         
         var comment = !string.IsNullOrEmpty(operation.Description)
             ? new CommentNode(operation.Description, CommentKind.JSDoc)
@@ -870,6 +874,18 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
+        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
+        if (resultsAstBuilder.HasResponsesWithBody(operation))
+        {
+            var resultTypeName = resultsAstBuilder.ResultTypeName(operation.MethodName);
+            var operationFileName = GetModelFileName(operation.MethodName);
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode(resultTypeName) }.ToImmutableList(),
+                from: $"./{operationFileName}.results",
+                kind: ImportKind.Named,
+                isTypeOnly: true));
+        }
+
         // При Zod добавляем импорты схем
         if (_options?.ValidationLibrary == ValidationLibrary.Zod && _options.SerializeWithSchemas)
         {
@@ -901,14 +917,16 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                     kind: ImportKind.Named));
             }
 
-            // Response schema - из models
-            var successResponse = operation.Responses.FirstOrDefault(r =>
-                int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300);
-            if (successResponse?.Type is IrModelReference responseModelRef)
+            // Response schemas - для всех ответов с телом (parse по status)
+            var responseModelRefs = operation.Responses
+                .Where(r => r.Type is IrModelReference)
+                .Select(r => (IrModelReference)r.Type!)
+                .DistinctBy(m => m.ModelName);
+            foreach (var modelRef in responseModelRefs)
             {
-                var responseModelFileName = GetModelFileName(responseModelRef.ModelName);
+                var responseModelFileName = GetModelFileName(modelRef.ModelName);
                 result.Add(new ImportNode(
-                    items: new[] { new IdentifierNode($"{responseModelRef.ModelName}Schema") }.ToImmutableList(),
+                    items: new[] { new IdentifierNode($"{modelRef.ModelName}Schema") }.ToImmutableList(),
                     from: $"../../{modelsPath}/{responseModelFileName}/{responseModelFileName}.schema",
                     kind: ImportKind.Named));
             }
@@ -1086,7 +1104,10 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
         var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource);
 
-        var operationReturnType = ExtractReturnType(operation.Responses);
+        var useResultType = operation.Responses.Any(r => r.Type != null);
+        var operationReturnType = useResultType
+            ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false)
+            : ExtractReturnType(operation.Responses);
         var responseDataType = operationReturnType is SimpleTypeNode { Name.Name: "void" }
             ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false, isNullable: false, isOptional: false)
             : operationReturnType;
@@ -1120,6 +1141,14 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             new(placeholderId, optionsSpread, isSpread: true),
             new(placeholderId, signalSpread, isSpread: true)
         };
+        if (useResultType)
+        {
+            mergedConfigProps.Add(new PropertyAssignmentNode(
+                new IdentifierNode("validateStatus"),
+                new ArrowFunctionExpressionNode(
+                    ImmutableList<ParameterDeclarationNode>.Empty,
+                    new LiteralExpressionNode(true, LiteralKind.Boolean))));
+        }
 
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("axiosConfig"),
@@ -1137,7 +1166,54 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             initializer: new AwaitExpressionNode(axiosCall)));
         statements.Add(CreateBlankLineStatement());
 
-        if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
+        if (useResultType)
+        {
+            var responseDataRef = new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("response")),
+                new IdentifierNode("data"));
+            var responseStatusRef = new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("response")),
+                new IdentifierNode("status"));
+            var responsesWithType = operation.Responses
+                .Where(r => r.Type is IrModelReference && int.TryParse(r.StatusCode, out _))
+                .ToList();
+
+            foreach (var resp in responsesWithType)
+            {
+                var statusCode = int.Parse(resp.StatusCode);
+                var modelRef = (IrModelReference)resp.Type!;
+                var schemaName = $"{modelRef.ModelName}Schema";
+                var dataAccess = new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("response")),
+                    new IdentifierNode("data"));
+                var parseCall = useZod && _options!.DeserializeWithSchemas
+                    ? CreateZodParseCall(schemaName, dataAccess)
+                    : (ExpressionNode)dataAccess;
+
+                var returnObj = new ObjectLiteralExpressionNode(new[]
+                {
+                    new PropertyAssignmentNode(new IdentifierNode("status"),
+                        new LiteralExpressionNode(statusCode, LiteralKind.Number)),
+                    new PropertyAssignmentNode(new IdentifierNode("body"), parseCall)
+                }.ToImmutableList());
+
+                var statusLiteral = new LiteralExpressionNode(statusCode, LiteralKind.Number);
+                var condition = new BinaryExpressionNode(responseStatusRef, BinaryOperator.Equal, statusLiteral);
+
+                statements.Add(new IfStatementNode(
+                    condition,
+                    new BlockNode(new[] { new ReturnStatementNode(returnObj) }.ToImmutableList()),
+                    null));
+            }
+
+            statements.Add(new ReturnStatementNode(
+                new ObjectLiteralExpressionNode(new[]
+                {
+                    new PropertyAssignmentNode(new IdentifierNode("status"), responseStatusRef),
+                    new PropertyAssignmentNode(new IdentifierNode("body"), responseDataRef)
+                }.ToImmutableList())));
+        }
+        else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
         {
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("responseData"),

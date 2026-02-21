@@ -309,6 +309,16 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             }
         }
 
+        // 4b. Генерация results файлов (discriminated union по status codes)
+        if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            var resultsFiles = GenerateResultsFiles(irDocument, config, tsOptions);
+            foreach (var file in resultsFiles)
+            {
+                files[file.Key] = file.Value;
+            }
+        }
+
         // 5. Генерация Zod схем (если ValidationLibrary = Zod)
         if (tsOptions.ValidationLibrary == ValidationLibrary.Zod)
         {
@@ -341,7 +351,47 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         
         return files;
     }
-    
+
+    /// <summary>
+    /// Генерирует results файлы (discriminated union по status codes) для операций
+    /// </summary>
+    private Dictionary<string, string> GenerateResultsFiles(
+        IrDocument irDocument,
+        GenerationConfiguration config,
+        TypeScriptGenerationOptions tsOptions)
+    {
+        var files = new Dictionary<string, string>();
+
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
+        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
+            irType => astBuilder.BuildType(irType);
+        var resultsAstBuilder = new Ast.Builders.TypeScriptResultsAstBuilder(NamingConverter, typeBuilder);
+        var astRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+
+        foreach (var client in irDocument.Clients)
+        {
+            foreach (var operation in client.Operations)
+            {
+                if (!resultsAstBuilder.HasResponsesWithBody(operation))
+                    continue;
+
+                var resultsSourceFile = resultsAstBuilder.BuildResultsSourceFile(
+                    operation,
+                    importPath: null,
+                    config.FileOrganization,
+                    operation.MethodName);
+
+                var code = astRenderer.Render(resultsSourceFile);
+                var operationFileName = GetModelFileNameInternal(operation.MethodName);
+                var fileName = $"{operationFileName}/{operationFileName}.results.ts";
+                var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
+                files[filePath] = code;
+            }
+        }
+
+        return files;
+    }
+
     /// <summary>
     /// Генерирует Zod схемы из IR документа
     /// </summary>

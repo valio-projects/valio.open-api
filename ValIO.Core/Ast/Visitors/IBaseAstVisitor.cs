@@ -24,6 +24,7 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitExport(ExportNode node);
     
     // Типы (общие)
+    TResult VisitRawType(RawTypeNode node);
     TResult VisitSimpleType(SimpleTypeNode node);
     TResult VisitGenericType(GenericTypeNode node);
     TResult VisitNullableType(NullableTypeNode node);

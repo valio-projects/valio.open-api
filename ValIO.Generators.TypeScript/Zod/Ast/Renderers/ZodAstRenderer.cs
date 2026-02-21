@@ -235,6 +235,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     }
     
     // Реализация всех абстрактных методов BaseAstVisitor через VisitDefault
+    public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
     public override string VisitSimpleType(SimpleTypeNode node) => VisitDefault(node);
     public override string VisitExpressionStatement(ExpressionStatementNode node) => VisitDefault(node);
     public override string VisitTypeDeclaration(TypeDeclarationNode node) => VisitDefault(node);
