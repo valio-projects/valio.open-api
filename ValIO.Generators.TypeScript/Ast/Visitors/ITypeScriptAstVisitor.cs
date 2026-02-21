@@ -23,4 +23,6 @@ public interface ITypeScriptAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node);
     TResult VisitGenericParameter(GenericParameterNode node);
     TResult VisitPropertySignature(PropertySignatureNode node);
+    TResult VisitSpreadExpression(SpreadExpressionNode node);
+    TResult VisitArrowFunctionExpression(ArrowFunctionExpressionNode node);
 }

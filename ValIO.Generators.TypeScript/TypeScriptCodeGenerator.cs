@@ -299,7 +299,17 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             files[filePath] = code;
         }
         
-        // 4. Генерация Zod схем (если ValidationLibrary = Zod)
+        // 4. Генерация params файлов (если HttpClientLibrary = Axios)
+        if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            var paramsFiles = GenerateParamsFiles(irDocument, config, tsOptions);
+            foreach (var file in paramsFiles)
+            {
+                files[file.Key] = file.Value;
+            }
+        }
+
+        // 5. Генерация Zod схем (если ValidationLibrary = Zod)
         if (tsOptions.ValidationLibrary == ValidationLibrary.Zod)
         {
             var zodFiles = GenerateZodSchemas(irDocument, config, tsOptions);
@@ -307,9 +317,19 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             {
                 files[file.Key] = file.Value;
             }
+
+            // Zod схемы для params (при Axios)
+            if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios)
+            {
+                var paramsSchemaFiles = GenerateParamsSchemaFiles(irDocument, config, tsOptions);
+                foreach (var file in paramsSchemaFiles)
+                {
+                    files[file.Key] = file.Value;
+                }
+            }
         }
         
-        // 5. Генерация TanStack Query hooks (если UseTanStackQuery = true)
+        // 6. Генерация TanStack Query hooks (если UseTanStackQuery = true)
         if (tsOptions.UseTanStackQuery)
         {
             var queryFiles = GenerateTanStackQueryHooks(irDocument, config, tsOptions);
@@ -370,6 +390,79 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         
         return files;
     }
+
+    /// <summary>
+    /// Генерирует params файлы (интерфейсы параметров) для операций при использовании Axios
+    /// </summary>
+    private Dictionary<string, string> GenerateParamsFiles(
+        IrDocument irDocument,
+        GenerationConfiguration config,
+        TypeScriptGenerationOptions tsOptions)
+    {
+        var files = new Dictionary<string, string>();
+
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
+        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
+            irType => astBuilder.BuildType(irType);
+        var paramsAstBuilder = new Ast.Builders.TypeScriptParamsAstBuilder(NamingConverter, typeBuilder);
+        var astRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+
+        foreach (var client in irDocument.Clients)
+        {
+            foreach (var operation in client.Operations)
+            {
+                if (!paramsAstBuilder.HasParameters(operation))
+                    continue;
+
+                var paramsSourceFile = paramsAstBuilder.BuildParamsSourceFile(
+                    operation,
+                    importPath: null,
+                    config.FileOrganization,
+                    operation.MethodName);
+
+                var code = astRenderer.Render(paramsSourceFile);
+                var operationFileName = GetModelFileNameInternal(operation.MethodName);
+                var fileName = $"{operationFileName}/{operationFileName}.params.ts";
+                var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
+                files[filePath] = code;
+            }
+        }
+
+        return files;
+    }
+
+    /// <summary>
+    /// Генерирует Zod схемы для params операций
+    /// </summary>
+    private Dictionary<string, string> GenerateParamsSchemaFiles(
+        IrDocument irDocument,
+        GenerationConfiguration config,
+        TypeScriptGenerationOptions tsOptions)
+    {
+        var files = new Dictionary<string, string>();
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
+        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
+            irType => astBuilder.BuildType(irType);
+        var zodRenderer = new ZodSchemaRenderer(NamingConverter, typeBuilder);
+
+        foreach (var client in irDocument.Clients)
+        {
+            foreach (var operation in client.Operations)
+            {
+                var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
+                if (!hasParams)
+                    continue;
+
+                var code = zodRenderer.RenderParamsSchemasFromOperation(operation);
+                var operationFileName = GetModelFileNameInternal(operation.MethodName);
+                var fileName = $"{operationFileName}/{operationFileName}.params.schema.ts";
+                var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
+                files[filePath] = code;
+            }
+        }
+
+        return files;
+    }
     
     /// <summary>
     /// Генерирует TanStack Query hooks из IR документа
@@ -390,40 +483,22 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder = 
             irType => astBuilder.BuildType(irType);
         
-        // Создаем TanStackQueryRenderer
-        var queryRenderer = new TanStackQueryRenderer(
-            NamingConverter,
-            typeBuilder);
-        
-        // Генерируем hooks для каждой операции в каждом клиенте
+        var hookAstBuilder = new TanStackQuery.Ast.Builders.TanStackQueryHookAstBuilder(NamingConverter, typeBuilder);
+        var tsRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+
         foreach (var client in irDocument.Clients)
         {
             foreach (var operation in client.Operations)
             {
-                // Определяем, является ли операция мутацией (POST, PUT, PATCH, DELETE)
-                var isMutation = operation.HttpMethod is 
-                    "POST" or "PUT" or "PATCH" or "DELETE";
-                
-                // Строим вызов функции клиента
-                var clientFunction = BuildClientFunctionCall(operation, astBuilder);
-                
-                // Рендерим hook
-                var hookCode = queryRenderer.RenderHook(operation, clientFunction, isMutation);
-                
-                var queryKeyCode = queryRenderer.RenderQueryKeyFunction(operation);
+                var isMutation = operation.HttpMethod is "POST" or "PUT" or "PATCH" or "DELETE";
                 var operationFileName = GetModelFileNameInternal(operation.MethodName);
-                
-                var fullCode = new StringBuilder();
-                fullCode.AppendLine("import { useQuery, useMutation } from '@tanstack/react-query';");
-                fullCode.AppendLine($"import {{ {operation.MethodName} }} from './{operationFileName}';");
-                fullCode.AppendLine();
-                fullCode.Append(queryKeyCode);
-                fullCode.AppendLine();
-                fullCode.Append(hookCode);
-                
+
+                var hookSourceFile = hookAstBuilder.BuildHookSourceFile(operation, operationFileName, isMutation);
+                var fullCode = tsRenderer.Render(hookSourceFile);
+
                 var fileName = $"{operationFileName}/{operationFileName}.hook.ts";
                 var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
-                files[filePath] = fullCode.ToString();
+                files[filePath] = fullCode;
             }
         }
         
@@ -431,35 +506,41 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     }
     
     /// <summary>
-    /// Строит вызов функции клиента для операции
+    /// Строит вызов функции клиента для операции.
+    /// При Axios передаёт params, иначе отдельные параметры.
     /// </summary>
     private ValIO.Core.Ast.Nodes.ExpressionNode BuildClientFunctionCall(
         IrOperation operation,
-        TypeScriptAstBuilder astBuilder)
+        TypeScriptAstBuilder astBuilder,
+        TypeScriptGenerationOptions tsOptions)
     {
-        // Строим вызов функции клиента
+        var useParams = tsOptions.HttpClientLibrary == HttpClientLibrary.Axios;
+
         var functionName = new ValIO.Core.Ast.Nodes.IdentifierNode(operation.MethodName);
         var arguments = new List<ValIO.Core.Ast.Nodes.ExpressionNode>();
-        
-        // Добавляем параметры
-        foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+
+        if (useParams)
         {
             arguments.Add(new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(
-                new ValIO.Core.Ast.Nodes.IdentifierNode(param.Name)));
+                new ValIO.Core.Ast.Nodes.IdentifierNode("params")));
         }
-        
-        // Добавляем request body, если есть
-        if (operation.RequestBody != null)
+        else
         {
-            arguments.Add(new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(
-                new ValIO.Core.Ast.Nodes.IdentifierNode("request")));
+            foreach (var param in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+            {
+                arguments.Add(new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(
+                    new ValIO.Core.Ast.Nodes.IdentifierNode(param.Name)));
+            }
+            if (operation.RequestBody != null)
+            {
+                arguments.Add(new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(
+                    new ValIO.Core.Ast.Nodes.IdentifierNode("request")));
+            }
         }
-        
-        var functionCall = new ValIO.Core.Ast.Nodes.Expressions.CallExpressionNode(
+
+        return new ValIO.Core.Ast.Nodes.Expressions.CallExpressionNode(
             new ValIO.Core.Ast.Nodes.Expressions.IdentifierExpressionNode(functionName),
             arguments.ToImmutableList());
-        
-        return functionCall;
     }
     
     /// <summary>

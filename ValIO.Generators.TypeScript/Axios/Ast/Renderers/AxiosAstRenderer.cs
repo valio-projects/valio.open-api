@@ -29,17 +29,19 @@ public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<st
     public override string VisitAxiosCall(AxiosCallExpressionNode node)
     {
         var sb = new StringBuilder();
-        
+
         // Рендерим instance
         var instance = Visit(node.Instance);
         sb.Append(instance);
-        
+
         // Рендерим вызов request с конфигурацией
         sb.Append(".request(");
-        var config = VisitAxiosConfig(node.Config);
+        var config = node.Config is AxiosConfigNode axiosConfigNode
+            ? VisitAxiosConfig(axiosConfigNode)
+            : Visit(node.Config);
         sb.Append(config);
         sb.Append(")");
-        
+
         return sb.ToString();
     }
     
@@ -64,31 +66,51 @@ public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<st
         configSb.Append(",");
         CodeFormatter.AppendLine(configSb, configIndent, "");
         
-        // params (query parameters)
-        if (node.QueryParameters.Count > 0)
+        // params, headers, data - из Properties если есть (params interface), иначе из QueryParameters/Headers
+        var paramsProp = node.Properties.FirstOrDefault(p => p.Name.Name == "params");
+        var headersProp = node.Properties.FirstOrDefault(p => p.Name.Name == "headers");
+        var dataProp = node.Properties.FirstOrDefault(p => p.Name.Name == "data");
+
+        if (paramsProp != null)
         {
             CodeFormatter.Append(configSb, configIndent, "params: ");
-            var paramsObject = BuildQueryParamsObject(node.QueryParameters);
-            configSb.Append(paramsObject);
+            configSb.Append(Visit(paramsProp.Value));
             configSb.Append(",");
             CodeFormatter.AppendLine(configSb, configIndent, "");
         }
-        
-        // headers
-        if (node.Headers.Count > 0)
+        else if (node.QueryParameters.Count > 0)
+        {
+            CodeFormatter.Append(configSb, configIndent, "params: ");
+            configSb.Append(BuildQueryParamsObject(node.QueryParameters));
+            configSb.Append(",");
+            CodeFormatter.AppendLine(configSb, configIndent, "");
+        }
+
+        if (headersProp != null)
         {
             CodeFormatter.Append(configSb, configIndent, "headers: ");
-            var headersObject = BuildHeadersObject(node.Headers);
-            configSb.Append(headersObject);
+            configSb.Append(Visit(headersProp.Value));
             configSb.Append(",");
             CodeFormatter.AppendLine(configSb, configIndent, "");
         }
-        
-        // data (body)
-        if (node.Body != null)
+        else if (node.Headers.Count > 0)
+        {
+            CodeFormatter.Append(configSb, configIndent, "headers: ");
+            configSb.Append(BuildHeadersObject(node.Headers));
+            configSb.Append(",");
+            CodeFormatter.AppendLine(configSb, configIndent, "");
+        }
+
+        if (dataProp != null)
         {
             CodeFormatter.Append(configSb, configIndent, "data: ");
-            // TODO: Использовать параметр из функции
+            configSb.Append(Visit(dataProp.Value));
+            configSb.Append(",");
+            CodeFormatter.AppendLine(configSb, configIndent, "");
+        }
+        else if (node.Body != null)
+        {
+            CodeFormatter.Append(configSb, configIndent, "data: ");
             configSb.Append("data");
             configSb.Append(",");
             CodeFormatter.AppendLine(configSb, configIndent, "");
@@ -275,4 +297,14 @@ public class AxiosAstRenderer : AxiosAstVisitorBase<string>, IAxiosAstVisitor<st
     public override string VisitTryCatchStatement(TryCatchStatementNode node) => VisitDefault(node);
     public override string VisitGenericParameter(GenericParameterNode node) => VisitDefault(node);
     public override string VisitSourceFile(SourceFileNode node) => VisitDefault(node);
+    public override string VisitSpreadExpression(SpreadExpressionNode node) => $"...{Visit(node.Expression)}";
+    public override string VisitArrowFunctionExpression(ArrowFunctionExpressionNode node)
+    {
+        var asyncKw = node.IsAsync ? "async " : "";
+        var parameters = string.Join(", ", node.Parameters.Select(p => Visit(p)));
+        if (node.BodyExpression != null)
+            return $"{asyncKw}({parameters}) => {Visit(node.BodyExpression)}";
+        var blockContent = string.Join(" ", node.BodyBlock!.Statements.Select(Visit));
+        return $"{asyncKw}({parameters}) => {{ {blockContent} }}";
+    }
 }

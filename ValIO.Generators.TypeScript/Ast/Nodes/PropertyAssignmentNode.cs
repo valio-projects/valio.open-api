@@ -27,6 +27,11 @@ public sealed class PropertyAssignmentNode : AstNode
     /// </summary>
     public bool IsShorthand { get; }
     
+    /// <summary>
+    /// Spread expression (для ...expr синтаксиса в object literal)
+    /// </summary>
+    public bool IsSpread { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.PropertyAssignment;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Value };
@@ -38,12 +43,14 @@ public sealed class PropertyAssignmentNode : AstNode
         IdentifierNode name,
         ExpressionNode value,
         bool isShorthand = false,
+        bool isSpread = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
         Value = value ?? throw new ArgumentNullException(nameof(value));
         IsShorthand = isShorthand;
+        IsSpread = isSpread;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -61,6 +68,7 @@ public sealed class PropertyAssignmentNode : AstNode
             (IdentifierNode)Name.Clone(),
             (ExpressionNode)Value.Clone(),
             IsShorthand,
+            IsSpread,
             Metadata.ToImmutableDictionary());
     }
 }

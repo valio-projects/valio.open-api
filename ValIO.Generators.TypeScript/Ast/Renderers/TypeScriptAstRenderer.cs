@@ -286,6 +286,23 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"[{elements}]";
     }
 
+    public override string VisitSpreadExpression(SpreadExpressionNode node)
+    {
+        return $"...{Visit(node.Expression)}";
+    }
+
+    public override string VisitArrowFunctionExpression(ArrowFunctionExpressionNode node)
+    {
+        var asyncKw = node.IsAsync ? "async " : "";
+        var parameters = string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
+        if (node.BodyExpression != null)
+        {
+            return $"{asyncKw}({parameters}) => {Visit(node.BodyExpression)}";
+        }
+        var blockContent = string.Join(" ", node.BodyBlock!.Statements.Select(Visit));
+        return $"{asyncKw}({parameters}) => {{ {blockContent} }}";
+    }
+
     public override string VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node)
     {
         var parts = string.Join("", node.Parts.Select(p => p.IsExpression ? $"${{{Visit(p.Expression!)}}}" : p.Text));
@@ -376,6 +393,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             BinaryOperator.LeftShift => "<<",
             BinaryOperator.RightShift => ">>",
             BinaryOperator.Assign => "=",
+            BinaryOperator.NullishCoalescing => "??",
             _ => throw new NotSupportedException($"Binary operator {op} is not supported")
         };
     }
@@ -450,8 +468,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitPropertyAssignment(PropertyAssignmentNode node)
     {
-        var key = node.Name.Name;
         var value = Visit(node.Value);
+        if (node.IsSpread)
+        {
+            return $"...{value}";
+        }
+        var key = node.Name.Name;
         if (node.IsShorthand)
         {
             return key; // Shorthand: { name } вместо { name: name }
@@ -478,6 +500,22 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var optional = node.IsRequired ? "" : "?";
         var type = RenderType(node.Type);
         return $"{readonlyKeyword}{node.Name.Name}{optional}: {type}";
+    }
+
+    /// <summary>
+    /// Рендерит PropertySignatureNode как член интерфейса (с JSDoc и точкой с запятой)
+    /// </summary>
+    private void RenderPropertySignature(StringBuilder sb, PropertySignatureNode node, int indentLevel)
+    {
+        if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, "/**");
+            CodeFormatter.AppendLine(sb, indentLevel, $" * {node.Documentation.Text}");
+            CodeFormatter.AppendLine(sb, indentLevel, " */");
+        }
+        var optional = node.IsRequired ? "" : "?";
+        var type = RenderType(node.Type);
+        CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Name}{optional}: {type};");
     }
 
     // HTTP специфичные методы
@@ -552,9 +590,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         else
         {
-            // Named imports: import type { a, b } from "module" (TypeScript type imports)
             var namedImports = string.Join(", ", import.Items.Select(i => i.Name));
-            CodeFormatter.AppendLine(_sb, 0, $"import type {{ {namedImports} }}{from};");
+            var isTypeOnly = import.Metadata.TryGetValue("IsTypeOnly", out var typeOnlyObj) && typeOnlyObj is bool b && b;
+            var typeKeyword = isTypeOnly ? "import type " : "import ";
+            CodeFormatter.AppendLine(_sb, 0, $"{typeKeyword}{{ {namedImports} }}{from};");
         }
     }
 
@@ -591,6 +630,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             if (member is PropertyDeclarationNode property)
             {
                 RenderProperty(sb, property, indentLevel + 1);
+            }
+            else if (member is PropertySignatureNode propertySignature)
+            {
+                RenderPropertySignature(sb, propertySignature, indentLevel + 1);
             }
         }
         
@@ -1132,6 +1175,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     
     public override string VisitVariableDeclarationStatement(VariableDeclarationStatementNode node)
     {
+        if (node.Metadata.TryGetValue("FormattingBlank", out var v) && v is true)
+        {
+            return "";
+        }
         var name = node.Name.Name;
         var type = node.Type != null ? $": {RenderType(node.Type)}" : "";
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";

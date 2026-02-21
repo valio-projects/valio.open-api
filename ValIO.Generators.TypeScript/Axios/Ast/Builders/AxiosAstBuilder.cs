@@ -9,6 +9,7 @@ using ValIO.Core.IR;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Axios.Ast.Nodes;
+using ValIO.Generators.TypeScript.Axios.Models;
 
 namespace ValIO.Generators.TypeScript.Axios.Ast.Builders;
 
@@ -51,7 +52,82 @@ public class AxiosAstBuilder
         
         return new AxiosCallExpressionNode(instance, config);
     }
+
+    /// <summary>
+    /// Строит AxiosCallExpressionNode с использованием params interface
+    /// </summary>
+    public AxiosCallExpressionNode BuildAxiosCallWithParams(
+        IrOperation operation,
+        AxiosConfigParamsSource paramsSource,
+        ExpressionNode? axiosInstance = null)
+    {
+        var instance = axiosInstance ?? new IdentifierExpressionNode(new IdentifierNode("axios"));
+        var config = BuildAxiosConfigWithParams(operation, paramsSource);
+        return new AxiosCallExpressionNode(instance, config);
+    }
     
+    /// <summary>
+    /// Строит AxiosConfigNode с использованием params source
+    /// </summary>
+    public AxiosConfigNode BuildAxiosConfigWithParams(
+        IrOperation operation,
+        AxiosConfigParamsSource paramsSource)
+    {
+        var method = _httpBuilder.BuildHttpMethod(operation.HttpMethod);
+        var url = BuildUrlWithSource(operation, paramsSource.RouteParamsSource);
+
+        var queryParameters = operation.QueryParameters
+            .Select(p => _httpBuilder.BuildQueryParameter(p, _typeBuilder))
+            .ToImmutableList();
+
+        var headers = operation.HeaderParameters
+            .Select(p => _httpBuilder.BuildHeaderParameter(p, _typeBuilder))
+            .ToImmutableList();
+
+        var body = operation.RequestBody != null
+            ? _httpBuilder.BuildRequestBody(operation.RequestBody, _typeBuilder)
+            : null;
+
+        var properties = new List<PropertyAssignmentNode>();
+
+        properties.Add(new PropertyAssignmentNode(
+            new IdentifierNode("method"),
+            new LiteralExpressionNode(method.Method.ToString().ToUpperInvariant(), LiteralKind.String)));
+
+        properties.Add(new PropertyAssignmentNode(
+            new IdentifierNode("url"),
+            url));
+
+        if (paramsSource.QueryParamsSource != null && operation.QueryParameters.Count > 0)
+        {
+            properties.Add(new PropertyAssignmentNode(
+                new IdentifierNode("params"),
+                paramsSource.QueryParamsSource));
+        }
+
+        if (paramsSource.HeadersSource != null && operation.HeaderParameters.Count > 0)
+        {
+            properties.Add(new PropertyAssignmentNode(
+                new IdentifierNode("headers"),
+                paramsSource.HeadersSource));
+        }
+
+        if (paramsSource.BodySource != null && operation.RequestBody != null)
+        {
+            properties.Add(new PropertyAssignmentNode(
+                new IdentifierNode("data"),
+                paramsSource.BodySource));
+        }
+
+        return new AxiosConfigNode(
+            method: method,
+            url: url,
+            queryParameters: queryParameters,
+            headers: headers,
+            body: body,
+            properties: properties.ToImmutableList());
+    }
+
     /// <summary>
     /// Строит AxiosConfigNode из IrOperation
     /// </summary>
@@ -123,6 +199,58 @@ public class AxiosAstBuilder
             properties: properties.ToImmutableList());
     }
     
+    /// <summary>
+    /// Строит URL выражение с использованием routeParamsSource
+    /// </summary>
+    private ExpressionNode BuildUrlWithSource(IrOperation operation, ExpressionNode? routeParamsSource)
+    {
+        var path = operation.Path;
+        var pathParams = operation.PathParameters;
+
+        if (pathParams.Count == 0)
+        {
+            return new LiteralExpressionNode(path, LiteralKind.String);
+        }
+
+        if (routeParamsSource == null)
+        {
+            return new LiteralExpressionNode(path, LiteralKind.String);
+        }
+
+        var parts = new List<TemplateLiteralPart>();
+        var currentPath = path;
+
+        foreach (var param in pathParams)
+        {
+            var paramPlaceholder = $"{{{param.Name}}}";
+            var index = currentPath.IndexOf(paramPlaceholder, StringComparison.Ordinal);
+
+            if (index >= 0)
+            {
+                if (index > 0)
+                {
+                    parts.Add(new TemplateLiteralPart(currentPath.Substring(0, index)));
+                }
+
+                var paramAccess = new MemberAccessExpressionNode(
+                    routeParamsSource,
+                    new IdentifierNode(param.Name));
+                parts.Add(new TemplateLiteralPart(paramAccess));
+
+                currentPath = currentPath.Substring(index + paramPlaceholder.Length);
+            }
+        }
+
+        if (currentPath.Length > 0)
+        {
+            parts.Add(new TemplateLiteralPart(currentPath));
+        }
+
+        return parts.Count > 0
+            ? new TemplateLiteralExpressionNode(parts.ToImmutableList())
+            : new LiteralExpressionNode(path, LiteralKind.String);
+    }
+
     /// <summary>
     /// Строит URL выражение из IrOperation (может быть template literal)
     /// </summary>

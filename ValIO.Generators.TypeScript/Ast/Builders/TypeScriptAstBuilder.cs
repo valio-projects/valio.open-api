@@ -835,22 +835,137 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
         var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
+
+        // При Axios добавляем импорт axios и params
+        if (_options?.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            imports = AddAxiosAndParamsImports(imports, operation, fileOrganization);
+        }
+
         var declarations = new List<DeclarationNode> { BuildFunction(operation, isExported: true) };
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
-        
+
         return new SourceFileNode(
             imports: imports,
             exports: exports,
             declarations: declarations);
+    }
+
+    /// <summary>
+    /// Добавляет импорты axios и params
+    /// </summary>
+    private IReadOnlyList<ImportNode> AddAxiosAndParamsImports(
+        IReadOnlyList<ImportNode> existingImports,
+        IrOperation operation,
+        FileOrganization? fileOrganization)
+    {
+        var result = new List<ImportNode>();
+
+        // import axios from "axios"
+        result.Add(new ImportNode(
+            items: new[] { new IdentifierNode("axios") }.ToImmutableList(),
+            from: "axios",
+            kind: ImportKind.Default));
+
+        // import type { AxiosRequestConfig } from "axios"
+        result.Add(new ImportNode(
+            items: new[] { new IdentifierNode("AxiosRequestConfig") }.ToImmutableList(),
+            from: "axios",
+            kind: ImportKind.Named,
+            metadata: new Dictionary<string, object> { ["IsTypeOnly"] = true }.ToImmutableDictionary()));
+
+        // import type { XParams } from "./operationName.params"
+        var paramsParamsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
+        if (paramsParamsBuilder.HasParameters(operation))
+        {
+            var paramsTypeName = paramsParamsBuilder.ParamsInterfaceName(operation.MethodName);
+            var operationFileName = GetModelFileName(operation.MethodName);
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
+                from: $"./{operationFileName}.params",
+                kind: ImportKind.Named,
+                metadata: new Dictionary<string, object> { ["IsTypeOnly"] = true }.ToImmutableDictionary()));
+        }
+
+        // При Zod добавляем импорты схем
+        if (_options?.ValidationLibrary == ValidationLibrary.Zod && _options.SerializeWithSchemas)
+        {
+            var opName = _namingConverter.ToPascalCase(operation.MethodName);
+            var operationFileName = GetModelFileName(operation.MethodName);
+            var modelsPath = fileOrganization?.ModelsPath ?? "models";
+
+            var paramsSchemaImports = new List<IdentifierNode>();
+            if (operation.PathParameters.Count > 0)
+                paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
+            if (operation.QueryParameters.Count > 0)
+                paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+
+            if (paramsSchemaImports.Count > 0)
+            {
+                result.Add(new ImportNode(
+                    items: paramsSchemaImports.ToImmutableList(),
+                    from: $"./{operationFileName}.params.schema",
+                    kind: ImportKind.Named));
+            }
+
+            // Body schema - из models
+            if (operation.RequestBody != null && operation.RequestBody.Type is IrModelReference bodyModelRef)
+            {
+                var bodyModelFileName = GetModelFileName(bodyModelRef.ModelName);
+                result.Add(new ImportNode(
+                    items: new[] { new IdentifierNode($"{bodyModelRef.ModelName}Schema") }.ToImmutableList(),
+                    from: $"../../{modelsPath}/{bodyModelFileName}/{bodyModelFileName}.schema",
+                    kind: ImportKind.Named));
+            }
+
+            // Response schema - из models
+            var successResponse = operation.Responses.FirstOrDefault(r =>
+                int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300);
+            if (successResponse?.Type is IrModelReference responseModelRef)
+            {
+                var responseModelFileName = GetModelFileName(responseModelRef.ModelName);
+                result.Add(new ImportNode(
+                    items: new[] { new IdentifierNode($"{responseModelRef.ModelName}Schema") }.ToImmutableList(),
+                    from: $"../../{modelsPath}/{responseModelFileName}/{responseModelFileName}.schema",
+                    kind: ImportKind.Named));
+            }
+        }
+
+        result.AddRange(existingImports);
+        return result;
     }
     
     // Приватные вспомогательные методы для IR операций
     
     private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation)
     {
+        // При Axios используем единый params interface и добавляем options, signal для AbortController
+        if (_options?.HttpClientLibrary == HttpClientLibrary.Axios)
+        {
+            var paramsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
+            var axiosParams = new List<ParameterDeclarationNode>();
+            if (paramsBuilder.HasParameters(operation))
+            {
+                var paramsTypeName = paramsBuilder.ParamsInterfaceName(operation.MethodName);
+                axiosParams.Add(new ParameterDeclarationNode(
+                        name: new IdentifierNode("params"),
+                        type: new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false, isNullable: false, isOptional: false),
+                        isRequired: true));
+            }
+            var axiosConfigType = new SimpleTypeNode(new IdentifierNode("AxiosRequestConfig"), isPrimitive: false, isNullable: false, isOptional: false);
+            axiosParams.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode("options"),
+                type: axiosConfigType,
+                isRequired: false));
+            axiosParams.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode("signal"),
+                type: new SimpleTypeNode(new IdentifierNode("AbortSignal"), isPrimitive: false, isNullable: false, isOptional: false),
+                isRequired: false));
+            return axiosParams.ToImmutableList();
+        }
+
         var parameters = new List<ParameterDeclarationNode>();
-        
-        // Path parameters
+
         foreach (var param in operation.PathParameters)
         {
             var type = BuildType(param.Type);
@@ -859,8 +974,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 type: type,
                 isRequired: true));
         }
-        
-        // Query parameters
+
         foreach (var param in operation.QueryParameters)
         {
             var type = BuildType(param.Type);
@@ -869,8 +983,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 type: type,
                 isRequired: param.IsRequired));
         }
-        
-        // Header parameters
+
         foreach (var param in operation.HeaderParameters)
         {
             var type = BuildType(param.Type);
@@ -879,8 +992,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 type: type,
                 isRequired: param.IsRequired));
         }
-        
-        // Request body
+
         if (operation.RequestBody != null)
         {
             var bodyType = BuildType(operation.RequestBody.Type);
@@ -889,7 +1001,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 type: bodyType,
                 isRequired: operation.RequestBody.IsRequired));
         }
-        
+
         return parameters.ToImmutableList();
     }
     
@@ -912,48 +1024,193 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит тело функции с Axios вызовами
+    /// Строит тело функции с Axios вызовами, params interface и Zod serialization/deserialization
     /// </summary>
-    /// <param name="operation">IR операция</param>
-    /// <returns>AST узел блока с statements</returns>
     private BlockNode BuildAxiosFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
-        
-        // Используем AxiosAstBuilder для построения Axios вызова
-        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(
-            _namingConverter,
-            BuildType);
-        
-        var axiosCall = axiosBuilder.BuildAxiosCall(operation);
-        
-        // Определяем тип возвращаемого значения
-        var returnType = ExtractReturnType(operation.Responses);
-        
-        // Если есть успешный ответ, обрабатываем response.data
-        if (returnType is not SimpleTypeNode { Name.Name: "void" })
+        var useZod = _options?.ValidationLibrary == ValidationLibrary.Zod
+            && (_options.SerializeWithSchemas || _options.DeserializeWithSchemas);
+
+        var hasRoute = operation.PathParameters.Count > 0;
+        var hasQuery = operation.QueryParameters.Count > 0;
+        var hasBody = operation.RequestBody != null && (operation.RequestBody.IsJson || operation.RequestBody.IsForm);
+        var hasHeaders = operation.HeaderParameters.Count > 0;
+        var rb = operation.RequestBody;
+        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasHeaders ? 1 : 0);
+        var isFlat = groupCount <= 1;
+
+        var paramsExpr = new IdentifierExpressionNode(new IdentifierNode("params"));
+        ExpressionNode? routeSource = null;
+        ExpressionNode? querySource = null;
+        ExpressionNode? bodySource = null;
+        ExpressionNode? headersSource = null;
+
+        if (isFlat)
         {
-            // const response = await axios(...)
-            var responseVar = new VariableDeclarationStatementNode(
-                name: new IdentifierNode("response"),
-                type: null, // TypeScript может вывести тип
-                initializer: new AwaitExpressionNode(axiosCall));
-            statements.Add(responseVar);
-            
-            // return response.data
-            var dataAccess = new MemberAccessExpressionNode(
-                @object: new IdentifierExpressionNode(new IdentifierNode("response")),
-                member: new IdentifierNode("data"));
-            statements.Add(new ReturnStatementNode(dataAccess));
+            if (hasRoute) routeSource = paramsExpr;
+            if (hasQuery) querySource = paramsExpr;
+            if (hasBody) bodySource = paramsExpr;
+            if (hasHeaders) headersSource = paramsExpr;
         }
         else
         {
-            // Для void просто вызываем axios без возврата
-            statements.Add(new ExpressionStatementNode(
-                new AwaitExpressionNode(axiosCall)));
+            if (hasRoute) routeSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
+            if (hasQuery) querySource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
+            if (hasBody) bodySource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb!.IsJson ? "body" : "form"));
+            if (hasHeaders) headersSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("headers"));
         }
-        
+
+        if (useZod && _options!.SerializeWithSchemas)
+        {
+            var opName = _namingConverter.ToPascalCase(operation.MethodName);
+            if (hasRoute)
+            {
+                var routeInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
+                var parseCall = CreateZodParseCall($"{opName}RouteParamsSchema", routeInput);
+                statements.Add(new VariableDeclarationStatementNode(
+                    new IdentifierNode("parsedRoute"),
+                    type: null,
+                    initializer: parseCall));
+                routeSource = new IdentifierExpressionNode(new IdentifierNode("parsedRoute"));
+            }
+            if (hasQuery)
+            {
+                var queryInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
+                var parseCall = CreateZodParseCall($"{opName}QueryParamsSchema", queryInput);
+                statements.Add(new VariableDeclarationStatementNode(
+                    new IdentifierNode("parsedQuery"),
+                    type: null,
+                    initializer: parseCall));
+                querySource = new IdentifierExpressionNode(new IdentifierNode("parsedQuery"));
+            }
+            if (hasBody && rb!.Type is IrModelReference bodyModelRef)
+            {
+                var bodyInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb.IsJson ? "body" : "form"));
+                var parseCall = CreateZodParseCall($"{bodyModelRef.ModelName}Schema", bodyInput);
+                statements.Add(new VariableDeclarationStatementNode(
+                    new IdentifierNode("parsedBody"),
+                    type: null,
+                    initializer: parseCall));
+                bodySource = new IdentifierExpressionNode(new IdentifierNode("parsedBody"));
+            }
+            statements.Add(CreateBlankLineStatement());
+        }
+
+        var paramsSource = new Axios.Models.AxiosConfigParamsSource(routeSource, querySource, bodySource, headersSource);
+        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
+        var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource);
+
+        var operationReturnType = ExtractReturnType(operation.Responses);
+        var responseDataType = operationReturnType is SimpleTypeNode { Name.Name: "void" }
+            ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false, isNullable: false, isOptional: false)
+            : operationReturnType;
+        var axiosConfigType = new GenericTypeNode(
+            new IdentifierNode("AxiosRequestConfig"),
+            new[] { responseDataType }.ToImmutableList(),
+            isNullable: false,
+            isOptional: false);
+
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("baseConfig"),
+            type: null,
+            initializer: configNode));
+
+        var optionsRef = new IdentifierExpressionNode(new IdentifierNode("options"));
+        var signalRef = new IdentifierExpressionNode(new IdentifierNode("signal"));
+        var emptyObject = new ObjectLiteralExpressionNode(ImmutableList<PropertyAssignmentNode>.Empty);
+        var optionsSpread = new BinaryExpressionNode(optionsRef, BinaryOperator.NullishCoalescing, emptyObject);
+        var signalSpread = new ConditionalExpressionNode(
+            signalRef,
+            new ObjectLiteralExpressionNode(new[]
+            {
+                new PropertyAssignmentNode(new IdentifierNode("signal"), signalRef)
+            }.ToImmutableList()),
+            emptyObject);
+
+        var placeholderId = new IdentifierNode("_");
+        var mergedConfigProps = new List<PropertyAssignmentNode>
+        {
+            new(placeholderId, new IdentifierExpressionNode(new IdentifierNode("baseConfig")), isSpread: true),
+            new(placeholderId, optionsSpread, isSpread: true),
+            new(placeholderId, signalSpread, isSpread: true)
+        };
+
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("axiosConfig"),
+            type: axiosConfigType,
+            initializer: new ObjectLiteralExpressionNode(mergedConfigProps.ToImmutableList())));
+
+        var axiosCall = new Axios.Ast.Nodes.AxiosCallExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode("axios")),
+            new IdentifierExpressionNode(new IdentifierNode("axiosConfig")));
+
+        statements.Add(CreateBlankLineStatement());
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("response"),
+            type: null,
+            initializer: new AwaitExpressionNode(axiosCall)));
+        statements.Add(CreateBlankLineStatement());
+
+        if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
+        {
+            statements.Add(new VariableDeclarationStatementNode(
+                new IdentifierNode("responseData"),
+                type: null,
+                initializer: new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("response")),
+                    new IdentifierNode("data"))));
+
+            if (useZod && _options!.DeserializeWithSchemas)
+            {
+                var successResponse = operation.Responses.FirstOrDefault(r =>
+                    int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300);
+                if (successResponse?.Type is IrModelReference responseModelRef)
+                {
+                    var parseCall = CreateZodParseCall($"{responseModelRef.ModelName}Schema",
+                        new IdentifierExpressionNode(new IdentifierNode("responseData")));
+                    statements.Add(new VariableDeclarationStatementNode(
+                        new IdentifierNode("parsedResponse"),
+                        type: null,
+                        initializer: parseCall));
+                    statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("parsedResponse"))));
+                }
+                else
+                {
+                    statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("responseData"))));
+                }
+            }
+            else
+            {
+                statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("responseData"))));
+            }
+        }
+
         return new BlockNode(statements.ToImmutableList());
+    }
+
+    /// <summary>
+    /// Создаёт statement для пустой строки (форматирование)
+    /// </summary>
+    private static VariableDeclarationStatementNode CreateBlankLineStatement()
+    {
+        return new VariableDeclarationStatementNode(
+            new IdentifierNode("_"),
+            type: null,
+            initializer: null,
+            documentation: null,
+            metadata: new Dictionary<string, object> { ["FormattingBlank"] = true }.ToImmutableDictionary());
+    }
+
+    /// <summary>
+    /// Создаёт выражение Schema.parse(input)
+    /// </summary>
+    private static ExpressionNode CreateZodParseCall(string schemaName, ExpressionNode input)
+    {
+        var schemaAccess = new MemberAccessExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode(schemaName)),
+            new IdentifierNode("parse"));
+        return new CallExpressionNode(schemaAccess, new[] { input }.ToImmutableList());
     }
     
     private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)

@@ -26,12 +26,13 @@ public abstract class TypeScriptAstVisitorBase<TResult> : BaseAstVisitor<TResult
     /// </summary>
     public override TResult VisitExpression(ExpressionNode node)
     {
-        // Проверяем, является ли это ArrayLiteralExpressionNode (использует ObjectLiteralExpression kind временно)
         if (node is ArrayLiteralExpressionNode arrayLiteral)
-        {
             return VisitArrayLiteralExpression(arrayLiteral);
-        }
-        
+        if (node is SpreadExpressionNode spreadExpr)
+            return VisitSpreadExpression(spreadExpr);
+        if (node is ArrowFunctionExpressionNode arrowFn)
+            return VisitArrowFunctionExpression(arrowFn);
+
         return node.Kind switch
         {
             AstNodeKind.ObjectLiteralExpression => VisitObjectLiteralExpression((ObjectLiteralExpressionNode)node),
@@ -65,4 +66,6 @@ public abstract class TypeScriptAstVisitorBase<TResult> : BaseAstVisitor<TResult
     public abstract TResult VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node);
     public abstract TResult VisitGenericParameter(GenericParameterNode node);
     public abstract TResult VisitPropertySignature(PropertySignatureNode node);
+    public abstract TResult VisitSpreadExpression(SpreadExpressionNode node);
+    public abstract TResult VisitArrowFunctionExpression(ArrowFunctionExpressionNode node);
 }

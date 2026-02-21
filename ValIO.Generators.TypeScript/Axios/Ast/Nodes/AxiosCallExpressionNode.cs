@@ -18,9 +18,9 @@ public sealed class AxiosCallExpressionNode : ExpressionNode
     public ExpressionNode Instance { get; }
     
     /// <summary>
-    /// Конфигурация Axios
+    /// Конфигурация Axios (AxiosConfigNode или IdentifierExpressionNode для переменной)
     /// </summary>
-    public AxiosConfigNode Config { get; }
+    public ExpressionNode Config { get; }
     
     public override AstNodeKind Kind => AstNodeKind.AxiosCallExpression;
     
@@ -31,7 +31,7 @@ public sealed class AxiosCallExpressionNode : ExpressionNode
     /// </summary>
     public AxiosCallExpressionNode(
         ExpressionNode instance,
-        AxiosConfigNode config,
+        ExpressionNode config,
         TypeNode? type = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(type, metadata)
@@ -39,7 +39,7 @@ public sealed class AxiosCallExpressionNode : ExpressionNode
         Instance = instance ?? throw new ArgumentNullException(nameof(instance));
         Config = config ?? throw new ArgumentNullException(nameof(config));
     }
-    
+
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
         if (visitor is IAxiosAstVisitor<TResult> axiosVisitor)
@@ -57,7 +57,7 @@ public sealed class AxiosCallExpressionNode : ExpressionNode
     {
         return new AxiosCallExpressionNode(
             (ExpressionNode)Instance.Clone(),
-            (AxiosConfigNode)Config.Clone(),
+            (ExpressionNode)Config.Clone(),
             Type != null ? (TypeNode)Type.Clone() : null,
             Metadata.ToImmutableDictionary());
     }

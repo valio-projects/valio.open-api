@@ -242,4 +242,14 @@ public class TanStackQueryAstRenderer : TanStackQueryAstVisitorBase<string>, ITa
     public override string VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node) => VisitDefault(node);
     public override string VisitGenericParameter(GenericParameterNode node) => VisitDefault(node);
     public override string VisitSourceFile(SourceFileNode node) => VisitDefault(node);
+    public override string VisitSpreadExpression(SpreadExpressionNode node) => $"...{Visit(node.Expression)}";
+    public override string VisitArrowFunctionExpression(ArrowFunctionExpressionNode node)
+    {
+        var asyncKw = node.IsAsync ? "async " : "";
+        var parameters = string.Join(", ", node.Parameters.Select(p => Visit(p)));
+        if (node.BodyExpression != null)
+            return $"{asyncKw}({parameters}) => {Visit(node.BodyExpression)}";
+        var blockContent = string.Join(" ", node.BodyBlock!.Statements.Select(Visit));
+        return $"{asyncKw}({parameters}) => {{ {blockContent} }}";
+    }
 }

@@ -328,4 +328,44 @@ public class ZodSchemaRenderer
             .Replace("//", "/")
             .TrimEnd('/');
     }
+
+    /// <summary>
+    /// Рендерит Zod схемы для params операции (RouteParamsSchema, QueryParamsSchema)
+    /// </summary>
+    public string RenderParamsSchemasFromOperation(
+        IrOperation operation,
+        string? operationFileName = null,
+        string? modelsPath = null)
+    {
+        if (operation == null)
+            throw new ArgumentNullException(nameof(operation));
+
+        var sb = new StringBuilder();
+        var opName = _namingConverter.ToPascalCase(operation.MethodName);
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder);
+        var zodRenderer = new ZodAstRenderer();
+
+        sb.AppendLine("import { z, ZodSchema } from 'zod';");
+        sb.AppendLine();
+
+        var hasRoute = operation.PathParameters.Count > 0;
+        var hasQuery = operation.QueryParameters.Count > 0;
+
+        if (hasRoute)
+        {
+            var routeSchema = zodBuilder.BuildZodObjectFromParameters(operation.PathParameters);
+            var routeSchemaCode = zodRenderer.Render(routeSchema);
+            sb.AppendLine($"export const {opName}RouteParamsSchema: ZodSchema = {routeSchemaCode};");
+            sb.AppendLine();
+        }
+
+        if (hasQuery)
+        {
+            var querySchema = zodBuilder.BuildZodObjectFromParameters(operation.QueryParameters);
+            var querySchemaCode = zodRenderer.Render(querySchema);
+            sb.AppendLine($"export const {opName}QueryParamsSchema: ZodSchema = {querySchemaCode};");
+        }
+
+        return sb.ToString();
+    }
 }

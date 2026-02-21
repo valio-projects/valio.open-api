@@ -23,5 +23,7 @@ public enum BinaryOperator
     BitwiseXor,
     LeftShift,
     RightShift,
-    Assign
+    Assign,
+    /// <summary>Nullish coalescing (??)</summary>
+    NullishCoalescing
 }

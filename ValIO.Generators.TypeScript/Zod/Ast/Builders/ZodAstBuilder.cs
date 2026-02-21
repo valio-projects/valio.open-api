@@ -45,6 +45,22 @@ public class ZodAstBuilder
         var properties = model.Properties.Select(BuildZodProperty).ToImmutableList();
         return new ZodObjectNode(properties);
     }
+
+    /// <summary>
+    /// Строит ZodObjectNode из списка IrParameter (для route/query params)
+    /// </summary>
+    public ZodObjectNode BuildZodObjectFromParameters(IReadOnlyList<IrParameter> parameters)
+    {
+        var properties = parameters
+            .Select(p => new ZodPropertyNode(
+                name: new IdentifierNode(p.Name),
+                schema: BuildZodSchemaFromIrType(p.Type),
+                isRequired: p.IsRequired,
+                isNullable: p.Type is IrNullableType,
+                isOptional: !p.IsRequired))
+            .ToImmutableList();
+        return new ZodObjectNode(properties);
+    }
     
     /// <summary>
     /// Строит ZodPropertyNode из IrProperty
