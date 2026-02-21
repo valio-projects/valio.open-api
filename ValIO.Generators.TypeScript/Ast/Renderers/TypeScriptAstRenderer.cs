@@ -175,34 +175,22 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitSimpleType(SimpleTypeNode node)
     {
-        // Проверяем metadata для литеральных строк
-        var isLiteralString = node.Metadata.TryGetValue("IsLiteralString", out var literalStrObj) 
-            && literalStrObj is bool isLiteral && isLiteral;
-        
-        if (isLiteralString && node.Metadata.TryGetValue("LiteralValue", out var literalValue))
+        if (node.LiteralValue != null)
         {
-            // Это литеральная строка - рендерим значение в кавычках с экранированием
-            // Экранирование и форматирование делается ТОЛЬКО здесь, в renderer
-            var valueStr = literalValue?.ToString() ?? "";
-            var escapedValue = CodeEscapeHelper.EscapeTypeScriptString(valueStr);
-            
+            var literalValue = node.LiteralValue;
             var nullableStr = node.IsNullable ? " | null" : "";
             var optionalStr = node.IsOptional ? "?" : "";
-            return $"\"{escapedValue}\"{optionalStr}{nullableStr}";
+            if (literalValue is string str)
+            {
+                var escapedValue = CodeEscapeHelper.EscapeTypeScriptString(str);
+                return $"\"{escapedValue}\"{optionalStr}{nullableStr}";
+            }
+            if (literalValue is int or long or short or byte or float or double or decimal)
+            {
+                return $"{literalValue}{optionalStr}{nullableStr}";
+            }
         }
-        
-        // Проверяем metadata для литеральных чисел
-        var isLiteralNumber = node.Metadata.TryGetValue("IsLiteralNumber", out var literalNumObj) 
-            && literalNumObj is bool isLiteralNum && isLiteralNum;
-        
-        if (isLiteralNumber && node.Metadata.TryGetValue("LiteralValue", out var literalNumValue))
-        {
-            // Это литеральное число - рендерим значение как есть
-            var nullableStr = node.IsNullable ? " | null" : "";
-            var optionalStr = node.IsOptional ? "?" : "";
-            return $"{literalNumValue}{optionalStr}{nullableStr}";
-        }
-        
+
         // Обычный тип
         var typeName = node.Name.Name;
         var nullableStr2 = node.IsNullable ? " | null" : "";
@@ -591,8 +579,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         else
         {
             var namedImports = string.Join(", ", import.Items.Select(i => i.Name));
-            var isTypeOnly = import.Metadata.TryGetValue("IsTypeOnly", out var typeOnlyObj) && typeOnlyObj is bool b && b;
-            var typeKeyword = isTypeOnly ? "import type " : "import ";
+            var typeKeyword = import.IsTypeOnly ? "import type " : "import ";
             CodeFormatter.AppendLine(_sb, 0, $"{typeKeyword}{{ {namedImports} }}{from};");
         }
     }
@@ -716,21 +703,11 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             }
         }
         
-        // Добавляем @example если есть в metadata
-        if (node.Metadata.TryGetValue("Example", out var exampleObj) && exampleObj != null)
-        {
-            var exampleStr = exampleObj.ToString() ?? "";
-            jsDocLines.Add($"@example {exampleStr}");
-        }
+        if (!string.IsNullOrEmpty(node.Example))
+            jsDocLines.Add($"@example {node.Example}");
+        if (!string.IsNullOrEmpty(node.Todo))
+            jsDocLines.Add($"@todo {node.Todo}");
         
-        // Добавляем @todo если есть в metadata
-        if (node.Metadata.TryGetValue("Todo", out var todoObj) && todoObj != null)
-        {
-            var todoStr = todoObj.ToString() ?? "";
-            jsDocLines.Add($"@todo {todoStr}");
-        }
-        
-        // Генерируем JSDoc комментарий
         if (jsDocLines.Count > 0)
         {
             CodeFormatter.AppendLine(sb, indentLevel, "/**");
@@ -916,17 +893,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             jsDocLines.Add("@optional");
         }
         
-        // Добавляем @readonly если свойство readonly (можно добавить через metadata)
-        if (node.Metadata.TryGetValue("IsReadOnly", out var isReadOnlyObj) && isReadOnlyObj is bool isReadOnly && isReadOnly)
-        {
+        if (node.IsReadOnly)
             jsDocLines.Add("@readonly");
-        }
-        
-        // Добавляем @deprecated если свойство deprecated (можно добавить через metadata)
-        if (node.Metadata.TryGetValue("IsDeprecated", out var isDeprecatedObj) && isDeprecatedObj is bool isDeprecated && isDeprecated)
-        {
+        if (node.IsDeprecated)
             jsDocLines.Add("@deprecated");
-        }
         
         // Добавляем constraints из IrPropertyConstraints
         if (constraints != null)
@@ -981,24 +951,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             }
         }
         
-        // Добавляем @example если есть в metadata
-        if (node.Metadata.TryGetValue("Example", out var exampleObj) && exampleObj != null)
-        {
-            var exampleStr = RenderDefaultValue(exampleObj);
-            jsDocLines.Add($"@example {exampleStr}");
-        }
-        
-        // Добавляем @enum если тип является enum (можно определить через metadata)
-        if (node.Metadata.TryGetValue("IsEnum", out var isEnumObj) && isEnumObj is bool isEnum && isEnum)
-        {
+        if (!string.IsNullOrEmpty(node.Example))
+            jsDocLines.Add($"@example {RenderDefaultValue(node.Example)}");
+        if (node.IsEnum)
             jsDocLines.Add("@enum");
-        }
-        
-        // Добавляем @constant если свойство является константой (можно добавить через metadata)
-        if (node.Metadata.TryGetValue("IsConstant", out var isConstantObj) && isConstantObj is bool isConstant && isConstant)
-        {
+        if (node.IsConstant)
             jsDocLines.Add("@constant");
-        }
         
         // Генерируем JSDoc комментарий, если есть что добавить
         if (jsDocLines.Count > 0)
@@ -1011,10 +969,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
         
-        // Объявление свойства
         var optional = node.IsRequired ? "" : "?";
-        // PropertyDeclarationNode не имеет IsReadOnly для TypeScript, используем пустую строку
-        var isReadonly = ""; // Можно добавить через metadata позже
+        var isReadonly = node.IsReadOnly ? "readonly " : "";
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{isReadonly}{node.Name.Name}{optional}: {type};");
     }
@@ -1173,12 +1129,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"throw {exception};";
     }
     
+    public override string VisitBlankLineStatement(BlankLineStatementNode node) => "";
+
     public override string VisitVariableDeclarationStatement(VariableDeclarationStatementNode node)
     {
-        if (node.Metadata.TryGetValue("FormattingBlank", out var v) && v is true)
-        {
-            return "";
-        }
         var name = node.Name.Name;
         var type = node.Type != null ? $": {RenderType(node.Type)}" : "";
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";

@@ -56,6 +56,16 @@ public sealed class FunctionDeclarationNode : DeclarationNode
     /// </summary>
     public bool IsDeprecated { get; }
     
+    /// <summary>
+    /// Пример использования для JSDoc @example
+    /// </summary>
+    public string? Example { get; }
+    
+    /// <summary>
+    /// TODO-метка для JSDoc @todo
+    /// </summary>
+    public string? Todo { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.FunctionDeclaration;
     
     public override IReadOnlyList<AstNode> Children
@@ -91,7 +101,9 @@ public sealed class FunctionDeclarationNode : DeclarationNode
         bool isExported = false,
         bool isTypePredicate = false,
         string? typePredicateParameterName = null,
-        bool isDeprecated = false)
+        bool isDeprecated = false,
+        string? example = null,
+        string? todo = null)
         : base(name, documentation, attributes, metadata)
     {
         ReturnType = returnType;
@@ -103,6 +115,8 @@ public sealed class FunctionDeclarationNode : DeclarationNode
         IsTypePredicate = isTypePredicate;
         TypePredicateParameterName = typePredicateParameterName;
         IsDeprecated = isDeprecated;
+        Example = example;
+        Todo = todo;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -129,6 +143,8 @@ public sealed class FunctionDeclarationNode : DeclarationNode
             IsExported,
             IsTypePredicate,
             TypePredicateParameterName,
-            IsDeprecated);
+            IsDeprecated,
+            Example,
+            Todo);
     }
 }

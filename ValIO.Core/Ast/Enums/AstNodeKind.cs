@@ -35,6 +35,7 @@ public enum AstNodeKind
     CastExpression,
     
     // Statements
+    BlankLineStatement,
     ReturnStatement,
     IfStatement,
     ForEachStatement,

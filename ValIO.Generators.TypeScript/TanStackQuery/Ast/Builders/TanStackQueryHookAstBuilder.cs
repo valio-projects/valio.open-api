@@ -90,14 +90,14 @@ public sealed class TanStackQueryHookAstBuilder
                 items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
                 from: $"./{operationFileName}.params",
                 kind: ImportKind.Named,
-                metadata: new Dictionary<string, object> { ["IsTypeOnly"] = true }.ToImmutableDictionary()));
+                isTypeOnly: true));
         }
 
         items.Add(new ImportNode(
             items: new[] { new IdentifierNode("AxiosRequestConfig") }.ToImmutableList(),
             from: "axios",
             kind: ImportKind.Named,
-            metadata: new Dictionary<string, object> { ["IsTypeOnly"] = true }.ToImmutableDictionary()));
+            isTypeOnly: true));
 
         return items;
     }

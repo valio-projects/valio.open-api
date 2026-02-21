@@ -1,5 +1,6 @@
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Http;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.CSharp.Ast.Nodes;
 
@@ -10,6 +11,8 @@ namespace ValIO.Generators.CSharp.Ast.Visitors;
 /// </summary>
 public abstract class CSharpAstVisitorBase<TResult> : BaseAstVisitor<TResult>, ICSharpAstVisitor<TResult>
 {
+    public override TResult VisitBlankLineStatement(BlankLineStatementNode node) => VisitDefault(node);
+
     /// <summary>
     /// Переопределяем Visit для поддержки IAstVisitor
     /// </summary>

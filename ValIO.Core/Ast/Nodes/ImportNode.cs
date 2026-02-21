@@ -24,6 +24,11 @@ public sealed class ImportNode : AstNode
     /// </summary>
     public ImportKind ImportKind { get; }
     
+    /// <summary>
+    /// Импорт только типов (import type { X } from "module")
+    /// </summary>
+    public bool IsTypeOnly { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.Import;
     
     public override IReadOnlyList<AstNode> Children => Items.Cast<AstNode>().ToImmutableList();
@@ -35,12 +40,14 @@ public sealed class ImportNode : AstNode
         IReadOnlyList<IdentifierNode> items,
         string? from = null,
         ImportKind kind = ImportKind.Named,
+        bool isTypeOnly = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
         Items = items?.ToImmutableList() ?? throw new ArgumentNullException(nameof(items));
         From = from;
         ImportKind = kind;
+        IsTypeOnly = isTypeOnly;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -54,6 +61,7 @@ public sealed class ImportNode : AstNode
             Items.Select(i => (IdentifierNode)i.Clone()).ToImmutableList(),
             From,
             ImportKind,
+            IsTypeOnly,
             Metadata.ToImmutableDictionary());
     }
 }

@@ -43,7 +43,8 @@ public abstract class ZodAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IZod
     }
     
     // Реализация методов IAstVisitor - делегируем в VisitDefault для неизвестных узлов
-    
+    public override TResult VisitBlankLineStatement(BlankLineStatementNode node) => VisitDefault(node);
+
     public override TResult VisitEnumDeclaration(EnumDeclarationNode node) => VisitDefault(node);
     public override TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node) => VisitDefault(node);
     public override TResult VisitHttpMethod(HttpMethodNode node) => VisitDefault(node);

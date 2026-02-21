@@ -36,6 +36,36 @@ public sealed class PropertyDeclarationNode : DeclarationNode
     /// </summary>
     public IrPropertyConstraints? Constraints { get; }
     
+    /// <summary>
+    /// Пример значения для JSDoc @example
+    /// </summary>
+    public string? Example { get; }
+    
+    /// <summary>
+    /// TODO-метка для JSDoc @todo
+    /// </summary>
+    public string? Todo { get; }
+    
+    /// <summary>
+    /// Свойство только для чтения
+    /// </summary>
+    public bool IsReadOnly { get; }
+    
+    /// <summary>
+    /// Свойство устарело (deprecated)
+    /// </summary>
+    public bool IsDeprecated { get; }
+    
+    /// <summary>
+    /// Значение является enum
+    /// </summary>
+    public bool IsEnum { get; }
+    
+    /// <summary>
+    /// Значение является константой
+    /// </summary>
+    public bool IsConstant { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.PropertyDeclaration;
     
     public override IReadOnlyList<AstNode> Children
@@ -64,7 +94,13 @@ public sealed class PropertyDeclarationNode : DeclarationNode
         CommentNode? documentation = null,
         IReadOnlyList<AttributeNode>? attributes = null,
         IReadOnlyDictionary<string, object>? metadata = null,
-        IrPropertyConstraints? constraints = null)
+        IrPropertyConstraints? constraints = null,
+        string? example = null,
+        string? todo = null,
+        bool isReadOnly = false,
+        bool isDeprecated = false,
+        bool isEnum = false,
+        bool isConstant = false)
         : base(name, documentation, attributes, metadata)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
@@ -72,6 +108,12 @@ public sealed class PropertyDeclarationNode : DeclarationNode
         Accessor = accessor;
         DefaultValue = defaultValue;
         Constraints = constraints;
+        Example = example;
+        Todo = todo;
+        IsReadOnly = isReadOnly;
+        IsDeprecated = isDeprecated;
+        IsEnum = isEnum;
+        IsConstant = isConstant;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -90,7 +132,13 @@ public sealed class PropertyDeclarationNode : DeclarationNode
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary(),
-            Constraints);
+            Constraints,
+            Example,
+            Todo,
+            IsReadOnly,
+            IsDeprecated,
+            IsEnum,
+            IsConstant);
     }
     
     public override string ToString()

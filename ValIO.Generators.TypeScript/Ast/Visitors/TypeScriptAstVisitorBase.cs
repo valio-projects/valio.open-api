@@ -1,6 +1,7 @@
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.TypeScript.Ast.Nodes;
@@ -45,6 +46,7 @@ public abstract class TypeScriptAstVisitorBase<TResult> : BaseAstVisitor<TResult
     
     public override TResult VisitUnaryExpression(UnaryExpressionNode node) => VisitDefault(node);
 
+    public override TResult VisitBlankLineStatement(BlankLineStatementNode node) => VisitDefault(node);
     public virtual TResult VisitEnumDeclaration(EnumDeclarationNode node) => VisitDefault(node);
     public virtual TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node) => VisitDefault(node);
     public virtual TResult VisitHttpMethod(HttpMethodNode node) => VisitDefault(node);

@@ -45,6 +45,7 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitCastExpression(CastExpressionNode node);
     
     // Statements (общие)
+    TResult VisitBlankLineStatement(BlankLineStatementNode node);
     TResult VisitReturnStatement(ReturnStatementNode node);
     TResult VisitIfStatement(IfStatementNode node);
     TResult VisitForEachStatement(ForEachStatementNode node);

@@ -20,6 +20,12 @@ public sealed class SimpleTypeNode : TypeNode
     /// </summary>
     public bool IsPrimitive { get; }
     
+    /// <summary>
+    /// Значение литерального типа (TypeScript: "hello" | 42).
+    /// Если задано — тип интерпретируется как литерал, не как имя типа.
+    /// </summary>
+    public object? LiteralValue { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.SimpleType;
     
     public override IReadOnlyList<AstNode> Children => new[] { Name };
@@ -32,11 +38,13 @@ public sealed class SimpleTypeNode : TypeNode
         bool isPrimitive = false,
         bool isNullable = false,
         bool isOptional = false,
+        object? literalValue = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(isNullable, isOptional, metadata)
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
         IsPrimitive = isPrimitive;
+        LiteralValue = literalValue;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -51,6 +59,7 @@ public sealed class SimpleTypeNode : TypeNode
             IsPrimitive,
             IsNullable,
             IsOptional,
+            LiteralValue,
             Metadata.ToImmutableDictionary());
     }
     

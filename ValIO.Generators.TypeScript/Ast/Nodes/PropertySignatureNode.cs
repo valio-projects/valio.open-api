@@ -27,6 +27,31 @@ public sealed class PropertySignatureNode : DeclarationNode
     /// </summary>
     public bool IsReadonly { get; }
     
+    /// <summary>
+    /// Пример значения для JSDoc @example
+    /// </summary>
+    public string? Example { get; }
+    
+    /// <summary>
+    /// TODO-метка для JSDoc @todo
+    /// </summary>
+    public string? Todo { get; }
+    
+    /// <summary>
+    /// Свойство устарело (deprecated)
+    /// </summary>
+    public bool IsDeprecated { get; }
+    
+    /// <summary>
+    /// Значение является enum
+    /// </summary>
+    public bool IsEnum { get; }
+    
+    /// <summary>
+    /// Значение является константой
+    /// </summary>
+    public bool IsConstant { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.PropertySignature;
     
     public override IReadOnlyList<AstNode> Children
@@ -51,12 +76,22 @@ public sealed class PropertySignatureNode : DeclarationNode
         bool isReadonly = false,
         CommentNode? documentation = null,
         IReadOnlyList<AttributeNode>? attributes = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        string? example = null,
+        string? todo = null,
+        bool isDeprecated = false,
+        bool isEnum = false,
+        bool isConstant = false)
         : base(name, documentation, attributes, metadata)
     {
         Type = type ?? throw new ArgumentNullException(nameof(type));
         IsRequired = isRequired;
         IsReadonly = isReadonly;
+        Example = example;
+        Todo = todo;
+        IsDeprecated = isDeprecated;
+        IsEnum = isEnum;
+        IsConstant = isConstant;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -77,6 +112,11 @@ public sealed class PropertySignatureNode : DeclarationNode
             IsReadonly,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            Example,
+            Todo,
+            IsDeprecated,
+            IsEnum,
+            IsConstant);
     }
 }

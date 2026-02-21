@@ -47,6 +47,8 @@ public abstract class ZodAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IZod
     }
     
     
+    public override TResult VisitBlankLineStatement(BlankLineStatementNode node) => VisitDefault(node);
+
     // Реализация методов IAstVisitor - делегируем в VisitDefault для неизвестных узлов
     public override TResult VisitUnaryExpression(UnaryExpressionNode node) => VisitDefault(node);
 

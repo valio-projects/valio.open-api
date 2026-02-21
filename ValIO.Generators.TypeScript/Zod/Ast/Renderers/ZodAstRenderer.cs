@@ -46,12 +46,9 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     /// </summary>
     private string VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node)
     {
-        // Проверяем, является ли это ссылкой на другую схему
-        if (node.Metadata.TryGetValue("SchemaReference", out var schemaRef) && schemaRef is string schemaName)
-        {
-            return schemaName;
-        }
-        
+        if (!string.IsNullOrEmpty(node.SchemaReference))
+            return node.SchemaReference;
+
         return node.SchemaKind switch
         {
             ZodSchemaKind.String => "z.string()",

@@ -503,33 +503,18 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             
             if (enumModel.BaseType == IrEnumBaseType.String)
             {
-                // Для строковых enum'ов создаем литеральный тип
-                // Храним чистое значение в metadata, без экранирования и кавычек
                 return new SimpleTypeNode(
-                    new IdentifierNode("string"), // Имя типа для идентификации
+                    new IdentifierNode("string"),
                     isPrimitive: true,
-                    metadata: new Dictionary<string, object> 
-                    { 
-                        { "IsLiteralString", true },
-                        { "LiteralValue", valueStr } // Храним чистое значение
-                    }) as TypeNode;
+                    literalValue: valueStr) as TypeNode;
             }
             
-            // Для числовых enum'ов создаем числовой литерал
-            if (enumModel.BaseType == IrEnumBaseType.Integer)
+            if (enumModel.BaseType == IrEnumBaseType.Integer && long.TryParse(valueStr, out var longValue))
             {
-                // Пытаемся преобразовать в число
-                if (long.TryParse(valueStr, out var longValue))
-                {
-                    return new SimpleTypeNode(
-                        new IdentifierNode("number"), // Имя типа для идентификации
-                        isPrimitive: true,
-                        metadata: new Dictionary<string, object> 
-                        { 
-                            { "IsLiteralNumber", true },
-                            { "LiteralValue", longValue } // Храним чистое значение
-                        }) as TypeNode;
-                }
+                return new SimpleTypeNode(
+                    new IdentifierNode("number"),
+                    isPrimitive: true,
+                    literalValue: longValue) as TypeNode;
             }
             
             // Fallback - используем строку (не должно происходить для правильно определенных enum'ов)
@@ -867,14 +852,12 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             from: "axios",
             kind: ImportKind.Default));
 
-        // import type { AxiosRequestConfig } from "axios"
         result.Add(new ImportNode(
             items: new[] { new IdentifierNode("AxiosRequestConfig") }.ToImmutableList(),
             from: "axios",
             kind: ImportKind.Named,
-            metadata: new Dictionary<string, object> { ["IsTypeOnly"] = true }.ToImmutableDictionary()));
+            isTypeOnly: true));
 
-        // import type { XParams } from "./operationName.params"
         var paramsParamsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
         if (paramsParamsBuilder.HasParameters(operation))
         {
@@ -884,7 +867,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
                 from: $"./{operationFileName}.params",
                 kind: ImportKind.Named,
-                metadata: new Dictionary<string, object> { ["IsTypeOnly"] = true }.ToImmutableDictionary()));
+                isTypeOnly: true));
         }
 
         // При Zod добавляем импорты схем
@@ -1192,14 +1175,9 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// <summary>
     /// Создаёт statement для пустой строки (форматирование)
     /// </summary>
-    private static VariableDeclarationStatementNode CreateBlankLineStatement()
+    private static BlankLineStatementNode CreateBlankLineStatement()
     {
-        return new VariableDeclarationStatementNode(
-            new IdentifierNode("_"),
-            type: null,
-            initializer: null,
-            documentation: null,
-            metadata: new Dictionary<string, object> { ["FormattingBlank"] = true }.ToImmutableDictionary());
+        return new BlankLineStatementNode();
     }
 
     /// <summary>

@@ -179,13 +179,8 @@ public class ZodAstBuilder
     /// </summary>
     private ZodSchemaNode BuildZodModelReference(IrModelReference modelReference)
     {
-        // Ссылка на другую Zod схему - сохраняем имя схемы в metadata
         var schemaName = $"{modelReference.ModelName}Schema";
-        var metadata = new Dictionary<string, object>
-        {
-            { "SchemaReference", schemaName }
-        }.ToImmutableDictionary();
-        return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any, metadata: metadata);
+        return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any, schemaReference: schemaName);
     }
     
     /// <summary>

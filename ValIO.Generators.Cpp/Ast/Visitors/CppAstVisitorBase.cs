@@ -1,5 +1,6 @@
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Http;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Nodes;
 using ValIO.Generators.Cpp.Ast.Nodes.UE;
@@ -12,6 +13,8 @@ namespace ValIO.Generators.Cpp.Ast.Visitors;
 /// </summary>
 public abstract class CppAstVisitorBase<TResult> : BaseAstVisitor<TResult>, ICppAstVisitor<TResult>
 {
+    public override TResult VisitBlankLineStatement(BlankLineStatementNode node) => VisitDefault(node);
+
     /// <summary>
     /// Переопределяем Visit для корректной диспетчеризации через Accept
     /// </summary>

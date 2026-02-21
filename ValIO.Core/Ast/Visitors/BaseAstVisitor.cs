@@ -92,6 +92,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     {
         return node.Kind switch
         {
+            AstNodeKind.BlankLineStatement => VisitBlankLineStatement((BlankLineStatementNode)node),
             AstNodeKind.ReturnStatement => VisitReturnStatement((ReturnStatementNode)node),
             AstNodeKind.IfStatement => VisitIfStatement((IfStatementNode)node),
             AstNodeKind.ForEachStatement => VisitForEachStatement((ForEachStatementNode)node),
@@ -134,6 +135,7 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitCastExpression(CastExpressionNode node);
     
     // Statements
+    public abstract TResult VisitBlankLineStatement(BlankLineStatementNode node);
     public abstract TResult VisitReturnStatement(ReturnStatementNode node);
     public abstract TResult VisitIfStatement(IfStatementNode node);
     public abstract TResult VisitForEachStatement(ForEachStatementNode node);
