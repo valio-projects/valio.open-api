@@ -61,7 +61,7 @@ public interface ITypeScriptAstBuilder
     /// <summary>
     /// Строит FunctionDeclarationNode из IrOperation
     /// </summary>
-    FunctionDeclarationNode BuildFunction(IrOperation operation);
+    FunctionDeclarationNode BuildFunction(IrOperation operation, bool isExported = false);
     
     /// <summary>
     /// Строит SourceFile из IrClient

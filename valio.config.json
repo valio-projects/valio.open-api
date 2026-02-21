@@ -2,7 +2,7 @@
   "projects": {
     "PanoramasAdminApi": {
       "language": "Cpp",
-      "schema": "https://lk-api.bytalent.ru/api/chessboard/swagger/v1/swagger.json",
+      "schema": "https://public-api.bytalent.ru/api/chessboard/panoramas/admin/swagger/v1/swagger.json",
       "outputPath": "G:\\gta\\Wireframe\\Source\\ChessboardHttpClients",
       "generateModels": true,
       "generateClients": true,

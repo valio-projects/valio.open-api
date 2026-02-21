@@ -348,36 +348,23 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             NamingConverter,
             typeBuilder);
         
-        // Вычисляем путь к папке со схемами для вычисления относительных путей
-        // Используем ResolveFilePath для получения полного пути, затем извлекаем путь к папке
-        var schemasFilePath = ResolveFilePath("dummy.ts", config, FileCategory.Schemas);
-        var schemasPath = "";
-        if (!string.IsNullOrEmpty(schemasFilePath))
-        {
-            var lastSlash = Math.Max(schemasFilePath.LastIndexOf('/'), schemasFilePath.LastIndexOf('\\'));
-            if (lastSlash >= 0)
-            {
-                schemasPath = schemasFilePath.Substring(0, lastSlash);
-            }
-        }
-        
-        // Генерируем Zod схемы для моделей
+        // Схемы помещаются в папку модели: models/modelName/modelName.schema.ts
+        var modelsBasePath = config.FileOrganization.ModelsPath ?? "models";
         foreach (var model in irDocument.Models)
         {
-            var fileName = $"{GetModelFileNameInternal(model.Name)}.schema.ts";
-            var currentFileName = GetModelFileNameInternal(model.Name);
-            var code = zodRendererWithBuilder.RenderFromIr(model, importPath: null, currentFileName, schemasPath);
-            var filePath = ResolveFilePath(fileName, config, FileCategory.Schemas);
+            var modelFileName = GetModelFileNameInternal(model.Name);
+            var fileName = $"{modelFileName}/{modelFileName}.schema.ts";
+            var code = zodRendererWithBuilder.RenderFromIr(model, importPath: null, modelFileName, modelsBasePath);
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
             files[filePath] = code;
         }
         
-        // Генерируем Zod схемы для enum'ов
         foreach (var enumModel in irDocument.Enums)
         {
-            var fileName = $"{GetModelFileNameInternal(enumModel.Name)}.schema.ts";
-            var currentFileName = GetModelFileNameInternal(enumModel.Name);
-            var code = zodRendererWithBuilder.RenderEnumFromIr(enumModel, importPath: null, currentFileName, schemasPath);
-            var filePath = ResolveFilePath(fileName, config, FileCategory.Schemas);
+            var modelFileName = GetModelFileNameInternal(enumModel.Name);
+            var fileName = $"{modelFileName}/{modelFileName}.schema.ts";
+            var code = zodRendererWithBuilder.RenderEnumFromIr(enumModel, importPath: null, modelFileName, modelsBasePath);
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Models);
             files[filePath] = code;
         }
         
@@ -423,18 +410,18 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 // Рендерим hook
                 var hookCode = queryRenderer.RenderHook(operation, clientFunction, isMutation);
                 
-                // Рендерим query key функцию
                 var queryKeyCode = queryRenderer.RenderQueryKeyFunction(operation);
+                var operationFileName = GetModelFileNameInternal(operation.MethodName);
                 
-                // Объединяем код
                 var fullCode = new StringBuilder();
                 fullCode.AppendLine("import { useQuery, useMutation } from '@tanstack/react-query';");
+                fullCode.AppendLine($"import {{ {operation.MethodName} }} from './{operationFileName}';");
                 fullCode.AppendLine();
                 fullCode.Append(queryKeyCode);
                 fullCode.AppendLine();
                 fullCode.Append(hookCode);
                 
-                var fileName = $"{GetModelFileNameInternal(operation.MethodName)}.hook.ts";
+                var fileName = $"{operationFileName}/{operationFileName}.hook.ts";
                 var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
                 files[filePath] = fullCode.ToString();
             }
@@ -498,19 +485,21 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 // Проверяем наличие методов в интерфейсе (для клиентов)
                 var isClient = interfaceNode.Members.Any(m => m is MethodDeclarationNode); // Проверяем наличие методов
                 var category = isClient ? FileCategory.Clients : FileCategory.Models;
-                return ($"{GetModelFileNameInternal(interfaceNode.Name.Name)}.ts", category);
+                var name = GetModelFileNameInternal(interfaceNode.Name.Name);
+                return ($"{name}/{name}.ts", category);
             }
             if (declaration is TypeAliasDeclarationNode typeAliasNode)
             {
-                return ($"{GetModelFileNameInternal(typeAliasNode.Name.Name)}.ts", FileCategory.Models);
+                var name = GetModelFileNameInternal(typeAliasNode.Name.Name);
+                return ($"{name}/{name}.ts", FileCategory.Models);
             }
             if (declaration is FunctionDeclarationNode functionNode)
             {
-                // Функции обычно являются частью клиентов
-                return ($"{GetModelFileNameInternal(functionNode.Name.Name)}.ts", FileCategory.Clients);
+                var name = GetModelFileNameInternal(functionNode.Name.Name);
+                return ($"{name}/{name}.ts", FileCategory.Clients);
             }
         }
         
-        return ("generated.ts", FileCategory.Models);
+        return ("generated/generated.ts", FileCategory.Models);
     }
 }

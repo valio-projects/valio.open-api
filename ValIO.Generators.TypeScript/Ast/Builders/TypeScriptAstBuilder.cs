@@ -114,52 +114,54 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         IReadOnlyList<string> dependencies, 
         string? importPath,
         FileOrganization? fileOrganization = null,
-        FileCategory? currentFileCategory = null)
+        FileCategory? currentFileCategory = null,
+        string? currentModelOrEnumName = null,
+        string? currentOperationName = null)
     {
         if (dependencies.Count == 0)
         {
             return ImmutableList<ImportNode>.Empty;
         }
         
-        // Группируем зависимости по файлам (модели и enum'ы в одном файле)
         var importsByFile = new Dictionary<string, List<string>>();
+        var modelsPath = fileOrganization?.ModelsPath ?? "./models";
+        var clientsPath = fileOrganization?.ClientsPath ?? "./api";
         
-        // Определяем базовый путь для текущего файла
-        var currentBasePath = currentFileCategory switch
-        {
-            FileCategory.Models => fileOrganization?.ModelsPath ?? "./models",
-            FileCategory.Clients => fileOrganization?.ClientsPath ?? "./api",
-            FileCategory.Schemas => "./schemas",
-            _ => "./"
-        };
+        var currentBasePath = !string.IsNullOrEmpty(currentModelOrEnumName)
+            ? $"{modelsPath}/{GetModelFileName(currentModelOrEnumName)}"
+            : !string.IsNullOrEmpty(currentOperationName)
+                ? $"{clientsPath}/{GetModelFileName(currentOperationName)}"
+                : currentFileCategory switch
+                {
+                    FileCategory.Models => modelsPath,
+                    FileCategory.Clients => clientsPath,
+                    FileCategory.Schemas => "./schemas",
+                    _ => "./"
+                };
         
         foreach (var dependency in dependencies.Distinct().OrderBy(d => d))
         {
-            // Определяем имя файла для зависимости (без расширения .ts)
             var fileName = GetModelFileName(dependency);
+            var dependencyDir = $"{modelsPath}/{fileName}";
             
-            // Зависимости всегда находятся в папке models (модели и enum'ы)
-            var dependencyBasePath = fileOrganization?.ModelsPath ?? "./models";
-            
-            // Вычисляем относительный путь от текущего файла к зависимости
             string importPathForFile;
             if (!string.IsNullOrEmpty(importPath))
             {
-                // Если передан importPath, используем его
                 importPathForFile = $"{importPath}/{fileName}";
             }
-            else if (currentBasePath == dependencyBasePath)
+            else if (!string.IsNullOrEmpty(currentModelOrEnumName) || !string.IsNullOrEmpty(currentOperationName))
             {
-                // Если файлы в одной папке, используем относительный путь
-                importPathForFile = $"./{fileName}";
+                importPathForFile = CalculateRelativePath(currentBasePath, dependencyDir, fileName);
+            }
+            else if (currentBasePath == modelsPath)
+            {
+                importPathForFile = $"./{fileName}/{fileName}";
             }
             else
             {
-                // Если файлы в разных папках, вычисляем относительный путь
-                importPathForFile = CalculateRelativePath(currentBasePath, dependencyBasePath, fileName);
+                importPathForFile = CalculateRelativePath(currentBasePath, dependencyDir, fileName);
             }
             
-            // Нормализуем путь (убираем двойные слеши, заменяем обратные слеши)
             importPathForFile = NormalizePath(importPathForFile);
             
             if (!importsByFile.ContainsKey(importPathForFile))
@@ -322,9 +324,8 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         var dependencies = ExtractDependencies(model);
-        // Исключаем текущую модель из зависимостей
         dependencies = dependencies.Where(d => d != model.Name).ToList();
-        var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Models);
+        var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Models, model.Name);
         var declarations = new[] { (DeclarationNode)BuildInterface(model) };
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
@@ -394,7 +395,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     public SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null, FileOrganization? fileOrganization = null)
     {
-        var imports = BuildImports(Array.Empty<string>(), importPath, fileOrganization, FileCategory.Models);
+        var imports = BuildImports(Array.Empty<string>(), importPath, fileOrganization, FileCategory.Models, enumModel.Name);
         var declarations = BuildEnumDeclaration(enumModel);
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
@@ -740,11 +741,10 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// <summary>
     /// Строит FunctionDeclarationNode из IrOperation
     /// </summary>
-    public FunctionDeclarationNode BuildFunction(IrOperation operation)
+    public FunctionDeclarationNode BuildFunction(IrOperation operation, bool isExported = false)
     {
         var name = new IdentifierNode(operation.MethodName);
         
-        // Определяем тип возвращаемого значения из responses
         var returnType = ExtractReturnType(operation.Responses);
         
         var comment = !string.IsNullOrEmpty(operation.Description)
@@ -763,7 +763,8 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             body: body,
             isArrowFunction: false,
             isAsync: true,
-            documentation: comment);
+            documentation: comment,
+            isExported: isExported);
     }
     
     /// <summary>
@@ -800,22 +801,41 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             sourceFiles.Add(BuildSourceFile(enumModel, importPath, fileOrganization));
         }
         
-        // Генерируем клиенты
+        // Генерируем клиенты — по одному SourceFile на каждую операцию (endpoints/operationName/operationName.ts)
         foreach (var client in document.Clients)
         {
-            sourceFiles.Add(BuildSourceFile(client, importPath, fileOrganization));
+            foreach (var operation in client.Operations)
+            {
+                sourceFiles.Add(BuildSourceFileForOperation(operation, importPath, fileOrganization));
+            }
         }
         
         return sourceFiles;
     }
     
     /// <summary>
-    /// Строит SourceFile из IrClient
+    /// Строит SourceFile из IrClient (один файл со всеми операциями)
     /// </summary>
     public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients);
         var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunction(op)).ToList();
+        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+        
+        return new SourceFileNode(
+            imports: imports,
+            exports: exports,
+            declarations: declarations);
+    }
+    
+    /// <summary>
+    /// Строит SourceFile для одной операции (endpoints/operationName/operationName.ts)
+    /// </summary>
+    public SourceFileNode BuildSourceFileForOperation(IrOperation operation, string? importPath = null, FileOrganization? fileOrganization = null)
+    {
+        var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
+        var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
+        var declarations = new List<DeclarationNode> { BuildFunction(operation, isExported: true) };
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
         return new SourceFileNode(

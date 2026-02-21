@@ -134,6 +134,7 @@ public abstract class BaseCodeGenerator : ICodeGenerator
     /// <summary>
     /// Разрешает путь к файлу на основе категории и конфигурации
     /// </summary>
+    /// <param name="fileName">Имя файла или относительный путь (например, modelName/modelName.ts)</param>
     protected virtual string ResolveFilePath(string fileName, GenerationConfiguration config, FileCategory fileCategory = FileCategory.Models)
     {
         var shouldSeparate = fileCategory switch

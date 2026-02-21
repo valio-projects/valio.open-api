@@ -3,7 +3,7 @@
     "ChessboardApi": {
       "language": "TypeScript",
       "schema": "https://bitrix24.bytalent.ru/api/chessboard/swagger/v1/swagger.json",
-      "outputPath": "C:\\Workspace\\Talent\\talent.frontends.partners\\src\\swagger\\chessboard\\catalog",
+      "outputPath": "C:\\Workspace\\Talent\\talent.frontends.erp\\src\\domains\\developers\\swagger\\chessboard\\panoramas",
       "generateModels": true,
       "generateClients": true,
       "options": {
@@ -24,7 +24,7 @@
         }
       },
       "fileOrganization": {
-        "groupingStrategy": "ByTag",
+        "groupingStrategy": "by-route",
         "separateModels": true,
         "separateClients": true,
         "modelsPath": "models",

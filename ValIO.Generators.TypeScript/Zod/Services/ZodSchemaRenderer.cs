@@ -48,11 +48,12 @@ public class ZodSchemaRenderer
         var sb = new StringBuilder(4096);
         
         var schemaName = $"{model.Name}Schema";
+        var modelFileName = _namingConverter.ToCamelCase(model.Name);
         
-        // Генерируем импорты
-        sb.AppendLine("import { z } from 'zod';");
+        sb.AppendLine("import { z, ZodSchema } from 'zod';");
+        sb.AppendLine();
+        sb.AppendLine($"import type {{ {model.Name} }} from \"./{modelFileName}\";");
         
-        // Собираем зависимости из свойств модели
         var dependencies = ExtractDependencies(model);
         if (dependencies.Count > 0)
         {
@@ -65,22 +66,18 @@ public class ZodSchemaRenderer
             sb.AppendLine();
         }
         
-        // Генерируем JSDoc комментарий
         if (!string.IsNullOrEmpty(model.Description))
         {
             CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
         }
         
-        // Строим Zod AST из IR модели
         var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder);
         var zodObject = zodBuilder.BuildZodObject(model);
         
-        // Рендерим AST в код
         var zodRenderer = new ZodAstRenderer();
         var zodObjectCode = zodRenderer.Render(zodObject);
         
-        // Генерируем экспорт схемы
-        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = {zodObjectCode};");
+        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{model.Name}> = {zodObjectCode};");
         
         return sb.ToString();
     }
@@ -100,15 +97,13 @@ public class ZodSchemaRenderer
         
         var schemaName = $"{enumModel.Name}Schema";
         var typeName = enumModel.Name;
+        var enumFileName = _namingConverter.ToCamelCase(enumModel.Name);
         var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
         var constArrayName = $"{typeName}Values";
         
-        sb.AppendLine("import { z } from 'zod';");
-        
-        // Собираем зависимости из enum (если есть ссылки на другие модели)
-        // Для enum'ов обычно нет зависимостей, но на всякий случай проверяем
-        // TODO: Добавить извлечение зависимостей для enum'ов, если они появятся
-        
+        sb.AppendLine("import { z, ZodSchema } from 'zod';");
+        sb.AppendLine();
+        sb.AppendLine($"import type {{ {typeName} }} from \"./{enumFileName}\";");
         sb.AppendLine();
         
         // Строим Zod AST из IR enum
@@ -149,12 +144,10 @@ public class ZodSchemaRenderer
             CommentGenerator.GenerateJSDocComment(sb, 0, enumModel.Description);
         }
         
-        // Рендерим Zod enum схему
         var zodRenderer = new ZodAstRenderer();
         var zodEnumCode = zodRenderer.VisitZodEnum(zodEnum);
         
-        // Генерируем экспорт схемы
-        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName} = {zodEnumCode};");
+        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{typeName}> = {zodEnumCode};");
         
         return sb.ToString();
     }
@@ -249,27 +242,26 @@ public class ZodSchemaRenderer
     }
     
     /// <summary>
-    /// Вычисляет относительный путь для импорта схемы
+    /// Вычисляет относительный путь для импорта схемы.
+    /// При структуре models/modelName/ — из currentModel к depModel: ../depModel/depModel.schema
     /// </summary>
     private string CalculateImportPath(string? currentFileName, string dependencyFileName, string? schemasPath, string? importPath)
     {
-        // Если указан явный importPath, используем его
         if (!string.IsNullOrEmpty(importPath))
         {
             var normalizedPath = NormalizePath(importPath);
-            return $"{normalizedPath}/{dependencyFileName}.schema";
+            return $"{normalizedPath}/{dependencyFileName}/{dependencyFileName}.schema";
         }
         
-        // Если указан schemasPath и currentFileName, вычисляем относительный путь
         if (!string.IsNullOrEmpty(schemasPath) && !string.IsNullOrEmpty(currentFileName))
         {
-            var currentBasePath = NormalizePath(schemasPath);
-            var dependencyBasePath = NormalizePath(schemasPath);
-            var relativePath = CalculateRelativePath(currentBasePath, dependencyBasePath, $"{dependencyFileName}.schema");
+            var modelsPath = NormalizePath(schemasPath);
+            var currentBasePath = $"{modelsPath}/{currentFileName}";
+            var dependencyDir = $"{modelsPath}/{dependencyFileName}";
+            var relativePath = CalculateRelativePath(currentBasePath, dependencyDir, $"{dependencyFileName}.schema");
             return NormalizePath(relativePath);
         }
         
-        // По умолчанию используем относительный путь в той же папке
         return $"./{dependencyFileName}.schema";
     }
     
