@@ -85,7 +85,7 @@ public sealed class TanStackQueryHookAstBuilder
                 new IdentifierNode("useQuery"),
                 new IdentifierNode("useIsFetching"),
                 new IdentifierNode("QueryClient"),
-                new IdentifierNode("QueryFunction"),
+                //new IdentifierNode("QueryFunction"),
                 new IdentifierNode("QueryFunctionContext"),
                 new IdentifierNode("UseQueryOptions"),
                 new IdentifierNode("UseInfiniteQueryOptions"),
