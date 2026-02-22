@@ -100,9 +100,30 @@ public sealed class TypeScriptResultsAstBuilder
                 variantTypes.Add(new SimpleTypeNode(new IdentifierNode(variantInterfaceName), isPrimitive: false));
             }
 
-            var unionType = variantTypes.Count == 1
-                ? variantTypes[0]
-                : new UnionTypeNode(variantTypes);
+            // Catch-all variant для неизвестных status codes: { status: number; body: unknown }
+            var otherVariantName = $"{_namingConverter.ToPascalCase(currentOperationName)}ResultOther";
+            var otherVariantInterface = new InterfaceDeclarationNode(
+                name: new IdentifierNode(otherVariantName),
+                accessModifier: AccessModifier.Public,
+                baseTypes: ImmutableList<TypeNode>.Empty,
+                members: new List<DeclarationNode>
+                {
+                    new PropertySignatureNode(
+                        new IdentifierNode("status"),
+                        new SimpleTypeNode(new IdentifierNode("number"), isPrimitive: true),
+                        isRequired: true,
+                        documentation: new CommentNode("HTTP status code not in schema (e.g. 204, 301, 503)")),
+                    new PropertySignatureNode(
+                        new IdentifierNode("body"),
+                        new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
+                        isRequired: true,
+                        documentation: new CommentNode("Response body for unhandled status"))
+                }.ToImmutableList(),
+                documentation: new CommentNode("Response for status codes not explicitly defined in OpenAPI schema"));
+            declarations.Add(otherVariantInterface);
+            variantTypes.Add(new SimpleTypeNode(new IdentifierNode(otherVariantName), isPrimitive: false));
+
+            var unionType = new UnionTypeNode(variantTypes);
 
             var resultTypeAlias = new TypeAliasDeclarationNode(
                 new IdentifierNode(resultTypeName),

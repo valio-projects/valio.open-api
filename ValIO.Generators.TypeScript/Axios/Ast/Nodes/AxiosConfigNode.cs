@@ -114,7 +114,7 @@ public sealed class AxiosConfigNode : ExpressionNode
         // Fallback на object literal expression через ITypeScriptAstVisitor
         if (visitor is ITypeScriptAstVisitor<TResult> typescriptVisitor)
         {
-            var objectLiteral = new ObjectLiteralExpressionNode(Properties, Type, Metadata);
+            var objectLiteral = new ObjectLiteralExpressionNode(Properties, Type, Metadata, preferMultilineFormat: true);
             return typescriptVisitor.VisitObjectLiteralExpression(objectLiteral);
         }
         return visitor.VisitExpression(this);

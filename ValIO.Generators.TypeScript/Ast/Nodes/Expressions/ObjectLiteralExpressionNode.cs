@@ -17,6 +17,11 @@ public sealed class ObjectLiteralExpressionNode : ExpressionNode
     /// Свойства объекта
     /// </summary>
     public IReadOnlyList<PropertyAssignmentNode> Properties { get; }
+
+    /// <summary>
+    /// Рендерить объект с переносами строк для каждого свойства
+    /// </summary>
+    public bool PreferMultilineFormat { get; }
     
     public override AstNodeKind Kind => AstNodeKind.ObjectLiteralExpression;
     
@@ -37,10 +42,12 @@ public sealed class ObjectLiteralExpressionNode : ExpressionNode
     public ObjectLiteralExpressionNode(
         IReadOnlyList<PropertyAssignmentNode>? properties = null,
         TypeNode? type = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        bool preferMultilineFormat = false)
         : base(type, metadata)
     {
         Properties = properties?.ToImmutableList() ?? ImmutableList<PropertyAssignmentNode>.Empty;
+        PreferMultilineFormat = preferMultilineFormat;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -57,6 +64,7 @@ public sealed class ObjectLiteralExpressionNode : ExpressionNode
         return new ObjectLiteralExpressionNode(
             Properties.Select(p => (PropertyAssignmentNode)p.Clone()).ToImmutableList(),
             Type != null ? (TypeNode)Type.Clone() : null,
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            PreferMultilineFormat);
     }
 }

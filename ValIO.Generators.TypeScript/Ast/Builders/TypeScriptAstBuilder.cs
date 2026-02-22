@@ -733,7 +733,9 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var useResultType = _options?.HttpClientLibrary == HttpClientLibrary.Axios
             && operation.Responses.Any(r => r.Type != null);
         var returnType = useResultType
-            ? new SimpleTypeNode(new IdentifierNode($"{_namingConverter.ToPascalCase(operation.MethodName)}Result"), isPrimitive: false)
+            ? new GenericTypeNode(
+                new IdentifierNode("Promise"),
+                new[] { new SimpleTypeNode(new IdentifierNode($"{_namingConverter.ToPascalCase(operation.MethodName)}Result"), isPrimitive: false) }.ToImmutableList())
             : ExtractReturnType(operation.Responses);
         
         var comment = !string.IsNullOrEmpty(operation.Description)
@@ -823,7 +825,11 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     public SourceFileNode BuildSourceFileForOperation(IrOperation operation, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
-        var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
+        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
+        var excludeResponseModels = _options?.HttpClientLibrary == HttpClientLibrary.Axios
+            && resultsAstBuilder.HasResponsesWithBody(operation);
+        var dependencies = ExtractDependencies(client, excludeResponseModels);
+        var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
 
         // При Axios добавляем импорт axios и params
         if (_options?.HttpClientLibrary == HttpClientLibrary.Axios)
@@ -1104,22 +1110,21 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
         var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource);
 
+        var bodyTypeNode = operation.RequestBody?.Type is IrModelReference reqBodyModelRef
+            ? new SimpleTypeNode(new IdentifierNode(reqBodyModelRef.ModelName), isPrimitive: false)
+            : new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true);
+        var axiosConfigGeneric = new GenericTypeNode(
+            new IdentifierNode("AxiosRequestConfig"),
+            new[] { bodyTypeNode }.ToImmutableList());
+
         var useResultType = operation.Responses.Any(r => r.Type != null);
         var operationReturnType = useResultType
             ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false)
             : ExtractReturnType(operation.Responses);
-        var responseDataType = operationReturnType is SimpleTypeNode { Name.Name: "void" }
-            ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false, isNullable: false, isOptional: false)
-            : operationReturnType;
-        var axiosConfigType = new GenericTypeNode(
-            new IdentifierNode("AxiosRequestConfig"),
-            new[] { responseDataType }.ToImmutableList(),
-            isNullable: false,
-            isOptional: false);
 
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("baseConfig"),
-            type: null,
+            type: axiosConfigGeneric,
             initializer: configNode));
 
         var optionsRef = new IdentifierExpressionNode(new IdentifierNode("options"));
@@ -1152,8 +1157,8 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("axiosConfig"),
-            type: axiosConfigType,
-            initializer: new ObjectLiteralExpressionNode(mergedConfigProps.ToImmutableList())));
+            type: axiosConfigGeneric,
+            initializer: new ObjectLiteralExpressionNode(mergedConfigProps.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true)));
 
         var axiosCall = new Axios.Ast.Nodes.AxiosCallExpressionNode(
             new IdentifierExpressionNode(new IdentifierNode("axios")),
@@ -1292,7 +1297,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             isOptional: false);
     }
     
-    private IReadOnlyList<string> ExtractDependencies(IrClient client)
+    private IReadOnlyList<string> ExtractDependencies(IrClient client, bool excludeResponseModels = false)
     {
         var dependencies = new HashSet<string>();
         
@@ -1310,12 +1315,15 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 ExtractDependenciesFromType(operation.RequestBody.Type, dependencies);
             }
             
-            // Зависимости из responses
-            foreach (var response in operation.Responses)
+            // Зависимости из responses (пропускаем при excludeResponseModels — используется Result type)
+            if (!excludeResponseModels)
             {
-                if (response.Type != null)
+                foreach (var response in operation.Responses)
                 {
-                    ExtractDependenciesFromType(response.Type, dependencies);
+                    if (response.Type != null)
+                    {
+                        ExtractDependenciesFromType(response.Type, dependencies);
+                    }
                 }
             }
         }
