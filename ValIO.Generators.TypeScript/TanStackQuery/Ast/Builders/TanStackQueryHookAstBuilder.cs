@@ -14,12 +14,14 @@ namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Builders;
 
 /// <summary>
 /// Строит AST (SourceFileNode) для TanStack Query hook-файла.
-/// Использует TypeScript AST nodes: ImportNode, FunctionDeclarationNode, TypeAliasDeclarationNode.
+/// Использует AST-узлы для типов, тел методов и объявлений.
 /// </summary>
 public sealed class TanStackQueryHookAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
+    private readonly TypeScriptResultsAstBuilder _resultsBuilder;
+    private readonly TanStackQueryTypeBuilder _typeBuilder;
 
     public TanStackQueryHookAstBuilder(
         INamingConverter namingConverter,
@@ -27,6 +29,8 @@ public sealed class TanStackQueryHookAstBuilder
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder);
+        _typeBuilder = new TanStackQueryTypeBuilder(namingConverter);
     }
 
     /// <summary>
@@ -41,10 +45,17 @@ public sealed class TanStackQueryHookAstBuilder
         var hasParams = _paramsBuilder.HasParameters(operation);
         var paramsTypeName = hasParams ? _paramsBuilder.ParamsInterfaceName(operation.MethodName) : null;
 
-        var imports = BuildImports(operation, operationFileName, hasParams, paramsTypeName);
+        var resultTypeName = _resultsBuilder.HasResponsesWithBody(operation)
+            ? _resultsBuilder.ResultTypeName(operation.MethodName)
+            : null;
+
+        var dataType = _typeBuilder.BuildDataType(resultTypeName);
+        var variablesType = _typeBuilder.BuildVariablesType(paramsTypeName);
+
+        var imports = BuildImports(operation, operationFileName, hasParams, paramsTypeName, resultTypeName, isMutation);
         var declarations = isMutation
-            ? BuildMutationDeclarations(operation, hookBaseName, paramsTypeName)
-            : BuildQueryDeclarations(operation, hookBaseName, paramsTypeName, hasParams);
+            ? BuildMutationDeclarations(operation, hookBaseName, paramsTypeName, resultTypeName, dataType, variablesType)
+            : BuildQueryDeclarations(operation, hookBaseName, paramsTypeName, hasParams, resultTypeName, dataType);
 
         return new SourceFileNode(imports: imports, declarations: declarations);
     }
@@ -53,51 +64,47 @@ public sealed class TanStackQueryHookAstBuilder
         IrOperation operation,
         string operationFileName,
         bool hasParams,
-        string? paramsTypeName)
+        string? paramsTypeName,
+        string? resultTypeName,
+        bool isMutation)
     {
+        var tanstackItems = isMutation
+            ? new[]
+            {
+                new IdentifierNode("useMutation"),
+                new IdentifierNode("useIsMutating"),
+                new IdentifierNode("QueryClient"),
+                new IdentifierNode("UseMutationOptions"),
+                new IdentifierNode("UseMutationResult"),
+                new IdentifierNode("MutationFunction"),
+            }
+            : new[]
+            {
+                new IdentifierNode("useInfiniteQuery"),
+                new IdentifierNode("useQuery"),
+                new IdentifierNode("useIsFetching"),
+                new IdentifierNode("QueryClient"),
+                new IdentifierNode("QueryFunction"),
+                new IdentifierNode("UseQueryOptions"),
+                new IdentifierNode("UseInfiniteQueryOptions"),
+                new IdentifierNode("UseQueryResult"),
+                new IdentifierNode("UseInfiniteQueryResult"),
+                new IdentifierNode("InfiniteData"),
+            };
+
         var items = new List<ImportNode>
         {
-            new(
-                items: new[]
-                {
-                    new IdentifierNode("useInfiniteQuery"),
-                    new IdentifierNode("useMutation"),
-                    new IdentifierNode("useQuery"),
-                    new IdentifierNode("useIsFetching"),
-                    new IdentifierNode("useIsMutating"),
-                    new IdentifierNode("QueryClient"),
-                    new IdentifierNode("QueryFunction"),
-                    new IdentifierNode("UseQueryOptions"),
-                    new IdentifierNode("UseInfiniteQueryOptions"),
-                    new IdentifierNode("UseMutationOptions"),
-                    new IdentifierNode("UseQueryResult"),
-                    new IdentifierNode("UseInfiniteQueryResult"),
-                    new IdentifierNode("UseMutationResult"),
-                    new IdentifierNode("InfiniteData"),
-                    new IdentifierNode("MutationFunction"),
-                }.ToImmutableList(),
-                from: "@tanstack/react-query",
-                kind: ImportKind.Named),
-            new(
-                items: new[] { new IdentifierNode(operation.MethodName) }.ToImmutableList(),
-                from: $"./{operationFileName}",
-                kind: ImportKind.Named)
+            new(items: tanstackItems.ToImmutableList(), from: "@tanstack/react-query", kind: ImportKind.Named),
+            new(items: new[] { new IdentifierNode(operation.MethodName) }.ToImmutableList(), from: $"./{operationFileName}", kind: ImportKind.Named)
         };
 
         if (hasParams && paramsTypeName != null)
-        {
-            items.Add(new ImportNode(
-                items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
-                from: $"./{operationFileName}.params",
-                kind: ImportKind.Named,
-                isTypeOnly: true));
-        }
+            items.Add(new ImportNode(items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(), from: $"./{operationFileName}.params", kind: ImportKind.Named, isTypeOnly: true));
 
-        items.Add(new ImportNode(
-            items: new[] { new IdentifierNode("AxiosRequestConfig") }.ToImmutableList(),
-            from: "axios",
-            kind: ImportKind.Named,
-            isTypeOnly: true));
+        if (resultTypeName != null)
+            items.Add(new ImportNode(items: new[] { new IdentifierNode(resultTypeName) }.ToImmutableList(), from: $"./{operationFileName}.results", kind: ImportKind.Named, isTypeOnly: true));
+
+        items.Add(new ImportNode(items: new[] { new IdentifierNode("AxiosRequestConfig") }.ToImmutableList(), from: "axios", kind: ImportKind.Named, isTypeOnly: true));
 
         return items;
     }
@@ -106,22 +113,35 @@ public sealed class TanStackQueryHookAstBuilder
         IrOperation operation,
         string hookBaseName,
         string? paramsTypeName,
-        bool hasParams)
+        bool hasParams,
+        string? resultTypeName,
+        TypeNode dataType)
     {
         var pathParts = GetQueryKeyPathParts(operation);
         var decls = new List<DeclarationNode>();
 
-        decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}InfiniteQueryKey", pathParts, hasParams, paramsTypeName, includeInfinite: true));
-        decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}QueryKey", pathParts, hasParams, paramsTypeName, includeInfinite: false));
-        decls.Add(BuildGetInfiniteQueryOptionsFn(operation, hookBaseName, paramsTypeName, hasParams));
-        decls.Add(BuildGetQueryOptionsFn(operation, hookBaseName, paramsTypeName, hasParams));
-        decls.Add(BuildTypeAlias($"{hookBaseName}QueryResult", $"NonNullable<Awaited<ReturnType<typeof {operation.MethodName}>>>"));
-        decls.Add(BuildTypeAlias($"{hookBaseName}QueryError", "Error"));
-        decls.Add(BuildUseQueryFn(operation, hookBaseName, paramsTypeName, hasParams));
-        decls.Add(BuildUseInfiniteQueryFn(operation, hookBaseName, paramsTypeName, hasParams));
-        decls.Add(BuildPrefetchQueryFn(operation, hookBaseName, paramsTypeName, hasParams));
-        decls.Add(BuildPrefetchInfiniteQueryFn(operation, hookBaseName, paramsTypeName, hasParams));
-        decls.Add(BuildUseIsFetchingFn(hookBaseName, paramsTypeName, hasParams));
+        decls.Add(_typeBuilder.BuildQueryOptionsParamsInterface(hookBaseName, dataType, isInfinite: false));
+        decls.Add(_typeBuilder.BuildQueryOptionsParamsInterface(hookBaseName, dataType, isInfinite: true));
+        decls.Add(_typeBuilder.BuildQueryOptionsResultTypeAlias(hookBaseName, dataType, isInfinite: false));
+        decls.Add(_typeBuilder.BuildQueryOptionsResultTypeAlias(hookBaseName, dataType, isInfinite: true));
+
+        var paramsType = paramsTypeName != null ? TanStackQueryTypeBuilder.SimpleType(paramsTypeName) : null;
+        var queryOptionsParamsType = new IdentifierNode($"Get{hookBaseName}QueryOptionsParams");
+        var infiniteQueryOptionsParamsType = new IdentifierNode($"Get{hookBaseName}InfiniteQueryOptionsParams");
+        var queryOptionsResultType = new IdentifierNode($"Get{hookBaseName}QueryOptionsResult");
+        var infiniteQueryOptionsResultType = new IdentifierNode($"Get{hookBaseName}InfiniteQueryOptionsResult");
+
+        decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}InfiniteQueryKey", pathParts, hasParams, paramsType, includeInfinite: true));
+        decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}QueryKey", pathParts, hasParams, paramsType, includeInfinite: false));
+        decls.Add(BuildGetInfiniteQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, new IdentifierNode($"get{hookBaseName}InfiniteQueryKey"), new IdentifierNode($"get{hookBaseName}InfiniteQueryOptions"), infiniteQueryOptionsParamsType, infiniteQueryOptionsResultType));
+        decls.Add(BuildGetQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, new IdentifierNode($"get{hookBaseName}QueryKey"), new IdentifierNode($"get{hookBaseName}QueryOptions"), queryOptionsParamsType, queryOptionsResultType));
+        decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}QueryResult"), dataType));
+        decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}QueryError"), TanStackQueryTypeBuilder.SimpleType("Error")));
+        decls.Add(BuildUseQueryFn(operation, hookBaseName, paramsType, hasParams, queryOptionsParamsType, queryOptionsResultType, dataType));
+        decls.Add(BuildUseInfiniteQueryFn(operation, hookBaseName, paramsType, hasParams, infiniteQueryOptionsParamsType, infiniteQueryOptionsResultType, dataType));
+        decls.Add(BuildPrefetchQueryFn(operation, hookBaseName, paramsType, hasParams, queryOptionsParamsType, queryOptionsResultType));
+        decls.Add(BuildPrefetchInfiniteQueryFn(operation, hookBaseName, paramsType, hasParams, infiniteQueryOptionsParamsType, infiniteQueryOptionsResultType));
+        decls.Add(BuildUseIsFetchingFn(hookBaseName, paramsType, hasParams));
 
         return decls;
     }
@@ -129,15 +149,23 @@ public sealed class TanStackQueryHookAstBuilder
     private IReadOnlyList<DeclarationNode> BuildMutationDeclarations(
         IrOperation operation,
         string hookBaseName,
-        string? paramsTypeName)
+        string? paramsTypeName,
+        string? resultTypeName,
+        TypeNode dataType,
+        TypeNode variablesType)
     {
-        var variablesType = paramsTypeName ?? "void";
         var decls = new List<DeclarationNode>();
 
-        decls.Add(BuildGetMutationOptionsFn(operation, hookBaseName, variablesType));
-        decls.Add(BuildTypeAlias($"{hookBaseName}MutationResult", $"NonNullable<Awaited<ReturnType<typeof {operation.MethodName}>>>"));
-        decls.Add(BuildTypeAlias($"{hookBaseName}MutationError", "Error"));
-        decls.Add(BuildUseMutationFn(operation, hookBaseName, variablesType));
+        decls.Add(_typeBuilder.BuildMutationOptionsParamsInterface(hookBaseName, dataType, variablesType));
+        decls.Add(_typeBuilder.BuildMutationOptionsResultInterface(hookBaseName, dataType, variablesType));
+
+        var optionsParamsType = new IdentifierNode($"Get{hookBaseName}MutationOptionsParams");
+        var optionsResultType = new IdentifierNode($"Get{hookBaseName}MutationOptionsResult");
+
+        decls.Add(BuildGetMutationOptionsFn(operation, hookBaseName, variablesType, optionsParamsType, optionsResultType));
+        decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}MutationResult"), dataType));
+        decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}MutationError"), TanStackQueryTypeBuilder.SimpleType("Error")));
+        decls.Add(BuildUseMutationFn(operation, hookBaseName, optionsParamsType, optionsResultType, dataType, variablesType));
         decls.Add(BuildUseIsMutatingFn(operation, hookBaseName));
 
         return decls;
@@ -146,16 +174,14 @@ public sealed class TanStackQueryHookAstBuilder
     private static IReadOnlyList<string> GetQueryKeyPathParts(IrOperation operation)
     {
         var path = operation.Path.Trim('/');
-        return string.IsNullOrEmpty(path)
-            ? new[] { "api" }
-            : path.Split('/').Where(p => !string.IsNullOrEmpty(p)).ToList();
+        return string.IsNullOrEmpty(path) ? new[] { "api" } : path.Split('/').Where(p => !string.IsNullOrEmpty(p)).ToList();
     }
 
     private FunctionDeclarationNode BuildGetQueryKeyFn(
         string name,
         IReadOnlyList<string> pathParts,
         bool hasParams,
-        string? paramsTypeName,
+        TypeNode? paramsType,
         bool includeInfinite)
     {
         var elements = new List<ExpressionNode>();
@@ -172,53 +198,57 @@ public sealed class TanStackQueryHookAstBuilder
             elements.Add(new SpreadExpressionNode(cond));
         }
 
-        var parameters = hasParams && paramsTypeName != null
-            ? new[]
-            {
-                new ParameterDeclarationNode(
-                    new IdentifierNode("params"),
-                    new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false),
-                    isRequired: false)
-            }.ToImmutableList()
+        var parameters = hasParams && paramsType != null
+            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: false) }.ToImmutableList()
             : ImmutableList<ParameterDeclarationNode>.Empty;
 
         return new FunctionDeclarationNode(
             new IdentifierNode(name),
-            returnType: null,
+            returnType: _typeBuilder.BuildQueryKeyReturnType(),
             parameters: parameters,
             body: new BlockNode(new[] { new ReturnStatementNode(new ArrayLiteralExpressionNode(elements.ToImmutableList(), preferMultilineFormat: true)) }.ToImmutableList()),
             isArrowFunction: true,
             isAsync: false,
-            documentation: new CommentNode(includeInfinite
-                ? "Query key for useInfiniteQuery. Includes 'infinite' prefix for pagination."
-                : "Query key for useQuery. Used as cache identifier.", CommentKind.JSDoc),
+            documentation: new CommentNode(includeInfinite ? "Query key for useInfiniteQuery." : "Query key for useQuery.", CommentKind.JSDoc),
             isExported: true);
     }
 
     private FunctionDeclarationNode BuildGetInfiniteQueryOptionsFn(
         IrOperation operation,
         string hookBaseName,
-        string? paramsTypeName,
-        bool hasParams)
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode getQueryKeyFnName,
+        IdentifierNode getQueryOptionsFnName,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType)
     {
-        return BuildGetQueryOptionsFnInternal(operation, $"get{hookBaseName}InfiniteQueryKey", $"get{hookBaseName}InfiniteQueryOptions", paramsTypeName, hasParams);
+        return BuildGetQueryOptionsFnInternal(operation, hookBaseName, paramsType, hasParams, getQueryKeyFnName, getQueryOptionsFnName, optionsParamsType, optionsResultType, isInfinite: true);
     }
 
     private FunctionDeclarationNode BuildGetQueryOptionsFn(
         IrOperation operation,
         string hookBaseName,
-        string? paramsTypeName,
-        bool hasParams)
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode getQueryKeyFnName,
+        IdentifierNode getQueryOptionsFnName,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType)
     {
-        return BuildGetQueryOptionsFnInternal(operation, $"get{hookBaseName}QueryKey", $"get{hookBaseName}QueryOptions", paramsTypeName, hasParams);
+        return BuildGetQueryOptionsFnInternal(operation, hookBaseName, paramsType, hasParams, getQueryKeyFnName, getQueryOptionsFnName, optionsParamsType, optionsResultType, isInfinite: false);
     }
 
     private FunctionDeclarationNode BuildGetQueryOptionsFnInternal(
         IrOperation operation,
-        string getQueryKeyFnName,
-        string getQueryOptionsFnName,
-        string? paramsTypeName,
-        bool hasParams)
+        string hookBaseName,
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode getQueryKeyFnName,
+        IdentifierNode getQueryOptionsFnName,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType,
+        bool isInfinite)
     {
         var optionsRef = new IdentifierExpressionNode(new IdentifierNode("options"));
         var queryOptsRef = new MemberAccessExpressionNode(optionsRef, new IdentifierNode("query"), useOptionalChaining: true);
@@ -226,12 +256,12 @@ public sealed class TanStackQueryHookAstBuilder
 
         var queryKeyVar = new VariableDeclarationStatementNode(
             new IdentifierNode("queryKey"),
-            null,
+            _typeBuilder.BuildQueryKeyReturnType(),
             new BinaryExpressionNode(
                 queryKeyFromOpts,
                 BinaryOperator.NullishCoalescing,
                 new CallExpressionNode(
-                    new IdentifierExpressionNode(new IdentifierNode(getQueryKeyFnName)),
+                    new IdentifierExpressionNode(getQueryKeyFnName),
                     hasParams ? new[] { new IdentifierExpressionNode(new IdentifierNode("params")) }.ToImmutableList() : ImmutableList<ExpressionNode>.Empty)));
 
         var apiCallArgs = new List<ExpressionNode>();
@@ -245,7 +275,7 @@ public sealed class TanStackQueryHookAstBuilder
             apiCallArgs.ToImmutableList());
 
         var queryFnArrow = new ArrowFunctionExpressionNode(
-            new[] { new ParameterDeclarationNode(new IdentifierNode("context"), new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: false), isRequired: true) }.ToImmutableList(),
+            new[] { new ParameterDeclarationNode(new IdentifierNode("context"), TanStackQueryTypeBuilder.SimpleType("object"), isRequired: true) }.ToImmutableList(),
             queryFnExpr);
 
         var returnObjProps = new List<PropertyAssignmentNode>
@@ -253,62 +283,46 @@ public sealed class TanStackQueryHookAstBuilder
             new(new IdentifierNode("queryKey"), new IdentifierExpressionNode(new IdentifierNode("queryKey"))),
             new(new IdentifierNode("queryFn"), queryFnArrow),
         };
-        if (getQueryOptionsFnName.Contains("Infinite"))
+        if (isInfinite)
         {
             returnObjProps.Add(new PropertyAssignmentNode(new IdentifierNode("initialPageParam"), new LiteralExpressionNode(0, LiteralKind.Number)));
             returnObjProps.Add(new PropertyAssignmentNode(new IdentifierNode("getNextPageParam"), new ArrowFunctionExpressionNode(
                 ImmutableList<ParameterDeclarationNode>.Empty,
                 new LiteralExpressionNode(null, LiteralKind.Null))));
         }
-        var returnObj = new ObjectLiteralExpressionNode(returnObjProps.ToImmutableList());
+        var returnObj = new ObjectLiteralExpressionNode(returnObjProps.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true);
 
+        var resultTypeRef = new SimpleTypeNode(optionsResultType, isPrimitive: false);
         var statements = new List<StatementNode>
         {
             queryKeyVar,
-            new ReturnStatementNode(returnObj)
+            new VariableDeclarationStatementNode(new IdentifierNode("result"), resultTypeRef, returnObj),
+            new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("result")))
         };
 
         var parameters = new List<ParameterDeclarationNode>();
-        if (hasParams && paramsTypeName != null)
-        {
-            parameters.Add(new ParameterDeclarationNode(
-                new IdentifierNode("params"),
-                new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false),
-                isRequired: true));
-        }
-        var optionsTypeStr = getQueryOptionsFnName.Contains("Infinite")
-            ? $"{{ query?: Partial<UseInfiniteQueryOptions<InfiniteData<NonNullable<Awaited<ReturnType<typeof {operation.MethodName}>>>>, Error>>; request?: AxiosRequestConfig }}"
-            : $"{{ query?: Partial<UseQueryOptions<NonNullable<Awaited<ReturnType<typeof {operation.MethodName}>>>, Error>>; request?: AxiosRequestConfig }}";
-        parameters.Add(new ParameterDeclarationNode(
-            new IdentifierNode("options"),
-            new RawTypeNode(optionsTypeStr),
-            isRequired: false));
+        if (hasParams && paramsType != null)
+            parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: true));
+        parameters.Add(new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(optionsParamsType, isPrimitive: false), isRequired: false));
 
         return new FunctionDeclarationNode(
-            new IdentifierNode(getQueryOptionsFnName),
-            returnType: null,
+            getQueryOptionsFnName,
+            returnType: resultTypeRef,
             parameters: parameters.ToImmutableList(),
             body: new BlockNode(statements.ToImmutableList()),
             isArrowFunction: true,
-            documentation: new CommentNode(getQueryOptionsFnName.Contains("Infinite")
-                ? "Options for useInfiniteQuery. Adds pagination (initialPageParam, getNextPageParam)."
-                : "Options for useQuery. Contains queryKey and queryFn.",
-                CommentKind.JSDoc),
+            documentation: new CommentNode(isInfinite ? "Options for useInfiniteQuery." : "Options for useQuery.", CommentKind.JSDoc),
             isExported: true);
-    }
-
-    private static TypeAliasDeclarationNode BuildTypeAlias(string name, string typeName)
-    {
-        return new TypeAliasDeclarationNode(
-            new IdentifierNode(name),
-            new SimpleTypeNode(new IdentifierNode(typeName), isPrimitive: false));
     }
 
     private FunctionDeclarationNode BuildUseQueryFn(
         IrOperation operation,
         string hookBaseName,
-        string? paramsTypeName,
-        bool hasParams)
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType,
+        TypeNode dataType)
     {
         var getOptsArgs = hasParams
             ? new[] { new IdentifierExpressionNode(new IdentifierNode("params")), new IdentifierExpressionNode(new IdentifierNode("options")) }.ToImmutableList()
@@ -318,29 +332,32 @@ public sealed class TanStackQueryHookAstBuilder
         {
             new VariableDeclarationStatementNode(
                 new IdentifierNode("queryOptions"),
-                null,
+                new SimpleTypeNode(optionsResultType, isPrimitive: false),
                 new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode($"get{hookBaseName}QueryOptions")), getOptsArgs)),
             new ReturnStatementNode(new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("useQuery")),
                 new[] { new IdentifierExpressionNode(new IdentifierNode("queryOptions")), new IdentifierExpressionNode(new IdentifierNode("queryClient")) }.ToImmutableList()))
         }.ToImmutableList());
 
-        var parameters = BuildUseQueryParams(paramsTypeName, hasParams, $"get{hookBaseName}QueryOptions");
+        var parameters = BuildUseQueryParams(paramsType, hasParams, optionsParamsType);
         return new FunctionDeclarationNode(
             new IdentifierNode($"use{hookBaseName}"),
-            returnType: null,
+            returnType: _typeBuilder.BuildUseQueryResultType(dataType),
             parameters: parameters,
             body: body,
             isArrowFunction: true,
-            documentation: new CommentNode("Fetches and caches data. Use for one-time or refetch-on-mount.", CommentKind.JSDoc),
+            documentation: new CommentNode("Fetches and caches data.", CommentKind.JSDoc),
             isExported: true);
     }
 
     private FunctionDeclarationNode BuildUseInfiniteQueryFn(
         IrOperation operation,
         string hookBaseName,
-        string? paramsTypeName,
-        bool hasParams)
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType,
+        TypeNode dataType)
     {
         var getOptsArgs = hasParams
             ? new[] { new IdentifierExpressionNode(new IdentifierNode("params")), new IdentifierExpressionNode(new IdentifierNode("options")) }.ToImmutableList()
@@ -350,7 +367,7 @@ public sealed class TanStackQueryHookAstBuilder
         {
             new VariableDeclarationStatementNode(
                 new IdentifierNode("queryOptions"),
-                null,
+                new SimpleTypeNode(optionsResultType, isPrimitive: false),
                 new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode($"get{hookBaseName}InfiniteQueryOptions")), getOptsArgs)),
             new ReturnStatementNode(new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("useInfiniteQuery")),
@@ -359,19 +376,21 @@ public sealed class TanStackQueryHookAstBuilder
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"use{hookBaseName}Infinite"),
-            returnType: null,
-            parameters: BuildUseQueryParams(paramsTypeName, hasParams, $"get{hookBaseName}InfiniteQueryOptions"),
+            returnType: _typeBuilder.BuildUseInfiniteQueryResultType(dataType),
+            parameters: BuildUseQueryParams(paramsType, hasParams, optionsParamsType),
             body: body,
             isArrowFunction: true,
-            documentation: new CommentNode("Fetches paginated data. Use for infinite scroll / load more.", CommentKind.JSDoc),
+            documentation: new CommentNode("Fetches paginated data.", CommentKind.JSDoc),
             isExported: true);
     }
 
     private FunctionDeclarationNode BuildPrefetchQueryFn(
         IrOperation operation,
         string hookBaseName,
-        string? paramsTypeName,
-        bool hasParams)
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType)
     {
         var getOptsArgs = hasParams
             ? new[] { new IdentifierExpressionNode(new IdentifierNode("params")), new IdentifierExpressionNode(new IdentifierNode("options")) }.ToImmutableList()
@@ -381,7 +400,7 @@ public sealed class TanStackQueryHookAstBuilder
         {
             new VariableDeclarationStatementNode(
                 new IdentifierNode("queryOptions"),
-                null,
+                new SimpleTypeNode(optionsResultType, isPrimitive: false),
                 new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode($"get{hookBaseName}QueryOptions")), getOptsArgs)),
             new ExpressionStatementNode(new AwaitExpressionNode(new CallExpressionNode(
                 new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("queryClient")), new IdentifierNode("prefetchQuery")),
@@ -391,32 +410,30 @@ public sealed class TanStackQueryHookAstBuilder
 
         var parameters = new List<ParameterDeclarationNode>
         {
-            new(new IdentifierNode("queryClient"), new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false), isRequired: true)
+            new(new IdentifierNode("queryClient"), TanStackQueryTypeBuilder.SimpleType("QueryClient"), isRequired: true)
         };
-        if (hasParams && paramsTypeName != null)
-            parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true));
-        parameters.Add(new ParameterDeclarationNode(
-            new IdentifierNode("options"),
-            new RawTypeNode($"Parameters<typeof get{hookBaseName}QueryOptions>[1]"),
-            isRequired: false,
-            documentation: new CommentNode("query: UseQueryOptions, request: AxiosRequestConfig", CommentKind.JSDoc)));
+        if (hasParams && paramsType != null)
+            parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: true));
+        parameters.Add(new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(optionsParamsType, isPrimitive: false), isRequired: false));
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"prefetch{hookBaseName}Query"),
-            returnType: null,
+            returnType: _typeBuilder.BuildPromiseQueryClientType(),
             parameters: parameters.ToImmutableList(),
             body: body,
             isArrowFunction: true,
             isAsync: true,
-            documentation: new CommentNode("Prefetches data into cache. Call before navigation for instant display.", CommentKind.JSDoc),
+            documentation: new CommentNode("Prefetches data into cache.", CommentKind.JSDoc),
             isExported: true);
     }
 
     private FunctionDeclarationNode BuildPrefetchInfiniteQueryFn(
         IrOperation operation,
         string hookBaseName,
-        string? paramsTypeName,
-        bool hasParams)
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType)
     {
         var getOptsArgs = hasParams
             ? new[] { new IdentifierExpressionNode(new IdentifierNode("params")), new IdentifierExpressionNode(new IdentifierNode("options")) }.ToImmutableList()
@@ -426,7 +443,7 @@ public sealed class TanStackQueryHookAstBuilder
         {
             new VariableDeclarationStatementNode(
                 new IdentifierNode("queryOptions"),
-                null,
+                new SimpleTypeNode(optionsResultType, isPrimitive: false),
                 new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode($"get{hookBaseName}InfiniteQueryOptions")), getOptsArgs)),
             new ExpressionStatementNode(new AwaitExpressionNode(new CallExpressionNode(
                 new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("queryClient")), new IdentifierNode("prefetchInfiniteQuery")),
@@ -436,28 +453,24 @@ public sealed class TanStackQueryHookAstBuilder
 
         var parameters = new List<ParameterDeclarationNode>
         {
-            new(new IdentifierNode("queryClient"), new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false), isRequired: true)
+            new(new IdentifierNode("queryClient"), TanStackQueryTypeBuilder.SimpleType("QueryClient"), isRequired: true)
         };
-        if (hasParams && paramsTypeName != null)
-            parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true));
-        parameters.Add(new ParameterDeclarationNode(
-            new IdentifierNode("options"),
-            new RawTypeNode($"Parameters<typeof get{hookBaseName}InfiniteQueryOptions>[1]"),
-            isRequired: false,
-            documentation: new CommentNode("query: UseInfiniteQueryOptions, request: AxiosRequestConfig", CommentKind.JSDoc)));
+        if (hasParams && paramsType != null)
+            parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: true));
+        parameters.Add(new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(optionsParamsType, isPrimitive: false), isRequired: false));
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"prefetch{hookBaseName}InfiniteQuery"),
-            returnType: null,
+            returnType: _typeBuilder.BuildPromiseQueryClientType(),
             parameters: parameters.ToImmutableList(),
             body: body,
             isArrowFunction: true,
             isAsync: true,
-            documentation: new CommentNode("Prefetches infinite query data. Use for preloading next pages.", CommentKind.JSDoc),
+            documentation: new CommentNode("Prefetches infinite query data.", CommentKind.JSDoc),
             isExported: true);
     }
 
-    private FunctionDeclarationNode BuildUseIsFetchingFn(string hookBaseName, string? paramsTypeName, bool hasParams)
+    private FunctionDeclarationNode BuildUseIsFetchingFn(string hookBaseName, TypeNode? paramsType, bool hasParams)
     {
         var getKeyCall = new CallExpressionNode(
             new IdentifierExpressionNode(new IdentifierNode($"get{hookBaseName}QueryKey")),
@@ -470,13 +483,13 @@ public sealed class TanStackQueryHookAstBuilder
                 new[] { new ObjectLiteralExpressionNode(new[] { new PropertyAssignmentNode(new IdentifierNode("queryKey"), getKeyCall) }.ToImmutableList()) }.ToImmutableList()))
         }.ToImmutableList());
 
-        var parameters = hasParams && paramsTypeName != null
-            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: false) }.ToImmutableList()
+        var parameters = hasParams && paramsType != null
+            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: false) }.ToImmutableList()
             : ImmutableList<ParameterDeclarationNode>.Empty;
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"useIsFetching{hookBaseName}"),
-            returnType: null,
+            returnType: TanStackQueryTypeBuilder.SimpleType("number", isPrimitive: true),
             parameters: parameters,
             body: body,
             isArrowFunction: true,
@@ -484,86 +497,82 @@ public sealed class TanStackQueryHookAstBuilder
             isExported: true);
     }
 
-    private static IReadOnlyList<ParameterDeclarationNode> BuildUseQueryParams(string? paramsTypeName, bool hasParams, string getOptionsFnName)
+    private static IReadOnlyList<ParameterDeclarationNode> BuildUseQueryParams(
+        TypeNode? paramsType,
+        bool hasParams,
+        IdentifierNode optionsParamsType)
     {
         var list = new List<ParameterDeclarationNode>();
-        if (hasParams && paramsTypeName != null)
-            list.Add(new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true));
-        list.Add(new ParameterDeclarationNode(
-            new IdentifierNode("options"),
-            new RawTypeNode($"Parameters<typeof {getOptionsFnName}>[1]"),
-            isRequired: false,
-            documentation: new CommentNode("query: UseQueryOptions, request: AxiosRequestConfig", CommentKind.JSDoc)));
-        list.Add(new ParameterDeclarationNode(
-            new IdentifierNode("queryClient"),
-            new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false),
-            isRequired: false,
-            documentation: new CommentNode("Uses default QueryClient if not provided", CommentKind.JSDoc)));
+        if (hasParams && paramsType != null)
+            list.Add(new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: true));
+        list.Add(new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(optionsParamsType, isPrimitive: false), isRequired: false));
+        list.Add(new ParameterDeclarationNode(new IdentifierNode("queryClient"), TanStackQueryTypeBuilder.SimpleType("QueryClient"), isRequired: false));
         return list;
     }
 
     private FunctionDeclarationNode BuildGetMutationOptionsFn(
         IrOperation operation,
         string hookBaseName,
-        string variablesType)
+        TypeNode variablesType,
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType)
     {
         var mutationKey = new ArrayLiteralExpressionNode(
             new[] { new LiteralExpressionNode(_namingConverter.ToCamelCase(operation.MethodName), LiteralKind.String) }.ToImmutableList());
 
-        var mutationFnBody = new CallExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode(operation.MethodName)),
-            new[] { new IdentifierExpressionNode(new IdentifierNode("variables")), new IdentifierExpressionNode(new IdentifierNode("requestOptions")) }.ToImmutableList());
-
         var mutationFn = new ArrowFunctionExpressionNode(
-            new[] { new ParameterDeclarationNode(new IdentifierNode("variables"), new SimpleTypeNode(new IdentifierNode(variablesType), isPrimitive: false), isRequired: true) }.ToImmutableList(),
-            mutationFnBody);
+            new[] { new ParameterDeclarationNode(new IdentifierNode("variables"), variablesType, isRequired: true) }.ToImmutableList(),
+            new CallExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode(operation.MethodName)),
+                new[] { new IdentifierExpressionNode(new IdentifierNode("variables")), new IdentifierExpressionNode(new IdentifierNode("requestOptions")) }.ToImmutableList()));
+
+        var resultObj = new ObjectLiteralExpressionNode(new PropertyAssignmentNode[]
+        {
+            new(new IdentifierNode("mutationKey"), mutationKey),
+            new(new IdentifierNode("mutationFn"), mutationFn),
+        }.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true);
 
         var body = new BlockNode(new StatementNode[]
         {
             new VariableDeclarationStatementNode(
                 new IdentifierNode("requestOptions"),
-                null,
+                _typeBuilder.BuildRequestOptionsType(),
                 new MemberAccessExpressionNode(
                     new BinaryExpressionNode(
                         new IdentifierExpressionNode(new IdentifierNode("options")),
                         BinaryOperator.NullishCoalescing,
                         new ObjectLiteralExpressionNode(ImmutableList<PropertyAssignmentNode>.Empty)),
                     new IdentifierNode("request"))),
-            new ReturnStatementNode(new ObjectLiteralExpressionNode(new PropertyAssignmentNode[]
-            {
-                new PropertyAssignmentNode(new IdentifierNode("mutationKey"), mutationKey),
-                new PropertyAssignmentNode(new IdentifierNode("mutationFn"), mutationFn),
-            }.ToImmutableList()))
+            new VariableDeclarationStatementNode(
+                new IdentifierNode("result"),
+                new SimpleTypeNode(optionsResultType, isPrimitive: false),
+                resultObj),
+            new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("result")))
         }.ToImmutableList());
 
-        var mutationOptionsType = $"{{ mutation?: UseMutationOptions<NonNullable<Awaited<ReturnType<typeof {operation.MethodName}>>>, Error, {variablesType}>; request?: AxiosRequestConfig }}";
         return new FunctionDeclarationNode(
             new IdentifierNode($"get{hookBaseName}MutationOptions"),
-            returnType: null,
-            parameters: new[]
-            {
-                new ParameterDeclarationNode(
-                    new IdentifierNode("options"),
-                    new RawTypeNode(mutationOptionsType),
-                    isRequired: false,
-                    documentation: new CommentNode("mutation: UseMutationOptions, request: AxiosRequestConfig", CommentKind.JSDoc))
-            }.ToImmutableList(),
+            returnType: new SimpleTypeNode(optionsResultType, isPrimitive: false),
+            parameters: new[] { new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(optionsParamsType, isPrimitive: false), isRequired: false) }.ToImmutableList(),
             body: body,
             isArrowFunction: true,
-            documentation: new CommentNode("Options for useMutation. Contains mutationKey and mutationFn.", CommentKind.JSDoc),
+            documentation: new CommentNode("Options for useMutation.", CommentKind.JSDoc),
             isExported: true);
     }
 
     private FunctionDeclarationNode BuildUseMutationFn(
         IrOperation operation,
         string hookBaseName,
-        string variablesType)
+        IdentifierNode optionsParamsType,
+        IdentifierNode optionsResultType,
+        TypeNode dataType,
+        TypeNode variablesType)
     {
         var body = new BlockNode(new StatementNode[]
         {
             new VariableDeclarationStatementNode(
                 new IdentifierNode("mutationOptions"),
-                null,
+                new SimpleTypeNode(optionsResultType, isPrimitive: false),
                 new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode($"get{hookBaseName}MutationOptions")), new[] { new IdentifierExpressionNode(new IdentifierNode("options")) }.ToImmutableList())),
             new ReturnStatementNode(new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("useMutation")),
@@ -572,23 +581,15 @@ public sealed class TanStackQueryHookAstBuilder
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"use{hookBaseName}"),
-            returnType: null,
-            parameters: new ParameterDeclarationNode[]
+            returnType: _typeBuilder.BuildUseMutationResultType(dataType, variablesType),
+            parameters: new[]
             {
-                new ParameterDeclarationNode(
-                    new IdentifierNode("options"),
-                    new RawTypeNode($"Parameters<typeof get{hookBaseName}MutationOptions>[1]"),
-                    isRequired: false,
-                    documentation: new CommentNode("mutation: UseMutationOptions, request: AxiosRequestConfig", CommentKind.JSDoc)),
-                new ParameterDeclarationNode(
-                    new IdentifierNode("queryClient"),
-                    new SimpleTypeNode(new IdentifierNode("QueryClient"), isPrimitive: false),
-                    isRequired: false,
-                    documentation: new CommentNode("Uses default QueryClient if not provided", CommentKind.JSDoc))
+                new ParameterDeclarationNode(new IdentifierNode("options"), new SimpleTypeNode(optionsParamsType, isPrimitive: false), isRequired: false),
+                new ParameterDeclarationNode(new IdentifierNode("queryClient"), TanStackQueryTypeBuilder.SimpleType("QueryClient"), isRequired: false)
             }.ToImmutableList(),
             body: body,
             isArrowFunction: true,
-            documentation: new CommentNode("Mutation hook. Returns mutate function and status.", CommentKind.JSDoc),
+            documentation: new CommentNode("Mutation hook.", CommentKind.JSDoc),
             isExported: true);
     }
 
@@ -606,7 +607,7 @@ public sealed class TanStackQueryHookAstBuilder
 
         return new FunctionDeclarationNode(
             new IdentifierNode($"useIsMutating{hookBaseName}"),
-            returnType: null,
+            returnType: TanStackQueryTypeBuilder.SimpleType("number", isPrimitive: true),
             parameters: ImmutableList<ParameterDeclarationNode>.Empty,
             body: body,
             isArrowFunction: true,

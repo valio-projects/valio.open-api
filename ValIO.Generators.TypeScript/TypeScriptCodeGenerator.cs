@@ -310,7 +310,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         }
 
         // 4b. Генерация results файлов (discriminated union по status codes)
-        if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios)
+        // Нужны при Axios (endpoint возвращает Result) или при TanStack Query (hooks используют Result тип)
+        if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios || tsOptions.UseTanStackQuery)
         {
             var resultsFiles = GenerateResultsFiles(irDocument, config, tsOptions);
             foreach (var file in resultsFiles)

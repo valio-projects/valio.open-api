@@ -259,6 +259,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
+        if (node.Arguments.Count >= 2)
+        {
+            var indent = new string(' ', (_indentLevel + 1) * 4);
+            var closingIndent = new string(' ', _indentLevel * 4);
+            var argLines = node.Arguments.Select(a => indent + Visit(a));
+            return $"{target}(\n{string.Join(",\n", argLines)}\n{closingIndent})";
+        }
         var args = string.Join(", ", node.Arguments.Select(Visit));
         return $"{target}({args})";
     }
@@ -743,8 +750,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var exportKeyword = node.IsExported ? "export " : "";
         var asyncKeyword = node.IsAsync ? "async " : "";
         var functionKeyword = node.IsArrowFunction ? "" : "function ";
-        var parameters = string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
-        
+        var useMultilineParams = node.Parameters.Count >= 2;
+        var paramsIndent = new string(' ', (indentLevel + 1) * 4);
+        var parametersStr = useMultilineParams
+            ? "\n" + string.Join(",\n", node.Parameters.Select(p => paramsIndent + RenderParameterDeclaration(p))) + "\n" + new string(' ', indentLevel * 4)
+            : string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
+
         // Проверяем, является ли это type predicate (value is Type)
         string returnType;
         if (node.ReturnType != null)
@@ -773,12 +784,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             {
                 // Если тело состоит из одного return statement, рендерим как выражение
                 var bodyExpression = Visit(returnStmt.Value);
-                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parameters}){returnType} => {bodyExpression};");
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parametersStr}){returnType} => {bodyExpression};");
             }
             else
             {
                 // Arrow function с блоком
-                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parameters}){returnType} => {{");
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parametersStr}){returnType} => {{");
                 if (node.Body != null && node.Body.Statements.Count > 0)
                 {
                     var savedIndent = _indentLevel;
@@ -796,7 +807,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         else
         {
             // Обычная функция: function fn(params): returnType { body }
-            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Name}({parameters}){returnType} {{");
+            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Name}({parametersStr}){returnType} {{");
             if (node.Body != null && node.Body.Statements.Count > 0)
             {
                 var savedIndent = _indentLevel;
