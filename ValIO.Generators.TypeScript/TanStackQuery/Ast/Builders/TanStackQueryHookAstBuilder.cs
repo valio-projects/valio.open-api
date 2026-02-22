@@ -254,13 +254,6 @@ public sealed class TanStackQueryHookAstBuilder
         IdentifierNode optionsResultType,
         bool isInfinite)
     {
-        var tQueryKey = TanStackQueryTypeBuilder.TQueryKeyTypeParameter;
-        var queryKeyConstraint = _typeBuilder.BuildQueryKeyReturnType();
-        var genericParams = new[]
-        {
-            new GenericParameterNode(new IdentifierNode("TQueryKey"), queryKeyConstraint, queryKeyConstraint)
-        }.ToImmutableList();
-
         var optionsRef = new IdentifierExpressionNode(new IdentifierNode("options"));
         var queryOptsRef = new MemberAccessExpressionNode(optionsRef, new IdentifierNode("query"), useOptionalChaining: true);
         var queryKeyFromOpts = new MemberAccessExpressionNode(queryOptsRef, new IdentifierNode("queryKey"), useOptionalChaining: true);
@@ -285,8 +278,11 @@ public sealed class TanStackQueryHookAstBuilder
             new IdentifierExpressionNode(new IdentifierNode(operation.MethodName)),
             apiCallArgs.ToImmutableList());
 
+        var contextType = isInfinite
+            ? _typeBuilder.BuildQueryFunctionContextForInfiniteType()
+            : _typeBuilder.BuildQueryFunctionContextType();
         var queryFnArrow = new ArrowFunctionExpressionNode(
-            new[] { new ParameterDeclarationNode(new IdentifierNode("context"), _typeBuilder.BuildQueryFunctionContextType(tQueryKey), isRequired: true) }.ToImmutableList(),
+            new[] { new ParameterDeclarationNode(new IdentifierNode("context"), contextType, isRequired: true) }.ToImmutableList(),
             queryFnExpr);
 
         var returnObjProps = new List<PropertyAssignmentNode>
@@ -304,8 +300,8 @@ public sealed class TanStackQueryHookAstBuilder
         var returnObj = new ObjectLiteralExpressionNode(returnObjProps.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true);
 
         var resultType = isInfinite
-            ? _typeBuilder.BuildUseInfiniteQueryOptionsWithQueryKey(dataType, tQueryKey)
-            : _typeBuilder.BuildUseQueryOptionsWithQueryKey(dataType, tQueryKey);
+            ? _typeBuilder.BuildUseInfiniteQueryOptionsType(dataType)
+            : _typeBuilder.BuildUseQueryOptionsType(dataType);
         var statements = new List<StatementNode>
         {
             queryKeyVar,
@@ -325,8 +321,7 @@ public sealed class TanStackQueryHookAstBuilder
             body: new BlockNode(statements.ToImmutableList()),
             isArrowFunction: true,
             documentation: new CommentNode(isInfinite ? "Options for useInfiniteQuery." : "Options for useQuery.", CommentKind.JSDoc),
-            isExported: true,
-            genericParameters: genericParams);
+            isExported: true);
     }
 
     private FunctionDeclarationNode BuildUseQueryFn(
