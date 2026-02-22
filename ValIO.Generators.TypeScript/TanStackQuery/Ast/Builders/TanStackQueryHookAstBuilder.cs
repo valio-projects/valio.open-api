@@ -85,6 +85,7 @@ public sealed class TanStackQueryHookAstBuilder
                 new IdentifierNode("useIsFetching"),
                 new IdentifierNode("QueryClient"),
                 new IdentifierNode("QueryFunction"),
+                new IdentifierNode("QueryFunctionContext"),
                 new IdentifierNode("UseQueryOptions"),
                 new IdentifierNode("UseInfiniteQueryOptions"),
                 new IdentifierNode("UseQueryResult"),
@@ -133,8 +134,8 @@ public sealed class TanStackQueryHookAstBuilder
 
         decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}InfiniteQueryKey", pathParts, hasParams, paramsType, includeInfinite: true));
         decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}QueryKey", pathParts, hasParams, paramsType, includeInfinite: false));
-        decls.Add(BuildGetInfiniteQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, new IdentifierNode($"get{hookBaseName}InfiniteQueryKey"), new IdentifierNode($"get{hookBaseName}InfiniteQueryOptions"), infiniteQueryOptionsParamsType, infiniteQueryOptionsResultType));
-        decls.Add(BuildGetQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, new IdentifierNode($"get{hookBaseName}QueryKey"), new IdentifierNode($"get{hookBaseName}QueryOptions"), queryOptionsParamsType, queryOptionsResultType));
+        decls.Add(BuildGetInfiniteQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, dataType, new IdentifierNode($"get{hookBaseName}InfiniteQueryKey"), new IdentifierNode($"get{hookBaseName}InfiniteQueryOptions"), infiniteQueryOptionsParamsType, infiniteQueryOptionsResultType));
+        decls.Add(BuildGetQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, dataType, new IdentifierNode($"get{hookBaseName}QueryKey"), new IdentifierNode($"get{hookBaseName}QueryOptions"), queryOptionsParamsType, queryOptionsResultType));
         decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}QueryResult"), dataType));
         decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}QueryError"), TanStackQueryTypeBuilder.SimpleType("Error")));
         decls.Add(BuildUseQueryFn(operation, hookBaseName, paramsType, hasParams, queryOptionsParamsType, queryOptionsResultType, dataType));
@@ -218,12 +219,13 @@ public sealed class TanStackQueryHookAstBuilder
         string hookBaseName,
         TypeNode? paramsType,
         bool hasParams,
+        TypeNode dataType,
         IdentifierNode getQueryKeyFnName,
         IdentifierNode getQueryOptionsFnName,
         IdentifierNode optionsParamsType,
         IdentifierNode optionsResultType)
     {
-        return BuildGetQueryOptionsFnInternal(operation, hookBaseName, paramsType, hasParams, getQueryKeyFnName, getQueryOptionsFnName, optionsParamsType, optionsResultType, isInfinite: true);
+        return BuildGetQueryOptionsFnInternal(operation, hookBaseName, paramsType, hasParams, dataType, getQueryKeyFnName, getQueryOptionsFnName, optionsParamsType, optionsResultType, isInfinite: true);
     }
 
     private FunctionDeclarationNode BuildGetQueryOptionsFn(
@@ -231,12 +233,13 @@ public sealed class TanStackQueryHookAstBuilder
         string hookBaseName,
         TypeNode? paramsType,
         bool hasParams,
+        TypeNode dataType,
         IdentifierNode getQueryKeyFnName,
         IdentifierNode getQueryOptionsFnName,
         IdentifierNode optionsParamsType,
         IdentifierNode optionsResultType)
     {
-        return BuildGetQueryOptionsFnInternal(operation, hookBaseName, paramsType, hasParams, getQueryKeyFnName, getQueryOptionsFnName, optionsParamsType, optionsResultType, isInfinite: false);
+        return BuildGetQueryOptionsFnInternal(operation, hookBaseName, paramsType, hasParams, dataType, getQueryKeyFnName, getQueryOptionsFnName, optionsParamsType, optionsResultType, isInfinite: false);
     }
 
     private FunctionDeclarationNode BuildGetQueryOptionsFnInternal(
@@ -244,12 +247,20 @@ public sealed class TanStackQueryHookAstBuilder
         string hookBaseName,
         TypeNode? paramsType,
         bool hasParams,
+        TypeNode dataType,
         IdentifierNode getQueryKeyFnName,
         IdentifierNode getQueryOptionsFnName,
         IdentifierNode optionsParamsType,
         IdentifierNode optionsResultType,
         bool isInfinite)
     {
+        var tQueryKey = TanStackQueryTypeBuilder.TQueryKeyTypeParameter;
+        var queryKeyConstraint = _typeBuilder.BuildQueryKeyReturnType();
+        var genericParams = new[]
+        {
+            new GenericParameterNode(new IdentifierNode("TQueryKey"), queryKeyConstraint, queryKeyConstraint)
+        }.ToImmutableList();
+
         var optionsRef = new IdentifierExpressionNode(new IdentifierNode("options"));
         var queryOptsRef = new MemberAccessExpressionNode(optionsRef, new IdentifierNode("query"), useOptionalChaining: true);
         var queryKeyFromOpts = new MemberAccessExpressionNode(queryOptsRef, new IdentifierNode("queryKey"), useOptionalChaining: true);
@@ -275,7 +286,7 @@ public sealed class TanStackQueryHookAstBuilder
             apiCallArgs.ToImmutableList());
 
         var queryFnArrow = new ArrowFunctionExpressionNode(
-            new[] { new ParameterDeclarationNode(new IdentifierNode("context"), TanStackQueryTypeBuilder.SimpleType("object"), isRequired: true) }.ToImmutableList(),
+            new[] { new ParameterDeclarationNode(new IdentifierNode("context"), _typeBuilder.BuildQueryFunctionContextType(tQueryKey), isRequired: true) }.ToImmutableList(),
             queryFnExpr);
 
         var returnObjProps = new List<PropertyAssignmentNode>
@@ -292,11 +303,13 @@ public sealed class TanStackQueryHookAstBuilder
         }
         var returnObj = new ObjectLiteralExpressionNode(returnObjProps.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true);
 
-        var resultTypeRef = new SimpleTypeNode(optionsResultType, isPrimitive: false);
+        var resultType = isInfinite
+            ? _typeBuilder.BuildUseInfiniteQueryOptionsWithQueryKey(dataType, tQueryKey)
+            : _typeBuilder.BuildUseQueryOptionsWithQueryKey(dataType, tQueryKey);
         var statements = new List<StatementNode>
         {
             queryKeyVar,
-            new VariableDeclarationStatementNode(new IdentifierNode("result"), resultTypeRef, returnObj),
+            new VariableDeclarationStatementNode(new IdentifierNode("result"), resultType, returnObj),
             new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("result")))
         };
 
@@ -307,12 +320,13 @@ public sealed class TanStackQueryHookAstBuilder
 
         return new FunctionDeclarationNode(
             getQueryOptionsFnName,
-            returnType: resultTypeRef,
+            returnType: resultType,
             parameters: parameters.ToImmutableList(),
             body: new BlockNode(statements.ToImmutableList()),
             isArrowFunction: true,
             documentation: new CommentNode(isInfinite ? "Options for useInfiniteQuery." : "Options for useQuery.", CommentKind.JSDoc),
-            isExported: true);
+            isExported: true,
+            genericParameters: genericParams);
     }
 
     private FunctionDeclarationNode BuildUseQueryFn(

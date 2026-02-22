@@ -59,6 +59,14 @@ public sealed class TanStackQueryTypeBuilder
     public TypeNode BuildQueryKeyReturnType() =>
         ReadonlyArray(SimpleType("unknown", isPrimitive: true));
 
+    /// <summary>QueryFunctionContext&lt;TQueryKey&gt; для параметра context в queryFn</summary>
+    /// <param name="queryKeyType">Тип query key (по умолчанию readonly unknown[])</param>
+    public TypeNode BuildQueryFunctionContextType(TypeNode? queryKeyType = null) =>
+        GenericType("QueryFunctionContext", queryKeyType ?? BuildQueryKeyReturnType());
+
+    /// <summary>Тип для generic-параметра TQueryKey</summary>
+    public static TypeNode TQueryKeyTypeParameter => SimpleType("TQueryKey");
+
     public TypeNode BuildRequestOptionsType() =>
         Union(SimpleType("AxiosRequestConfig"), SimpleType("undefined", isPrimitive: true));
 
@@ -144,6 +152,17 @@ public sealed class TanStackQueryTypeBuilder
             ? GenericType("UseInfiniteQueryOptions", InfiniteData(dataType), SimpleType("Error"))
             : GenericType("UseQueryOptions", dataType, SimpleType("Error"));
         return new TypeAliasDeclarationNode(new IdentifierNode(name), type);
+    }
+
+    /// <summary>UseQueryOptions с generic TQueryKey для getXxxQueryOptions</summary>
+    public TypeNode BuildUseQueryOptionsWithQueryKey(TypeNode dataType, TypeNode queryKeyType) =>
+        GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, dataType, queryKeyType);
+
+    /// <summary>UseInfiniteQueryOptions с generic TQueryKey для getXxxInfiniteQueryOptions</summary>
+    public TypeNode BuildUseInfiniteQueryOptionsWithQueryKey(TypeNode dataType, TypeNode queryKeyType)
+    {
+        var infiniteData = InfiniteData(dataType);
+        return GenericType("UseInfiniteQueryOptions", infiniteData, SimpleType("Error"), infiniteData, queryKeyType, SimpleType("unknown", isPrimitive: true));
     }
 
     public TypeNode BuildUseQueryResultType(TypeNode dataType) =>

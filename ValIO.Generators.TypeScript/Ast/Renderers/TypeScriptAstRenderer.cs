@@ -750,6 +750,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var exportKeyword = node.IsExported ? "export " : "";
         var asyncKeyword = node.IsAsync ? "async " : "";
         var functionKeyword = node.IsArrowFunction ? "" : "function ";
+        var genericParamsStr = node.GenericParameters.Count > 0
+            ? "<" + string.Join(", ", node.GenericParameters.Select(VisitGenericParameter)) + ">"
+            : "";
         var useMultilineParams = node.Parameters.Count >= 2;
         var paramsIndent = new string(' ', (indentLevel + 1) * 4);
         var parametersStr = useMultilineParams
@@ -778,18 +781,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         
         if (node.IsArrowFunction)
         {
-            // Arrow function: const fn = (params) => body
-            // Для arrow function тело может быть выражением или блоком
+            // Arrow function: const fn = <T>(params) => body (generic после =, не после имени)
             if (node.Body != null && node.Body.Statements.Count == 1 && node.Body.Statements[0] is ReturnStatementNode returnStmt && returnStmt.Value != null)
             {
-                // Если тело состоит из одного return statement, рендерим как выражение
                 var bodyExpression = Visit(returnStmt.Value);
-                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parametersStr}){returnType} => {bodyExpression};");
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {genericParamsStr}{asyncKeyword}({parametersStr}){returnType} => {bodyExpression};");
             }
             else
             {
-                // Arrow function с блоком
-                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}({parametersStr}){returnType} => {{");
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {genericParamsStr}{asyncKeyword}({parametersStr}){returnType} => {{");
                 if (node.Body != null && node.Body.Statements.Count > 0)
                 {
                     var savedIndent = _indentLevel;
@@ -807,7 +807,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         else
         {
             // Обычная функция: function fn(params): returnType { body }
-            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Name}({parametersStr}){returnType} {{");
+            CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}{asyncKeyword}{functionKeyword}{node.Name.Name}{genericParamsStr}({parametersStr}){returnType} {{");
             if (node.Body != null && node.Body.Statements.Count > 0)
             {
                 var savedIndent = _indentLevel;

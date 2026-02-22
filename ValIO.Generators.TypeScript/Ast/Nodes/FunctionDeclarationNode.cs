@@ -66,6 +66,11 @@ public sealed class FunctionDeclarationNode : DeclarationNode
     /// </summary>
     public string? Todo { get; }
     
+    /// <summary>
+    /// Generic параметры функции (например, TQueryKey extends readonly unknown[])
+    /// </summary>
+    public IReadOnlyList<GenericParameterNode> GenericParameters { get; }
+    
     public override AstNodeKind Kind => AstNodeKind.FunctionDeclaration;
     
     public override IReadOnlyList<AstNode> Children
@@ -76,6 +81,7 @@ public sealed class FunctionDeclarationNode : DeclarationNode
             if (Documentation != null)
                 children.Add(Documentation);
             children.AddRange(Attributes);
+            children.AddRange(GenericParameters);
             if (ReturnType != null)
                 children.Add(ReturnType);
             children.AddRange(Parameters);
@@ -103,7 +109,8 @@ public sealed class FunctionDeclarationNode : DeclarationNode
         string? typePredicateParameterName = null,
         bool isDeprecated = false,
         string? example = null,
-        string? todo = null)
+        string? todo = null,
+        IReadOnlyList<GenericParameterNode>? genericParameters = null)
         : base(name, documentation, attributes, metadata)
     {
         ReturnType = returnType;
@@ -117,6 +124,7 @@ public sealed class FunctionDeclarationNode : DeclarationNode
         IsDeprecated = isDeprecated;
         Example = example;
         Todo = todo;
+        GenericParameters = genericParameters?.ToImmutableList() ?? ImmutableList<GenericParameterNode>.Empty;
     }
     
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -145,6 +153,7 @@ public sealed class FunctionDeclarationNode : DeclarationNode
             TypePredicateParameterName,
             IsDeprecated,
             Example,
-            Todo);
+            Todo,
+            GenericParameters.Select(g => (GenericParameterNode)g.Clone()).ToImmutableList());
     }
 }
