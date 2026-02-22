@@ -18,7 +18,7 @@
           "enumFormat": "Enum",
           "useStrictNullChecks": true,
           "axios": {
-            "customInstancePath": "#shared/api/valioAxios",
+            "customInstancePath": "@app/valioAxios.ts",
             "customInstanceName": "ValioAxiosClient"
           }
         }
@@ -55,7 +55,7 @@
           "enumFormat": "Enum",
           "useStrictNullChecks": true,
           "axios": {
-            "customInstancePath": "#shared/api/valioAxios",
+            "customInstancePath": "@app/valioAxios.ts",
             "customInstanceName": "ValioAxiosClient"
           }
         }

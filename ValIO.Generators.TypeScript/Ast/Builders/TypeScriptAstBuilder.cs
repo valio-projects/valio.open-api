@@ -848,6 +848,28 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
 
     /// <summary>
+    /// Возвращает имя axios instance и соответствующий ImportNode.
+    /// Если заданы customInstancePath и customInstanceName — использует кастомный instance, иначе global axios.
+    /// </summary>
+    private (string InstanceName, ImportNode Import) GetAxiosInstanceImport()
+    {
+        var axios = _options?.Axios;
+        var path = axios?.CustomInstancePath;
+        var name = axios?.CustomInstanceName;
+        if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name))
+        {
+            return (name, new ImportNode(
+                items: new[] { new IdentifierNode(name) }.ToImmutableList(),
+                from: path,
+                kind: ImportKind.Named));
+        }
+        return ("axios", new ImportNode(
+            items: new[] { new IdentifierNode("axios") }.ToImmutableList(),
+            from: "axios",
+            kind: ImportKind.Default));
+    }
+
+    /// <summary>
     /// Добавляет импорты axios и params
     /// </summary>
     private IReadOnlyList<ImportNode> AddAxiosAndParamsImports(
@@ -857,11 +879,8 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var result = new List<ImportNode>();
 
-        // import axios from "axios"
-        result.Add(new ImportNode(
-            items: new[] { new IdentifierNode("axios") }.ToImmutableList(),
-            from: "axios",
-            kind: ImportKind.Default));
+        var (axiosInstanceName, axiosInstanceImport) = GetAxiosInstanceImport();
+        result.Add(axiosInstanceImport);
 
         result.Add(new ImportNode(
             items: new[] { new IdentifierNode("AxiosRequestConfig") }.ToImmutableList(),
@@ -1160,8 +1179,9 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             type: axiosConfigGeneric,
             initializer: new ObjectLiteralExpressionNode(mergedConfigProps.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true)));
 
+        var (axiosInstanceName, _) = GetAxiosInstanceImport();
         var axiosCall = new Axios.Ast.Nodes.AxiosCallExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode("axios")),
+            new IdentifierExpressionNode(new IdentifierNode(axiosInstanceName)),
             new IdentifierExpressionNode(new IdentifierNode("axiosConfig")));
 
         statements.Add(CreateBlankLineStatement());
