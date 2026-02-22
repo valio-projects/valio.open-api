@@ -77,6 +77,7 @@ public sealed class TanStackQueryHookAstBuilder
                 new IdentifierNode("UseMutationOptions"),
                 new IdentifierNode("UseMutationResult"),
                 new IdentifierNode("MutationFunction"),
+                new IdentifierNode("MutationFunctionContext"),
             }
             : new[]
             {
@@ -529,8 +530,10 @@ public sealed class TanStackQueryHookAstBuilder
         var mutationKey = new ArrayLiteralExpressionNode(
             new[] { new LiteralExpressionNode(_namingConverter.ToCamelCase(operation.MethodName), LiteralKind.String) }.ToImmutableList());
 
+        // MutationFunction<TData, TVariables> = (variables, context: MutationFunctionContext) => Promise<TData>
+        var contextParam = new ParameterDeclarationNode(new IdentifierNode("_context"), _typeBuilder.BuildMutationFunctionContextType(), isRequired: true);
         var mutationFn = new ArrowFunctionExpressionNode(
-            new[] { new ParameterDeclarationNode(new IdentifierNode("variables"), variablesType, isRequired: true) }.ToImmutableList(),
+            new[] { new ParameterDeclarationNode(new IdentifierNode("variables"), variablesType, isRequired: true), contextParam }.ToImmutableList(),
             new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode(operation.MethodName)),
                 new[] { new IdentifierExpressionNode(new IdentifierNode("variables")), new IdentifierExpressionNode(new IdentifierNode("requestOptions")) }.ToImmutableList()));

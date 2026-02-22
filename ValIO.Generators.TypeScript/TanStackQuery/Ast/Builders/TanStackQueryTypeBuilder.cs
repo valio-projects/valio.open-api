@@ -67,6 +67,10 @@ public sealed class TanStackQueryTypeBuilder
     public TypeNode BuildQueryFunctionContextForInfiniteType() =>
         GenericType("QueryFunctionContext", BuildQueryKeyReturnType(), SimpleType("number", isPrimitive: true));
 
+    /// <summary>MutationFunctionContext для mutationFn (variables, context) => Promise&lt;TData&gt;</summary>
+    public TypeNode BuildMutationFunctionContextType() =>
+        SimpleType("MutationFunctionContext");
+
     public TypeNode BuildRequestOptionsType() =>
         Union(SimpleType("AxiosRequestConfig"), SimpleType("undefined", isPrimitive: true));
 
@@ -75,6 +79,7 @@ public sealed class TanStackQueryTypeBuilder
         TypeNode dataType,
         TypeNode variablesType)
     {
+        // UseMutationOptions<TData, TError, TVariables, TOnMutateResult>
         var mutationOptionsType = GenericType("UseMutationOptions", dataType, SimpleType("Error"), variablesType);
         return new InterfaceDeclarationNode(
             name: new IdentifierNode($"Get{hookBaseName}MutationOptionsParams"),
@@ -98,7 +103,8 @@ public sealed class TanStackQueryTypeBuilder
         TypeNode dataType,
         TypeNode variablesType)
     {
-        var mutationFnType = GenericType("MutationFunction", dataType, SimpleType("Error"), variablesType);
+        // MutationFunction<TData, TVariables> = (variables, context) => Promise<TData>
+        var mutationFnType = GenericType("MutationFunction", dataType, variablesType);
         var mutationKeyType = ReadonlyArray(SimpleType("string", isPrimitive: true));
         return new InterfaceDeclarationNode(
             name: new IdentifierNode($"Get{hookBaseName}MutationOptionsResult"),
@@ -123,9 +129,11 @@ public sealed class TanStackQueryTypeBuilder
         bool isInfinite)
     {
         var queryKeyType = BuildQueryKeyReturnType();
+        // UseQueryOptions<TQueryFnData, TError, TData, TQueryKey> - 4 params
+        // UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam> - 5 params
         TypeNode queryPropType = isInfinite
             ? Partial(GenericType("UseInfiniteQueryOptions", dataType, SimpleType("Error"), InfiniteData(dataType), queryKeyType, SimpleType("number", isPrimitive: true)))
-            : Partial(GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, dataType, queryKeyType));
+            : Partial(GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, queryKeyType));
         return new InterfaceDeclarationNode(
             name: new IdentifierNode($"Get{hookBaseName}{(isInfinite ? "Infinite" : "")}QueryOptionsParams"),
             accessModifier: AccessModifier.Public,
@@ -152,13 +160,13 @@ public sealed class TanStackQueryTypeBuilder
         var queryKeyType = BuildQueryKeyReturnType();
         var type = isInfinite
             ? GenericType("UseInfiniteQueryOptions", dataType, SimpleType("Error"), InfiniteData(dataType), queryKeyType, SimpleType("number", isPrimitive: true))
-            : GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, dataType, queryKeyType);
+            : GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, queryKeyType);
         return new TypeAliasDeclarationNode(new IdentifierNode(name), type);
     }
 
-    /// <summary>UseQueryOptions для getXxxQueryOptions (queryKey из getXxxQueryKey)</summary>
+    /// <summary>UseQueryOptions для getXxxQueryOptions (4 params: TQueryFnData, TError, TData, TQueryKey)</summary>
     public TypeNode BuildUseQueryOptionsType(TypeNode dataType) =>
-        GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, dataType, BuildQueryKeyReturnType());
+        GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, BuildQueryKeyReturnType());
 
     /// <summary>UseInfiniteQueryOptions для getXxxInfiniteQueryOptions (TQueryFnData=page, TPageParam=number)</summary>
     public TypeNode BuildUseInfiniteQueryOptionsType(TypeNode dataType)
