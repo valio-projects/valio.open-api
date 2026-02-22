@@ -40,16 +40,17 @@ public class GenerateCommand : Command
             Description = "Path to configuration file (JSON or YAML)"
         };
 
-        var projectOption = new Option<string?>("--project", "-p")
+        var projectsOption = new Option<string[]>("--projects", "-p")
         {
-            Description = "Project name from configuration file (required if using config with multiple projects)"
+            Description = "Project name(s) from configuration file. If omitted, all projects from config are run.",
+            AllowMultipleArgumentsPerToken = true
         };
 
         Options.Add(schemaOption);
         Options.Add(outputOption);
         Options.Add(languageOption);
         Options.Add(configOption);
-        Options.Add(projectOption);
+        Options.Add(projectsOption);
 
         SetAction(async (ParseResult parseResult) =>
         {
@@ -57,7 +58,7 @@ public class GenerateCommand : Command
             var output = parseResult.GetValue(outputOption);
             var language = parseResult.GetValue(languageOption);
             var configFile = parseResult.GetValue(configOption);
-            var projectName = parseResult.GetValue(projectOption);
+            var projectNames = parseResult.GetValue(projectsOption) ?? Array.Empty<string>();
 
             var logger = serviceProvider.GetRequiredService<ILogger<GenerateCommand>>();
             var parser = serviceProvider.GetRequiredService<IOpenApiDocumentParser>();
@@ -76,54 +77,91 @@ public class GenerateCommand : Command
                     var config = await configLoader.LoadConfigFromFileAsync(configFile.FullName);
                     logger.LogInformation("Configuration loaded from: {ConfigPath}", configFile.FullName);
 
-                    // Определяем какой проект использовать
                     if (config.Projects.Count == 0)
                     {
                         logger.LogError("Configuration file contains no projects");
                         return 1;
                     }
 
-                    if (config.Projects.Count == 1)
+                    // Определяем список проектов для генерации
+                    var projectsToRun = projectNames.Length > 0
+                        ? projectNames.Where(name => config.Projects.ContainsKey(name)).ToList()
+                        : config.Projects.Keys.ToList();
+
+                    var notFound = projectNames.Where(name => !config.Projects.ContainsKey(name)).ToList();
+                    if (notFound.Count > 0)
                     {
-                        // Если проект один, используем его
-                        projectConfig = config.Projects.Values.First();
-                        projectName = config.Projects.Keys.First();
-                        logger.LogInformation("Using project: {ProjectName}", projectName);
+                        logger.LogError("Project(s) not found: {Projects}. Available: {Available}",
+                            string.Join(", ", notFound), string.Join(", ", config.Projects.Keys));
+                        return 1;
                     }
-                    else
+
+                    var totalFiles = 0;
+                    var hasErrors = false;
+
+                    foreach (var projName in projectsToRun)
                     {
-                        // Если проектов несколько, нужен --project
-                        if (string.IsNullOrWhiteSpace(projectName))
+                        projectConfig = config.Projects[projName];
+                        logger.LogInformation("Using project: {ProjectName}", projName);
+
+                        var projSchema = string.IsNullOrWhiteSpace(schema) ? projectConfig.Schema : schema;
+                        var projOutput = string.IsNullOrWhiteSpace(output) ? projectConfig.OutputPath : output;
+
+                        generationConfig = configLoader.MapToGenerationConfiguration(projectConfig);
+                        generationConfig.OutputPath = projOutput;
+
+                        var projValidation = configValidator.Validate(generationConfig);
+                        if (!projValidation.IsValid)
                         {
-                            logger.LogError("Multiple projects found in configuration. Please specify --project option. Available projects: {Projects}",
-                                string.Join(", ", config.Projects.Keys));
-                            return 1;
+                            logger.LogError("Configuration validation failed for {Project}: {Errors}",
+                                projName, string.Join(", ", projValidation.Errors));
+                            hasErrors = true;
+                            continue;
                         }
 
-                        if (!config.Projects.TryGetValue(projectName, out projectConfig))
+                        foreach (var warning in projValidation.Warnings)
+                            logger.LogWarning(warning);
+
+                        logger.LogInformation("Parsing OpenAPI schema from: {Schema}", projSchema);
+                        OpenApiDocument doc;
+                        if (Uri.TryCreate(projSchema, UriKind.Absolute, out var schemaUri) &&
+                            (schemaUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
+                             schemaUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
+                             schemaUri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
                         {
-                            logger.LogError("Project '{ProjectName}' not found in configuration. Available projects: {Projects}",
-                                projectName, string.Join(", ", config.Projects.Keys));
-                            return 1;
+                            doc = await parser.ParseFromUrlAsync(projSchema);
+                        }
+                        else
+                        {
+                            doc = await parser.ParseFromFileAsync(projSchema);
                         }
 
-                        logger.LogInformation("Using project: {ProjectName}", projectName);
+                        logger.LogInformation("OpenAPI document parsed successfully for {Project}", projName);
+                        var gen = factory.CreateGenerator(generationConfig.Language, generationConfig.Options);
+                        logger.LogInformation("Using generator for language: {Language}", generationConfig.Language);
+                        logger.LogInformation("Generating code to: {Output}", projOutput);
+                        var genResult = await gen.GenerateAsync(doc, generationConfig);
+
+                        if (genResult.Success)
+                        {
+                            totalFiles += genResult.GeneratedFiles.Count;
+                            logger.LogInformation("Code generation completed for {Project}. Generated {FileCount} files",
+                                projName, genResult.GeneratedFiles.Count);
+                            foreach (var w in genResult.Warnings)
+                                logger.LogWarning(w);
+                        }
+                        else
+                        {
+                            logger.LogError("Code generation failed for {Project}: {Errors}",
+                                projName, string.Join(", ", genResult.Errors));
+                            hasErrors = true;
+                        }
                     }
 
-                    // Используем schema из конфига, если не указан в аргументах
-                    if (string.IsNullOrWhiteSpace(schema))
-                    {
-                        schema = projectConfig.Schema;
-                    }
-
-                    // Используем output из конфига, если не указан в аргументах
-                    if (string.IsNullOrWhiteSpace(output))
-                    {
-                        output = projectConfig.OutputPath;
-                    }
-
-                    // Преобразуем ProjectConfig в GenerationConfiguration
-                    generationConfig = configLoader.MapToGenerationConfiguration(projectConfig);
+                    if (hasErrors)
+                        return 1;
+                    logger.LogInformation("Code generation completed successfully. Total generated {FileCount} files", totalFiles);
+                    return 0;
                 }
                 else
                 {

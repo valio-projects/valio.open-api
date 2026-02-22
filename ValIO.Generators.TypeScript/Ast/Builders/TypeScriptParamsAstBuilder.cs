@@ -84,47 +84,56 @@ public sealed class TypeScriptParamsAstBuilder
         var hasHeaders = operation.HeaderParameters.Count > 0;
 
         var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasForm ? 1 : 0) + (hasHeaders ? 1 : 0);
+        var useFlatOnly = groupCount <= 1;
 
-        // Route под-интерфейс
-        if (hasRoute)
+        // Под-интерфейсы Route/Query/Headers — только при агрегатной структуре (groupCount > 1)
+        if (!useFlatOnly)
         {
-            var routeInterface = BuildRouteParamsInterface(operation);
-            declarations.Add(routeInterface);
+            if (hasRoute)
+            {
+                var routeInterface = BuildRouteParamsInterface(operation);
+                declarations.Add(routeInterface);
+            }
+
+            if (hasQuery)
+            {
+                var queryInterface = BuildQueryParamsInterface(operation);
+                declarations.Add(queryInterface);
+            }
+
+            if (hasHeaders)
+            {
+                var headersInterface = BuildHeadersParamsInterface(operation);
+                declarations.Add(headersInterface);
+            }
         }
 
-        // Query под-интерфейс
-        if (hasQuery)
-        {
-            var queryInterface = BuildQueryParamsInterface(operation);
-            declarations.Add(queryInterface);
-        }
-
-        // Headers под-интерфейс
-        if (hasHeaders)
-        {
-            var headersInterface = BuildHeadersParamsInterface(operation);
-            declarations.Add(headersInterface);
-        }
-
-        // Агрегирующий params интерфейс
-        var paramsInterface = groupCount <= 1
+        // Params: при groupCount <= 1 — плоская модель с properties и комментариями; иначе — агрегат
+        var paramsInterface = useFlatOnly
             ? BuildFlatParamsInterface(operation, hasBody, hasForm)
             : BuildAggregateParamsInterface(operation, hasRoute, hasQuery, hasBody, hasForm, hasHeaders);
 
         declarations.Add(paramsInterface);
 
-        // Импорты для типов body/form (относительный путь из папки операции)
+        // Импорты для типов body/form
         if (hasBody || hasForm)
         {
             var bodyTypeName = BodyParamsTypeName(rb!);
             if (bodyTypeName != "unknown")
             {
-                var modelFileName = _namingConverter.ToCamelCase(bodyTypeName);
-                var relativePath = $"../../{fileOrganization?.ModelsPath ?? "models"}/{modelFileName}/{modelFileName}";
-                imports.Add(new ImportNode(
-                    items: new[] { new IdentifierNode(bodyTypeName) }.ToImmutableList(),
-                    from: relativePath,
-                    kind: ImportKind.Named));
+                imports.Add(CreateModelImport(bodyTypeName, fileOrganization));
+            }
+        }
+
+        // Импорты для моделей/enums, используемых в route/query/header params
+        var paramDependencies = ExtractParamTypeDependencies(operation);
+        var importedNames = new HashSet<string>(imports.SelectMany(i => i.Items.Select(item => item.Name)));
+        foreach (var dep in paramDependencies)
+        {
+            if (!importedNames.Contains(dep))
+            {
+                importedNames.Add(dep);
+                imports.Add(CreateModelImport(dep, fileOrganization));
             }
         }
 
@@ -209,21 +218,24 @@ public sealed class TypeScriptParamsAstBuilder
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
                 type: _typeBuilder(param.Type),
-                isRequired: true));
+                isRequired: true,
+                documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
         foreach (var param in operation.QueryParameters)
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
                 type: _typeBuilder(param.Type),
-                isRequired: param.IsRequired));
+                isRequired: param.IsRequired,
+                documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
         foreach (var param in operation.HeaderParameters)
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
                 type: _typeBuilder(param.Type),
-                isRequired: param.IsRequired));
+                isRequired: param.IsRequired,
+                documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
 
         if (hasBody && operation.RequestBody != null)
@@ -333,5 +345,60 @@ public sealed class TypeScriptParamsAstBuilder
             || operation.QueryParameters.Count > 0
             || operation.HeaderParameters.Count > 0
             || operation.RequestBody != null;
+    }
+
+    /// <summary>Собирает имена моделей/enums из типов параметров route/query/headers.</summary>
+    private static IReadOnlyList<string> ExtractParamTypeDependencies(IrOperation operation)
+    {
+        var deps = new HashSet<string>();
+        foreach (var p in operation.PathParameters)
+            ExtractDependenciesFromIrType(p.Type, deps);
+        foreach (var p in operation.QueryParameters)
+            ExtractDependenciesFromIrType(p.Type, deps);
+        foreach (var p in operation.HeaderParameters)
+            ExtractDependenciesFromIrType(p.Type, deps);
+        return deps.ToList();
+    }
+
+    private static void ExtractDependenciesFromIrType(IrType type, HashSet<string> dependencies)
+    {
+        switch (type)
+        {
+            case IrModelReference modelRef:
+                dependencies.Add(modelRef.ModelName);
+                break;
+            case IrArrayType arrayType:
+                ExtractDependenciesFromIrType(arrayType.ElementType, dependencies);
+                break;
+            case IrDictionaryType dictType:
+                ExtractDependenciesFromIrType(dictType.KeyType, dependencies);
+                ExtractDependenciesFromIrType(dictType.ValueType, dependencies);
+                break;
+            case IrUnionType unionType:
+                foreach (var t in unionType.Types)
+                    ExtractDependenciesFromIrType(t, dependencies);
+                break;
+            case IrIntersectionType intersectionType:
+                foreach (var t in intersectionType.Types)
+                    ExtractDependenciesFromIrType(t, dependencies);
+                break;
+            case IrNullableType nullableType:
+                ExtractDependenciesFromIrType(nullableType.InnerType, dependencies);
+                break;
+            case IrOptionalType optionalType:
+                ExtractDependenciesFromIrType(optionalType.InnerType, dependencies);
+                break;
+        }
+    }
+
+    private ImportNode CreateModelImport(string typeName, FileOrganization? fileOrganization)
+    {
+        var modelFileName = _namingConverter.ToCamelCase(typeName);
+        var relativePath = $"../../{fileOrganization?.ModelsPath ?? "models"}/{modelFileName}/{modelFileName}";
+        return new ImportNode(
+            items: new[] { new IdentifierNode(typeName) }.ToImmutableList(),
+            from: relativePath,
+            kind: ImportKind.Named,
+            isTypeOnly: true);
     }
 }
