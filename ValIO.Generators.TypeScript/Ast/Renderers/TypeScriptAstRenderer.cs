@@ -196,6 +196,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             {
                 return $"{literalValue}{optionalStr}{nullableStr}";
             }
+            if (literalValue is bool b)
+            {
+                return $"{(b ? "true" : "false")}{optionalStr}{nullableStr}";
+            }
         }
 
         // Обычный тип
@@ -382,6 +386,17 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var right = Visit(node.Right);
         var op = GetBinaryOperator(node.Operator);
         return $"({left} {op} {right})";
+    }
+
+    public override string VisitUnaryExpression(UnaryExpressionNode node)
+    {
+        var operand = Visit(node.Operand);
+        return node.Operator switch
+        {
+            UnaryOperator.LogicalNot => $"!{operand}",
+            UnaryOperator.Negate => $"-{operand}",
+            _ => throw new NotSupportedException($"Unary operator {node.Operator} is not supported for TypeScript")
+        };
     }
     
     /// <summary>

@@ -75,25 +75,37 @@ public sealed class TypeScriptResultsAstBuilder
             {
                 var statusLiteral = ParseStatusCodeLiteral(response.StatusCode);
                 var bodyType = _typeBuilder(response.Type!);
+                var isSuccess = IsSuccessStatusCode(response.StatusCode);
 
                 var variantInterfaceName = ResultVariantInterfaceName(currentOperationName, response.StatusCode);
+                var members = new List<DeclarationNode>
+                {
+                    new PropertySignatureNode(
+                        new IdentifierNode("status"),
+                        statusLiteral,
+                        isRequired: true,
+                        documentation: new CommentNode($"HTTP {response.StatusCode}")),
+                    new PropertySignatureNode(
+                        new IdentifierNode("body"),
+                        bodyType,
+                        isRequired: true,
+                        documentation: new CommentNode(response.Description ?? $"Response body for {response.StatusCode}")),
+                    new PropertySignatureNode(
+                        new IdentifierNode("isSuccessful"),
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: isSuccess),
+                        isRequired: true,
+                        documentation: new CommentNode(isSuccess ? "True — response is 2xx" : "False — response is not 2xx")),
+                    new PropertySignatureNode(
+                        new IdentifierNode("isFailed"),
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: !isSuccess),
+                        isRequired: true,
+                        documentation: new CommentNode(isSuccess ? "False — response is 2xx" : "True — response is not 2xx"))
+                };
                 var variantInterface = new InterfaceDeclarationNode(
                     name: new IdentifierNode(variantInterfaceName),
                     accessModifier: AccessModifier.Public,
                     baseTypes: ImmutableList<TypeNode>.Empty,
-                    members: new List<DeclarationNode>
-                    {
-                        new PropertySignatureNode(
-                            new IdentifierNode("status"),
-                            statusLiteral,
-                            isRequired: true,
-                            documentation: new CommentNode($"HTTP {response.StatusCode}")),
-                        new PropertySignatureNode(
-                            new IdentifierNode("body"),
-                            bodyType,
-                            isRequired: true,
-                            documentation: new CommentNode(response.Description ?? $"Response body for {response.StatusCode}"))
-                    }.ToImmutableList(),
+                    members: members.ToImmutableList(),
                     documentation: new CommentNode($"Response variant for status {response.StatusCode}"));
 
                 declarations.Add(variantInterface);
@@ -117,7 +129,17 @@ public sealed class TypeScriptResultsAstBuilder
                         new IdentifierNode("body"),
                         new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
                         isRequired: true,
-                        documentation: new CommentNode("Response body for unhandled status"))
+                        documentation: new CommentNode("Response body for unhandled status")),
+                    new PropertySignatureNode(
+                        new IdentifierNode("isSuccessful"),
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: false),
+                        isRequired: true,
+                        documentation: new CommentNode("False — unhandled status")),
+                    new PropertySignatureNode(
+                        new IdentifierNode("isFailed"),
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: true),
+                        isRequired: true,
+                        documentation: new CommentNode("True — unhandled status"))
                 }.ToImmutableList(),
                 documentation: new CommentNode("Response for status codes not explicitly defined in OpenAPI schema"));
             declarations.Add(otherVariantInterface);
@@ -157,6 +179,15 @@ public sealed class TypeScriptResultsAstBuilder
             imports: imports.ToImmutableList(),
             exports: exports,
             declarations: declarations.ToImmutableList());
+    }
+
+    /// <summary>
+    /// Определяет, является ли status code успешным (2xx)
+    /// </summary>
+    private static bool IsSuccessStatusCode(string statusCode)
+    {
+        if (statusCode == "default") return false;
+        return int.TryParse(statusCode, out var code) && code >= 200 && code < 300;
     }
 
     /// <summary>

@@ -883,7 +883,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         result.Add(axiosInstanceImport);
 
         result.Add(new ImportNode(
-            items: new[] { new IdentifierNode("AxiosRequestConfig") }.ToImmutableList(),
+            items: new[] { new IdentifierNode("AxiosRequestConfig"), new IdentifierNode("AxiosInstance") }.ToImmutableList(),
             from: "axios",
             kind: ImportKind.Named,
             isTypeOnly: true));
@@ -1126,6 +1126,14 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             statements.Add(CreateBlankLineStatement());
         }
 
+        var (axiosInstanceName, _) = GetAxiosInstanceImport();
+        var axiosInstanceType = new SimpleTypeNode(new IdentifierNode("AxiosInstance"), isPrimitive: false);
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("axiosInstance"),
+            type: axiosInstanceType,
+            initializer: new IdentifierExpressionNode(new IdentifierNode(axiosInstanceName))));
+        statements.Add(CreateBlankLineStatement());
+
         var paramsSource = new Axios.Models.AxiosConfigParamsSource(routeSource, querySource, bodySource, headersSource);
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
         var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource);
@@ -1179,9 +1187,8 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             type: axiosConfigGeneric,
             initializer: new ObjectLiteralExpressionNode(mergedConfigProps.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true)));
 
-        var (axiosInstanceName, _) = GetAxiosInstanceImport();
         var axiosCall = new Axios.Ast.Nodes.AxiosCallExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode(axiosInstanceName)),
+            new IdentifierExpressionNode(new IdentifierNode("axiosInstance")),
             new IdentifierExpressionNode(new IdentifierNode("axiosConfig")));
 
         statements.Add(CreateBlankLineStatement());
@@ -1206,6 +1213,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             foreach (var resp in responsesWithType)
             {
                 var statusCode = int.Parse(resp.StatusCode);
+                var isSuccessful = statusCode >= 200 && statusCode < 300;
                 var modelRef = (IrModelReference)resp.Type!;
                 var schemaName = $"{modelRef.ModelName}Schema";
                 var dataAccess = new MemberAccessExpressionNode(
@@ -1219,7 +1227,11 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 {
                     new PropertyAssignmentNode(new IdentifierNode("status"),
                         new LiteralExpressionNode(statusCode, LiteralKind.Number)),
-                    new PropertyAssignmentNode(new IdentifierNode("body"), parseCall)
+                    new PropertyAssignmentNode(new IdentifierNode("body"), parseCall),
+                    new PropertyAssignmentNode(new IdentifierNode("isSuccessful"),
+                        new LiteralExpressionNode(isSuccessful, LiteralKind.Boolean)),
+                    new PropertyAssignmentNode(new IdentifierNode("isFailed"),
+                        new LiteralExpressionNode(!isSuccessful, LiteralKind.Boolean))
                 }.ToImmutableList());
 
                 var statusLiteral = new LiteralExpressionNode(statusCode, LiteralKind.Number);
@@ -1235,7 +1247,18 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 new ObjectLiteralExpressionNode(new[]
                 {
                     new PropertyAssignmentNode(new IdentifierNode("status"), responseStatusRef),
-                    new PropertyAssignmentNode(new IdentifierNode("body"), responseDataRef)
+                    new PropertyAssignmentNode(new IdentifierNode("body"), responseDataRef),
+                    new PropertyAssignmentNode(new IdentifierNode("isSuccessful"),
+                        new BinaryExpressionNode(
+                            new BinaryExpressionNode(responseStatusRef, BinaryOperator.GreaterThanOrEqual, new LiteralExpressionNode(200, LiteralKind.Number)),
+                            BinaryOperator.LogicalAnd,
+                            new BinaryExpressionNode(responseStatusRef, BinaryOperator.LessThan, new LiteralExpressionNode(300, LiteralKind.Number)))),
+                    new PropertyAssignmentNode(new IdentifierNode("isFailed"),
+                        new UnaryExpressionNode(UnaryOperator.LogicalNot,
+                            new BinaryExpressionNode(
+                                new BinaryExpressionNode(responseStatusRef, BinaryOperator.GreaterThanOrEqual, new LiteralExpressionNode(200, LiteralKind.Number)),
+                                BinaryOperator.LogicalAnd,
+                                new BinaryExpressionNode(responseStatusRef, BinaryOperator.LessThan, new LiteralExpressionNode(300, LiteralKind.Number)))))
                 }.ToImmutableList())));
         }
         else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
