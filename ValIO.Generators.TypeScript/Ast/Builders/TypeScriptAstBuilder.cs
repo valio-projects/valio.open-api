@@ -826,9 +826,10 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
         var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
-        var excludeResponseModels = _options?.HttpClientLibrary == HttpClientLibrary.Axios
-            && resultsAstBuilder.HasResponsesWithBody(operation);
-        var dependencies = ExtractDependencies(client, excludeResponseModels);
+        // При Axios работаем только с params — не добавляем импорты models/enums из path/query/header/body/response
+        var dependencies = _options?.HttpClientLibrary == HttpClientLibrary.Axios
+            ? Array.Empty<string>()
+            : ExtractDependencies(client, excludeResponseModels: false);
         var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
 
         // При Axios добавляем импорт axios и params
@@ -1110,9 +1111,8 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
         var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource);
 
-        var bodyTypeNode = operation.RequestBody?.Type is IrModelReference reqBodyModelRef
-            ? new SimpleTypeNode(new IdentifierNode(reqBodyModelRef.ModelName), isPrimitive: false)
-            : new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true);
+        // Используем unknown — не добавляем импорт модели body, работаем с params
+        var bodyTypeNode = new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true);
         var axiosConfigGeneric = new GenericTypeNode(
             new IdentifierNode("AxiosRequestConfig"),
             new[] { bodyTypeNode }.ToImmutableList());
