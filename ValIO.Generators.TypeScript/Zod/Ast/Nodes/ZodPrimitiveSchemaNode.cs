@@ -14,9 +14,14 @@ namespace ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 public sealed class ZodPrimitiveSchemaNode : ZodSchemaNode
 {
     /// <summary>
-    /// Ссылка на другую Zod схему (имя переменной). Используется при z.lazy(() => SchemaName).
+    /// Ссылка на другую Zod схему (имя переменной).
     /// </summary>
     public string? SchemaReference { get; }
+
+    /// <summary>
+    /// Использовать z.lazy(() => SchemaReference) для рекурсивных схем (self-reference).
+    /// </summary>
+    public bool IsLazy { get; }
 
     public override AstNodeKind Kind => AstNodeKind.ZodSchema;
     
@@ -29,10 +34,12 @@ public sealed class ZodPrimitiveSchemaNode : ZodSchemaNode
         ZodSchemaKind schemaKind,
         TypeNode? type = null,
         string? schemaReference = null,
+        bool isLazy = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(schemaKind, type, metadata)
     {
         SchemaReference = schemaReference;
+        IsLazy = isLazy;
         // Валидация: только примитивные типы
         if (schemaKind != ZodSchemaKind.String &&
             schemaKind != ZodSchemaKind.Number &&
@@ -60,6 +67,7 @@ public sealed class ZodPrimitiveSchemaNode : ZodSchemaNode
             SchemaKind,
             Type != null ? (TypeNode)Type.Clone() : null,
             SchemaReference,
+            IsLazy,
             Metadata.ToImmutableDictionary());
     }
 }

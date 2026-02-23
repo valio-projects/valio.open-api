@@ -55,7 +55,11 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     private string VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node)
     {
         if (!string.IsNullOrEmpty(node.SchemaReference))
+        {
+            if (node.IsLazy)
+                return $"z.lazy(() => {node.SchemaReference})";
             return node.SchemaReference;
+        }
 
         return node.SchemaKind switch
         {
