@@ -24,6 +24,14 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     {
         return VisitZodObject(node);
     }
+
+    /// <summary>
+    /// Рендерит ZodSchemaNode (object, union, intersection)
+    /// </summary>
+    public string RenderSchema(ZodSchemaNode node)
+    {
+        return VisitZodSchema(node);
+    }
     
     public override string VisitZodSchema(ZodSchemaNode node)
     {

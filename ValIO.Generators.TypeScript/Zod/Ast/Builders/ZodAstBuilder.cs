@@ -36,7 +36,42 @@ public class ZodAstBuilder
     }
     
     /// <summary>
-    /// Строит ZodObjectNode из IrModel
+    /// Строит ZodSchemaNode из IrModel с учётом oneOf, allOf, anyOf
+    /// </summary>
+    /// <param name="model">IR модель</param>
+    /// <returns>AST узел Zod схемы (object, union или intersection)</returns>
+    public ZodSchemaNode BuildZodSchemaFromIrModel(IrModel model)
+    {
+        if (model.Composition != null && model.Composition.Types.Count > 0)
+        {
+            switch (model.Composition.Kind)
+            {
+                case IrCompositionKind.OneOf:
+                case IrCompositionKind.AnyOf:
+                    var unionVariants = model.Composition.Types
+                        .Select(BuildZodSchemaFromIrType)
+                        .ToImmutableList();
+                    return new ZodUnionNode(unionVariants);
+                case IrCompositionKind.AllOf:
+                    var allOfSchemas = model.Composition.Types
+                        .Select(BuildZodSchemaFromIrType)
+                        .ToList();
+                    if (model.Properties.Count > 0)
+                    {
+                        var ownPropsSchema = BuildZodObject(model);
+                        allOfSchemas.Add(ownPropsSchema);
+                    }
+                    if (allOfSchemas.Count == 1)
+                        return allOfSchemas[0];
+                    return new ZodIntersectionNode(allOfSchemas);
+            }
+        }
+
+        return BuildZodObject(model);
+    }
+
+    /// <summary>
+    /// Строит ZodObjectNode из IrModel (только properties, без composition)
     /// </summary>
     /// <param name="model">IR модель</param>
     /// <returns>AST узел Zod object схемы</returns>

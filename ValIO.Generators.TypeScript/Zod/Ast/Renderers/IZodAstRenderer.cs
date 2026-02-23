@@ -11,4 +11,9 @@ public interface IZodAstRenderer
     /// Рендерит ZodObjectNode в TypeScript код
     /// </summary>
     string Render(ZodObjectNode node);
+
+    /// <summary>
+    /// Рендерит ZodSchemaNode (object, union, intersection) в TypeScript код
+    /// </summary>
+    string RenderSchema(ZodSchemaNode node);
 }

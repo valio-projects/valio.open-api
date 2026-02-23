@@ -73,6 +73,43 @@
         "methods": "CamelCase",
         "enums": "PascalCase"
       }
+    },
+    "ChessboardCatalog": {
+      "language": "TypeScript",
+      "schema": "https://admin-api.bytalent.ru/api/chessboard/swagger/v1/swagger.json",
+      "outputPath": "C:\\Workspace\\Talent\\talent.frontends.erp\\src\\domains\\developers\\swagger\\chessboard\\catalog",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "typescript": {
+          "queryParametersStyle": "ModelClass",
+          "modelFormat": "ValidationSchemas",
+          "validationLibrary": "Zod",
+          "httpClientLibrary": "Axios",
+          "useTanStackQuery": true,
+          "serializeWithSchemas": true,
+          "deserializeWithSchemas": true,
+          "enumFormat": "Enum",
+          "useStrictNullChecks": true,
+          "axios": {
+            "customInstancePath": "@app/valioAxios.ts",
+            "customInstanceName": "ValioAxiosClient"
+          }
+        }
+      },
+      "fileOrganization": {
+        "groupingStrategy": "by-route",
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "endpoints"
+      },
+      "namingConvention": {
+        "models": "PascalCase",
+        "properties": "CamelCase",
+        "methods": "CamelCase",
+        "enums": "PascalCase"
+      }
     }
   }
 }

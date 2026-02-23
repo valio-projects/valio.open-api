@@ -132,14 +132,14 @@ public sealed class TypeScriptResultsAstBuilder
                         documentation: new CommentNode("Response body for unhandled status")),
                     new PropertySignatureNode(
                         new IdentifierNode("isSuccessful"),
-                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: false),
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true),
                         isRequired: true,
-                        documentation: new CommentNode("False — unhandled status")),
+                        documentation: new CommentNode("Computed from status — true if 2xx")),
                     new PropertySignatureNode(
                         new IdentifierNode("isFailed"),
-                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: true),
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true),
                         isRequired: true,
-                        documentation: new CommentNode("True — unhandled status"))
+                        documentation: new CommentNode("Computed from status — true if not 2xx"))
                 }.ToImmutableList(),
                 documentation: new CommentNode("Response for status codes not explicitly defined in OpenAPI schema"));
             declarations.Add(otherVariantInterface);

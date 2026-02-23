@@ -72,12 +72,12 @@ public class ZodSchemaRenderer
         }
         
         var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder);
-        var zodObject = zodBuilder.BuildZodObject(model);
+        var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
         
         var zodRenderer = new ZodAstRenderer();
-        var zodObjectCode = zodRenderer.Render(zodObject);
+        var zodSchemaCode = zodRenderer.RenderSchema(zodSchema);
         
-        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{model.Name}> = {zodObjectCode};");
+        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{model.Name}> = {zodSchemaCode};");
         
         return sb.ToString();
     }
