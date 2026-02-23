@@ -417,7 +417,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         // Создаем новый ZodSchemaRenderer с typeBuilder
         var zodRendererWithBuilder = new ZodSchemaRenderer(
             NamingConverter,
-            typeBuilder);
+            typeBuilder,
+            tsOptions.UseBigInt);
         
         // Схемы помещаются в папку модели: models/modelName/modelName.schema.ts
         var modelsBasePath = config.FileOrganization.ModelsPath ?? "models";
@@ -494,7 +495,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
             irType => astBuilder.BuildType(irType);
-        var zodRenderer = new ZodSchemaRenderer(NamingConverter, typeBuilder);
+        var zodRenderer = new ZodSchemaRenderer(NamingConverter, typeBuilder, tsOptions.UseBigInt);
 
         foreach (var client in irDocument.Clients)
         {

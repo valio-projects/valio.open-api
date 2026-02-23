@@ -18,18 +18,22 @@ public class ZodSchemaRenderer
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, ValIO.Core.Ast.Nodes.TypeNode> _typeBuilder;
+    private readonly bool _useBigInt;
     
     /// <summary>
     /// Конструктор
     /// </summary>
     /// <param name="namingConverter">Конвертер имен</param>
     /// <param name="typeBuilder">Функция для построения TypeNode из IrType</param>
+    /// <param name="useBigInt">Использовать bigint для int64. По умолчанию false — number.</param>
     public ZodSchemaRenderer(
         INamingConverter namingConverter,
-        Func<IrType, TypeNode> typeBuilder)
+        Func<IrType, TypeNode> typeBuilder,
+        bool useBigInt = false)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
+        _useBigInt = useBigInt;
     }
     
     /// <summary>
@@ -71,7 +75,7 @@ public class ZodSchemaRenderer
             CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
         }
         
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder);
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt);
         var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
         
         var zodRenderer = new ZodAstRenderer();
@@ -107,7 +111,7 @@ public class ZodSchemaRenderer
         sb.AppendLine();
         
         // Строим Zod AST из IR enum
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder);
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt);
         var zodEnum = zodBuilder.BuildZodEnum(enumModel);
         
         // Генерируем массив значений enum
@@ -342,7 +346,7 @@ public class ZodSchemaRenderer
 
         var sb = new StringBuilder();
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder);
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt);
         var zodRenderer = new ZodAstRenderer();
 
         sb.AppendLine("import { z, ZodSchema } from 'zod';");

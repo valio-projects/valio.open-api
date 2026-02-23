@@ -21,18 +21,22 @@ public class ZodAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
+    private readonly bool _useBigInt;
     
     /// <summary>
     /// Конструктор
     /// </summary>
     /// <param name="namingConverter">Конвертер имен</param>
     /// <param name="typeBuilder">Функция для построения TypeNode из IrType</param>
+    /// <param name="useBigInt">Использовать bigint для int64. По умолчанию false — number.</param>
     public ZodAstBuilder(
         INamingConverter namingConverter,
-        Func<IrType, TypeNode> typeBuilder)
+        Func<IrType, TypeNode> typeBuilder,
+        bool useBigInt = false)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
+        _useBigInt = useBigInt;
     }
     
     /// <summary>
@@ -194,7 +198,7 @@ public class ZodAstBuilder
             IrPrimitiveKind.String => ZodSchemaKind.String,
             IrPrimitiveKind.Number => ZodSchemaKind.Number,
             IrPrimitiveKind.Integer => ZodSchemaKind.Integer,
-            IrPrimitiveKind.Long => ZodSchemaKind.BigInt,
+            IrPrimitiveKind.Long => _useBigInt ? ZodSchemaKind.BigInt : ZodSchemaKind.Number,
             IrPrimitiveKind.Boolean => ZodSchemaKind.Boolean,
             IrPrimitiveKind.DateTime => ZodSchemaKind.String,
             IrPrimitiveKind.Date => ZodSchemaKind.String,

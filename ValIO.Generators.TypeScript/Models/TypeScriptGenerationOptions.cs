@@ -48,6 +48,12 @@ public class TypeScriptGenerationOptions
     /// </summary>
     public bool UseStrictNullChecks { get; set; } = true;
     
+    /// <summary>
+    /// Использовать нативный bigint для int64 (format: int64).
+    /// По умолчанию false — int64 маппится в number (возможна потеря точности для значений &gt; 2^53-1).
+    /// </summary>
+    public bool UseBigInt { get; set; } = false;
+    
     // QueryParametersStyle не используется для TypeScript, query параметры всегда передаются как отдельные параметры
     // Это свойство оставлено для обратной совместимости, но не используется
     

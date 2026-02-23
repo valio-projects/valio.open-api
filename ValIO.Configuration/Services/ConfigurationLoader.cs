@@ -445,6 +445,12 @@ public class ConfigurationLoader : IConfigurationLoader
             options.UseStrictNullChecks = config.UseStrictNullChecks.Value;
         }
 
+        // Парсинг UseBigInt
+        if (config.UseBigInt.HasValue)
+        {
+            options.UseBigInt = config.UseBigInt.Value;
+        }
+
         // Парсинг Axios опций
         if (config.Axios != null)
         {

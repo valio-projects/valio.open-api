@@ -149,6 +149,11 @@ public class ConfigTypeScriptOptions
     public bool? UseStrictNullChecks { get; set; }
     
     /// <summary>
+    /// Использовать нативный bigint для int64 (format: int64). По умолчанию false — используется number.
+    /// </summary>
+    public bool? UseBigInt { get; set; }
+    
+    /// <summary>
     /// Настройки для Axios HTTP клиента
     /// </summary>
     public ConfigAxiosOptions? Axios { get; set; }

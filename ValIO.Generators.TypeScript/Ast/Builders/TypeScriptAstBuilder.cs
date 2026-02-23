@@ -673,7 +673,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             IrPrimitiveKind.String => "string",
             IrPrimitiveKind.Number => "number",
             IrPrimitiveKind.Integer => "number",
-            IrPrimitiveKind.Long => "bigint",
+            IrPrimitiveKind.Long => (_options?.UseBigInt == true) ? "bigint" : "number",
             IrPrimitiveKind.Boolean => "boolean",
             IrPrimitiveKind.DateTime => "string", // ISO string в TypeScript
             IrPrimitiveKind.Date => "string",
