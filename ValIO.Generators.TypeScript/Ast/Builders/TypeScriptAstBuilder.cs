@@ -366,12 +366,19 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит PropertyDeclarationNode из IrProperty
+    /// Строит PropertyDeclarationNode из IrProperty.
+    /// Для опциональных свойств response-моделей формирует nullish тип (T | null) в AST,
+    /// т.к. API может вернуть null или не вернуть свойство.
     /// </summary>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
         var type = BuildType(property.Type);
+        
+        // nullish: опциональное свойство → T | null в AST (явно, без костылей в рендерере)
+        if (!property.IsRequired && !IsTypeNullable(type))
+            type = new NullableTypeNode(type);
+        
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.JSDoc)
             : null;
@@ -637,6 +644,26 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var innerType = BuildType(optionalType.InnerType);
         return new OptionalTypeNode(innerType);
+    }
+    
+    /// <summary>
+    /// Проверяет, допускает ли TypeNode значение null (в объединении или как NullableType).
+    /// </summary>
+    private static bool IsTypeNullable(TypeNode type)
+    {
+        return type switch
+        {
+            NullableTypeNode => true,
+            UnionTypeNode union when union.Types.Any(t =>
+                t is SimpleTypeNode st && st.Name.Name == "null") => true,
+            SimpleTypeNode simple when simple.IsNullable => true,
+            ArrayTypeNode array when array.IsNullable => true,
+            GenericTypeNode generic when generic.IsNullable => true,
+            DictionaryTypeNode dict when dict.IsNullable => true,
+            IntersectionTypeNode intersection when intersection.IsNullable => true,
+            RawTypeNode raw when raw.IsNullable => true,
+            _ => false
+        };
     }
     
     private string MapPrimitiveToTypeScript(IrPrimitiveKind primitiveKind)
