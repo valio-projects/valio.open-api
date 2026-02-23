@@ -16,9 +16,14 @@ public enum IrPrimitiveKind
     Number,
     
     /// <summary>
-    /// Целое число (int/long)
+    /// Целое число (int32)
     /// </summary>
     Integer,
+    
+    /// <summary>
+    /// Длинное целое (int64) — в TypeScript/JS маппится в bigint
+    /// </summary>
+    Long,
     
     /// <summary>
     /// Логическое значение

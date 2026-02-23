@@ -13,6 +13,7 @@ public enum ZodSchemaKind
     String,
     Number,
     Integer,
+    BigInt,
     Boolean,
     Null,
     Any,

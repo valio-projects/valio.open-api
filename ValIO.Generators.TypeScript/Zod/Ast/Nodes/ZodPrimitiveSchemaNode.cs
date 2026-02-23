@@ -44,6 +44,7 @@ public sealed class ZodPrimitiveSchemaNode : ZodSchemaNode
         if (schemaKind != ZodSchemaKind.String &&
             schemaKind != ZodSchemaKind.Number &&
             schemaKind != ZodSchemaKind.Integer &&
+            schemaKind != ZodSchemaKind.BigInt &&
             schemaKind != ZodSchemaKind.Boolean &&
             schemaKind != ZodSchemaKind.Null &&
             schemaKind != ZodSchemaKind.Any)

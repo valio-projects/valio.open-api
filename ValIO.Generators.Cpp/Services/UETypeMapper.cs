@@ -57,7 +57,8 @@ public sealed class UETypeMapper
         {
             IrPrimitiveKind.String => SimpleType("FString"),
             IrPrimitiveKind.Number => SimpleType("double", isPrimitive: true),
-            IrPrimitiveKind.Integer => SimpleType("int64", isPrimitive: true),
+            IrPrimitiveKind.Integer => SimpleType("int32", isPrimitive: true),
+            IrPrimitiveKind.Long => SimpleType("int64", isPrimitive: true),
             IrPrimitiveKind.Boolean => SimpleType("bool", isPrimitive: true),
             IrPrimitiveKind.DateTime => SimpleType("FString"), // ISO 8601 строка в UE
             IrPrimitiveKind.Date => SimpleType("FString"),
@@ -158,6 +159,7 @@ public sealed class UETypeMapper
             {
                 IrPrimitiveKind.Number => "0.0",
                 IrPrimitiveKind.Integer => "0",
+                IrPrimitiveKind.Long => "0",
                 IrPrimitiveKind.Boolean => "false",
                 _ => null
             },
@@ -178,7 +180,8 @@ public sealed class UETypeMapper
             {
                 IrPrimitiveKind.String => "%s",
                 IrPrimitiveKind.Uuid => "%s",
-                IrPrimitiveKind.Integer => "%lld",
+                IrPrimitiveKind.Integer => "%d",
+                IrPrimitiveKind.Long => "%lld",
                 IrPrimitiveKind.Number => "%f",
                 IrPrimitiveKind.Boolean => "%s",
                 _ => "%s"

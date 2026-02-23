@@ -64,8 +64,9 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return node.SchemaKind switch
         {
             ZodSchemaKind.String => "z.string()",
-            ZodSchemaKind.Number => "z.number()",
-            ZodSchemaKind.Integer => "z.number().int()",
+            ZodSchemaKind.Number => "z.coerce.number()",
+            ZodSchemaKind.Integer => "z.coerce.number().int()",
+            ZodSchemaKind.BigInt => "z.coerce.bigint()",
             ZodSchemaKind.Boolean => "z.boolean()",
             ZodSchemaKind.Null => "z.null()",
             ZodSchemaKind.Any => "z.any()",
@@ -208,8 +209,9 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return kind switch
         {
             ZodSchemaKind.String => "z.string()",
-            ZodSchemaKind.Number => "z.number()",
-            ZodSchemaKind.Integer => "z.number().int()",
+            ZodSchemaKind.Number => "z.coerce.number()",
+            ZodSchemaKind.Integer => "z.coerce.number().int()",
+            ZodSchemaKind.BigInt => "z.coerce.bigint()",
             ZodSchemaKind.Boolean => "z.boolean()",
             ZodSchemaKind.Null => "z.null()",
             ZodSchemaKind.Any => "z.any()",

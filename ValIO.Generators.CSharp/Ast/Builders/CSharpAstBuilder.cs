@@ -980,6 +980,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             IrPrimitiveKind.String => "string",
             IrPrimitiveKind.Number => "double",
             IrPrimitiveKind.Integer => "int",
+            IrPrimitiveKind.Long => "long",
             IrPrimitiveKind.Boolean => "bool",
             IrPrimitiveKind.DateTime => "DateTime",
             IrPrimitiveKind.Date => "DateOnly",

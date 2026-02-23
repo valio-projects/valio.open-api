@@ -193,7 +193,8 @@ public class ZodAstBuilder
         {
             IrPrimitiveKind.String => ZodSchemaKind.String,
             IrPrimitiveKind.Number => ZodSchemaKind.Number,
-            IrPrimitiveKind.Integer => ZodSchemaKind.Number,
+            IrPrimitiveKind.Integer => ZodSchemaKind.Integer,
+            IrPrimitiveKind.Long => ZodSchemaKind.BigInt,
             IrPrimitiveKind.Boolean => ZodSchemaKind.Boolean,
             IrPrimitiveKind.DateTime => ZodSchemaKind.String,
             IrPrimitiveKind.Date => ZodSchemaKind.String,

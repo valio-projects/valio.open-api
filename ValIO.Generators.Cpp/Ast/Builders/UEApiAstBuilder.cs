@@ -786,7 +786,7 @@ public sealed class UEApiAstBuilder
     {
         var propName = _naming.PropertyName(prop.Name);
         var accessExpr = BuildExpressionFromPath($"{formDataPath}.{propName}");
-        var needsLexToString = prop.Type is IrPrimitiveType p && p.PrimitiveKind is IrPrimitiveKind.Integer or IrPrimitiveKind.Number or IrPrimitiveKind.Boolean;
+        var needsLexToString = prop.Type is IrPrimitiveType p && p.PrimitiveKind is IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number or IrPrimitiveKind.Boolean;
         if (needsLexToString)
         {
             return new CallExpressionNode(

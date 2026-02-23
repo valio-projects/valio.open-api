@@ -533,7 +533,7 @@ public class IrBuilder
             return IrPrimitiveKind.Number;
         
         if (typeValue.HasFlag(JsonSchemaType.Integer))
-            return IrPrimitiveKind.Integer;
+            return format == "int64" ? IrPrimitiveKind.Long : IrPrimitiveKind.Integer;
         
         if (typeValue.HasFlag(JsonSchemaType.Boolean))
             return IrPrimitiveKind.Boolean;
