@@ -283,15 +283,20 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
     {
+        string result;
         if (node.PreferMultilineFormat && node.Properties.Count > 0)
         {
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var propertyLines = node.Properties.Select(p => indent + VisitPropertyAssignment(p));
-            return "{\n" + string.Join(",\n", propertyLines) + "\n" + closingIndent + "}";
+            result = "{\n" + string.Join(",\n", propertyLines) + "\n" + closingIndent + "}";
         }
-        var properties = string.Join(", ", node.Properties.Select(p => VisitPropertyAssignment(p)));
-        return $"{{ {properties} }}";
+        else
+        {
+            var properties = string.Join(", ", node.Properties.Select(p => VisitPropertyAssignment(p)));
+            result = $"{{ {properties} }}";
+        }
+        return node.AsConstAssertion ? $"{result} as const" : result;
     }
     
     public override string VisitArrayLiteralExpression(ArrayLiteralExpressionNode node)

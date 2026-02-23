@@ -8,6 +8,7 @@ using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
@@ -326,13 +327,78 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var dependencies = ExtractDependencies(model);
         dependencies = dependencies.Where(d => d != model.Name).ToList();
         var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Models, model.Name);
-        var declarations = new[] { (DeclarationNode)BuildInterface(model) };
+        
+        var declarations = new List<DeclarationNode> { BuildInterface(model) };
+        var constraintsDecl = BuildConstraintsDeclaration(model);
+        if (constraintsDecl != null)
+            declarations.Add(constraintsDecl);
+        
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
         return new SourceFileNode(
             imports: imports,
             exports: exports,
-            declarations: declarations);
+            declarations: declarations.ToImmutableList());
+    }
+    
+    /// <summary>
+    /// Строит VariableDeclarationNode с const объектом метаданных валидации для Zod схем.
+    /// Возвращает null если нет свойств с constraints.
+    /// </summary>
+    private VariableDeclarationNode? BuildConstraintsDeclaration(IrModel model)
+    {
+        var propConstraints = model.Properties
+            .Where(p => p.Constraints != null && HasAnyConstraint(p.Constraints))
+            .Select(p => new
+            {
+                p.Name,
+                Constraints = p.Constraints!
+            })
+            .ToList();
+        
+        if (propConstraints.Count == 0)
+            return null;
+        
+        var properties = propConstraints.Select(pc =>
+        {
+            var c = pc.Constraints;
+            var props = new List<PropertyAssignmentNode>();
+            if (c.Min.HasValue)
+                props.Add(new PropertyAssignmentNode(new IdentifierNode("min"), new LiteralExpressionNode(c.Min.Value, LiteralKind.Number)));
+            if (c.Max.HasValue)
+                props.Add(new PropertyAssignmentNode(new IdentifierNode("max"), new LiteralExpressionNode(c.Max.Value, LiteralKind.Number)));
+            if (c.ExclusiveMin.HasValue)
+                props.Add(new PropertyAssignmentNode(new IdentifierNode("exclusiveMin"), new LiteralExpressionNode(c.ExclusiveMin.Value, LiteralKind.Number)));
+            if (c.ExclusiveMax.HasValue)
+                props.Add(new PropertyAssignmentNode(new IdentifierNode("exclusiveMax"), new LiteralExpressionNode(c.ExclusiveMax.Value, LiteralKind.Number)));
+            if (c.MinLength.HasValue)
+                props.Add(new PropertyAssignmentNode(new IdentifierNode("minLength"), new LiteralExpressionNode(c.MinLength.Value, LiteralKind.Number)));
+            if (c.MaxLength.HasValue)
+                props.Add(new PropertyAssignmentNode(new IdentifierNode("maxLength"), new LiteralExpressionNode(c.MaxLength.Value, LiteralKind.Number)));
+            if (!string.IsNullOrEmpty(c.Pattern))
+                props.Add(new PropertyAssignmentNode(new IdentifierNode("pattern"), new LiteralExpressionNode(c.Pattern, LiteralKind.String)));
+            
+            return new PropertyAssignmentNode(
+                new IdentifierNode(pc.Name),
+                new ObjectLiteralExpressionNode(
+                    props.ToImmutableList(),
+                    preferMultilineFormat: props.Count > 1,
+                    asConstAssertion: true));
+        }).ToImmutableList();
+        
+        var initializer = new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true);
+        return new VariableDeclarationNode(
+            new IdentifierNode($"{model.Name}Constraints"),
+            VariableDeclarationKind.Const,
+            initializer: initializer,
+            isExported: true,
+            asConstAssertion: true);
+    }
+    
+    private static bool HasAnyConstraint(IrPropertyConstraints c)
+    {
+        return c.Min.HasValue || c.Max.HasValue || c.ExclusiveMin.HasValue || c.ExclusiveMax.HasValue
+            || c.MinLength.HasValue || c.MaxLength.HasValue || !string.IsNullOrEmpty(c.Pattern);
     }
     
     /// <summary>

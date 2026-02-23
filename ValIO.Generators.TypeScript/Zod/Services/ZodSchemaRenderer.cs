@@ -2,6 +2,7 @@ using System.Linq;
 using System.Text;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Utilities;
@@ -56,7 +57,16 @@ public class ZodSchemaRenderer
         
         sb.AppendLine("import { z, ZodSchema } from 'zod';");
         sb.AppendLine();
-        sb.AppendLine($"import type {{ {model.Name} }} from \"./{modelFileName}\";");
+        var hasConstraints = model.Properties.Any(p => p.Constraints != null && HasAnyConstraint(p.Constraints));
+        if (hasConstraints)
+        {
+            sb.AppendLine($"import type {{ {model.Name} }} from \"./{modelFileName}\";");
+            sb.AppendLine($"import {{ {model.Name}Constraints }} from \"./{modelFileName}\";");
+        }
+        else
+        {
+            sb.AppendLine($"import type {{ {model.Name} }} from \"./{modelFileName}\";");
+        }
         
         var dependencies = ExtractDependencies(model);
         if (dependencies.Count > 0)
@@ -159,6 +169,12 @@ public class ZodSchemaRenderer
     /// <summary>
     /// Извлекает зависимости из IR модели
     /// </summary>
+    private static bool HasAnyConstraint(IrPropertyConstraints c)
+    {
+        return c.Min.HasValue || c.Max.HasValue || c.ExclusiveMin.HasValue || c.ExclusiveMax.HasValue
+            || c.MinLength.HasValue || c.MaxLength.HasValue || !string.IsNullOrEmpty(c.Pattern);
+    }
+
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
         var dependencies = new HashSet<string>();

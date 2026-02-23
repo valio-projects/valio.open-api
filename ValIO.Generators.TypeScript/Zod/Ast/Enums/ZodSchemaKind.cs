@@ -17,6 +17,10 @@ public enum ZodSchemaKind
     Boolean,
     Null,
     Any,
+    /// <summary>
+    /// Схема в виде выражения (цепочка вызовов z.string().uuid().min() и т.д.)
+    /// </summary>
+    Expression,
     Optional,
     Nullable,
     Effects,

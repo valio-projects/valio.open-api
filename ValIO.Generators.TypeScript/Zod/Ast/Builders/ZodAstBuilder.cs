@@ -81,7 +81,10 @@ public class ZodAstBuilder
     /// <returns>AST узел Zod object схемы</returns>
     public ZodObjectNode BuildZodObject(IrModel model)
     {
-        var properties = model.Properties.Select(p => BuildZodProperty(p, model.Name)).ToImmutableList();
+        var constraintsName = $"{model.Name}Constraints";
+        var properties = model.Properties
+            .Select(p => BuildZodProperty(p, model.Name, constraintsName))
+            .ToImmutableList();
         return new ZodObjectNode(properties);
     }
 
@@ -105,16 +108,13 @@ public class ZodAstBuilder
     /// Строит ZodPropertyNode из IrProperty
     /// </summary>
     /// <param name="property">IR свойство</param>
+    /// <param name="currentModelName">Имя текущей модели (для constraints ref и self-reference)</param>
+    /// <param name="constraintsObjectName">Имя const объекта с метаданными валидации (например MyModelConstraints), null если не генерируем</param>
     /// <returns>AST узел Zod property</returns>
-    public ZodPropertyNode BuildZodProperty(IrProperty property, string? currentModelName = null)
+    public ZodPropertyNode BuildZodProperty(IrProperty property, string? currentModelName = null, string? constraintsObjectName = null)
     {
         var name = new IdentifierNode(property.Name);
-        var schema = BuildZodSchemaFromIrType(property.Type, currentModelName);
-        
-        if (property.Constraints != null)
-        {
-            schema = ApplyConstraints(schema, property.Constraints);
-        }
+        var schema = BuildZodSchemaFromIrType(property.Type, currentModelName, property, constraintsObjectName);
         
         return new ZodPropertyNode(
             name: name,
@@ -128,12 +128,23 @@ public class ZodAstBuilder
     /// Строит ZodSchemaNode из IrType
     /// </summary>
     /// <param name="irType">IR тип</param>
-    /// <returns>AST узел Zod схемы</returns>
-    public ZodSchemaNode BuildZodSchemaFromIrType(ValIO.Core.IR.Types.IrType irType, string? currentModelName = null)
+    /// <param name="currentModelName">Имя текущей модели</param>
+    /// <param name="property">Контекст свойства (для constraints), null для параметров</param>
+    /// <param name="constraintsObjectName">Имя const объекта (MyModelConstraints)</param>
+    public ZodSchemaNode BuildZodSchemaFromIrType(
+        ValIO.Core.IR.Types.IrType irType,
+        string? currentModelName = null,
+        IrProperty? property = null,
+        string? constraintsObjectName = null)
     {
         return irType.Kind switch
         {
-            IrTypeKind.Primitive => BuildZodPrimitive((IrPrimitiveType)irType),
+            IrTypeKind.Primitive => BuildZodPrimitive(
+                (IrPrimitiveType)irType,
+                property?.Constraints,
+                property != null && !string.IsNullOrEmpty(constraintsObjectName)
+                    ? $"{constraintsObjectName}.{property.Name}"
+                    : null),
             IrTypeKind.ModelReference => BuildZodModelReference((IrModelReference)irType, currentModelName),
             IrTypeKind.Array => BuildZodArray((IrArrayType)irType, currentModelName),
             IrTypeKind.Dictionary => BuildZodDictionary((IrDictionaryType)irType),
@@ -189,29 +200,22 @@ public class ZodAstBuilder
     // Приватные вспомогательные методы для IR типов
     
     /// <summary>
-    /// Строит Zod схему из IrPrimitiveType
+    /// Строит Zod схему из IrPrimitiveType.
+    /// Использует ZodExpressionBuilder для AST цепочки вызовов (uuid, datetime, min, max и т.д.).
     /// </summary>
-    private ZodSchemaNode BuildZodPrimitive(IrPrimitiveType primitiveType)
+    private ZodSchemaNode BuildZodPrimitive(
+        IrPrimitiveType primitiveType,
+        IrPropertyConstraints? constraints = null,
+        string? constraintsRef = null)
     {
-        var schemaKind = primitiveType.PrimitiveKind switch
+        var kind = primitiveType.PrimitiveKind;
+        // Binary, ByteArray, File — Any, без expression
+        if (kind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File)
         {
-            IrPrimitiveKind.String => ZodSchemaKind.String,
-            IrPrimitiveKind.Number => ZodSchemaKind.Number,
-            IrPrimitiveKind.Integer => ZodSchemaKind.Integer,
-            IrPrimitiveKind.Long => _useBigInt ? ZodSchemaKind.BigInt : ZodSchemaKind.Number,
-            IrPrimitiveKind.Boolean => ZodSchemaKind.Boolean,
-            IrPrimitiveKind.DateTime => ZodSchemaKind.String,
-            IrPrimitiveKind.Date => ZodSchemaKind.String,
-            IrPrimitiveKind.Time => ZodSchemaKind.String,
-            // Binary, ByteArray, File - используем Any, так как в TypeScript они обычно передаются как any или string
-            IrPrimitiveKind.Binary => ZodSchemaKind.Any,
-            IrPrimitiveKind.ByteArray => ZodSchemaKind.Any,
-            IrPrimitiveKind.Uuid => ZodSchemaKind.String,
-            IrPrimitiveKind.File => ZodSchemaKind.Any,
-            _ => ZodSchemaKind.Any
-        };
+            return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any);
+        }
         
-        return new ZodPrimitiveSchemaNode(schemaKind);
+        return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef);
     }
     
     /// <summary>
@@ -278,14 +282,6 @@ public class ZodAstBuilder
     {
         var innerSchema = BuildZodSchemaFromIrType(optionalType.InnerType, currentModelName);
         return new ZodEffectsNode(innerSchema, ZodEffectKind.Optional);
-    }
-    
-    /// <summary>
-    /// Применяет constraints к Zod схеме
-    /// </summary>
-    private ZodSchemaNode ApplyConstraints(ZodSchemaNode schema, IrPropertyConstraints constraints)
-    {
-        return schema;
     }
     
     private ZodSchemaNode BuildZodAny()
