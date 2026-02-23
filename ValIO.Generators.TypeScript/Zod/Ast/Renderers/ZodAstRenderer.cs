@@ -115,10 +115,11 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         var schema = Visit((AstNode)node.Schema);
         sb.Append(schema);
         
-        // Применяем модификаторы
+        // Применяем модификаторы: nullish для optional (API может вернуть null или не вернуть свойство)
         if (!node.IsRequired && node.IsOptional)
         {
-            sb.Append(".optional()");
+            sb.Append(".nullish()");
+            return sb.ToString();
         }
         
         if (node.IsNullable)
@@ -190,7 +191,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
                 }
                 break;
             case ZodEffectKind.Optional:
-                sb.Append(".optional()");
+                sb.Append(".nullish()");
                 break;
             case ZodEffectKind.Nullable:
                 sb.Append(".nullable()");

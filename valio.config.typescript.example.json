@@ -19,7 +19,7 @@
           "useStrictNullChecks": true,
           "axios": {
             "customInstancePath": "@app/valioAxios.ts",
-            "customInstanceName": "ValioAxiosClient"
+            "customInstanceName": "PanoramasValioAxiosClient"
           }
         }
       },

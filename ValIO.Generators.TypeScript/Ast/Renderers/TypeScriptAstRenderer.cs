@@ -547,6 +547,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         }
         var optional = node.IsRequired ? "" : "?";
         var type = RenderType(node.Type);
+        if (!node.IsRequired && !IsTypeNullable(node.Type))
+            type += " | null";
         CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Name}{optional}: {type};");
     }
 
@@ -1019,6 +1021,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var optional = node.IsRequired ? "" : "?";
         var isReadonly = node.IsReadOnly ? "readonly " : "";
         var type = RenderType(node.Type);
+        // nullish: optional свойства допускают null (API может вернуть null или не вернуть свойство)
+        if (!node.IsRequired && !IsTypeNullable(node.Type))
+            type += " | null";
         CodeFormatter.AppendLine(sb, indentLevel, $"{isReadonly}{node.Name.Name}{optional}: {type};");
     }
     
