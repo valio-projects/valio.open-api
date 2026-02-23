@@ -6,6 +6,7 @@ using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Ast.Nodes;
+using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 using ValIO.Generators.TypeScript.Zod.Ast.Visitors;
@@ -35,10 +36,10 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     
     public override string VisitZodSchema(ZodSchemaNode node)
     {
-        // Обрабатываем конкретные типы узлов напрямую, чтобы избежать бесконечной рекурсии
         return node switch
         {
             ZodPrimitiveSchemaNode primitive => VisitZodPrimitiveSchema(primitive),
+            ZodExpressionSchemaNode exprNode => VisitExpression(exprNode.Expression),
             ZodObjectNode obj => VisitZodObject(obj),
             ZodArrayNode array => VisitZodArray(array),
             ZodUnionNode union => VisitZodUnion(union),
@@ -47,6 +48,43 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
             ZodEffectsNode effects => VisitZodEffects(effects),
             _ => throw new NotSupportedException($"Unsupported ZodSchemaNode type: {node.GetType().Name}")
         };
+    }
+
+    /// <summary>
+    /// Рендерит ExpressionNode (цепочек вызовов Zod)
+    /// </summary>
+    private string VisitExpression(AstNode node)
+    {
+        return node switch
+        {
+            CallExpressionNode call => VisitCallExpression(call),
+            MemberAccessExpressionNode ma => VisitMemberAccessExpression(ma),
+            IdentifierExpressionNode id => VisitIdentifierExpression(id),
+            LiteralExpressionNode lit => VisitLiteralExpression(lit),
+            ObjectLiteralExpressionNode obj => VisitObjectLiteralExpression(obj),
+            _ => throw new NotSupportedException($"Unsupported expression node: {node.GetType().Name}")
+        };
+    }
+
+    private string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
+    {
+        var properties = string.Join(", ", node.Properties.Select(VisitPropertyAssignment));
+        var result = $"{{ {properties} }}";
+        return node.AsConstAssertion ? $"{result} as const" : result;
+    }
+
+    private string VisitPropertyAssignment(PropertyAssignmentNode node)
+    {
+        var value = node.Value switch
+        {
+            LiteralExpressionNode lit => VisitLiteralExpression(lit),
+            ObjectLiteralExpressionNode obj => VisitObjectLiteralExpression(obj),
+            IdentifierExpressionNode id => VisitIdentifierExpression(id),
+            MemberAccessExpressionNode ma => VisitMemberAccessExpression(ma),
+            CallExpressionNode call => VisitCallExpression(call),
+            _ => VisitExpression((ExpressionNode)node.Value)
+        };
+        return $"{node.Name.Name}: {value}";
     }
     
     /// <summary>
@@ -266,7 +304,15 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     public override string VisitGenericType(GenericTypeNode node) => VisitDefault(node);
     public override string VisitImport(ImportNode node) => VisitDefault(node);
     public override string VisitAttribute(AttributeNode node) => VisitDefault(node);
-    public override string VisitCallExpression(CallExpressionNode node) => VisitDefault(node);
+    public override string VisitCallExpression(CallExpressionNode node)
+    {
+        var newPrefix = node.IsNewExpression ? "new " : "";
+        var target = VisitExpression(node.Target);
+        var args = node.Arguments.Count > 0
+            ? string.Join(", ", node.Arguments.Select(a => VisitExpression((AstNode)a)))
+            : "";
+        return $"{newPrefix}{target}({args})";
+    }
     public override string VisitIdentifier(IdentifierNode node) => VisitDefault(node);
     public override string VisitConditionalExpression(ConditionalExpressionNode node) => VisitDefault(node);
     public override string VisitExport(ExportNode node) => VisitDefault(node);
@@ -275,7 +321,11 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     public override string VisitCastExpression(CastExpressionNode node) => VisitDefault(node);
     public override string VisitForEachStatement(ForEachStatementNode node) => VisitDefault(node);
     public override string VisitAwaitExpression(AwaitExpressionNode node) => VisitDefault(node);
-    public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) => VisitDefault(node);
+    public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
+    {
+        var obj = VisitExpression(node.Object);
+        return $"{obj}.{node.Member.Name}";
+    }
     public override string VisitPropertyDeclaration(PropertyDeclarationNode node) => VisitDefault(node);
     public override string VisitArrayType(ArrayTypeNode node) => VisitDefault(node);
     public override string VisitCatchClause(CatchClauseNode node) => VisitDefault(node);
