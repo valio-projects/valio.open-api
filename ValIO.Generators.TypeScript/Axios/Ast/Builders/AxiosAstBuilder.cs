@@ -202,7 +202,10 @@ public class AxiosAstBuilder
     /// <summary>
     /// Строит URL выражение с использованием routeParamsSource
     /// </summary>
-    private ExpressionNode BuildUrlWithSource(IrOperation operation, ExpressionNode? routeParamsSource)
+    /// <summary>
+    /// Строит выражение URL (литерал или template) с подстановкой route-параметров.
+    /// </summary>
+    public ExpressionNode BuildUrlWithSource(IrOperation operation, ExpressionNode? routeParamsSource)
     {
         var path = operation.Path;
         var pathParams = operation.PathParameters;

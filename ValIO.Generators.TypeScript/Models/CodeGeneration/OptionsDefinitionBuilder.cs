@@ -1,4 +1,3 @@
-using ValIO.Core.Models;
 using ValIO.Core.Models.TemplateData;
 using ValIO.Generators.TypeScript.Models;
 
@@ -32,7 +31,7 @@ public static class OptionsDefinitionBuilder
             }
         };
         
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        if (TypeScriptHttpTransportResolver.Resolve(options).HasFlag(TypeScriptHttpTransports.Axios))
         {
             properties.Add(new OptionsProperty
             {
@@ -72,7 +71,7 @@ public static class OptionsDefinitionBuilder
             }
         };
         
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        if (TypeScriptHttpTransportResolver.Resolve(options).HasFlag(TypeScriptHttpTransports.Axios))
         {
             properties.Add(new OptionsProperty
             {
@@ -118,7 +117,7 @@ public static class OptionsDefinitionBuilder
             }
         };
         
-        if (options.HttpClientLibrary == HttpClientLibrary.Axios)
+        if (TypeScriptHttpTransportResolver.Resolve(options).HasFlag(TypeScriptHttpTransports.Axios))
         {
             properties.Add(new OptionsProperty
             {

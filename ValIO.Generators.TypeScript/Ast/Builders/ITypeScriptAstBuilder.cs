@@ -8,6 +8,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Ast.Nodes;
+using ValIO.Generators.TypeScript.Models;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
@@ -69,7 +70,20 @@ public interface ITypeScriptAstBuilder
     SourceFileNode BuildSourceFile(IrClient client, string? importPath = null, FileOrganization? fileOrganization = null);
     
     /// <summary>
-    /// Строит список SourceFile из IrDocument (все модели, enum'ы и клиенты)
+    /// Строит список SourceFile из IrDocument (модели, enum'ы и опционально endpoint-клиенты).
     /// </summary>
-    IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null, FileOrganization? fileOrganization = null);
+    IReadOnlyList<SourceFileNode> BuildSourceFiles(
+        IrDocument document,
+        string? importPath = null,
+        FileOrganization? fileOrganization = null,
+        bool includeOperationEndpointFiles = false);
+
+    /// <summary>
+    /// Endpoint-файл для одной операции (axios или fetch).
+    /// </summary>
+    SourceFileNode BuildSourceFileForOperation(
+        IrOperation operation,
+        string? importPath = null,
+        FileOrganization? fileOrganization = null,
+        TypeScriptEndpointTransport transport = TypeScriptEndpointTransport.Axios);
 }

@@ -122,6 +122,11 @@ public class ConfigTypeScriptOptions
     /// HTTP клиент: "Fetch" или "Axios"
     /// </summary>
     public string? HttpClientLibrary { get; set; }
+
+    /// <summary>
+    /// Транспорты: "fetch", "axios", "both" или через запятую "axios,fetch".
+    /// </summary>
+    public string? HttpTransports { get; set; }
     
     /// <summary>
     /// Использовать TanStack Query
@@ -157,11 +162,32 @@ public class ConfigTypeScriptOptions
     /// Настройки для Axios HTTP клиента
     /// </summary>
     public ConfigAxiosOptions? Axios { get; set; }
+
+    /// <summary>
+    /// Настройки для fetch HTTP клиента (кастомный fetcher)
+    /// </summary>
+    public ConfigFetchOptions? Fetch { get; set; }
     
     /// <summary>
     /// Стиль передачи query параметров: "IndividualParameters" или "ModelClass"
     /// </summary>
     public string? QueryParametersStyle { get; set; }
+}
+
+/// <summary>
+/// Настройки для fetch HTTP клиента
+/// </summary>
+public class ConfigFetchOptions
+{
+    /// <summary>
+    /// Путь до модуля с кастомной функцией fetch
+    /// </summary>
+    public string? CustomFetcherPath { get; set; }
+
+    /// <summary>
+    /// Имя экспорта fetcher-функции
+    /// </summary>
+    public string? CustomFetcherName { get; set; }
 }
 
 /// <summary>

@@ -410,6 +410,9 @@ public class ConfigurationLoader : IConfigurationLoader
             };
         }
 
+        if (!string.IsNullOrWhiteSpace(config.HttpTransports))
+            options.HttpTransports = ParseHttpTransports(config.HttpTransports);
+
         // Парсинг UseTanStackQuery
         if (config.UseTanStackQuery.HasValue)
         {
@@ -461,10 +464,39 @@ public class ConfigurationLoader : IConfigurationLoader
             };
         }
 
+        if (config.Fetch != null)
+        {
+            options.Fetch = new FetchOptions
+            {
+                CustomFetcherPath = config.Fetch.CustomFetcherPath,
+                CustomFetcherName = config.Fetch.CustomFetcherName
+            };
+        }
+
         // Парсинг QueryParametersStyle (оставлено для обратной совместимости, но не используется)
         // QueryParametersStyle не используется для TypeScript, query параметры всегда передаются как отдельные параметры
 
         return options;
+    }
+
+    private static TypeScriptHttpTransports ParseHttpTransports(string raw)
+    {
+        var v = raw.Trim().ToLowerInvariant();
+        if (v is "both" or "axios,fetch" or "fetch,axios")
+            return TypeScriptHttpTransports.Fetch | TypeScriptHttpTransports.Axios;
+
+        TypeScriptHttpTransports result = TypeScriptHttpTransports.None;
+        foreach (var part in v.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            result |= part switch
+            {
+                "fetch" => TypeScriptHttpTransports.Fetch,
+                "axios" => TypeScriptHttpTransports.Axios,
+                _ => TypeScriptHttpTransports.None
+            };
+        }
+
+        return result;
     }
 
     /// <summary>

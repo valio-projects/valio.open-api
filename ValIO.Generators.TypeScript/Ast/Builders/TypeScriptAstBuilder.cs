@@ -24,7 +24,7 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// Построитель AST для TypeScript (Builder Pattern)
 /// Использует IR для построения AST узлов
 /// </summary>
-public class TypeScriptAstBuilder : ITypeScriptAstBuilder
+public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 {
     /// <summary>
     /// Категория файла для определения пути импорта
@@ -40,6 +40,11 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private readonly ITypeMapper _typeMapper;
     private readonly HttpAstBuilder _httpBuilder;
     private readonly TypeScriptGenerationOptions? _options;
+
+    /// <summary>
+    /// Транспорт генерируемого endpoint-файла (axios / fetch). Устанавливается в <see cref="BuildSourceFileForOperation"/>.
+    /// </summary>
+    private TypeScriptEndpointTransport _activeEndpointTransport = TypeScriptEndpointTransport.Axios;
     
     /// <summary>
     /// Конструктор
@@ -824,7 +829,7 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var name = new IdentifierNode(operation.MethodName);
         
-        var useResultType = _options?.HttpClientLibrary == HttpClientLibrary.Axios
+        var useResultType = UseParamsStyleEndpointTransport()
             && operation.Responses.Any(r => r.Type != null);
         var returnType = useResultType
             ? new GenericTypeNode(
@@ -853,9 +858,14 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит список SourceFile из IrDocument (все модели, enum'ы и клиенты)
+    /// Строит список SourceFile из IrDocument (модели, enum'ы и опционально endpoint-клиенты).
     /// </summary>
-    public IReadOnlyList<SourceFileNode> BuildSourceFiles(IrDocument document, string? importPath = null, FileOrganization? fileOrganization = null)
+    /// <param name="includeOperationEndpointFiles">Если false — не генерировать файлы операций (их пишет <see cref="TypeScriptCodeGenerator"/> с суффиксами .axios/.fetch).</param>
+    public IReadOnlyList<SourceFileNode> BuildSourceFiles(
+        IrDocument document,
+        string? importPath = null,
+        FileOrganization? fileOrganization = null,
+        bool includeOperationEndpointFiles = false)
     {
         var sourceFiles = new List<SourceFileNode>();
         
@@ -886,16 +896,30 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
             sourceFiles.Add(BuildSourceFile(enumModel, importPath, fileOrganization));
         }
         
-        // Генерируем клиенты — по одному SourceFile на каждую операцию (endpoints/operationName/operationName.ts)
-        foreach (var client in document.Clients)
+        if (includeOperationEndpointFiles)
         {
-            foreach (var operation in client.Operations)
+            foreach (var client in document.Clients)
             {
-                sourceFiles.Add(BuildSourceFileForOperation(operation, importPath, fileOrganization));
+                foreach (var operation in client.Operations)
+                {
+                    var transport = InferDefaultEndpointTransport();
+                    sourceFiles.Add(BuildSourceFileForOperation(operation, importPath, fileOrganization, transport));
+                }
             }
         }
-        
+
         return sourceFiles;
+    }
+
+    private bool UseParamsStyleEndpointTransport() =>
+        _activeEndpointTransport is TypeScriptEndpointTransport.Axios or TypeScriptEndpointTransport.Fetch;
+
+    private TypeScriptEndpointTransport InferDefaultEndpointTransport()
+    {
+        var r = TypeScriptHttpTransportResolver.Resolve(_options ?? new TypeScriptGenerationOptions());
+        if (r.HasFlag(TypeScriptHttpTransports.Axios))
+            return TypeScriptEndpointTransport.Axios;
+        return TypeScriptEndpointTransport.Fetch;
     }
     
     /// <summary>
@@ -904,41 +928,62 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients);
-        var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunction(op)).ToList();
-        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
-        
-        return new SourceFileNode(
-            imports: imports,
-            exports: exports,
-            declarations: declarations);
+        var transport = InferDefaultEndpointTransport();
+        _activeEndpointTransport = transport;
+        try
+        {
+            var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunction(op)).ToList();
+            var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+
+            return new SourceFileNode(
+                imports: imports,
+                exports: exports,
+                declarations: declarations);
+        }
+        finally
+        {
+            _activeEndpointTransport = TypeScriptEndpointTransport.Axios;
+        }
     }
     
     /// <summary>
-    /// Строит SourceFile для одной операции (endpoints/operationName/operationName.ts)
+    /// Строит SourceFile для одной операции (endpoints/operationName/operationName.axios.ts или .fetch.ts).
     /// </summary>
-    public SourceFileNode BuildSourceFileForOperation(IrOperation operation, string? importPath = null, FileOrganization? fileOrganization = null)
+    public SourceFileNode BuildSourceFileForOperation(
+        IrOperation operation,
+        string? importPath = null,
+        FileOrganization? fileOrganization = null,
+        TypeScriptEndpointTransport transport = TypeScriptEndpointTransport.Axios)
     {
         var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
-        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
-        // При Axios работаем только с params — не добавляем импорты models/enums из path/query/header/body/response
-        var dependencies = _options?.HttpClientLibrary == HttpClientLibrary.Axios
-            ? Array.Empty<string>()
-            : ExtractDependencies(client, excludeResponseModels: false);
-        var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
-
-        // При Axios добавляем импорт axios и params
-        if (_options?.HttpClientLibrary == HttpClientLibrary.Axios)
+        _activeEndpointTransport = transport;
+        try
         {
-            imports = AddAxiosAndParamsImports(imports, operation, fileOrganization);
+            var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
+            var dependencies = UseParamsStyleEndpointTransport()
+                ? Array.Empty<string>()
+                : ExtractDependencies(client, excludeResponseModels: false);
+            var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Clients, currentOperationName: operation.MethodName);
+
+            imports = transport switch
+            {
+                TypeScriptEndpointTransport.Axios => AddAxiosAndParamsImports(imports, operation, fileOrganization),
+                TypeScriptEndpointTransport.Fetch => AddFetchAndParamsImports(imports, operation, fileOrganization),
+                _ => imports
+            };
+
+            var declarations = new List<DeclarationNode> { BuildFunction(operation, isExported: true) };
+            var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
+
+            return new SourceFileNode(
+                imports: imports,
+                exports: exports,
+                declarations: declarations);
         }
-
-        var declarations = new List<DeclarationNode> { BuildFunction(operation, isExported: true) };
-        var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
-
-        return new SourceFileNode(
-            imports: imports,
-            exports: exports,
-            declarations: declarations);
+        finally
+        {
+            _activeEndpointTransport = TypeScriptEndpointTransport.Axios;
+        }
     }
 
     /// <summary>
@@ -1055,36 +1100,132 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
         result.AddRange(existingImports);
         return result;
     }
+
+    /// <summary>
+    /// Импорты для fetch endpoint: params, results, zod — по смыслу как axios; опционально кастомный fetcher.
+    /// </summary>
+    private IReadOnlyList<ImportNode> AddFetchAndParamsImports(
+        IReadOnlyList<ImportNode> existingImports,
+        IrOperation operation,
+        FileOrganization? fileOrganization)
+    {
+        var result = new List<ImportNode>();
+
+        var fetchOpts = _options?.Fetch;
+        if (!string.IsNullOrWhiteSpace(fetchOpts?.CustomFetcherPath) && !string.IsNullOrWhiteSpace(fetchOpts?.CustomFetcherName))
+        {
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode(fetchOpts!.CustomFetcherName!) }.ToImmutableList(),
+                from: fetchOpts.CustomFetcherPath!,
+                kind: ImportKind.Named));
+        }
+
+        var paramsParamsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
+        if (paramsParamsBuilder.HasParameters(operation))
+        {
+            var paramsTypeName = paramsParamsBuilder.ParamsInterfaceName(operation.MethodName);
+            var operationFileName = GetModelFileName(operation.MethodName);
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
+                from: $"./{operationFileName}.params",
+                kind: ImportKind.Named,
+                isTypeOnly: true));
+        }
+
+        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
+        if (resultsAstBuilder.HasResponsesWithBody(operation))
+        {
+            var resultTypeName = resultsAstBuilder.ResultTypeName(operation.MethodName);
+            var operationFileName = GetModelFileName(operation.MethodName);
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode(resultTypeName) }.ToImmutableList(),
+                from: $"./{operationFileName}.results",
+                kind: ImportKind.Named,
+                isTypeOnly: true));
+        }
+
+        if (_options?.ValidationLibrary == ValidationLibrary.Zod && _options.SerializeWithSchemas)
+        {
+            var opName = _namingConverter.ToPascalCase(operation.MethodName);
+            var operationFileName = GetModelFileName(operation.MethodName);
+            var modelsPath = fileOrganization?.ModelsPath ?? "models";
+
+            var paramsSchemaImports = new List<IdentifierNode>();
+            if (operation.PathParameters.Count > 0)
+                paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
+            if (operation.QueryParameters.Count > 0)
+                paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+
+            if (paramsSchemaImports.Count > 0)
+            {
+                result.Add(new ImportNode(
+                    items: paramsSchemaImports.ToImmutableList(),
+                    from: $"./{operationFileName}.params.schema",
+                    kind: ImportKind.Named));
+            }
+
+            if (operation.RequestBody != null && operation.RequestBody.Type is IrModelReference bodyModelRef)
+            {
+                var bodyModelFileName = GetModelFileName(bodyModelRef.ModelName);
+                result.Add(new ImportNode(
+                    items: new[] { new IdentifierNode($"{bodyModelRef.ModelName}Schema") }.ToImmutableList(),
+                    from: $"../../{modelsPath}/{bodyModelFileName}/{bodyModelFileName}.schema",
+                    kind: ImportKind.Named));
+            }
+
+            var responseModelRefs = operation.Responses
+                .Where(r => r.Type is IrModelReference)
+                .Select(r => (IrModelReference)r.Type!)
+                .DistinctBy(m => m.ModelName);
+            foreach (var modelRef in responseModelRefs)
+            {
+                var responseModelFileName = GetModelFileName(modelRef.ModelName);
+                result.Add(new ImportNode(
+                    items: new[] { new IdentifierNode($"{modelRef.ModelName}Schema") }.ToImmutableList(),
+                    from: $"../../{modelsPath}/{responseModelFileName}/{responseModelFileName}.schema",
+                    kind: ImportKind.Named));
+            }
+        }
+
+        result.AddRange(existingImports);
+        return result;
+    }
     
     // Приватные вспомогательные методы для IR операций
     
     private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation)
     {
-        // При Axios используем единый params interface и добавляем options, signal для AbortController
-        if (_options?.HttpClientLibrary == HttpClientLibrary.Axios)
+        if (UseParamsStyleEndpointTransport())
         {
             var paramsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
-            var axiosParams = new List<ParameterDeclarationNode>();
+            var endpointParams = new List<ParameterDeclarationNode>();
             if (paramsBuilder.HasParameters(operation))
             {
                 var paramsTypeName = paramsBuilder.ParamsInterfaceName(operation.MethodName);
-                axiosParams.Add(new ParameterDeclarationNode(
+                endpointParams.Add(new ParameterDeclarationNode(
                         name: new IdentifierNode("params"),
                         type: new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false, isNullable: false, isOptional: false),
                         isRequired: true));
             }
-            var axiosConfigType = new SimpleTypeNode(new IdentifierNode("AxiosRequestConfig"), isPrimitive: false, isNullable: false, isOptional: false);
-            axiosParams.Add(new ParameterDeclarationNode(
+
+            var optionsTypeName = _activeEndpointTransport == TypeScriptEndpointTransport.Axios
+                ? "AxiosRequestConfig"
+                : "RequestInit";
+            var optionsType = new SimpleTypeNode(new IdentifierNode(optionsTypeName), isPrimitive: false, isNullable: false, isOptional: false);
+            var optionsDoc = _activeEndpointTransport == TypeScriptEndpointTransport.Axios
+                ? "Optional Axios request config (headers, timeout, etc.)"
+                : "Optional RequestInit (headers, credentials, etc.)";
+            endpointParams.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode("options"),
-                type: axiosConfigType,
+                type: optionsType,
                 isRequired: false,
-                documentation: new CommentNode("Optional Axios request config (headers, timeout, etc.)", CommentKind.JSDoc)));
-            axiosParams.Add(new ParameterDeclarationNode(
+                documentation: new CommentNode(optionsDoc, CommentKind.JSDoc)));
+            endpointParams.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode("signal"),
                 type: new SimpleTypeNode(new IdentifierNode("AbortSignal"), isPrimitive: false, isNullable: false, isOptional: false),
                 isRequired: false,
                 documentation: new CommentNode("Optional AbortSignal for request cancellation", CommentKind.JSDoc)));
-            return axiosParams.ToImmutableList();
+            return endpointParams.ToImmutableList();
         }
 
         var parameters = new List<ParameterDeclarationNode>();
@@ -1135,15 +1276,12 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// <returns>AST узел блока с statements или null для type-only функции</returns>
     private BlockNode? BuildFunctionBody(IrOperation operation)
     {
-        // Если HttpClientLibrary = Axios, используем AxiosAstBuilder для построения Axios вызовов
-        if (_options?.HttpClientLibrary == HttpClientLibrary.Axios)
+        return _activeEndpointTransport switch
         {
-            return BuildAxiosFunctionBody(operation);
-        }
-        
-        // Для Fetch или других библиотек можно добавить соответствующую реализацию
-        // Пока возвращаем null для type-only функции
-        return null;
+            TypeScriptEndpointTransport.Axios => BuildAxiosFunctionBody(operation),
+            TypeScriptEndpointTransport.Fetch => BuildFetchFunctionBody(operation),
+            _ => null
+        };
     }
     
     /// <summary>
@@ -1152,73 +1290,16 @@ public class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private BlockNode BuildAxiosFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
+        var ctx = PrepareHttpParamSourcesWithOptionalZod(operation);
+        statements.AddRange(ctx.LeadingStatements);
+
+        var routeSource = ctx.RouteSource;
+        var querySource = ctx.QuerySource;
+        var bodySource = ctx.BodySource;
+        var headersSource = ctx.HeadersSource;
+
         var useZod = _options?.ValidationLibrary == ValidationLibrary.Zod
             && (_options.SerializeWithSchemas || _options.DeserializeWithSchemas);
-
-        var hasRoute = operation.PathParameters.Count > 0;
-        var hasQuery = operation.QueryParameters.Count > 0;
-        var hasBody = operation.RequestBody != null && (operation.RequestBody.IsJson || operation.RequestBody.IsForm);
-        var hasHeaders = operation.HeaderParameters.Count > 0;
-        var rb = operation.RequestBody;
-        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasHeaders ? 1 : 0);
-        var isFlat = groupCount <= 1;
-
-        var paramsExpr = new IdentifierExpressionNode(new IdentifierNode("params"));
-        ExpressionNode? routeSource = null;
-        ExpressionNode? querySource = null;
-        ExpressionNode? bodySource = null;
-        ExpressionNode? headersSource = null;
-
-        if (isFlat)
-        {
-            if (hasRoute) routeSource = paramsExpr;
-            if (hasQuery) querySource = paramsExpr;
-            if (hasBody) bodySource = paramsExpr;
-            if (hasHeaders) headersSource = paramsExpr;
-        }
-        else
-        {
-            if (hasRoute) routeSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
-            if (hasQuery) querySource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
-            if (hasBody) bodySource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb!.IsJson ? "body" : "form"));
-            if (hasHeaders) headersSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("headers"));
-        }
-
-        if (useZod && _options!.SerializeWithSchemas)
-        {
-            var opName = _namingConverter.ToPascalCase(operation.MethodName);
-            if (hasRoute)
-            {
-                var routeInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
-                var parseCall = CreateZodParseCall($"{opName}RouteParamsSchema", routeInput);
-                statements.Add(new VariableDeclarationStatementNode(
-                    new IdentifierNode("parsedRoute"),
-                    type: null,
-                    initializer: parseCall));
-                routeSource = new IdentifierExpressionNode(new IdentifierNode("parsedRoute"));
-            }
-            if (hasQuery)
-            {
-                var queryInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
-                var parseCall = CreateZodParseCall($"{opName}QueryParamsSchema", queryInput);
-                statements.Add(new VariableDeclarationStatementNode(
-                    new IdentifierNode("parsedQuery"),
-                    type: null,
-                    initializer: parseCall));
-                querySource = new IdentifierExpressionNode(new IdentifierNode("parsedQuery"));
-            }
-            if (hasBody && rb!.Type is IrModelReference bodyModelRef)
-            {
-                var bodyInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb.IsJson ? "body" : "form"));
-                var parseCall = CreateZodParseCall($"{bodyModelRef.ModelName}Schema", bodyInput);
-                statements.Add(new VariableDeclarationStatementNode(
-                    new IdentifierNode("parsedBody"),
-                    type: null,
-                    initializer: parseCall));
-                bodySource = new IdentifierExpressionNode(new IdentifierNode("parsedBody"));
-            }
-            statements.Add(CreateBlankLineStatement());
-        }
 
         var (axiosInstanceName, _) = GetAxiosInstanceImport();
         var axiosInstanceType = new SimpleTypeNode(new IdentifierNode("AxiosInstance"), isPrimitive: false);

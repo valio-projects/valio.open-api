@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using ValIO.Core.Interfaces;
@@ -6,6 +7,7 @@ using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Utilities;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Zod.Ast.Builders;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 using ValIO.Generators.TypeScript.Zod.Ast.Renderers;
@@ -364,18 +366,55 @@ public class ZodSchemaRenderer
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
         var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt);
         var zodRenderer = new ZodAstRenderer();
-
-        sb.AppendLine("import { z, ZodSchema } from 'zod';");
-        sb.AppendLine();
+        var paramsAst = new TypeScriptParamsAstBuilder(_namingConverter, _typeBuilder);
 
         var hasRoute = operation.PathParameters.Count > 0;
         var hasQuery = operation.QueryParameters.Count > 0;
+        var rb = operation.RequestBody;
+        var hasBody = rb != null && rb.IsJson;
+        var hasForm = rb != null && rb.IsForm;
+        var hasHeaders = operation.HeaderParameters.Count > 0;
+        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasForm ? 1 : 0) + (hasHeaders ? 1 : 0);
+        var useFlatOnly = groupCount <= 1;
+
+        string? routeInterfaceForGeneric = null;
+        if (hasRoute)
+        {
+            if (!useFlatOnly)
+                routeInterfaceForGeneric = paramsAst.RouteParamsInterfaceName(operation.MethodName);
+            else if (groupCount == 1)
+                routeInterfaceForGeneric = paramsAst.ParamsInterfaceName(operation.MethodName);
+        }
+
+        string? queryInterfaceForGeneric = null;
+        if (hasQuery)
+        {
+            if (!useFlatOnly)
+                queryInterfaceForGeneric = paramsAst.QueryParamsInterfaceName(operation.MethodName);
+            else if (groupCount == 1)
+                queryInterfaceForGeneric = paramsAst.ParamsInterfaceName(operation.MethodName);
+        }
+
+        var fileBase = operationFileName ?? _namingConverter.ToCamelCase(operation.MethodName);
+        var typesToImport = new List<string>();
+        if (routeInterfaceForGeneric != null)
+            typesToImport.Add(routeInterfaceForGeneric);
+        if (queryInterfaceForGeneric != null && queryInterfaceForGeneric != routeInterfaceForGeneric)
+            typesToImport.Add(queryInterfaceForGeneric);
+
+        sb.AppendLine("import { z, ZodSchema } from 'zod';");
+        if (typesToImport.Count > 0)
+        {
+            sb.AppendLine($"import type {{ {string.Join(", ", typesToImport.Distinct())} }} from './{fileBase}.params';");
+        }
+        sb.AppendLine();
 
         if (hasRoute)
         {
             var routeSchema = zodBuilder.BuildZodObjectFromParameters(operation.PathParameters);
             var routeSchemaCode = zodRenderer.Render(routeSchema);
-            sb.AppendLine($"export const {opName}RouteParamsSchema: ZodSchema = {routeSchemaCode};");
+            var routeGeneric = routeInterfaceForGeneric != null ? $"<{routeInterfaceForGeneric}>" : "";
+            sb.AppendLine($"export const {opName}RouteParamsSchema: ZodSchema{routeGeneric} = {routeSchemaCode};");
             sb.AppendLine();
         }
 
@@ -383,7 +422,8 @@ public class ZodSchemaRenderer
         {
             var querySchema = zodBuilder.BuildZodObjectFromParameters(operation.QueryParameters);
             var querySchemaCode = zodRenderer.Render(querySchema);
-            sb.AppendLine($"export const {opName}QueryParamsSchema: ZodSchema = {querySchemaCode};");
+            var queryGeneric = queryInterfaceForGeneric != null ? $"<{queryInterfaceForGeneric}>" : "";
+            sb.AppendLine($"export const {opName}QueryParamsSchema: ZodSchema{queryGeneric} = {querySchemaCode};");
         }
 
         return sb.ToString();

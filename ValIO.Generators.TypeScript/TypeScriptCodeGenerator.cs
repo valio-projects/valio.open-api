@@ -281,9 +281,11 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
         var irDocument = irBuilder.BuildFromOpenApi(document, warnings);
         
-        // 2. IR → AST для моделей и enum'ов
+        var httpTransports = TypeScriptHttpTransportResolver.Resolve(tsOptions);
+
+        // 2. IR → AST для моделей и enum'ов (без endpoint-файлов — они генерируются с суффиксами .axios / .fetch)
         var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
-        var sourceFiles = astBuilder.BuildSourceFiles(irDocument, importPath: null, fileOrganization: config.FileOrganization);
+        var sourceFiles = astBuilder.BuildSourceFiles(irDocument, importPath: null, fileOrganization: config.FileOrganization, includeOperationEndpointFiles: false);
         
         // 3. AST → Code для моделей и enum'ов
         var astRenderer = new TypeScriptAstRenderer();
@@ -298,9 +300,11 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
             
             files[filePath] = code;
         }
+
+        GenerateEndpointTransportClientFiles(files, irDocument, config, tsOptions, astBuilder, astRenderer, httpTransports);
         
-        // 4. Генерация params файлов (если HttpClientLibrary = Axios)
-        if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios)
+        // 4. Генерация params файлов (стиль params для axios и/или fetch)
+        if (httpTransports.HasFlag(TypeScriptHttpTransports.Axios) || httpTransports.HasFlag(TypeScriptHttpTransports.Fetch))
         {
             var paramsFiles = GenerateParamsFiles(irDocument, config, tsOptions);
             foreach (var file in paramsFiles)
@@ -310,8 +314,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         }
 
         // 4b. Генерация results файлов (discriminated union по status codes)
-        // Нужны при Axios (endpoint возвращает Result) или при TanStack Query (hooks используют Result тип)
-        if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios || tsOptions.UseTanStackQuery)
+        if (httpTransports.HasFlag(TypeScriptHttpTransports.Axios)
+            || httpTransports.HasFlag(TypeScriptHttpTransports.Fetch)
+            || tsOptions.UseTanStackQuery)
         {
             var resultsFiles = GenerateResultsFiles(irDocument, config, tsOptions);
             foreach (var file in resultsFiles)
@@ -329,8 +334,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 files[file.Key] = file.Value;
             }
 
-            // Zod схемы для params (при Axios)
-            if (tsOptions.HttpClientLibrary == HttpClientLibrary.Axios)
+            if (httpTransports.HasFlag(TypeScriptHttpTransports.Axios) || httpTransports.HasFlag(TypeScriptHttpTransports.Fetch))
             {
                 var paramsSchemaFiles = GenerateParamsSchemaFiles(irDocument, config, tsOptions);
                 foreach (var file in paramsSchemaFiles)
@@ -351,6 +355,51 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         }
         
         return files;
+    }
+
+    /// <summary>
+    /// Генерирует endpoint-клиенты <c>{op}.axios.ts</c> и/или <c>{op}.fetch.ts</c>.
+    /// </summary>
+    private void GenerateEndpointTransportClientFiles(
+        Dictionary<string, string> files,
+        IrDocument irDocument,
+        GenerationConfiguration config,
+        TypeScriptGenerationOptions tsOptions,
+        TypeScriptAstBuilder astBuilder,
+        TypeScriptAstRenderer astRenderer,
+        TypeScriptHttpTransports httpTransports)
+    {
+        foreach (var client in irDocument.Clients)
+        {
+            foreach (var operation in client.Operations)
+            {
+                var operationFileName = GetModelFileNameInternal(operation.MethodName);
+
+                if (httpTransports.HasFlag(TypeScriptHttpTransports.Axios))
+                {
+                    var axiosSource = astBuilder.BuildSourceFileForOperation(
+                        operation,
+                        importPath: null,
+                        config.FileOrganization,
+                        TypeScriptEndpointTransport.Axios);
+                    var axiosCode = astRenderer.Render(axiosSource);
+                    var axiosPath = ResolveFilePath($"{operationFileName}/{operationFileName}.axios.ts", config, FileCategory.Clients);
+                    files[axiosPath] = axiosCode;
+                }
+
+                if (httpTransports.HasFlag(TypeScriptHttpTransports.Fetch))
+                {
+                    var fetchSource = astBuilder.BuildSourceFileForOperation(
+                        operation,
+                        importPath: null,
+                        config.FileOrganization,
+                        TypeScriptEndpointTransport.Fetch);
+                    var fetchCode = astRenderer.Render(fetchSource);
+                    var fetchPath = ResolveFilePath($"{operationFileName}/{operationFileName}.fetch.ts", config, FileCategory.Clients);
+                    files[fetchPath] = fetchCode;
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -535,7 +584,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder = 
             irType => astBuilder.BuildType(irType);
         
-        var hookAstBuilder = new TanStackQuery.Ast.Builders.TanStackQueryHookAstBuilder(NamingConverter, typeBuilder);
+        var hookTransports = TypeScriptHttpTransportResolver.Resolve(tsOptions);
+        var hookUsesAxios = TypeScriptHttpTransportResolver.ResolveTanStackHookTransport(hookTransports) == TypeScriptEndpointTransport.Axios;
+        var hookAstBuilder = new TanStackQuery.Ast.Builders.TanStackQueryHookAstBuilder(NamingConverter, typeBuilder, hookUsesAxios);
         var tsRenderer = new Ast.Renderers.TypeScriptAstRenderer();
 
         foreach (var client in irDocument.Clients)
@@ -566,7 +617,9 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         TypeScriptAstBuilder astBuilder,
         TypeScriptGenerationOptions tsOptions)
     {
-        var useParams = tsOptions.HttpClientLibrary == HttpClientLibrary.Axios;
+        var transports = TypeScriptHttpTransportResolver.Resolve(tsOptions);
+        var useParams = transports.HasFlag(TypeScriptHttpTransports.Axios)
+            || transports.HasFlag(TypeScriptHttpTransports.Fetch);
 
         var functionName = new ValIO.Core.Ast.Nodes.IdentifierNode(operation.MethodName);
         var arguments = new List<ValIO.Core.Ast.Nodes.ExpressionNode>();

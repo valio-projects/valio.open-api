@@ -19,9 +19,14 @@ public class TypeScriptGenerationOptions
     public ValidationLibrary? ValidationLibrary { get; set; }
     
     /// <summary>
-    /// HTTP клиент: Fetch или Axios
+    /// HTTP клиент: Fetch или Axios (legacy; при <see cref="HttpTransports"/> = <see cref="TypeScriptHttpTransports.None"/> выводится через <see cref="TypeScriptHttpTransportResolver.Resolve"/>).
     /// </summary>
     public HttpClientLibrary HttpClientLibrary { get; set; } = HttpClientLibrary.Fetch;
+
+    /// <summary>
+    /// Явный выбор транспортов (fetch, axios или оба). Если <see cref="TypeScriptHttpTransports.None"/> — используется <see cref="HttpClientLibrary"/>.
+    /// </summary>
+    public TypeScriptHttpTransports HttpTransports { get; set; } = TypeScriptHttpTransports.None;
     
     /// <summary>
     /// Использовать TanStack Query
@@ -61,6 +66,11 @@ public class TypeScriptGenerationOptions
     /// Настройки для Axios HTTP клиента
     /// </summary>
     public AxiosOptions? Axios { get; set; }
+
+    /// <summary>
+    /// Настройки для fetch HTTP клиента (кастомный fetcher).
+    /// </summary>
+    public FetchOptions? Fetch { get; set; }
 }
 
 /// <summary>

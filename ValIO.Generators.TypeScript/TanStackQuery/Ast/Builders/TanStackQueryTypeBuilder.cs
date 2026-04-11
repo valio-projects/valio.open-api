@@ -14,10 +14,12 @@ namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Builders;
 public sealed class TanStackQueryTypeBuilder
 {
     private readonly INamingConverter _namingConverter;
+    private readonly bool _hookUsesAxios;
 
-    public TanStackQueryTypeBuilder(INamingConverter namingConverter)
+    public TanStackQueryTypeBuilder(INamingConverter namingConverter, bool hookUsesAxios = true)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        _hookUsesAxios = hookUsesAxios;
     }
 
     /// <summary>SimpleTypeNode для примитива или идентификатора</summary>
@@ -72,7 +74,9 @@ public sealed class TanStackQueryTypeBuilder
         SimpleType("MutationFunctionContext");
 
     public TypeNode BuildRequestOptionsType() =>
-        Union(SimpleType("AxiosRequestConfig"), SimpleType("undefined", isPrimitive: true));
+        Union(
+            SimpleType(_hookUsesAxios ? "AxiosRequestConfig" : "RequestInit"),
+            SimpleType("undefined", isPrimitive: true));
 
     public InterfaceDeclarationNode BuildMutationOptionsParamsInterface(
         string hookBaseName,
@@ -93,7 +97,7 @@ public sealed class TanStackQueryTypeBuilder
                     isRequired: false),
                 new PropertySignatureNode(
                     new IdentifierNode("request"),
-                    SimpleType("AxiosRequestConfig"),
+                    SimpleType(_hookUsesAxios ? "AxiosRequestConfig" : "RequestInit"),
                     isRequired: false)
             }.ToImmutableList());
     }
@@ -146,7 +150,7 @@ public sealed class TanStackQueryTypeBuilder
                     isRequired: false),
                 new PropertySignatureNode(
                     new IdentifierNode("request"),
-                    SimpleType("AxiosRequestConfig"),
+                    SimpleType(_hookUsesAxios ? "AxiosRequestConfig" : "RequestInit"),
                     isRequired: false)
             }.ToImmutableList());
     }
