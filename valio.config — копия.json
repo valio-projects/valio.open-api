@@ -11,7 +11,7 @@
           "queryParametersStyle": "ModelClass",
           "modelFormat": "ValidationSchemas",
           "validationLibrary": "Zod",
-          "httpClientLibrary": "Axios",
+          "httpTransports": "axios",
           "useTanStackQuery": true,
           "serializeWithSchemas": true,
           "deserializeWithSchemas": true,

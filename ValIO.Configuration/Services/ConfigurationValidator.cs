@@ -29,10 +29,6 @@ public class ConfigurationValidator : IConfigurationValidator
                 !Enum.IsDefined(typeof(ValidationLibrary), config.Options.ValidationLibrary.Value))
                 errors.Add($"Invalid validation library: {config.Options.ValidationLibrary}");
 
-            if (config.Options.HttpClientLibrary.HasValue &&
-                !Enum.IsDefined(typeof(HttpClientLibrary), config.Options.HttpClientLibrary.Value))
-                errors.Add($"Invalid HTTP client library: {config.Options.HttpClientLibrary}");
-
             if (config.Options.QueryWrapperLibrary.HasValue &&
                 !Enum.IsDefined(typeof(QueryWrapperLibrary), config.Options.QueryWrapperLibrary.Value))
                 errors.Add($"Invalid query wrapper library: {config.Options.QueryWrapperLibrary}");

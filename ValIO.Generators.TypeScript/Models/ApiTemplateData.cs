@@ -11,9 +11,9 @@ public class TypeScriptClientTemplateData
     public IReadOnlyList<TypeScriptOperationTemplateData> Operations { get; set; } = Array.Empty<TypeScriptOperationTemplateData>();
     
     /// <summary>
-    /// HTTP клиент: Fetch или Axios
+    /// Генерируемые HTTP-транспорты (fetch, axios или оба).
     /// </summary>
-    public HttpClientLibrary HttpClientLibrary { get; set; } = HttpClientLibrary.Fetch;
+    public TypeScriptHttpTransports HttpTransports { get; set; } = TypeScriptHttpTransports.Fetch;
     
     /// <summary>
     /// Список имен типов, которые нужно импортировать (PascalCase)

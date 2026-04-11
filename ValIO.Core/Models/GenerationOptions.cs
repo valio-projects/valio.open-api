@@ -6,7 +6,6 @@ namespace ValIO.Core.Models;
 public class GenerationOptions
 {
     public ValidationLibrary? ValidationLibrary { get; set; }
-    public HttpClientLibrary? HttpClientLibrary { get; set; }
     public QueryWrapperLibrary? QueryWrapperLibrary { get; set; }
     
     /// <summary>

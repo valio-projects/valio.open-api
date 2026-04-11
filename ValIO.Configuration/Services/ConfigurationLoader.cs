@@ -106,7 +106,6 @@ public class ConfigurationLoader : IConfigurationLoader
             var generationOptions = new GenerationOptions
             {
                 ValidationLibrary = ParseValidationLibrary(projectConfig.Options.ValidationLibrary),
-                HttpClientLibrary = ParseHttpClientLibrary(projectConfig.Options.HttpClientLibrary),
                 QueryWrapperLibrary = ParseQueryWrapperLibrary(projectConfig.Options.QueryWrapperLibrary)
             };
             
@@ -179,17 +178,6 @@ public class ConfigurationLoader : IConfigurationLoader
             "valli" => ValidationLibrary.Valli,
             null or "" => null,
             _ => throw new ArgumentException($"Unknown validation library: {library}")
-        };
-    }
-
-    private static HttpClientLibrary? ParseHttpClientLibrary(string? library)
-    {
-        return library?.ToLowerInvariant() switch
-        {
-            "fetch" => HttpClientLibrary.Fetch,
-            "axios" => HttpClientLibrary.Axios,
-            null or "" => null,
-            _ => throw new ArgumentException($"Unknown HTTP client library: {library}")
         };
     }
 
@@ -389,29 +377,13 @@ public class ConfigurationLoader : IConfigurationLoader
             };
         }
 
-        // Парсинг HttpClientLibrary
-        if (!string.IsNullOrEmpty(config.HttpClientLibrary))
-        {
-            options.HttpClientLibrary = config.HttpClientLibrary.ToLowerInvariant() switch
-            {
-                "fetch" => HttpClientLibrary.Fetch,
-                "axios" => HttpClientLibrary.Axios,
-                _ => HttpClientLibrary.Fetch
-            };
-        }
-        else if (!string.IsNullOrEmpty(parentOptions?.HttpClientLibrary))
-        {
-            // Fallback на родительские опции
-            options.HttpClientLibrary = parentOptions.HttpClientLibrary.ToLowerInvariant() switch
-            {
-                "fetch" => HttpClientLibrary.Fetch,
-                "axios" => HttpClientLibrary.Axios,
-                _ => HttpClientLibrary.Fetch
-            };
-        }
-
         if (!string.IsNullOrWhiteSpace(config.HttpTransports))
-            options.HttpTransports = ParseHttpTransports(config.HttpTransports);
+        {
+            var parsed = ParseHttpTransports(config.HttpTransports.Trim());
+            options.HttpTransports = parsed == TypeScriptHttpTransports.None
+                ? TypeScriptHttpTransports.Fetch
+                : parsed;
+        }
 
         // Парсинг UseTanStackQuery
         if (config.UseTanStackQuery.HasValue)

@@ -12,7 +12,6 @@ public interface IClientTemplateData
     string Name { get; set; }
     IReadOnlyList<IOperationTemplateData> Operations { get; }
     GenerationLanguage Language { get; set; }
-    HttpClientLibrary HttpClientLibrary { get; set; }
     IReadOnlyList<string> Dependencies { get; set; }
     string? Namespace { get; set; }
     string? ModelsPath { get; set; }

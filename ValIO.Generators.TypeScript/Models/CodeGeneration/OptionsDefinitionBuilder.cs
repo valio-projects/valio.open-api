@@ -31,7 +31,7 @@ public static class OptionsDefinitionBuilder
             }
         };
         
-        if (TypeScriptHttpTransportResolver.Resolve(options).HasFlag(TypeScriptHttpTransports.Axios))
+        if (options.HttpTransports.HasFlag(TypeScriptHttpTransports.Axios))
         {
             properties.Add(new OptionsProperty
             {
@@ -71,7 +71,7 @@ public static class OptionsDefinitionBuilder
             }
         };
         
-        if (TypeScriptHttpTransportResolver.Resolve(options).HasFlag(TypeScriptHttpTransports.Axios))
+        if (options.HttpTransports.HasFlag(TypeScriptHttpTransports.Axios))
         {
             properties.Add(new OptionsProperty
             {
@@ -117,7 +117,7 @@ public static class OptionsDefinitionBuilder
             }
         };
         
-        if (TypeScriptHttpTransportResolver.Resolve(options).HasFlag(TypeScriptHttpTransports.Axios))
+        if (options.HttpTransports.HasFlag(TypeScriptHttpTransports.Axios))
         {
             properties.Add(new OptionsProperty
             {

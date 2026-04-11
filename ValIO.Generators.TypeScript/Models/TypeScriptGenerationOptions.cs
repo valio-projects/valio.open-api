@@ -19,14 +19,9 @@ public class TypeScriptGenerationOptions
     public ValidationLibrary? ValidationLibrary { get; set; }
     
     /// <summary>
-    /// HTTP клиент: Fetch или Axios (legacy; при <see cref="HttpTransports"/> = <see cref="TypeScriptHttpTransports.None"/> выводится через <see cref="TypeScriptHttpTransportResolver.Resolve"/>).
+    /// Генерируемые HTTP-транспорты (fetch, axios или оба). По умолчанию только <see cref="TypeScriptHttpTransports.Fetch"/>.
     /// </summary>
-    public HttpClientLibrary HttpClientLibrary { get; set; } = HttpClientLibrary.Fetch;
-
-    /// <summary>
-    /// Явный выбор транспортов (fetch, axios или оба). Если <see cref="TypeScriptHttpTransports.None"/> — используется <see cref="HttpClientLibrary"/>.
-    /// </summary>
-    public TypeScriptHttpTransports HttpTransports { get; set; } = TypeScriptHttpTransports.None;
+    public TypeScriptHttpTransports HttpTransports { get; set; } = TypeScriptHttpTransports.Fetch;
     
     /// <summary>
     /// Использовать TanStack Query

@@ -916,8 +916,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
     private TypeScriptEndpointTransport InferDefaultEndpointTransport()
     {
-        var r = TypeScriptHttpTransportResolver.Resolve(_options ?? new TypeScriptGenerationOptions());
-        if (r.HasFlag(TypeScriptHttpTransports.Axios))
+        var t = _options?.HttpTransports ?? TypeScriptHttpTransports.Fetch;
+        if (t.HasFlag(TypeScriptHttpTransports.Axios))
             return TypeScriptEndpointTransport.Axios;
         return TypeScriptEndpointTransport.Fetch;
     }

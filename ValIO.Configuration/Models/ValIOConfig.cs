@@ -8,7 +8,6 @@ namespace ValIO.Configuration.Models;
 public class ConfigOptions
 {
     public string? ValidationLibrary { get; set; }
-    public string? HttpClientLibrary { get; set; }
     public string? QueryWrapperLibrary { get; set; }
     
     /// <summary>
@@ -118,11 +117,6 @@ public class ConfigTypeScriptOptions
     /// </summary>
     public string? ValidationLibrary { get; set; }
     
-    /// <summary>
-    /// HTTP клиент: "Fetch" или "Axios"
-    /// </summary>
-    public string? HttpClientLibrary { get; set; }
-
     /// <summary>
     /// Транспорты: "fetch", "axios", "both" или через запятую "axios,fetch".
     /// </summary>

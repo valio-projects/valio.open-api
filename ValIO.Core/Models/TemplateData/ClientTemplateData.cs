@@ -33,11 +33,6 @@ public class ClientTemplateData<TOptions, TOperationOptions> : IClientTemplateDa
     public GenerationLanguage Language { get; set; }
     
     /// <summary>
-    /// HTTP клиент библиотека (Fetch, Axios, HttpClient и т.д.)
-    /// </summary>
-    public HttpClientLibrary HttpClientLibrary { get; set; } = HttpClientLibrary.Fetch;
-    
-    /// <summary>
     /// Список зависимостей (имена типов, которые нужно импортировать)
     /// </summary>
     public IReadOnlyList<string> Dependencies { get; set; } = Array.Empty<string>();

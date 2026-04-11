@@ -37,27 +37,14 @@ public sealed class FetchOptions
 }
 
 /// <summary>
-/// Нормализация флагов транспортов и согласование с legacy <see cref="ValIO.Core.Models.HttpClientLibrary"/>.
+/// Вспомогательные правила выбора транспорта для TanStack Query.
 /// </summary>
-public static class TypeScriptHttpTransportResolver
+public static class TypeScriptHttpTransportsTanStack
 {
-    /// <summary>
-    /// Возвращает ненулевой набор транспортов: явные флаги или вывод из <see cref="TypeScriptGenerationOptions.HttpClientLibrary"/>.
-    /// </summary>
-    public static TypeScriptHttpTransports Resolve(TypeScriptGenerationOptions options)
-    {
-        if (options.HttpTransports != TypeScriptHttpTransports.None)
-            return options.HttpTransports;
-
-        return options.HttpClientLibrary == ValIO.Core.Models.HttpClientLibrary.Axios
-            ? TypeScriptHttpTransports.Axios
-            : TypeScriptHttpTransports.Fetch;
-    }
-
     /// <summary>
     /// Транспорт для TanStack Query: при наличии Axios — только он, иначе Fetch.
     /// </summary>
-    public static TypeScriptEndpointTransport ResolveTanStackHookTransport(TypeScriptHttpTransports transports)
+    public static TypeScriptEndpointTransport PreferredHookTransport(TypeScriptHttpTransports transports)
     {
         if (transports.HasFlag(TypeScriptHttpTransports.Axios))
             return TypeScriptEndpointTransport.Axios;

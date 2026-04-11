@@ -76,7 +76,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
                 TypeScriptOptions = new TypeScriptGenerationOptions
                 {
                     ModelFormat = ModelFormat.Interfaces,
-                    HttpClientLibrary = HttpClientLibrary.Fetch
+                    HttpTransports = TypeScriptHttpTransports.Fetch
                 }
             },
             FileOrganization = new Core.Models.FileOrganization
@@ -106,9 +106,9 @@ public class TypeScriptCodeGeneratorIntegrationTests
         var modelFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".model.ts")).ToList();
         modelFiles.Should().NotBeEmpty("Should generate model files");
         
-        // Проверяем, что сгенерированы клиенты
-        var clientFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".api.ts")).ToList();
-        clientFiles.Should().NotBeEmpty("Should generate client files");
+        // Проверяем, что сгенерированы fetch-клиенты
+        var clientFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".fetch.ts")).ToList();
+        clientFiles.Should().NotBeEmpty("Should generate fetch client files");
         
         // Проверяем содержимое модели
         var userModelFile = modelFiles.FirstOrDefault(f => f.Contains("user.model.ts"));
@@ -159,7 +159,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
                 {
                     ModelFormat = ModelFormat.ValidationSchemas,
                     ValidationLibrary = ValidationLibrary.Zod,
-                    HttpClientLibrary = HttpClientLibrary.Fetch
+                    HttpTransports = TypeScriptHttpTransports.Fetch
                 }
             },
             FileOrganization = new Core.Models.FileOrganization
@@ -225,7 +225,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
                 TypeScriptOptions = new TypeScriptGenerationOptions
                 {
                     ModelFormat = ModelFormat.Interfaces,
-                    HttpClientLibrary = HttpClientLibrary.Axios
+                    HttpTransports = TypeScriptHttpTransports.Axios
                 }
             },
             FileOrganization = new Core.Models.FileOrganization
@@ -251,7 +251,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
         result.Errors.Should().BeEmpty();
         
         // Проверяем содержимое клиента с Axios
-        var clientFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".api.ts")).ToList();
+        var clientFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".axios.ts")).ToList();
         clientFiles.Should().NotBeEmpty();
         
         var clientFile = clientFiles.FirstOrDefault();
@@ -286,7 +286,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
                 TypeScriptOptions = new TypeScriptGenerationOptions
                 {
                     ModelFormat = ModelFormat.Interfaces,
-                    HttpClientLibrary = HttpClientLibrary.Fetch,
+                    HttpTransports = TypeScriptHttpTransports.Fetch,
                     UseTanStackQuery = true
                 }
             },
@@ -313,16 +313,16 @@ public class TypeScriptCodeGeneratorIntegrationTests
         result.Errors.Should().BeEmpty();
         
         // Проверяем, что сгенерированы TanStack Query хуки
-        var queryFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".queries.ts") || k.Contains("query")).ToList();
-        queryFiles.Should().NotBeEmpty("Should generate query files");
+        var hookFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".hook.ts")).ToList();
+        hookFiles.Should().NotBeEmpty("Should generate hook files");
         
-        // Проверяем содержимое query файла
-        var queryFile = queryFiles.FirstOrDefault();
-        if (queryFile != null)
+        // Проверяем содержимое hook файла
+        var hookFile = hookFiles.FirstOrDefault();
+        if (hookFile != null)
         {
-            var queryContent = result.GeneratedFiles[queryFile];
-            queryContent.Should().Contain("import { useQuery");
-            queryContent.Should().Contain("useGetUsers");
+            var hookContent = result.GeneratedFiles[hookFile];
+            hookContent.Should().Contain("import { useQuery");
+            hookContent.Should().Contain("useGetUsers");
         }
     }
 
@@ -350,7 +350,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
                 {
                     ModelFormat = ModelFormat.ValidationSchemas,
                     ValidationLibrary = ValidationLibrary.Zod,
-                    HttpClientLibrary = HttpClientLibrary.Axios,
+                    HttpTransports = TypeScriptHttpTransports.Axios,
                     UseTanStackQuery = true,
                     SerializeWithSchemas = true,
                     DeserializeWithSchemas = true
@@ -380,14 +380,14 @@ public class TypeScriptCodeGeneratorIntegrationTests
         
         // Проверяем, что сгенерированы все компоненты
         result.GeneratedFiles.Keys.Should().Contain(k => k.Contains(".schema.ts"), "Should generate schema files");
-        result.GeneratedFiles.Keys.Should().Contain(k => k.Contains(".queries.ts") || k.Contains("query"), "Should generate query files");
+        result.GeneratedFiles.Keys.Should().Contain(k => k.Contains(".hook.ts"), "Should generate hook files");
         
-        // Проверяем, что в query файлах есть валидация
-        var queryFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".queries.ts") || k.Contains("query")).ToList();
-        if (queryFiles.Any())
+        // Проверяем, что в hook файлах есть валидация
+        var hookFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".hook.ts")).ToList();
+        if (hookFiles.Any())
         {
-            var queryContent = result.GeneratedFiles[queryFiles.First()];
-            queryContent.Should().Contain("schema.parse", "Should include schema validation");
+            var hookContent = result.GeneratedFiles[hookFiles.First()];
+            hookContent.Should().Contain("schema.parse", "Should include schema validation");
         }
     }
 }

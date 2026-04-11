@@ -163,13 +163,6 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 typescriptOptions.UseTanStackQuery = true;
             }
 
-            // Если HttpClientLibrary не задан в TypeScript опциях, но задан на верхнем уровне, используем его
-            if (typescriptOptions.HttpClientLibrary == HttpClientLibrary.Fetch &&
-                config.Options.HttpClientLibrary.HasValue)
-            {
-                typescriptOptions.HttpClientLibrary = config.Options.HttpClientLibrary.Value;
-            }
-
             // Если ValidationLibrary не задан в TypeScript опциях, но задан на верхнем уровне, используем его
             if (typescriptOptions.ValidationLibrary == null &&
                 config.Options.ValidationLibrary.HasValue)
@@ -185,11 +178,6 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
 
         if (config.Options != null)
         {
-            if (config.Options.HttpClientLibrary.HasValue)
-            {
-                defaultOptions.HttpClientLibrary = config.Options.HttpClientLibrary.Value;
-            }
-
             if (config.Options.ValidationLibrary.HasValue)
             {
                 defaultOptions.ValidationLibrary = config.Options.ValidationLibrary.Value;
@@ -281,7 +269,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         var irBuilder = new IrBuilder(schemaResolver, NamingConverter);
         var irDocument = irBuilder.BuildFromOpenApi(document, warnings);
         
-        var httpTransports = TypeScriptHttpTransportResolver.Resolve(tsOptions);
+        var httpTransports = tsOptions.HttpTransports;
 
         // 2. IR → AST для моделей и enum'ов (без endpoint-файлов — они генерируются с суффиксами .axios / .fetch)
         var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
@@ -584,8 +572,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder = 
             irType => astBuilder.BuildType(irType);
         
-        var hookTransports = TypeScriptHttpTransportResolver.Resolve(tsOptions);
-        var hookUsesAxios = TypeScriptHttpTransportResolver.ResolveTanStackHookTransport(hookTransports) == TypeScriptEndpointTransport.Axios;
+        var hookUsesAxios = TypeScriptHttpTransportsTanStack.PreferredHookTransport(tsOptions.HttpTransports) == TypeScriptEndpointTransport.Axios;
         var hookAstBuilder = new TanStackQuery.Ast.Builders.TanStackQueryHookAstBuilder(NamingConverter, typeBuilder, hookUsesAxios);
         var tsRenderer = new Ast.Renderers.TypeScriptAstRenderer();
 
@@ -617,9 +604,8 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         TypeScriptAstBuilder astBuilder,
         TypeScriptGenerationOptions tsOptions)
     {
-        var transports = TypeScriptHttpTransportResolver.Resolve(tsOptions);
-        var useParams = transports.HasFlag(TypeScriptHttpTransports.Axios)
-            || transports.HasFlag(TypeScriptHttpTransports.Fetch);
+        var useParams = tsOptions.HttpTransports.HasFlag(TypeScriptHttpTransports.Axios)
+            || tsOptions.HttpTransports.HasFlag(TypeScriptHttpTransports.Fetch);
 
         var functionName = new ValIO.Core.Ast.Nodes.IdentifierNode(operation.MethodName);
         var arguments = new List<ValIO.Core.Ast.Nodes.ExpressionNode>();
