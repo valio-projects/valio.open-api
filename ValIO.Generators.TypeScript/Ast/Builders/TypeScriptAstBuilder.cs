@@ -438,17 +438,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     /// <summary>
     /// Строит PropertyDeclarationNode из IrProperty.
-    /// Для опциональных свойств response-моделей формирует nullish тип (T | null) в AST,
-    /// т.к. API может вернуть null или не вернуть свойство.
+    /// Optional без JSON-null отражается только через <c>?</c> у свойства; <c>| null</c> идёт из IR (nullable union / IrNullableType).
     /// </summary>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
         var type = BuildType(property.Type);
-        
-        // nullish: опциональное свойство → T | null в AST (явно, без костылей в рендерере)
-        if (!property.IsRequired && !IsTypeNullable(type))
-            type = new NullableTypeNode(type);
         
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.JSDoc)

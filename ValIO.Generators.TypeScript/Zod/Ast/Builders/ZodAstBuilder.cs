@@ -148,10 +148,10 @@ public class ZodAstBuilder
             IrTypeKind.ModelReference => BuildZodModelReference((IrModelReference)irType, currentModelName),
             IrTypeKind.Array => BuildZodArray((IrArrayType)irType, currentModelName),
             IrTypeKind.Dictionary => BuildZodDictionary((IrDictionaryType)irType),
-            IrTypeKind.Union => BuildZodUnion((IrUnionType)irType, currentModelName),
-            IrTypeKind.Intersection => BuildZodIntersection((IrIntersectionType)irType, currentModelName),
-            IrTypeKind.Nullable => BuildZodNullable((IrNullableType)irType, currentModelName),
-            IrTypeKind.Optional => BuildZodOptional((IrOptionalType)irType, currentModelName),
+            IrTypeKind.Union => BuildZodUnion((IrUnionType)irType, currentModelName, property, constraintsObjectName),
+            IrTypeKind.Intersection => BuildZodIntersection((IrIntersectionType)irType, currentModelName, property, constraintsObjectName),
+            IrTypeKind.Nullable => BuildZodNullable((IrNullableType)irType, currentModelName, property, constraintsObjectName),
+            IrTypeKind.Optional => BuildZodOptional((IrOptionalType)irType, currentModelName, property, constraintsObjectName),
             _ => BuildZodAny()
         };
     }
@@ -235,7 +235,7 @@ public class ZodAstBuilder
     /// </summary>
     private ZodSchemaNode BuildZodArray(IrArrayType arrayType, string? currentModelName = null)
     {
-        var elementSchema = BuildZodSchemaFromIrType(arrayType.ElementType, currentModelName);
+        var elementSchema = BuildZodSchemaFromIrType(arrayType.ElementType, currentModelName, null, null);
         return new ZodArrayNode(elementSchema);
     }
     
@@ -244,43 +244,63 @@ public class ZodAstBuilder
     /// </summary>
     private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType)
     {
-        var valueSchema = BuildZodSchemaFromIrType(dictionaryType.ValueType);
+        _ = BuildZodSchemaFromIrType(dictionaryType.ValueType, null, null, null);
         return BuildZodAny();
     }
     
     /// <summary>
     /// Строит Zod схему из IrUnionType
     /// </summary>
-    private ZodSchemaNode BuildZodUnion(IrUnionType unionType, string? currentModelName = null)
+    private ZodSchemaNode BuildZodUnion(
+        IrUnionType unionType,
+        string? currentModelName = null,
+        IrProperty? property = null,
+        string? constraintsObjectName = null)
     {
-        var variants = unionType.Types.Select(t => BuildZodSchemaFromIrType(t, currentModelName)).ToImmutableList();
+        var variants = unionType.Types
+            .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName))
+            .ToImmutableList();
         return new ZodUnionNode(variants);
     }
     
     /// <summary>
     /// Строит Zod схему из IrIntersectionType
     /// </summary>
-    private ZodSchemaNode BuildZodIntersection(IrIntersectionType intersectionType, string? currentModelName = null)
+    private ZodSchemaNode BuildZodIntersection(
+        IrIntersectionType intersectionType,
+        string? currentModelName = null,
+        IrProperty? property = null,
+        string? constraintsObjectName = null)
     {
-        var schemas = intersectionType.Types.Select(t => BuildZodSchemaFromIrType(t, currentModelName)).ToImmutableList();
+        var schemas = intersectionType.Types
+            .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName))
+            .ToImmutableList();
         return new ZodIntersectionNode(schemas);
     }
     
     /// <summary>
     /// Строит Zod схему из IrNullableType
     /// </summary>
-    private ZodSchemaNode BuildZodNullable(IrNullableType nullableType, string? currentModelName = null)
+    private ZodSchemaNode BuildZodNullable(
+        IrNullableType nullableType,
+        string? currentModelName = null,
+        IrProperty? property = null,
+        string? constraintsObjectName = null)
     {
-        var innerSchema = BuildZodSchemaFromIrType(nullableType.InnerType, currentModelName);
+        var innerSchema = BuildZodSchemaFromIrType(nullableType.InnerType, currentModelName, property, constraintsObjectName);
         return new ZodEffectsNode(innerSchema, ZodEffectKind.Nullable);
     }
     
     /// <summary>
     /// Строит Zod схему из IrOptionalType
     /// </summary>
-    private ZodSchemaNode BuildZodOptional(IrOptionalType optionalType, string? currentModelName = null)
+    private ZodSchemaNode BuildZodOptional(
+        IrOptionalType optionalType,
+        string? currentModelName = null,
+        IrProperty? property = null,
+        string? constraintsObjectName = null)
     {
-        var innerSchema = BuildZodSchemaFromIrType(optionalType.InnerType, currentModelName);
+        var innerSchema = BuildZodSchemaFromIrType(optionalType.InnerType, currentModelName, property, constraintsObjectName);
         return new ZodEffectsNode(innerSchema, ZodEffectKind.Optional);
     }
     

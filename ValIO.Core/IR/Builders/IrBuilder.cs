@@ -401,12 +401,18 @@ public class IrBuilder
             return new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Any };
         }
         
-        // Примитивные типы
-        if (IsPrimitive(resolvedSchema))
+        // Составной JSON Schema type: null + несколько примитивов / null + один примитив
+        var compositePrimitive = TryBuildCompositePrimitiveType(resolvedSchema);
+        if (compositePrimitive != null)
+            return compositePrimitive;
+        
+        // Один примитив без null в type (nullable обрабатывается в TryBuildCompositePrimitiveType)
+        if (IsSingleNonNullPrimitive(resolvedSchema))
         {
+            var core = resolvedSchema.Type!.Value & ~JsonSchemaType.Null;
             return new IrPrimitiveType
             {
-                PrimitiveKind = MapPrimitive(resolvedSchema.Type, resolvedSchema.Format)
+                PrimitiveKind = MapPrimitive(core, resolvedSchema.Format)
             };
         }
         
@@ -462,18 +468,279 @@ public class IrBuilder
     }
     
     /// <summary>
-    /// Проверяет, является ли схема примитивным типом
+    /// Схема допускает JSON null: type содержит Null или legacy nullable: true.
     /// </summary>
-    private bool IsPrimitive(IOpenApiSchema schema)
+    private static bool SchemaAllowsJsonNull(IOpenApiSchema schema)
+    {
+        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Null))
+            return true;
+        
+        if (schema.Extensions != null &&
+            schema.Extensions.TryGetValue(OpenApiConstants.NullableExtension, out var nullableExtension) &&
+            nullableExtension is JsonNodeExtension { Node: { } jsonNode } &&
+            jsonNode.GetValueKind() == JsonValueKind.True)
+            return true;
+        
+        return false;
+    }
+    
+    /// <summary>
+    /// Ровно один примитивный вид (без Null в флаге), без Object/Array.
+    /// </summary>
+    private static bool IsSingleNonNullPrimitive(IOpenApiSchema schema)
     {
         if (!schema.Type.HasValue)
             return false;
         
-        var type = schema.Type.Value;
-        return type.HasFlag(JsonSchemaType.String) || 
-               type.HasFlag(JsonSchemaType.Number) || 
-               type.HasFlag(JsonSchemaType.Integer) || 
-               type.HasFlag(JsonSchemaType.Boolean);
+        var core = schema.Type.Value & ~JsonSchemaType.Null;
+        if (core == default)
+            return false;
+        if (core.HasFlag(JsonSchemaType.Array) || core.HasFlag(JsonSchemaType.Object))
+            return false;
+        
+        var primitiveMask = JsonSchemaType.String | JsonSchemaType.Number | JsonSchemaType.Integer | JsonSchemaType.Boolean;
+        var prim = core & primitiveMask;
+        if (prim == default)
+            return false;
+        
+        return prim == JsonSchemaType.String ||
+               prim == JsonSchemaType.Number ||
+               prim == JsonSchemaType.Integer ||
+               prim == JsonSchemaType.Boolean;
+    }
+    
+    /// <summary>
+    /// Несколько примитивных типов в одном type, и/или null + примитив(ы).
+    /// </summary>
+    private IrType? TryBuildCompositePrimitiveType(IOpenApiSchema schema)
+    {
+        if (!schema.Type.HasValue)
+            return null;
+        
+        var full = schema.Type.Value;
+        var core = full & ~JsonSchemaType.Null;
+        
+        if (core.HasFlag(JsonSchemaType.Array) || core.HasFlag(JsonSchemaType.Object))
+            return null;
+        
+        var primitiveMask = JsonSchemaType.String | JsonSchemaType.Number | JsonSchemaType.Integer | JsonSchemaType.Boolean;
+        var prim = core & primitiveMask;
+        if (prim == default)
+            return null;
+        
+        var hasNull = SchemaAllowsJsonNull(schema);
+        
+        var flags = new List<JsonSchemaType>(4);
+        if (prim.HasFlag(JsonSchemaType.Integer))
+            flags.Add(JsonSchemaType.Integer);
+        if (prim.HasFlag(JsonSchemaType.Number))
+            flags.Add(JsonSchemaType.Number);
+        if (prim.HasFlag(JsonSchemaType.String))
+            flags.Add(JsonSchemaType.String);
+        if (prim.HasFlag(JsonSchemaType.Boolean))
+            flags.Add(JsonSchemaType.Boolean);
+        
+        if (flags.Count == 0)
+            return null;
+        
+        if (flags.Count == 1)
+        {
+            if (!hasNull)
+                return null;
+            
+            var kind = MapPrimitive(flags[0], ResolveFormatForUnionMember(schema, flags[0]));
+            return new IrNullableType { InnerType = new IrPrimitiveType { PrimitiveKind = kind } };
+        }
+        
+        // string + другие примитивы: строка как сериализация (число, bool, дата…). Сначала format, затем нес-string типы.
+        if (IsStringCoercionPrimitiveUnion(flags))
+        {
+            var kind = ResolveStringCoercionUnionPrimitiveKind(schema, flags);
+            IrType inner = new IrPrimitiveType { PrimitiveKind = kind };
+            return hasNull ? new IrNullableType { InnerType = inner } : inner;
+        }
+        
+        var unionMembers = new List<IrType>(flags.Count);
+        foreach (var flag in flags)
+        {
+            var kind = MapPrimitive(flag, ResolveFormatForUnionMember(schema, flag));
+            unionMembers.Add(new IrPrimitiveType { PrimitiveKind = kind });
+        }
+        
+        IrType result = new IrUnionType { Types = unionMembers };
+        if (hasNull)
+            result = new IrNullableType { InnerType = result };
+        
+        return result;
+    }
+    
+    /// <summary>
+    /// Union из string и одного или нескольких JSON-примитивов (integer, number, boolean) — string как fallback-представление.
+    /// </summary>
+    private static bool IsStringCoercionPrimitiveUnion(List<JsonSchemaType> flags)
+    {
+        if (flags.Count < 2)
+            return false;
+        if (!flags.Contains(JsonSchemaType.String))
+            return false;
+        foreach (var f in flags)
+        {
+            if (f != JsonSchemaType.String && f != JsonSchemaType.Integer && f != JsonSchemaType.Number &&
+                f != JsonSchemaType.Boolean)
+                return false;
+        }
+        return true;
+    }
+    
+    /// <summary>
+    /// Один целевой IrPrimitiveKind: сначала <see cref="schema.Format"/>, иначе приоритет boolean → integer → number, string только как носитель сериализации.
+    /// </summary>
+    private static IrPrimitiveKind ResolveStringCoercionUnionPrimitiveKind(IOpenApiSchema schema, List<JsonSchemaType> flags)
+    {
+        if (TryMapSchemaFormatToPrimitiveKind(schema.Format, out var fromFormat) &&
+            IsPrimitiveKindCompatibleWithJsonTypeUnion(fromFormat, flags))
+            return fromFormat;
+        
+        return MapStringCoercionUnionFromJsonTypes(schema.Format, flags);
+    }
+    
+    /// <summary>
+    /// Маппинг format в примитив IR (без учёта union — совместимость проверяется отдельно).
+    /// </summary>
+    private static bool TryMapSchemaFormatToPrimitiveKind(string? format, out IrPrimitiveKind kind)
+    {
+        kind = IrPrimitiveKind.String;
+        if (string.IsNullOrWhiteSpace(format))
+            return false;
+        
+        switch (format.Trim().ToLowerInvariant())
+        {
+            case "date":
+                kind = IrPrimitiveKind.Date;
+                return true;
+            case "date-time":
+                kind = IrPrimitiveKind.DateTime;
+                return true;
+            case "time":
+                kind = IrPrimitiveKind.Time;
+                return true;
+            case "uuid":
+            case "guid":
+                kind = IrPrimitiveKind.Uuid;
+                return true;
+            case "int64":
+            case "uint64":
+                kind = IrPrimitiveKind.Long;
+                return true;
+            case "int32":
+            case "uint32":
+            case "int16":
+            case "uint16":
+            case "short":
+            case "ushort":
+            case "int8":
+            case "uint8":
+            case "sbyte":
+                kind = IrPrimitiveKind.Integer;
+                return true;
+            case "byte":
+                kind = IrPrimitiveKind.ByteArray;
+                return true;
+            case "float":
+            case "double":
+            case "decimal":
+                kind = IrPrimitiveKind.Number;
+                return true;
+            case "binary":
+                kind = IrPrimitiveKind.Binary;
+                return true;
+            case "byte-array":
+            case "byte[]":
+                kind = IrPrimitiveKind.ByteArray;
+                return true;
+            default:
+                return false;
+        }
+    }
+    
+    /// <summary>
+    /// Совместим ли выбранный по format примитив с набором JSON Schema type-флагов в union.
+    /// </summary>
+    private static bool IsPrimitiveKindCompatibleWithJsonTypeUnion(IrPrimitiveKind kind, List<JsonSchemaType> flags)
+    {
+        var hasString = flags.Contains(JsonSchemaType.String);
+        var hasInt = flags.Contains(JsonSchemaType.Integer);
+        var hasNum = flags.Contains(JsonSchemaType.Number);
+        var hasBool = flags.Contains(JsonSchemaType.Boolean);
+        
+        return kind switch
+        {
+            IrPrimitiveKind.Date or IrPrimitiveKind.DateTime or IrPrimitiveKind.Time or IrPrimitiveKind.Uuid
+                => hasString,
+            IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray
+                => hasString,
+            IrPrimitiveKind.Long or IrPrimitiveKind.Integer or IrPrimitiveKind.Number
+                => hasString || hasInt || hasNum,
+            IrPrimitiveKind.Boolean
+                => hasBool,
+            _ => false
+        };
+    }
+    
+    /// <summary>
+    /// Выбор примитива только по type-флажкам и дополнительно по format, если format не дал отдельного примитива на первом шаге.
+    /// </summary>
+    private static IrPrimitiveKind MapStringCoercionUnionFromJsonTypes(string? format, List<JsonSchemaType> flags)
+    {
+        if (flags.Contains(JsonSchemaType.Boolean))
+            return IrPrimitiveKind.Boolean;
+        
+        var hasInt = flags.Contains(JsonSchemaType.Integer);
+        var hasNum = flags.Contains(JsonSchemaType.Number);
+        
+        if (hasInt || hasNum)
+        {
+            if (TryMapSchemaFormatToPrimitiveKind(format, out var fmtKind) &&
+                fmtKind is IrPrimitiveKind.Long or IrPrimitiveKind.Integer or IrPrimitiveKind.Number &&
+                IsPrimitiveKindCompatibleWithJsonTypeUnion(fmtKind, flags))
+                return fmtKind;
+            
+            if (hasInt && string.Equals(format, "int64", StringComparison.OrdinalIgnoreCase))
+                return IrPrimitiveKind.Long;
+            if (hasInt)
+                return IrPrimitiveKind.Integer;
+            return IrPrimitiveKind.Number;
+        }
+        
+        return IrPrimitiveKind.String;
+    }
+    
+    /// <summary>
+    /// Format задаёт ширину/вид числа — для ветки <c>string</c> в union с integer/number не наследуем его (иначе string ведёт себя как число).
+    /// </summary>
+    private static bool IsNumericOrIntegerWidthFormat(string format)
+    {
+        return TryMapSchemaFormatToPrimitiveKind(format, out var k) &&
+               k is IrPrimitiveKind.Long or IrPrimitiveKind.Integer or IrPrimitiveKind.Number;
+    }
+    
+    /// <summary>
+    /// format int64 на свойстве с type [integer, string] относится к числовой ветке, не к строке.
+    /// </summary>
+    private static string? ResolveFormatForUnionMember(IOpenApiSchema parent, JsonSchemaType memberFlag)
+    {
+        if (memberFlag != JsonSchemaType.String)
+            return parent.Format;
+        
+        if (!parent.Type.HasValue)
+            return parent.Format;
+        
+        var core = parent.Type.Value & ~JsonSchemaType.Null;
+        var hasNumeric = core.HasFlag(JsonSchemaType.Integer) || core.HasFlag(JsonSchemaType.Number);
+        if (hasNumeric && parent.Format != null && IsNumericOrIntegerWidthFormat(parent.Format))
+            return null;
+        
+        return parent.Format;
     }
     
     /// <summary>
@@ -517,6 +784,11 @@ public class IrBuilder
         
         if (typeValue.HasFlag(JsonSchemaType.String))
         {
+            if (TryMapSchemaFormatToPrimitiveKind(format, out var fromFmt) &&
+                fromFmt is IrPrimitiveKind.Date or IrPrimitiveKind.DateTime or IrPrimitiveKind.Time
+                    or IrPrimitiveKind.Uuid or IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray)
+                return fromFmt;
+            
             return format switch
             {
                 "date" => IrPrimitiveKind.Date,
@@ -533,7 +805,14 @@ public class IrBuilder
             return IrPrimitiveKind.Number;
         
         if (typeValue.HasFlag(JsonSchemaType.Integer))
-            return format == "int64" ? IrPrimitiveKind.Long : IrPrimitiveKind.Integer;
+        {
+            if (TryMapSchemaFormatToPrimitiveKind(format, out var intFmt) &&
+                intFmt is IrPrimitiveKind.Long or IrPrimitiveKind.Integer)
+                return intFmt;
+            return string.Equals(format, "int64", StringComparison.OrdinalIgnoreCase)
+                ? IrPrimitiveKind.Long
+                : IrPrimitiveKind.Integer;
+        }
         
         if (typeValue.HasFlag(JsonSchemaType.Boolean))
             return IrPrimitiveKind.Boolean;

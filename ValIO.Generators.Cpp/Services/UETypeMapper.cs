@@ -129,7 +129,7 @@ public sealed class UETypeMapper
     }
 
     /// <summary>
-    /// Union в UE нет прямого аналога. Маппим первый тип (или FString как fallback).
+    /// Union в UE нет прямого аналога. Берётся первый вариант из IR (остальные комбинации, кроме string+number, сводятся в IrBuilder).
     /// </summary>
     public TypeNode MapUnionType(IrUnionType union)
     {
