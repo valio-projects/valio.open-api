@@ -454,7 +454,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     /// <summary>
     /// Строит PropertyDeclarationNode из IrProperty.
-    /// Nullish: при отсутствии в required или при <see cref="IrNullableType"/> — тип <c>T | null | undefined</c> без <c>?</c> у имени; Zod — только <c>.nullish()</c>.
+    /// Nullish: при отсутствии в required или при <see cref="IrNullableType"/> — тип <c>T | null | undefined</c>; у имени <c>?</c> для необязательных полей (рендерер); Zod — <c>.nullish()</c>.
     /// </summary>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
