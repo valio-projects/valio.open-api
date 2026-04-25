@@ -325,7 +325,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Тип поля интерфейса: одна nullish-форма <c>T | null | undefined</c> (без <c>?</c> у имени), согласовано с Zod <c>.nullish()</c>.
+    /// Тип поля интерфейса: единая nullish-форма <c>T | null | undefined</c> при optional или <see cref="IrNullableType"/> (в т.ч. required nullable вроде <c>note</c>).
     /// </summary>
     private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
     {
@@ -454,7 +454,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     /// <summary>
     /// Строит PropertyDeclarationNode из IrProperty.
-    /// Nullish: при отсутствии в required или при <see cref="IrNullableType"/> — тип <c>T | null | undefined</c>; у имени <c>?</c> для необязательных полей (рендерер); Zod — <c>.nullish()</c>.
+    /// Всегда nullish в Zod и в типе: при optional или <see cref="IrNullableType"/> — <c>T | null | undefined</c>; у имени <c>?</c> только если поле не в required.
     /// </summary>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
