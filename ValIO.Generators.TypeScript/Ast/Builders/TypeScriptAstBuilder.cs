@@ -325,6 +325,22 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
+    /// Тип поля интерфейса: одна nullish-форма <c>T | null | undefined</c> (без <c>?</c> у имени), согласовано с Zod <c>.nullish()</c>.
+    /// </summary>
+    private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
+    {
+        var useNullish = !property.IsRequired || property.Type is IrNullableType;
+        if (!useNullish)
+            return BuildType(property.Type);
+        
+        var irCore = property.Type is IrNullableType n ? n.InnerType : property.Type;
+        var valueCore = BuildType(irCore);
+        var withNull = new NullableTypeNode(valueCore);
+        var undefinedType = new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true);
+        return new UnionTypeNode(ImmutableList.Create<TypeNode>(withNull, undefinedType));
+    }
+    
+    /// <summary>
     /// Строит SourceFile из IrModel
     /// </summary>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
@@ -438,12 +454,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     /// <summary>
     /// Строит PropertyDeclarationNode из IrProperty.
-    /// Optional без JSON-null отражается только через <c>?</c> у свойства; <c>| null</c> идёт из IR (nullable union / IrNullableType).
+    /// Nullish: при отсутствии в required или при <see cref="IrNullableType"/> — тип <c>T | null | undefined</c> без <c>?</c> у имени; Zod — только <c>.nullish()</c>.
     /// </summary>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
-        var type = BuildType(property.Type);
+        var type = BuildInterfacePropertyTypeNode(property);
         
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.JSDoc)
@@ -721,7 +737,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         {
             NullableTypeNode => true,
             UnionTypeNode union when union.Types.Any(t =>
-                t is SimpleTypeNode st && st.Name.Name == "null") => true,
+                t is NullableTypeNode ||
+                t is SimpleTypeNode st && st.Name.Name is "null" or "undefined") => true,
             SimpleTypeNode simple when simple.IsNullable => true,
             ArrayTypeNode array when array.IsNullable => true,
             GenericTypeNode generic when generic.IsNullable => true,

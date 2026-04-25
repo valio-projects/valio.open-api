@@ -94,12 +94,17 @@ public class ZodAstBuilder
     public ZodObjectNode BuildZodObjectFromParameters(IReadOnlyList<IrParameter> parameters)
     {
         var properties = parameters
-            .Select(p => new ZodPropertyNode(
-                name: new IdentifierNode(p.Name),
-                schema: BuildZodSchemaFromIrType(p.Type),
-                isRequired: p.IsRequired,
-                isNullable: p.Type is IrNullableType,
-                isOptional: !p.IsRequired))
+            .Select(p =>
+            {
+                var unwrap = TryUnwrapIrNullableRoot(p.Type, out var inner);
+                var schemaIr = unwrap ? inner! : p.Type;
+                return new ZodPropertyNode(
+                    name: new IdentifierNode(p.Name),
+                    schema: BuildZodSchemaFromIrType(schemaIr),
+                    isRequired: p.IsRequired,
+                    isNullable: unwrap,
+                    isOptional: !p.IsRequired);
+            })
             .ToImmutableList();
         return new ZodObjectNode(properties);
     }
@@ -114,13 +119,15 @@ public class ZodAstBuilder
     public ZodPropertyNode BuildZodProperty(IrProperty property, string? currentModelName = null, string? constraintsObjectName = null)
     {
         var name = new IdentifierNode(property.Name);
-        var schema = BuildZodSchemaFromIrType(property.Type, currentModelName, property, constraintsObjectName);
+        var unwrapNullable = TryUnwrapIrNullableRoot(property.Type, out var innerIr);
+        var schemaIr = unwrapNullable ? innerIr! : property.Type;
+        var schema = BuildZodSchemaFromIrType(schemaIr, currentModelName, property, constraintsObjectName);
         
         return new ZodPropertyNode(
             name: name,
             schema: schema,
             isRequired: property.IsRequired,
-            isNullable: property.Type is IrNullableType,
+            isNullable: unwrapNullable,
             isOptional: !property.IsRequired);
     }
     
@@ -307,5 +314,17 @@ public class ZodAstBuilder
     private ZodSchemaNode BuildZodAny()
     {
         return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any);
+    }
+    
+    private static bool TryUnwrapIrNullableRoot(IrType type, out IrType? inner)
+    {
+        if (type is IrNullableType n)
+        {
+            inner = n.InnerType;
+            return true;
+        }
+        
+        inner = null;
+        return false;
     }
 }

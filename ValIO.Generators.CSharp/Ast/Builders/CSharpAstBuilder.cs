@@ -949,8 +949,6 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     
     private TypeNode BuildUnionType(IrUnionType unionType)
     {
-        // В C# union обычно представляется как object или базовый класс
-        // Для простоты возвращаем object
         return new SimpleTypeNode(
             name: new IdentifierNode("object"),
             isPrimitive: false,

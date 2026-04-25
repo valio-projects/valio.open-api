@@ -916,6 +916,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // Проверяем, является ли тип nullable или optional
         var isNullable = IsTypeNullable(node.Type);
         var isOptional = !node.IsRequired || IsTypeOptional(node.Type);
+        var isNullishUnion = IsNullishValueUnionType(node.Type);
         
         // Получаем constraints из metadata
         var constraints = node.Constraints;
@@ -933,16 +934,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var typeString = RenderType(node.Type);
         jsDocLines.Add($"@type {{{typeString}}}");
         
-        // Добавляем @nullable для nullable типов
-        if (isNullable)
+        // Nullish: один тег вместо раздельных @optional / @nullable
+        if (isNullishUnion)
+            jsDocLines.Add("@nullish");
+        else
         {
-            jsDocLines.Add("@nullable");
-        }
-        
-        // Добавляем @optional для optional свойств
-        if (isOptional && !node.IsRequired)
-        {
-            jsDocLines.Add("@optional");
+            if (isNullable)
+                jsDocLines.Add("@nullable");
+            if (isOptional && !node.IsRequired)
+                jsDocLines.Add("@optional");
         }
         
         if (node.IsReadOnly)
@@ -1021,7 +1021,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
         
-        var optional = node.IsRequired ? "" : "?";
+        // Без "?" при явном T | null | undefined (nullish), иначе optional через "?"
+        var optional = node.IsRequired || isNullishUnion ? "" : "?";
         var isReadonly = node.IsReadOnly ? "readonly " : "";
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{isReadonly}{node.Name.Name}{optional}: {type};");
@@ -1046,6 +1047,17 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     }
     
     /// <summary>
+    /// Тип вида <c>(T | null) | undefined</c> из генератора интерфейсов (nullish, без <c>?</c> у свойства).
+    /// </summary>
+    private static bool IsNullishValueUnionType(TypeNode? type)
+    {
+        if (type is not UnionTypeNode u || u.Types.Count != 2)
+            return false;
+        return u.Types[0] is NullableTypeNode &&
+               u.Types[1] is SimpleTypeNode st && st.Name.Name == "undefined";
+    }
+    
+    /// <summary>
     /// Проверяет, является ли тип nullable
     /// </summary>
     private bool IsTypeNullable(TypeNode type)
@@ -1053,7 +1065,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return type switch
         {
             NullableTypeNode => true,
-            UnionTypeNode union when union.Types.Any(t => t is SimpleTypeNode st && st.Name.Name == "null") => true,
+            UnionTypeNode union when union.Types.Any(t =>
+                t is NullableTypeNode ||
+                t is SimpleTypeNode st && st.Name.Name is "null" or "undefined") => true,
             SimpleTypeNode simple when simple.IsNullable => true,
             ArrayTypeNode array when array.IsNullable => true,
             GenericTypeNode generic when generic.IsNullable => true,
