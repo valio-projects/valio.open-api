@@ -550,7 +550,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, $" * {node.Documentation.Text}");
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
-        var optional = node.IsRequired ? "" : "?";
+        // Согласовано с RenderProperty: "?" при nullish-union (params/модели) и/или необязательном члене.
+        var optional = IsNullishValueUnionType(node.Type) || !node.IsRequired ? "?" : "";
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{node.Name.Name}{optional}: {type};");
     }
