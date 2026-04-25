@@ -325,12 +325,17 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Тип поля интерфейса: единая nullish-форма <c>T | null | undefined</c> при optional или <see cref="IrNullableType"/> (в т.ч. required nullable вроде <c>note</c>).
+    /// Nullish в смысле OpenAPI/IR: ключ может отсутствовать, значение — <c>null</c> или тип допускает JSON-null.
+    /// </summary>
+    private static bool IsIrModelPropertyNullish(IrProperty property) =>
+        !property.IsRequired || property.Type is IrNullableType;
+    
+    /// <summary>
+    /// Тип поля интерфейса-модели: при nullish/optional — <c>(T | null) | undefined</c> и <c>?</c> в рендерере; иначе строго <c>T</c>.
     /// </summary>
     private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
     {
-        var useNullish = !property.IsRequired || property.Type is IrNullableType;
-        if (!useNullish)
+        if (!IsIrModelPropertyNullish(property))
             return BuildType(property.Type);
         
         var irCore = property.Type is IrNullableType n ? n.InnerType : property.Type;
@@ -454,7 +459,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     
     /// <summary>
     /// Строит PropertyDeclarationNode из IrProperty.
-    /// Всегда nullish в Zod и в типе: при optional или <see cref="IrNullableType"/> — <c>T | null | undefined</c>; у имени <c>?</c> только если поле не в required.
+    /// Интерфейсы-модели и Zod: nullish (<c>?</c>, <c>T | null | undefined</c>, <c>.nullish()</c>) только если свойство не в <c>required</c> и/или тип <see cref="IrNullableType"/>.
     /// </summary>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {

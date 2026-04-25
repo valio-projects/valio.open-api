@@ -1021,8 +1021,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendLine(sb, indentLevel, " */");
         }
         
-        // Необязательные поля (в т.ч. nullish T | null | undefined) — "?" у имени, как в ожидаемом TS.
-        var optional = node.IsRequired ? "" : "?";
+        // "?" при nullish-union из генератора и/или при отсутствии в OpenAPI required.
+        var optional = IsNullishValueUnionType(node.Type) || !node.IsRequired ? "?" : "";
         var isReadonly = node.IsReadOnly ? "readonly " : "";
         var type = RenderType(node.Type);
         CodeFormatter.AppendLine(sb, indentLevel, $"{isReadonly}{node.Name.Name}{optional}: {type};");

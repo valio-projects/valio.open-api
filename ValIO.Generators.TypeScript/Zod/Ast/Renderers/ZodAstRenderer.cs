@@ -154,7 +154,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         var schema = Visit((AstNode)node.Schema);
         sb.Append(schema);
         
-        // Всегда только .nullish() (не .nullable() / .optional()): и null, и undefined, и отсутствие ключа для optional.
+        // Согласованно с TS-интерфейсом: nullish только при optional-ключе и/или nullable (IrNullableType → IsNullable).
         if (!node.IsRequired || node.IsNullable)
             sb.Append(".nullish()");
         
