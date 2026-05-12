@@ -12,6 +12,10 @@
 | [03_NEW_TS_CLIENTS.md](./03_NEW_TS_CLIENTS.md) | Новые TS HTTP клиенты, Angular, SolidStart, MSW, TanStack Query | 1, 3 | Высокий |
 | [04_NEW_LANGUAGES.md](./04_NEW_LANGUAGES.md) | PHP, Python, Java, Kotlin, Swift, Dart, RestSharp | 4 | Средний |
 | [05_TS_VALIDATION.md](./05_TS_VALIDATION.md) | Valibot, TypeBox, Zod v3/v4 | 2 | Высокий |
+| [06_LEGACY_CLEANUP.md](./06_LEGACY_CLEANUP.md) | Полный каталог legacy-кода под удаление (53+ файла) | 0 | Критический |
+| [07_IR_NODES_AND_BUILDERS.md](./07_IR_NODES_AND_BUILDERS.md) | IR иерархия, IrBuilder, IR→AST конвертация, IrTypeDependencyGraph | 0 | Критический |
+| [08_AST_BUILDERS_DEEP.md](./08_AST_BUILDERS_DEEP.md) | Детальный разбор TypeScriptAstBuilder, CSharpAstBuilder, все алгоритмы | 0–1 | Высокий |
+| [09_DESIGN_PATTERNS.md](./09_DESIGN_PATTERNS.md) | Применение GoF паттернов: Visitor, CoR, Strategy, Builder, Template Method, Command, Composite, Prototype, Iterator, Facade, State, Proxy | Сквозной | Архитектурный |
 
 ## Порядок реализации
 

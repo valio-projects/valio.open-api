@@ -988,3 +988,650 @@ public class GenerationContext
 | `ValIO.Core/Interfaces/IIrTypeMapper.cs` | Новый маппер IrType → AST TypeNode |
 | `ValIO.Core/Plugin/IGeneratorPlugin.cs` | Контракт плагина |
 | `ValIO.Core/Plugin/GeneratorRegistry.cs` | Реестр плагинов |
+
+---
+
+## 12. TypeScript-генератор — TypeScript-специфичный legacy
+
+Это отдельный и очень объёмный блок legacy, который **полностью находится внутри** `ValIO.Generators.TypeScript/` и не был учтён в предыдущих секциях. Все эти файлы относятся к старому TemplateData-пути (Мир 1) и не используются в новом IR/AST-пайплайне (Мир 2).
+
+---
+
+### 12.1 Models/CodeGeneration/ — ещё один уровень генерации кода
+
+Папка `ValIO.Generators.TypeScript/Models/CodeGeneration/` содержит **третий уровень абстракции** (помимо TemplateData и AST) для генерации TypeScript кода. Это промежуточный слой, который никогда не стал частью основного пайплайна — он был создан в ходе эксперимента и так и остался висеть.
+
+**Принцип работы (старый, не активный):**
+```
+TemplateData → CodeGeneration models (FunctionSignature, OptionsDefinition, ...) → string.Format → файл
+```
+
+Этот слой дублирует AST нодам, только через строки (string-based, не дерево).
+
+#### Файлы к удалению:
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/CodeBlock.cs`**
+
+```csharp
+// Содержит CodeBlock (список CodeLine) + CodeLine (строка + отступ)
+// Заменяется: StatementNode / BlockStatementNode в AST
+
+public sealed class CodeBlock
+{
+    public required IReadOnlyList<CodeLine> Lines { get; init; }
+    public int BaseIndentLevel { get; init; }
+    public string Format()  // Форматирует через StringBuilder + indent
+}
+
+public sealed class CodeLine
+{
+    public required string Content { get; init; }
+    public int IndentLevel { get; init; }
+    public static CodeLine Empty => ...;
+}
+```
+
+**Почему удалить:** `CodeBlock` — это ручная имитация AST через строки. В новом пайплайне блоки кода представлены через `BlockStatementNode`, `SourceFileNode`, рендеринг через `TypeScriptAstRenderer` с управлением отступами через `_indentLevel`. Формат через `Format()` — string-building без дерева, невозможно анализировать или трансформировать.
+
+---
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/FunctionParameter.cs`**
+
+```csharp
+// Содержит FunctionParameter + GenericParameter
+// FunctionParameter.Format() → "name?: type = default"
+// CreateOptionsParameter(OptionsDefinition) — статический фабричный метод
+
+public sealed class FunctionParameter
+{
+    public required string Name { get; init; }
+    public required string Type { get; init; }  // строка, не IrType/TypeNode
+    public bool IsOptional { get; init; }
+    public string? Description { get; init; }
+    public string? DefaultValue { get; init; }
+    public string Format() → "name?: Type = default"
+    public static FunctionParameter CreateOptionsParameter(OptionsDefinition) → ...
+}
+```
+
+**Почему удалить:** `FunctionParameter` дублирует `FunctionDeclarationNode.Parameters` в AST — только строковый вариант. В AST параметр — это `PropertySignatureNode` или именованный параметр функции в `FunctionDeclarationNode`. Всё рендерится через `TypeScriptAstRenderer`.
+
+---
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/FunctionParameterBuilder.cs`**
+
+```csharp
+// Builder (FluentAPI) для FunctionParameter
+// Fluent методы: WithName, WithType, WithOptional, WithDescription, WithDefault, Build
+```
+
+**Почему удалить:** Builder для объекта, который сам удаляется.
+
+---
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/FunctionSignature.cs`**
+
+```csharp
+// Содержит FunctionSignature + GenericParameter
+// Format(indentLevel) → многострочная строка с "export async function Name<T>(...): ReturnType {"
+
+public sealed class FunctionSignature
+{
+    public required string Name { get; init; }
+    public IReadOnlyList<GenericParameter> GenericParameters { get; init; }
+    public required IReadOnlyList<FunctionParameter> Parameters { get; init; }
+    public string? ReturnType { get; init; }
+    public bool IsAsync { get; init; }
+    public bool IsArrowFunction { get; init; }
+    public string Format(int indentLevel = 0) → ...  // собственная реализация с StringBuilder
+}
+```
+
+**Почему удалить:** Это ручная реализация того, что делает `FunctionDeclarationNode` + `TypeScriptAstRenderer`. `FunctionSignature.Format()` содержит ~50 строк форматирования кода через `StringBuilder` — это ровно то, что вынесено в `TypeScriptAstRenderer.VisitFunctionDeclaration()`.
+
+---
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/OptionsDefinition.cs`**
+
+```csharp
+// Содержит OptionsDefinition + OptionsProperty
+// Format(indentLevel) → "options?: { prop1?: Type1; prop2: Type2; }"
+
+public sealed class OptionsDefinition
+{
+    public required IReadOnlyList<OptionsProperty> Properties { get; init; }
+    public bool IsOptional { get; init; } = true;
+    public string Format(int indentLevel = 0) → ...
+}
+
+public sealed class OptionsProperty
+{
+    public required string Name { get; init; }
+    public required string Type { get; init; }  // строка, не TypeNode
+    public bool IsOptional { get; init; }
+    public string? Description { get; init; }
+    public string Format(int indentLevel = 0) → "${indent}{Name}{optional}: {Type};"
+}
+```
+
+**Почему удалить:** Заменяется `ObjectLiteralExpressionNode` + `PropertySignatureNode` в AST.
+
+---
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/OptionsDefinitionBuilder.cs`**
+
+Builder для `OptionsDefinition`. Удаляется вместе с `OptionsDefinition`.
+
+---
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/TypeDefinition.cs`**
+
+```csharp
+// Содержит TypeDefinition + TypeObjectDefinition
+// TypeDefinition = строковое описание одного свойства типа
+// TypeObjectDefinition = коллекция TypeDefinition, Format() → "{ prop?: Type; }"
+
+public sealed class TypeDefinition
+{
+    public required string Name { get; init; }
+    public required string Type { get; init; }  // строка
+    public bool IsOptional { get; init; }
+    public string? Description { get; init; }
+    public string Format(int indentLevel = 0) → "${indent}{Name}{optional}: {Type};"
+}
+
+public sealed class TypeObjectDefinition
+{
+    public required IReadOnlyList<TypeDefinition> Properties { get; init; }
+    public string Format(int indentLevel = 0) → многострочный объект
+}
+```
+
+**Почему удалить:** Заменяется `InterfaceDeclarationNode` + `PropertySignatureNode` в AST, которые корректно рендерятся через `TypeScriptAstRenderer`.
+
+---
+
+**`ValIO.Generators.TypeScript/Models/CodeGeneration/TypeDefinitionBuilder.cs`**
+
+Builder для `TypeDefinition`. Удаляется вместе с `TypeDefinition`.
+
+---
+
+**Текущее использование `Models/CodeGeneration/`:**
+
+```bash
+# Grep показывает:
+grep -r "CodeBlock\|FunctionSignature\|OptionsDefinition\|TypeDefinition" --include="*.cs"
+# → только TypeScriptAstBuilder.cs (дуальная поддержка) и сами файлы
+```
+
+`TypeScriptAstBuilder` имеет дуальную поддержку: старые методы через `FunctionSignature`/`OptionsDefinition` (legacy path) и новые методы через AST ноды. После удаления legacy методов из `TypeScriptAstBuilder` вся папка `Models/CodeGeneration/` становится мёртвым кодом.
+
+**Итого — удалить 7 файлов:**
+```
+ValIO.Generators.TypeScript/Models/CodeGeneration/
+  CodeBlock.cs
+  FunctionParameter.cs
+  FunctionParameterBuilder.cs
+  FunctionSignature.cs
+  OptionsDefinition.cs
+  OptionsDefinitionBuilder.cs
+  TypeDefinition.cs
+  TypeDefinitionBuilder.cs
+```
+
+---
+
+### 12.2 ApiTemplateData.cs и InterfaceTemplateData.cs — TS-специфичные TemplateData модели
+
+Это TypeScript-специфичные TemplateData модели, аналогичные тем что в `ValIO.Core/Models/TemplateData/`, но для TypeScript-генератора.
+
+#### `ValIO.Generators.TypeScript/Models/ApiTemplateData.cs`
+
+```csharp
+// Содержит 4 класса TemplateData для TypeScript HTTP клиентов:
+
+public class TypeScriptClientTemplateData
+{
+    public string ClientName { get; set; }
+    public IReadOnlyList<TypeScriptOperationTemplateData> Operations { get; set; }
+    public TypeScriptHttpTransports HttpTransports { get; set; }  // ← legacy enum
+    public IReadOnlyList<string> ImportedTypes { get; set; }
+    public string? ModelsPath { get; set; }
+    public AxiosOptions? AxiosOptions { get; set; }
+}
+
+public class TypeScriptOperationTemplateData
+{
+    public string MethodName { get; set; }
+    public string HttpMethod { get; set; }
+    public string Path { get; set; }
+    public TypeInfo ReturnTypeInfo { get; set; }     // ← TypeInfo — legacy
+    public TypeInfo? RequestBodyTypeInfo { get; set; }  // ← TypeInfo — legacy
+    public IReadOnlyList<TypeScriptParameterTemplateData> PathParameters { get; set; }
+    public IReadOnlyList<TypeScriptParameterTemplateData> QueryParameters { get; set; }
+    public IReadOnlyList<TypeScriptParameterTemplateData> HeaderParameters { get; set; }
+    // ... ещё ~20 свойств
+}
+
+public class TypeScriptParameterTemplateData
+{
+    public TypeInfo TypeInfo { get; set; }    // ← TypeInfo — legacy
+    public string Type { get; set; }          // ← дублирование TypeInfo
+}
+
+public class TypeScriptFormDataPropertyTemplateData { ... }
+```
+
+**Почему удалить:** Все эти классы завязаны на `TypeInfo` (legacy) и `TypeScriptHttpTransports` (legacy enum). В новом пайплайне клиент строится через `IrClient` → `AxiosAstBuilder`/`FetchAstBuilder` → AST → рендеринг. Промежуточный TemplateData слой не нужен.
+
+**Использование:** Класс `TypeScriptAstBuilder` имеет метод `BuildClientSourceFile(TypeScriptClientTemplateData)` — legacy перегрузка. Она удаляется в рамках очистки `TypeScriptAstBuilder`.
+
+---
+
+#### `ValIO.Generators.TypeScript/Models/InterfaceTemplateData.cs`
+
+```csharp
+// Содержит 4 класса TemplateData для TypeScript моделей и enum:
+
+public class TypeScriptModelTemplateData
+{
+    public string InterfaceName { get; set; }
+    public IReadOnlyList<TypeScriptPropertyTemplateData> Properties { get; set; }
+    public bool UseStrictNullChecks { get; set; }
+    public IReadOnlyList<string> ImportedTypes { get; set; }
+    public string? BaseClassName { get; set; }
+    public ValidationLibrary? ValidationLibrary { get; set; }   // ← legacy enum
+}
+
+public class TypeScriptPropertyTemplateData
+{
+    public TypeInfo TypeInfo { get; set; }    // ← TypeInfo — legacy
+    public string Type { get; set; }          // ← строка-дублёр TypeInfo
+    public bool IsOptional { get; set; }
+}
+
+public class TypeScriptEnumTemplateData
+{
+    public TypeScriptEnumFormat EnumFormat { get; set; }
+    public ValidationLibrary? ValidationLibrary { get; set; }   // ← legacy enum
+    public IReadOnlyList<TypeScriptEnumValueTemplateData> Values { get; set; }
+}
+
+public class TypeScriptEnumValueTemplateData
+{
+    public string Name { get; set; }
+    public object? Value { get; set; }
+    public string ValueString { get; set; }
+}
+```
+
+**Почему удалить:** Аналогично `ApiTemplateData.cs` — завязаны на `TypeInfo` и `ValidationLibrary` enum. В новом пайплайне модели строятся через `IrModel` → `TypeScriptAstBuilder.BuildModelSourceFile(IrModel)` → AST → рендеринг.
+
+---
+
+#### TypeScript-специфичные `*TemplateDataOptions` файлы — удалить вместе с TemplateData
+
+```
+ValIO.Generators.TypeScript/Models/TypeScriptClientTemplateDataOptions.cs
+ValIO.Generators.TypeScript/Models/TypeScriptModelTemplateDataOptions.cs
+ValIO.Generators.TypeScript/Models/TypeScriptEnumTemplateDataOptions.cs
+ValIO.Generators.TypeScript/Models/TypeScriptOperationTemplateDataOptions.cs
+ValIO.Generators.TypeScript/Models/TypeScriptPropertyTemplateDataOptions.cs
+```
+
+Каждый из этих файлов наследует от соответствующего `*TemplateDataOptions` из `ValIO.Core/Models/TemplateData/Options/` и добавляет TS-специфичные поля (в основном `ValidationLibrary?`). После удаления TemplateData все эти файлы удаляются.
+
+---
+
+### 12.3 Renderers/ — TS-специфичные legacy рендереры
+
+Три рендерера, реализующие `IModelFormatRenderer`/`IEnumFormatRenderer` — оба интерфейса идут под удаление.
+
+#### `ValIO.Generators.TypeScript/Renderers/InterfaceModelRenderer.cs`
+
+```csharp
+public class InterfaceModelRenderer : IModelFormatRenderer
+{
+    public ModelFormat Format => ModelFormat.Interface;
+    public GenerationLanguage Language => GenerationLanguage.TypeScript;
+
+    public string Render(IModelTemplateData data)
+    {
+        // 90 строк StringBuilder-based рендеринга TypeScript interface
+        // Обрабатывает: imports, JSDoc, interface/type alias/intersection type
+        // Логика определяет формат: useTypeAlias / useIntersectionType / обычный interface
+    }
+}
+```
+
+**Текущий статус:** Зарегистрирован в `ServiceCollectionExtensions.AddTypeScriptGenerators()`:
+```csharp
+services.AddSingleton<InterfaceModelRenderer>();
+services.AddSingleton<IModelFormatRenderer>(sp => sp.GetRequiredService<InterfaceModelRenderer>());
+```
+Но `IModelFormatRenderer` используется только в `BaseCodeGenerator` (legacy) — который сам удаляется.
+
+**Почему удалить:** Логика рендеринга TypeScript интерфейсов полностью реализована в `TypeScriptAstRenderer.VisitInterfaceDeclaration()`. `InterfaceModelRenderer` — дублёр на основе TemplateData.
+
+---
+
+#### `ValIO.Generators.TypeScript/Renderers/TypeScriptEnumRenderer.cs`
+
+```csharp
+public class TypeScriptEnumRenderer : IEnumFormatRenderer
+{
+    public EnumFormat Format => EnumFormat.Enum;
+    public GenerationLanguage Language => GenerationLanguage.TypeScript;
+
+    public string Render(IEnumTemplateData data)
+    {
+        // Рендерит "export enum Name { Value = 'value', ... }"
+        // Использует CommentGenerator.GenerateJSDocComment
+        // Использует CodeFormatter.AppendLine
+    }
+}
+```
+
+**Текущий статус:** Зарегистрирован в DI. Не используется в активном пайплайне (только через `IEnumFormatRenderer` в legacy BaseCodeGenerator).
+
+**Почему удалить:** Генерация TypeScript enum реализована в `TypeScriptAstBuilder.BuildEnumSourceFile(IrEnum)` + `TypeScriptAstRenderer`.
+
+---
+
+#### `ValIO.Generators.TypeScript/Renderers/TypeScriptUnionTypeRenderer.cs`
+
+```csharp
+public class TypeScriptUnionTypeRenderer : IEnumFormatRenderer
+{
+    public EnumFormat Format => EnumFormat.Union;
+    public GenerationLanguage Language => GenerationLanguage.TypeScript;
+
+    public string Render(IEnumTemplateData data)
+    {
+        // Рендерит "export type Name = 'value1' | 'value2' | 'value3';"
+    }
+}
+```
+
+Аналогично `TypeScriptEnumRenderer` — дублёр. Удаляется.
+
+---
+
+### 12.4 Services/ — TypeScript-специфичные legacy сервисы
+
+Четыре сервиса, унаследованных от `Base*` классов, которые сами под удалением.
+
+#### `ValIO.Generators.TypeScript/Services/TypeScriptDependencyAnalyzer.cs`
+
+```csharp
+public class TypeScriptDependencyAnalyzer : BaseDependencyAnalyzer
+{
+    // Конструктор: base(namingConverter, GenerationLanguage.TypeScript)
+
+    protected override string? ResolveImportPath(string typeName, string? modelsPath, string? schemasPath)
+    {
+        // Логика:
+        // 1. IsBuiltInType → null (нет импорта)
+        // 2. Имя заканчивается на "Schema" → schemasPath + camelCase имя
+        // 3. Иначе → modelsPath + camelCase имя
+    }
+
+    public override bool IsBuiltInType(string typeName, GenerationLanguage language)
+    {
+        // Проверяет: any, unknown, object, string, number, boolean, void, null, undefined,
+        //             Date, Blob, File, Array, Record, Promise, Response
+        // Обрабатывает generic типы через разбор "<" и массивы через "[]"
+    }
+}
+```
+
+**Почему удалить:** `BaseDependencyAnalyzer` использует `GenerationLanguage` (legacy enum) и `TypeInfo` (legacy). В новом пайплайне зависимости между типами определяются через `IrTypeDependencyGraph` (в `ValIO.Core/IR/`) — граф строится `IrBuilder` на этапе анализа IR. Импорты разрешаются в `TypeScriptAstBuilder` на основе IR-информации, а не через `BaseDependencyAnalyzer`.
+
+**Что сохранить:** Логику определения встроенных TypeScript типов (`IsBuiltInType`) перенести в новый `TypeScriptIrTypeMapper` как `private static bool IsBuiltInTsType(string typeName)`.
+
+---
+
+#### `ValIO.Generators.TypeScript/Services/TypeScriptEnumExtractor.cs`
+
+```csharp
+public class TypeScriptEnumExtractor : BaseEnumExtractor
+{
+    // base(schemaResolver, namingConverter, GenerationLanguage.TypeScript)
+
+    protected override EnumFormat DetermineEnumFormat(string underlyingType)
+    {
+        // string → EnumFormat.Union
+        // всё остальное → EnumFormat.Enum
+    }
+}
+```
+
+**Почему удалить:** `BaseEnumExtractor` работает с `IOpenApiSchema` напрямую — обходя IR. В новом пайплайне перечисления извлекаются в `IrBuilder.ExtractEnums()` в `IrEnum` записи. Логика определения формата (Union vs Enum для string) переходит в `IrEnum.IsStringEnum` флаг + `TypeScriptAstBuilder.BuildEnumSourceFile()`.
+
+---
+
+#### `ValIO.Generators.TypeScript/Services/TypeScriptOperationNamingStrategy.cs`
+
+```csharp
+public class TypeScriptOperationNamingStrategy : IOperationNamingStrategy
+{
+    public string ToVariableName(string parameterName, INamingConverter namingConverter)
+        => namingConverter.ToCamelCase(parameterName);
+
+    public string ToPropertyName(string parameterName, INamingConverter namingConverter)
+        => namingConverter.ToPascalCase(parameterName);
+
+    public string GetDefaultParameterType() => "string";
+    public string GetDefaultRequestBodyType() => "any";
+}
+```
+
+**Почему удалить:** `IOperationNamingStrategy` — legacy интерфейс. Именование параметров операций теперь часть `IrOperation.Parameters[].Name` (уже применён `INamingConverter` в `IrBuilder`). TypeScript-специфичные типы по умолчанию (`"string"`, `"any"`) — часть `TypeScriptIrTypeMapper`.
+
+---
+
+#### `ValIO.Generators.TypeScript/Services/TypeScriptTypeInfoBuilder.cs`
+
+```csharp
+public class TypeScriptTypeInfoBuilder : BaseTypeInfoBuilder
+{
+    // base(typeMapper, schemaResolver, GenerationLanguage.TypeScript)
+
+    protected override TypeInfo CreateCollectionTypeInfo(TypeInfo itemType, bool isNullable)
+        => TypeInfo.Collection("Array", itemType, isNullable, Language);
+
+    protected override TypeInfo CreateDictionaryTypeInfo(TypeInfo keyType, TypeInfo valueType, bool isNullable)
+        => TypeInfo.Dictionary("Record", keyType, valueType, isNullable, Language);
+
+    protected override TypeInfo CreateDefaultTypeInfo(bool isNullable)
+    {
+        var typeInfo = TypeInfo.Simple("any", language: Language);
+        return isNullable ? TypeInfo.Nullable(typeInfo) : typeInfo;
+    }
+}
+```
+
+**Почему удалить:** `TypeInfo` удаляется полностью (заменяется `IrType`). `BaseTypeInfoBuilder` строит `TypeInfo` из `IOpenApiSchema` — вся эта цепочка заменяется `IrBuilder.BuildType(IOpenApiSchema) → IrType`. TypeScript-специфичная логика (`Array`, `Record`, `any`) — часть `TypeScriptIrTypeMapper.MapType(IrType)`.
+
+---
+
+### 12.5 TypeScriptTypeMapper.cs — legacy ITypeMapper реализация
+
+```csharp
+// ValIO.Generators.TypeScript/TypeScriptTypeMapper.cs
+
+public class TypeScriptTypeMapper : BaseTypeMapper
+{
+    public TypeScriptTypeMapper(INamingConverter namingConverter)
+        : base(namingConverter, GenerationLanguage.TypeScript) { }
+
+    // Работает с IOpenApiSchema — обходит IR!
+    public override string MapType(IOpenApiSchema schema, ISchemaResolver schemaResolver)
+    {
+        // Разрешает $ref → имя типа
+        // Обрабатывает allOf → "TypeA & TypeB"
+        // Обрабатывает oneOf/anyOf → "TypeA | TypeB"
+        // Обрабатывает object с properties → рекурсивно
+        // Обрабатывает array → "Array<ItemType>"
+        // Обрабатывает string/number/boolean/integer → примитивные TS типы
+    }
+
+    public override string MapPropertyType(IOpenApiSchema schema, bool isRequired, ISchemaResolver schemaResolver)
+    // + MapEnumType, MapTypeInternal, примитивный маппинг
+}
+```
+
+**Почему удалить:** Этот класс реализует `ITypeMapper` — интерфейс, работающий с `IOpenApiSchema` напрямую, минуя IR. Это **нарушение архитектурного слоя** — TypeScript-генератор не должен знать об OpenAPI-схеме, он должен работать только с IR.
+
+**Заменяется на:** `TypeScriptIrTypeMapper : IIrTypeMapper` — работает с `IrType`, возвращает `TypeNode` (AST нода), а не строку. Подробнее см. `07_IR_NODES_AND_BUILDERS.md`.
+
+```csharp
+// Новый интерфейс (ValIO.Core/Interfaces/IIrTypeMapper.cs):
+public interface IIrTypeMapper
+{
+    TypeNode MapType(IrType irType);           // IrType → TypeNode (AST нода)
+    bool IsNullable(IrType irType);            // Является ли тип nullable
+    bool IsOptional(IrType irType);            // Является ли тип optional
+}
+
+// Новая реализация (ValIO.Generators.TypeScript/TypeScriptIrTypeMapper.cs):
+public sealed class TypeScriptIrTypeMapper : IIrTypeMapper
+{
+    public TypeNode MapType(IrType irType) => irType switch
+    {
+        IrPrimitiveType p    => MapPrimitive(p.Kind),
+        IrModelReference ref => new SimpleTypeNode(ref.ModelName),
+        IrArrayType arr      => new GenericTypeNode("Array", [MapType(arr.ElementType)]),
+        IrDictionaryType d   => new GenericTypeNode("Record", [MapType(d.KeyType), MapType(d.ValueType)]),
+        IrNullableType n     => MapType(n.InnerType),  // TS: nullable через | null в конце
+        IrOptionalType o     => MapType(o.InnerType),  // TS: optional через "?" в property
+        IrUnionType u        => new UnionTypeNode(u.Types.Select(MapType).ToList()),
+        IrIntersectionType i => new IntersectionTypeNode(i.Types.Select(MapType).ToList()),
+        _ => throw new ArgumentException($"Unknown IrType: {irType.GetType().Name}")
+    };
+
+    private static SimpleTypeNode MapPrimitive(IrPrimitiveKind kind) => kind switch
+    {
+        IrPrimitiveKind.String    => new SimpleTypeNode("string"),
+        IrPrimitiveKind.Number    => new SimpleTypeNode("number"),
+        IrPrimitiveKind.Integer   => new SimpleTypeNode("number"),
+        IrPrimitiveKind.Long      => new SimpleTypeNode("number"),
+        IrPrimitiveKind.Boolean   => new SimpleTypeNode("boolean"),
+        IrPrimitiveKind.DateTime  => new SimpleTypeNode("string"),  // ISO-8601 строка
+        IrPrimitiveKind.Date      => new SimpleTypeNode("string"),
+        IrPrimitiveKind.Time      => new SimpleTypeNode("string"),
+        IrPrimitiveKind.Binary    => new SimpleTypeNode("Blob"),
+        IrPrimitiveKind.ByteArray => new SimpleTypeNode("string"),  // base64
+        IrPrimitiveKind.Uuid      => new SimpleTypeNode("string"),
+        IrPrimitiveKind.Any       => new SimpleTypeNode("unknown"),
+        IrPrimitiveKind.Void      => new SimpleTypeNode("void"),
+        IrPrimitiveKind.File      => new SimpleTypeNode("File"),
+        _ => new SimpleTypeNode("unknown")
+    };
+}
+```
+
+---
+
+### 12.6 ServiceCollectionExtensions — что убрать из DI регистрации
+
+После удаления всех TS-специфичных legacy классов нужно убрать их регистрацию из `ValIO/ServiceRegistration/ServiceCollectionExtensions.cs`.
+
+**Текущее состояние `AddTypeScriptGenerators()` — что содержит активные legacy регистрации:**
+
+```csharp
+// ValIO/ServiceRegistration/ServiceCollectionExtensions.cs
+
+private static IServiceCollection AddTypeScriptGenerators(this IServiceCollection services)
+{
+    // ← УДАЛИТЬ: TypeScriptTypeMapper (legacy ITypeMapper реализация)
+    services.AddSingleton<TypeScriptTypeMapper>();
+    services.AddSingleton<ITypeMapper>(sp => sp.GetRequiredService<TypeScriptTypeMapper>());
+
+    // ← УДАЛИТЬ: InterfaceModelRenderer (TemplateData рендерер)
+    services.AddSingleton<InterfaceModelRenderer>();
+    services.AddSingleton<IModelFormatRenderer>(sp => sp.GetRequiredService<InterfaceModelRenderer>());
+
+    // ← УДАЛИТЬ: TypeScriptEnumRenderer и TypeScriptUnionTypeRenderer
+    services.AddSingleton<TypeScriptEnumRenderer>();
+    services.AddSingleton<TypeScriptUnionTypeRenderer>();
+    services.AddSingleton<IEnumFormatRenderer>(sp => sp.GetRequiredService<TypeScriptEnumRenderer>());
+    services.AddSingleton<IEnumFormatRenderer>(sp => sp.GetRequiredService<TypeScriptUnionTypeRenderer>());
+
+    // ← УДАЛИТЬ: TypeScriptDependencyAnalyzer (legacy BaseDependencyAnalyzer)
+    services.AddSingleton<TypeScriptDependencyAnalyzer>();
+    services.AddSingleton<IDependencyAnalyzer>(sp => sp.GetRequiredService<TypeScriptDependencyAnalyzer>());
+
+    // ← УДАЛИТЬ: TypeScriptEnumExtractor (legacy BaseEnumExtractor)
+    services.AddSingleton<TypeScriptEnumExtractor>();
+    services.AddSingleton<IEnumExtractor>(sp => sp.GetRequiredService<TypeScriptEnumExtractor>());
+
+    // ← УДАЛИТЬ: TypeScriptOperationNamingStrategy (legacy IOperationNamingStrategy)
+    services.AddSingleton<IOperationNamingStrategy, TypeScriptOperationNamingStrategy>();
+
+    // ← УДАЛИТЬ: TypeScriptTypeInfoBuilder (legacy TypeInfo builder)
+    services.AddSingleton<TypeScriptTypeInfoBuilder>();
+    services.AddSingleton<ITypeInfoBuilder>(sp => sp.GetRequiredService<TypeScriptTypeInfoBuilder>());
+
+    // ← ОСТАВИТЬ (активный пайплайн):
+    services.AddSingleton<TypeScriptAstBuilder>();
+    services.AddSingleton<TypeScriptAstRenderer>();
+    services.AddSingleton<TypeScriptCodeGenerator>();
+    services.AddSingleton<ICodeGenerator, TypeScriptCodeGenerator>();
+    services.AddSingleton<ZodSchemaRenderer>();
+    services.AddSingleton<TanStackQueryRenderer>();
+    // ...
+}
+```
+
+**После рефакторинга** `AddTypeScriptGenerators()` полностью заменяется плагинной регистрацией через `TypeScriptPlugin.ConfigureServices(services)`. Метод `AddTypeScriptGenerators` удаляется.
+
+---
+
+### 12.7 Также удалить: закомментированные регистрации в ServiceCollectionExtensions
+
+В `ServiceCollectionExtensions.cs` есть большой закомментированный блок (~50 строк) с регистрациями старых TemplateData рендереров:
+
+```csharp
+// ЗАКОММЕНТИРОВАННЫЙ БЛОК — удалить вместе с файлом:
+// services.AddSingleton<IModelFormatRenderer, ...>();
+// services.AddSingleton<IEnumFormatRenderer, ...>();
+// zodModelRenderer = ...
+// zodEnumRenderer = ...
+// services.AddSingleton<IQueryWrapperRenderer, ...>();
+```
+
+Этот блок — артефакт перехода с TemplateData на IR/AST. Его наличие вводит в заблуждение при чтении кода. Комментарий удаляется вместе с файлом (файл будет заменён плагинной регистрацией).
+
+---
+
+### 12.8 Сводная таблица — TypeScript legacy к удалению
+
+| Файл | Категория | Заменяется |
+|------|-----------|-----------|
+| `Models/CodeGeneration/CodeBlock.cs` | Строковый генератор кода | `BlockStatementNode` + `TypeScriptAstRenderer` |
+| `Models/CodeGeneration/FunctionParameter.cs` | Строковый генератор кода | `FunctionDeclarationNode` |
+| `Models/CodeGeneration/FunctionParameterBuilder.cs` | Builder для legacy | Удаляется |
+| `Models/CodeGeneration/FunctionSignature.cs` | Строковый генератор кода | `FunctionDeclarationNode` + `TypeScriptAstRenderer` |
+| `Models/CodeGeneration/OptionsDefinition.cs` | Строковый генератор кода | `PropertySignatureNode` / `ObjectLiteralExpressionNode` |
+| `Models/CodeGeneration/OptionsDefinitionBuilder.cs` | Builder для legacy | Удаляется |
+| `Models/CodeGeneration/TypeDefinition.cs` | Строковый генератор кода | `InterfaceDeclarationNode` + `PropertySignatureNode` |
+| `Models/CodeGeneration/TypeDefinitionBuilder.cs` | Builder для legacy | Удаляется |
+| `Models/ApiTemplateData.cs` | TypeScript-специфичный TemplateData | `IrClient` → `AxiosAstBuilder`/`FetchAstBuilder` |
+| `Models/InterfaceTemplateData.cs` | TypeScript-специфичный TemplateData | `IrModel` → `TypeScriptAstBuilder` |
+| `Models/TypeScriptClientTemplateDataOptions.cs` | TemplateData Options | Удаляется вместе с TemplateData |
+| `Models/TypeScriptModelTemplateDataOptions.cs` | TemplateData Options | Удаляется вместе с TemplateData |
+| `Models/TypeScriptEnumTemplateDataOptions.cs` | TemplateData Options | Удаляется вместе с TemplateData |
+| `Models/TypeScriptOperationTemplateDataOptions.cs` | TemplateData Options | Удаляется вместе с TemplateData |
+| `Models/TypeScriptPropertyTemplateDataOptions.cs` | TemplateData Options | Удаляется вместе с TemplateData |
+| `Renderers/InterfaceModelRenderer.cs` | TemplateData рендерер | `TypeScriptAstRenderer.VisitInterfaceDeclaration()` |
+| `Renderers/TypeScriptEnumRenderer.cs` | TemplateData рендерер | `TypeScriptAstRenderer` для enum |
+| `Renderers/TypeScriptUnionTypeRenderer.cs` | TemplateData рендерер | `TypeScriptAstRenderer` для union type |
+| `Services/TypeScriptDependencyAnalyzer.cs` | Legacy сервис | `IrTypeDependencyGraph` в IR |
+| `Services/TypeScriptEnumExtractor.cs` | Legacy сервис | `IrBuilder.ExtractEnums()` |
+| `Services/TypeScriptOperationNamingStrategy.cs` | Legacy сервис | `IrBuilder` + `INamingConverter` |
+| `Services/TypeScriptTypeInfoBuilder.cs` | Legacy сервис | `IrBuilder.BuildType()` + `IrType` |
+| `TypeScriptTypeMapper.cs` | Legacy ITypeMapper | `TypeScriptIrTypeMapper : IIrTypeMapper` |
+
+**Итого: 23 файла к удалению** в TypeScript-генераторе (в дополнение к 30+ файлам в Core и других проектах из секций 2-10).

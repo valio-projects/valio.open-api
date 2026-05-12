@@ -523,4 +523,20 @@ ValIO.sln
 
 ---
 
-*Детальное описание каждого аспекта — в соответствующих документах.*
+---
+
+## Карта документов рефакторинга
+
+| Документ | Содержание |
+|----------|-----------|
+| `01_AST_REFACTORING.md` | Удаление `AstNodeKind`, исправление broken Accept в базовых нодах, ZodAstVisitorBase/TypeScriptAstVisitorBase, цепочка рефакторинга по шагам |
+| `02_PLUGIN_ARCHITECTURE.md` | Plugin-архитектура, `IGeneratorPlugin`, `ICodeGenerationStep`, `IIrTypeMapper`, `ConfigurationLoader`, детальные алгоритмы всех TS шагов |
+| `03_NEW_TS_CLIENTS.md` | Новые HTTP клиенты: undici, ofetch, got, ky, Angular HttpClient, SolidStart, MSW, TanStack Query (Vue/Angular/Solid/Svelte) |
+| `04_NEW_LANGUAGES.md` | Новые языки: PHP (Guzzle, Laravel), Python (aiohttp, HTTPX), C# RestSharp, F#, Java (OkHttp, UniRest), Kotlin, Swift, Dart |
+| `05_TS_VALIDATION.md` | Новые валидаторы: Valibot, TypeBox, Zod v3, Zod v4 — схемы, типы, интеграция |
+| `06_LEGACY_CLEANUP.md` | Полный каталог legacy-кода под удаление: TemplateData (30+ файлов Core), TypeScript-специфичный legacy (23 файла), ServiceCollectionExtensions |
+| `07_IR_NODES_AND_BUILDERS.md` | IR иерархия, `IrBuilder` алгоритм, IR→AST конвертация, `IrTypeDependencyGraph`, маппинг для TS/C#/PHP/Python |
+| `08_AST_BUILDERS_DEEP.md` | Детальный разбор всех AstBuilder классов, `TypeScriptAstBuilder` и `CSharpAstBuilder` декомпозиция, алгоритмы построения моделей/клиентов/схем |
+| `09_DESIGN_PATTERNS.md` | Применение GoF паттернов: Visitor, CoR, Strategy, Builder, Template Method, Command, Composite, Prototype, Iterator, Facade, State, Proxy |
+
+*Документы связаны между собой. Рекомендуемый порядок прочтения: 01 → 02 → 07 → 08 → 06 → 03 → 04 → 05 → 09.*
