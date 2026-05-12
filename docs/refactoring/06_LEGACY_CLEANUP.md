@@ -1,0 +1,990 @@
+# 06 — Полный каталог legacy-кода под удаление
+
+> **Этап:** 0 (выполняется параллельно с 01 и 02)  
+> **Приоритет:** Критический  
+> **Зависит от:** 01_AST_REFACTORING (нельзя удалять интерфейсы пока не заменены их реализации)
+
+---
+
+## Содержание
+
+1. [Общий принцип и порядок удаления](#1-общий-принцип-и-порядок-удаления)
+2. [TemplateData система — полное удаление](#2-templatedata-система--полное-удаление)
+3. [Устаревшие интерфейсы ValIO.Core/Interfaces](#3-устаревшие-интерфейсы-valiocoreinterfaces)
+4. [Устаревшие сервисы ValIO.Core/Services](#4-устаревшие-сервисы-valiocoreservices)
+5. [Устаревшие модели ValIO.Core/Models](#5-устаревшие-модели-valiocoremodels)
+6. [Устаревшие фабрики ValIO/Factories](#6-устаревшие-фабрики-valiofactories)
+7. [Устаревшие AST-слои](#7-устаревшие-ast-слои)
+8. [Устаревшие проекты и файлы вне основного кода](#8-устаревшие-проекты-и-файлы-вне-основного-кода)
+9. [Перечисления под замену](#9-перечисления-под-замену)
+10. [BaseCodeGenerator и ICodeGenerator — реструктуризация](#10-basecodeгenerator-и-icodegenerator--реструктуризация)
+11. [Сводная таблица всех удалений](#11-сводная-таблица-всех-удалений)
+
+---
+
+## 1. Общий принцип и порядок удаления
+
+### Почему legacy не удалено сразу
+
+В ValIO.Core существует два параллельных мира:
+
+**Мир 1 (старый, TemplateData):** `OpenAPI → Extractors → TemplateData → Renderers → string`  
+**Мир 2 (новый, IR/AST):** `OpenAPI → IrBuilder → IR → AstBuilder → AST → AstRenderer → string`
+
+Весь рабочий код уже перешёл на Мир 2. Мир 1 существует только в виде мёртвого кода — интерфейсы, классы, перечисления, которые больше не используются ни в одном рабочем пути. Комментарии в `BaseCodeGenerator.cs` прямо говорят: «методы удалены — они использовались только в старом TemplateData подходе».
+
+### Порядок удаления (важен для компилятора)
+
+```
+Шаг 1: Удалить реализации (Services, конкретные классы)
+Шаг 2: Удалить базовые классы (BaseXxx)
+Шаг 3: Удалить интерфейсы (IXxx)
+Шаг 4: Удалить модели TemplateData
+Шаг 5: Удалить перечисления (GenerationLanguage, ValidationLibrary, QueryWrapperLibrary)
+Шаг 6: Удалить фабрики
+Шаг 7: Удалить BaseCodeGenerator и ICodeGenerator (заменить на pipeline)
+```
+
+Нельзя удалять интерфейсы раньше их реализаций — компилятор укажет на ошибки.
+
+---
+
+## 2. TemplateData система — полное удаление
+
+Это самый большой блок legacy. Вся папка `ValIO.Core/Models/TemplateData/` удаляется целиком.
+
+### Файлы TemplateData моделей
+
+**`ValIO.Core/Models/TemplateData/ModelTemplateData.cs`**
+```csharp
+// Содержит:
+public class ModelTemplateData<TOptions, TPropertyOptions>  // legacy
+public class PropertyTemplateData<TOptions>                 // legacy
+public enum ModelFormat { Class, Record, Interface, TypeAlias, Struct }  // legacy
+```
+→ **Удалить.** Модели теперь представлены через `IrModel` → `TypeDeclarationNode` / `InterfaceDeclarationNode`.
+
+**`ValIO.Core/Models/TemplateData/OperationTemplateData.cs`**
+```csharp
+public class OperationTemplateData<TOptions>  // legacy
+// Содержит: MethodName, Path, HttpMethod, Parameters (список TypeInfo), ReturnType (TypeInfo)
+```
+→ **Удалить.** Операции представлены через `IrOperation` → методы в `MethodDeclarationNode`.
+
+**`ValIO.Core/Models/TemplateData/ClientTemplateData.cs`**
+```csharp
+public class ClientTemplateData<TOptions>  // legacy
+// Содержит: ClientName, Operations (список OperationTemplateData)
+```
+→ **Удалить.** Клиенты представлены через `IrClient` → `ClassDeclarationNode` / файл с функциями.
+
+**`ValIO.Core/Models/TemplateData/EnumTemplateData.cs`**
+```csharp
+public class EnumTemplateData<TOptions>  // legacy
+// Содержит: Name, Values (список строк или пар ключ-значение)
+```
+→ **Удалить.** Enum'ы представлены через `IrEnum` → `EnumDeclarationNode`.
+
+### Файлы опций TemplateData
+
+Вся папка `ValIO.Core/Models/TemplateData/Options/`:
+
+| Файл | Удалить |
+|------|---------|
+| `ModelTemplateDataOptions.cs` | да |
+| `PropertyTemplateDataOptions.cs` | да |
+| `OperationTemplateDataOptions.cs` | да |
+| `ClientTemplateDataOptions.cs` | да |
+| `EnumTemplateDataOptions.cs` | да |
+| `ITemplateDataOptions.cs` | да |
+
+Все эти классы — language-specific опции для TemplateData рендереров. После перехода на AST-рендереры они не нужны.
+
+### Итого по TemplateData
+
+```
+Удалить целиком:
+ValIO.Core/
+  Models/
+    TemplateData/
+      ModelTemplateData.cs
+      OperationTemplateData.cs
+      ClientTemplateData.cs
+      EnumTemplateData.cs
+      Options/
+        ModelTemplateDataOptions.cs
+        PropertyTemplateDataOptions.cs
+        OperationTemplateDataOptions.cs
+        ClientTemplateDataOptions.cs
+        EnumTemplateDataOptions.cs
+        ITemplateDataOptions.cs
+```
+
+---
+
+## 3. Устаревшие интерфейсы ValIO.Core/Interfaces
+
+Полный список интерфейсов под удаление с объяснением почему:
+
+### IClientRenderer.cs — удалить
+
+```csharp
+public interface IClientRenderer
+{
+    string Render(IClientTemplateData data);  // TemplateData — legacy
+}
+```
+**Почему:** Рендеринг HTTP клиентов теперь через `IrClient → AST → AstRenderer`. Никакой `IClientTemplateData` больше нет.
+
+### IModelRenderer.cs — удалить
+
+```csharp
+public interface IModelRenderer
+{
+    string Render(ModelTemplateData data);  // TemplateData — legacy
+}
+```
+**Почему:** Модели рендерятся через `IrModel → TypeDeclarationNode → TypeScriptAstRenderer/CSharpAstRenderer`.
+
+### IEnumRenderer.cs — удалить
+
+```csharp
+public interface IEnumRenderer
+{
+    string Render(EnumTemplateData data);  // TemplateData — legacy
+}
+```
+**Почему:** Enum'ы рендерятся через `IrEnum → EnumDeclarationNode → AstRenderer`.
+
+### IModelFormatRenderer.cs — удалить
+
+```csharp
+public interface IModelFormatRenderer
+{
+    string Render(ModelTemplateData data, ModelFormat format, GenerationLanguage language);
+    // ModelFormat — legacy enum; GenerationLanguage — legacy enum
+}
+```
+**Почему:** `ModelFormat` и `GenerationLanguage` удаляются. Формат модели определяется настройкой плагина.
+
+### IEnumFormatRenderer.cs — удалить
+
+```csharp
+public interface IEnumFormatRenderer
+{
+    string Render(EnumTemplateData data, EnumFormat format, GenerationLanguage language);
+}
+```
+**Почему:** `EnumFormat` и `GenerationLanguage` удаляются.
+
+### IOperationRenderer.cs — удалить
+
+```csharp
+public interface IOperationRenderer
+{
+    string Render(OperationTemplateData data);  // TemplateData — legacy
+}
+```
+**Почему:** Операции рендерятся через `IrOperation → MethodDeclarationNode → AstRenderer`.
+
+### IQueryWrapperRenderer.cs — удалить
+
+```csharp
+public interface IQueryWrapperRenderer
+{
+    string Render(OperationTemplateData data, QueryWrapperLibrary library, GenerationLanguage language);
+    // QueryWrapperLibrary — legacy enum
+}
+```
+**Почему:** TanStack Query и другие query wrappers теперь реализованы как отдельные `ICodeGenerationStep` через plugin-архитектуру.
+
+### IDependencyAnalyzer.cs — удалить
+
+```csharp
+public interface IDependencyAnalyzer
+{
+    IReadOnlySet<string> GetModelDependencies(ModelTemplateData data);
+    IReadOnlySet<string> GetOperationDependencies(OperationTemplateData data);
+}
+```
+**Почему:** Граф зависимостей теперь строится на уровне IR через `IrTypeDependencyGraph` в `IrBuilder`. `BaseDependencyAnalyzer` и его реализации удаляются.
+
+### IEnumExtractor.cs — удалить
+
+```csharp
+public interface IEnumExtractor
+{
+    IReadOnlyList<EnumTemplateData> ExtractEnums(IOpenApiSchema schema, ISchemaResolver resolver);
+}
+```
+**Почему:** Enum'ы извлекаются в `IrBuilder.ExtractEnums()` на уровне IR.
+
+### IModelExtractor.cs — удалить
+
+```csharp
+public interface IModelExtractor
+{
+    IReadOnlyList<ModelTemplateData> ExtractModels(OpenApiDocument document);
+}
+```
+**Почему:** Модели извлекаются в `IrBuilder.ExtractModels()`.
+
+### IOperationExtractor.cs — удалить
+
+```csharp
+public interface IOperationExtractor
+{
+    IReadOnlyList<OperationTemplateData> ExtractOperations(OpenApiDocument document);
+}
+```
+**Почему:** Операции извлекаются в `IrBuilder.ExtractClients()` → `IrOperation`.
+
+### ITypeInfoBuilder.cs — удалить
+
+```csharp
+public interface ITypeInfoBuilder
+{
+    TypeInfo BuildTypeInfo(IOpenApiSchema schema, ISchemaResolver resolver);
+    TypeInfo BuildPropertyTypeInfo(IOpenApiSchema schema, bool isRequired, ISchemaResolver resolver);
+}
+```
+**Почему:** `TypeInfo` — legacy модель. Типы теперь строятся в `IrBuilder.BuildType()` → `IrType`. `ITypeInfoBuilder` и его реализация `BaseTypeInfoBuilder` удаляются.
+
+### IClientTemplateData.cs, IModelTemplateData.cs, IEnumTemplateData.cs, IOperationTemplateData.cs — удалить
+
+```csharp
+public interface IClientTemplateData   { string ClientName { get; }; GenerationLanguage Language { get; }; ... }
+public interface IModelTemplateData    { string Name { get; }; ... }
+public interface IEnumTemplateData     { string Name { get; }; ... }
+public interface IOperationTemplateData { string MethodName { get; }; ... }
+```
+**Почему:** TemplateData интерфейсы — основа старого pipeline. Полностью заменены IR-записями.
+
+### ITypeMapper.cs — переработать, не удалять
+
+```csharp
+public interface ITypeMapper
+{
+    string MapType(IOpenApiSchema schema, ISchemaResolver schemaResolver);        // LEGACY — работает с OpenAPI
+    string MapPropertyType(IOpenApiSchema schema, bool isRequired, ...);          // LEGACY
+    string MapEnumType(IOpenApiSchema schema, ISchemaResolver schemaResolver);    // LEGACY
+    TypeInfo MapTypeInfo(IOpenApiSchema schema, ...);                             // LEGACY — возвращает TypeInfo
+    TypeInfo MapPropertyTypeInfo(IOpenApiSchema schema, bool isRequired, ...);   // LEGACY
+}
+```
+
+**Проблема:** `ITypeMapper` работает напрямую с `IOpenApiSchema` — это обход IR и нарушает pipeline. Кроме того, возвращает `TypeInfo` — legacy модель.
+
+**Правильный контракт после рефакторинга:**
+```csharp
+// ValIO.Core/Interfaces/IIrTypeMapper.cs — НОВЫЙ
+public interface IIrTypeMapper
+{
+    /// <summary>
+    /// Маппит IrType в AST TypeNode для конкретного языка/стека.
+    /// Каждый генератор реализует свой маппер.
+    /// </summary>
+    TypeNode MapType(IrType irType);
+    TypeNode MapPropertyType(IrType irType, bool isRequired);
+}
+
+// Пример реализации для TypeScript:
+public class TypeScriptIrTypeMapper : IIrTypeMapper
+{
+    public TypeNode MapType(IrType irType) => irType switch
+    {
+        IrPrimitiveType p  => MapPrimitive(p),
+        IrArrayType a      => new ArrayTypeNode(MapType(a.ElementType)),
+        IrDictionaryType d => new DictionaryTypeNode(MapType(d.KeyType), MapType(d.ValueType)),
+        IrNullableType n   => new NullableTypeNode(MapType(n.InnerType)),
+        IrOptionalType o   => new OptionalTypeNode(MapType(o.InnerType)),
+        IrUnionType u      => new UnionTypeNode(u.Types.Select(MapType).ToImmutableList()),
+        IrModelReference r => new SimpleTypeNode(r.ModelName),
+        _ => throw new NotSupportedException($"IrType {irType.GetType().Name} not supported")
+    };
+
+    private TypeNode MapPrimitive(IrPrimitiveType p) => p.PrimitiveKind switch
+    {
+        IrPrimitiveKind.String   => new SimpleTypeNode("string"),
+        IrPrimitiveKind.Number   => new SimpleTypeNode("number"),
+        IrPrimitiveKind.Integer  => new SimpleTypeNode("number"),
+        IrPrimitiveKind.Long     => new SimpleTypeNode("bigint"),
+        IrPrimitiveKind.Boolean  => new SimpleTypeNode("boolean"),
+        IrPrimitiveKind.DateTime => new SimpleTypeNode("string"),
+        IrPrimitiveKind.Uuid     => new SimpleTypeNode("string"),
+        IrPrimitiveKind.Binary   => new SimpleTypeNode("Blob"),
+        IrPrimitiveKind.Any      => new RawTypeNode("unknown"),
+        IrPrimitiveKind.Void     => new SimpleTypeNode("void"),
+        _ => new RawTypeNode("unknown")
+    };
+}
+```
+
+Старый `ITypeMapper` (работающий с OpenAPI schema напрямую) **удаляется**. Новый `IIrTypeMapper` работает только с IR.
+
+### ISchemaResolver.cs — оставить, переместить
+
+```csharp
+public interface ISchemaResolver
+{
+    IOpenApiSchema ResolveSchema(IOpenApiSchema schema);
+    string? GetSchemaName(IOpenApiSchema schema);
+}
+```
+
+**Почему оставить:** `ISchemaResolver` нужен `IrBuilder` для разрешения `$ref` ссылок при построении IR из OpenAPI. После того как IR построен, `ISchemaResolver` больше не используется. Можно оставить в `ValIO.Core/Interfaces/` или переместить в `ValIO.Core/IR/` как более подходящее место.
+
+---
+
+## 4. Устаревшие сервисы ValIO.Core/Services
+
+### BaseDependencyAnalyzer.cs — удалить
+
+```csharp
+public abstract class BaseDependencyAnalyzer : IDependencyAnalyzer
+{
+    // Анализирует зависимости между ModelTemplateData
+    // Использовался для определения порядка импортов в старом pipeline
+}
+```
+**Почему:** Зависимости теперь в `IrTypeDependencyGraph`, который строится в `IrBuilder.BuildTypeDependencyGraph()`.
+
+### BaseEnumExtractor.cs — удалить
+
+```csharp
+public abstract class BaseEnumExtractor : IEnumExtractor
+{
+    // Извлекал EnumTemplateData из OpenAPI схем
+}
+```
+**Почему:** Заменён `IrBuilder.ExtractEnums()`.
+
+### BaseTypeInfoBuilder.cs — удалить
+
+```csharp
+public abstract class BaseTypeInfoBuilder : ITypeInfoBuilder
+{
+    // Строил TypeInfo из OpenAPI схем
+}
+```
+**Почему:** Заменён `IrBuilder.BuildType()` → `IrType`. `TypeInfo` удаляется.
+
+### BaseTypeMapper.cs — удалить
+
+```csharp
+public abstract class BaseTypeMapper : ITypeMapper
+{
+    // Маппил OpenAPI schema в language-specific string типа
+    // Используется в старом TemplateData pipeline
+}
+```
+**Почему:** Заменён `IIrTypeMapper` (новый интерфейс, работающий с `IrType`).
+
+### DependencyCollector.cs — удалить
+
+```csharp
+public class DependencyCollector
+{
+    // Вспомогательный класс для BaseDependencyAnalyzer
+    // Собирал зависимости из TypeInfo
+}
+```
+**Почему:** `TypeInfo` удаляется, `DependencyCollector` теряет смысл.
+
+### ModelExtractor.cs — удалить
+
+```csharp
+public class ModelExtractor : BaseTypeInfoBuilder
+{
+    // Реализация IModelExtractor через BaseTypeInfoBuilder
+}
+```
+**Почему:** Заменён `IrBuilder.ExtractModels()`.
+
+### OperationExtractor.cs — удалить
+
+```csharp
+public class OperationExtractor : IOperationExtractor
+{
+    // Реализация IOperationExtractor
+}
+```
+**Почему:** Заменён `IrBuilder.ExtractClients()` → `IrOperation`.
+
+### SchemaResolver.cs — оставить, проверить
+
+```csharp
+public class SchemaResolver : ISchemaResolver
+{
+    // Разрешает $ref ссылки в OpenAPI документе
+}
+```
+
+**Почему оставить:** `SchemaResolver` используется в `IrBuilder` и нужен. Переместить из `Services/` в `IR/` или оставить как есть — допустимо. Важно не удалять.
+
+### NamingConverter.cs, FileWriter.cs — оставить
+
+Эти сервисы используются в новом pipeline и не являются legacy:
+- `NamingConverter` — нужен для `IrBuilder` и `AstBuilder`
+- `FileWriter` — нужен для записи сгенерированных файлов
+
+### BaseCodeGenerator.cs — реструктурировать (см. раздел 10)
+
+---
+
+## 5. Устаревшие модели ValIO.Core/Models
+
+### TypeInfo.cs — удалить
+
+```csharp
+public class TypeInfo
+{
+    public string BaseType { get; }
+    public bool IsCollection { get; }
+    public bool IsDictionary { get; }
+    public bool IsNullable { get; }
+    public bool IsOptional { get; }
+    public IReadOnlyList<TypeInfo> GenericArguments { get; }
+    public GenerationLanguage? Language { get; }  // ← нарушение: знает о языке
+    public TypeFormat Format { get; }             // ← legacy enum
+    
+    // Статические фабрики
+    public static TypeInfo Simple(string typeName) => ...;
+    public static TypeInfo Nullable(TypeInfo inner) => ...;
+    public static TypeInfo Collection(TypeInfo element) => ...;
+    public static TypeInfo Dictionary(TypeInfo key, TypeInfo value) => ...;
+    public static TypeInfo Void() => ...;
+}
+
+public enum TypeFormat { Object, Enum, Union, Intersection }  // удалить
+```
+
+**Почему удалить:**
+1. `TypeInfo.Language` знает о `GenerationLanguage` — нарушение слоистости
+2. Заменяется `IrType` иерархией в `ValIO.Core/IR/Types/`
+3. `TypeFormat` — дублирует информацию из `IrComposition` / `IrUnionType`
+
+**Важно:** `TypeScriptAstBuilder.BuildType(TypeInfo typeInfo)` — **использует TypeInfo**. Это значит, что `TypeScriptAstBuilder` ещё не полностью мигрирован на IR. Нужно заменить `BuildType(TypeInfo)` → `BuildType(IrType)`. Подробнее в `08_AST_BUILDERS_DEEP.md`.
+
+### GenerationOptions.cs — удалить
+
+```csharp
+public class GenerationOptions
+{
+    public ValidationLibrary? ValidationLibrary { get; set; }  // legacy enum
+    public QueryWrapperLibrary? QueryWrapperLibrary { get; set; }  // legacy enum
+    public object? CSharpOptions { get; set; }
+    public object? TypeScriptOptions { get; set; }
+    public object? CppOptions { get; set; }
+}
+```
+
+**Почему удалить:** Заменяется plugin-специфичными опциями через `IGeneratorPlugin.ParseOptions(config)`. Каждый плагин парсит свою секцию конфигурации самостоятельно.
+
+### ApiParameter.cs, ApiProperty.cs, ApiRequestBody.cs, ApiResponse.cs — удалить
+
+```csharp
+public class ApiParameter   { string Name; string Type; bool IsRequired; ... }
+public class ApiProperty    { string Name; TypeInfo Type; bool IsRequired; ... }
+public class ApiRequestBody { TypeInfo Type; bool IsRequired; string ContentType; ... }
+public class ApiResponse    { string StatusCode; TypeInfo Type; string Description; ... }
+```
+
+**Почему удалить:** Это промежуточные модели из старого pipeline (OpenAPI → Api* → TemplateData). В новом pipeline есть:
+- `IrParameter` вместо `ApiParameter`
+- `IrProperty` вместо `ApiProperty`
+- `IrRequestBody` вместо `ApiRequestBody`
+- `IrResponse` вместо `ApiResponse`
+
+### SchemaCompositionInfo.cs — проверить и удалить
+
+```csharp
+public class SchemaCompositionInfo
+{
+    public IrCompositionKind Kind { get; }
+    public IReadOnlyList<string> TypeNames { get; }
+}
+```
+
+Если используется только в `IrBuilder` внутри логики `ExtractComposition`, можно переделать в локальную private структуру или удалить — `IrComposition` уже несёт эту информацию.
+
+### GenerationConfiguration.cs — частично переработать
+
+```csharp
+public class GenerationConfiguration
+{
+    public string OutputPath { get; set; }
+    public GenerationLanguage Language { get; set; }  // ← legacy enum
+    public GenerationOptions? Options { get; set; }   // ← legacy class
+    public FileOrganization FileOrganization { get; set; }
+    public NamingConventions NamingConventions { get; set; }
+}
+```
+
+**Изменение:**
+- Убрать `Language` (заменяется идентификатором плагина — строкой)
+- Убрать `Options` (заменяется plugin-специфичной конфигурацией)
+- Добавить `PluginId` (строка, например `"typescript.axios"`, `"csharp"`)
+- Добавить `PluginOptions` (словарь или `JsonElement` для plugin-специфичных опций)
+
+```csharp
+// Новый GenerationConfiguration
+public class GenerationConfiguration
+{
+    public required string OutputPath { get; init; }
+    public required string PluginId { get; init; }       // "typescript.axios", "csharp", "php.guzzle"
+    public JsonElement? PluginOptions { get; init; }     // плагин парсит сам
+    public FileOrganization FileOrganization { get; init; }
+    public NamingConventions NamingConventions { get; init; }
+}
+```
+
+### FileGroupingStrategy.cs, FileOrganization.cs, NamingConvention.cs, NamingConventions.cs — оставить
+
+Эти модели используются в новом pipeline и не являются legacy.
+
+### ParameterLocation.cs — оставить или перенести в IR
+
+```csharp
+public enum ParameterLocation { Query, Path, Header, Cookie }
+```
+
+Если используется только в `IrOperation` — переименовать в `IrParameterLocation` и переместить в `ValIO.Core/IR/Enums/`.
+
+---
+
+## 6. Устаревшие фабрики ValIO/Factories
+
+### CodeGeneratorFactory.cs — удалить
+
+```csharp
+public class CodeGeneratorFactory
+{
+    public ICodeGenerator CreateGenerator(GenerationLanguage language, GenerationOptions? options)
+    {
+        return language switch
+        {
+            GenerationLanguage.CSharp     => _serviceProvider.GetRequiredService<CSharpCodeGenerator>(),
+            GenerationLanguage.TypeScript => _serviceProvider.GetRequiredService<TypeScriptCodeGenerator>(),
+            GenerationLanguage.Cpp        => _serviceProvider.GetRequiredService<CppCodeGenerator>(),
+            _ => throw new NotSupportedException(...)
+        };
+    }
+}
+```
+
+**Почему удалить:** Это жёстко закодированный switch на `GenerationLanguage`. Заменяется `GeneratorRegistry` из plugin-архитектуры:
+
+```csharp
+// Новый подход
+public class GeneratorRegistry
+{
+    private readonly Dictionary<string, IGeneratorPlugin> _plugins = new();
+
+    public void Register(IGeneratorPlugin plugin)
+        => _plugins[plugin.PluginId] = plugin;
+
+    public IGeneratorPlugin GetPlugin(string pluginId)
+        => _plugins.TryGetValue(pluginId, out var plugin)
+           ? plugin
+           : throw new NotSupportedException($"Plugin '{pluginId}' not registered");
+}
+```
+
+### TypeMapperFactory.cs — удалить
+
+```csharp
+public class TypeMapperFactory
+{
+    public ITypeMapper CreateTypeMapper(GenerationLanguage language)
+    {
+        return language switch { ... };  // switch на GenerationLanguage — legacy
+    }
+}
+```
+
+**Почему удалить:** Маппер теперь регистрируется через DI каждым плагином. Централизованная фабрика с switch не нужна.
+
+---
+
+## 7. Устаревшие AST-слои
+
+### IAstRenderer.cs — удалить
+
+```csharp
+// ValIO.Core/Ast/Visitors/IAstRenderer.cs
+public interface IAstRenderer : IAstVisitor<string>
+{
+    // Пустой маркерный интерфейс — никакой ценности
+}
+```
+
+**Почему:** После рефакторинга IAstVisitor dispatch-методы удаляются. Рендереры типизируются как `BaseAstVisitor<string>` с конкретным языковым интерфейсом (`ITypeScriptAstRenderer`, `ICSharpAstRenderer`). Маркерный интерфейс `IAstRenderer` не даёт ничего — только создаёт ложную абстракцию.
+
+### ICodeRenderer.cs — удалить
+
+```csharp
+// ValIO.Core/Interfaces/ICodeRenderer.cs
+public interface ICodeRenderer
+{
+    GenerationLanguage Language { get; }
+    string RenderModel(IModelTemplateData data);
+    string RenderEnum(EnumTemplateData data);
+    string RenderClient(IClientTemplateData data);
+    string RenderOperation(IOperationTemplateData data);
+}
+```
+
+**Почему:** Весь интерфейс завязан на TemplateData. Рендеринг теперь через `node.Accept(visitor)`.
+
+### HttpAstVisitorBase.cs — удалить
+
+```csharp
+// ValIO.Core/Ast/Visitors/HttpAstVisitorBase.cs
+public abstract class HttpAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IHttpAstVisitor<TResult>
+{
+    public override TResult VisitBlankLineStatement(BlankLineStatementNode node) => VisitDefault(node);
+    // Абстрактные методы только для HTTP
+}
+```
+
+**Почему:** После удаления HTTP методов из `IAstVisitor` нет смысла в `HttpAstVisitorBase`. HTTP рендереры напрямую реализуют `BaseAstVisitor<string>` + `IHttpAstVisitor<string>`. Промежуточный `HttpAstVisitorBase` — лишний уровень.
+
+### ValIO.Generators.TypeScript.Zod/ (отдельный проект) — удалить
+
+```
+ValIO.Generators.TypeScript.Zod/
+  Ast/
+    Visitors/
+      ZodAstVisitorBase.cs  ← единственный файл
+  ValIO.Generators.TypeScript.Zod.csproj
+```
+
+Это практически пустой проект — остаток от ранней архитектуры. Реальная Zod-реализация находится в `ValIO.Generators.TypeScript/Zod/`. Проект удаляется полностью вместе с `.csproj`.
+
+---
+
+## 8. Устаревшие проекты и файлы вне основного кода
+
+### Examples/valio-master/ — решение по ситуации
+
+```
+Examples/
+  valio-master/
+    ValIO.Core/
+    ValIO.Generators.TypeScript/
+    ValIO/
+    ...
+```
+
+Это полная копия старой версии кода. Оставить только если нужна как reference для сравнения при рефакторинге. Иначе — удалить чтобы не создавать путаницу при поиске по коду.
+
+**Рекомендация:** Переместить в отдельную ветку git (`archive/legacy-template-data`) и удалить из основной ветки.
+
+---
+
+## 9. Перечисления под замену
+
+### GenerationLanguage.cs — удалить
+
+```csharp
+public enum GenerationLanguage { CSharp, TypeScript, Cpp }
+```
+
+**Почему:** Язык генерации теперь идентифицируется строковым `PluginId` плагина (`"typescript.fetch"`, `"csharp"`, `"php.guzzle"`). Enum ограничивает расширяемость.
+
+**Заменяется на:** строки `PluginId` в `IGeneratorPlugin` и `GenerationConfiguration`.
+
+**Где используется сейчас (полный аудит):**
+- `ICodeGenerator.SupportsLanguage(GenerationLanguage)` → метод удаляется
+- `CodeGeneratorFactory.CreateGenerator(GenerationLanguage, ...)` → фабрика удаляется
+- `BaseCodeGenerator.Language` поле → заменяется `PluginId` строкой
+- `ICodeRenderer.Language` → интерфейс удаляется
+- `GenerationConfiguration.Language` → заменяется `PluginId`
+- `TypeScriptCodeGenerator.SupportsLanguage(GenerationLanguage)` → метод удаляется
+
+### ValidationLibrary.cs — удалить
+
+```csharp
+public enum ValidationLibrary
+{
+    Zod,
+    Yup,
+    Valli   // ОПЕЧАТКА: должно быть Valibot
+}
+```
+
+**Почему:** Validation library теперь выражается через `PluginId` плагина (`"typescript.zod"`, `"typescript.valibot"`, `"typescript.typebox"`). Enum знает только о 3 библиотеках из планируемых 4+.
+
+**Исправление опечатки Valli → Valibot:** Это не просто опечатка — правильное название библиотеки `valibot`. Enum удаляется, поэтому опечатка исчезает вместе с ним, но важно зафиксировать в документации.
+
+### QueryWrapperLibrary.cs — удалить
+
+```csharp
+public enum QueryWrapperLibrary { TanStackQuery, SWR }
+```
+
+**Почему:** Аналогично ValidationLibrary — заменяется `PluginId`. TanStack Query для React, Vue, Angular, Solid — это разные плагины.
+
+### TypeScriptHttpTransports.cs — заменить
+
+```csharp
+// ValIO.Generators.TypeScript/Models/TypeScriptHttpTransports.cs
+[Flags]
+public enum TypeScriptHttpTransports
+{
+    None  = 0,
+    Fetch = 1,
+    Axios = 2
+}
+```
+
+**Почему переработать:** Enum знает только о 2 транспортах. Планируется 6+ (undici, ofetch, got, ky, Angular HttpClient, native fetch). Flags enum плохо масштабируется — каждый новый транспорт требует новой степени 2.
+
+**Замена:** Транспорт идентифицируется `PluginId` плагина. Конфигурация может указывать несколько плагинов:
+
+```yaml
+# valIO.yaml
+generators:
+  - plugin: typescript.axios
+    output: ./src/api/axios
+  - plugin: typescript.fetch
+    output: ./src/api/fetch
+  - plugin: typescript.ky
+    output: ./src/api/ky
+```
+
+---
+
+## 10. BaseCodeGenerator и ICodeGenerator — реструктуризация
+
+### Текущий ICodeGenerator — удалить
+
+```csharp
+public interface ICodeGenerator
+{
+    Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config);
+    bool SupportsLanguage(GenerationLanguage language);  // ← GenerationLanguage — legacy
+    bool SupportsOptions(GenerationOptions? options);    // ← GenerationOptions — legacy
+}
+```
+
+**Почему:** Оба вспомогательных метода используют legacy типы.
+
+**Новый контракт:**
+```csharp
+// ValIO.Core/Pipeline/ICodeGenerationPipeline.cs
+public interface ICodeGenerationPipeline
+{
+    /// <summary>
+    /// Идентификатор плагина, который использует этот pipeline
+    /// </summary>
+    string PluginId { get; }
+
+    /// <summary>
+    /// Запускает pipeline генерации кода
+    /// </summary>
+    Task<GenerationResult> RunAsync(IrDocument irDocument, GenerationConfiguration config, CancellationToken ct = default);
+}
+```
+
+Pipeline собирает `ICodeGenerationStep[]` из DI и выполняет их по порядку.
+
+### Текущий BaseCodeGenerator — реструктурировать
+
+```csharp
+public abstract class BaseCodeGenerator : ICodeGenerator
+{
+    protected readonly ITypeMapper TypeMapper;           // ← legacy ITypeMapper
+    protected readonly INamingConverter NamingConverter; // ← оставить
+    protected readonly IFileWriter FileWriter;           // ← оставить
+    protected readonly ILogger Logger;                   // ← оставить
+    protected readonly GenerationLanguage Language;      // ← legacy enum
+
+    public abstract bool SupportsLanguage(GenerationLanguage language);  // ← legacy
+    public abstract bool SupportsOptions(GenerationOptions? options);    // ← legacy
+    public abstract Task<GenerationResult> GenerateAsync(OpenApiDocument document, GenerationConfiguration config);
+}
+```
+
+**Изменения:**
+- Убрать `ITypeMapper TypeMapper` (заменяется `IIrTypeMapper`)
+- Убрать `GenerationLanguage Language` (заменяется `PluginId` из `IGeneratorPlugin`)
+- Убрать `SupportsLanguage` и `SupportsOptions`
+- Переименовать в `BaseCodeGenerationPipeline : ICodeGenerationPipeline`
+
+```csharp
+// Новая база
+public abstract class BaseCodeGenerationPipeline : ICodeGenerationPipeline
+{
+    protected readonly INamingConverter NamingConverter;
+    protected readonly IFileWriter FileWriter;
+    protected readonly ILogger Logger;
+    protected readonly IReadOnlyList<ICodeGenerationStep> Steps;
+
+    public abstract string PluginId { get; }
+
+    public virtual async Task<GenerationResult> RunAsync(
+        IrDocument irDocument,
+        GenerationConfiguration config,
+        CancellationToken ct = default)
+    {
+        var context = new GenerationContext(irDocument, config);
+
+        foreach (var step in Steps)
+        {
+            await step.ExecuteAsync(context, ct);
+        }
+
+        await FileWriter.WriteAllAsync(context.GeneratedFiles, config.OutputPath, ct);
+        return context.ToResult();
+    }
+}
+```
+
+### TypeScriptCodeGenerator — разобрать на Steps
+
+Текущий `TypeScriptCodeGenerator` (678 строк) — God Object. Разбивается на:
+
+| Step | Ответственность |
+|------|-----------------|
+| `IrBuildStep` | OpenAPI → IrDocument (общий для всех языков) |
+| `TypeScriptModelsStep` | IrDocument.Models → TS interface/type файлы |
+| `TypeScriptEnumsStep` | IrDocument.Enums → TS enum файлы |
+| `TypeScriptClientStep` | IrDocument.Clients → HTTP client файлы (базовый) |
+| `AxiosClientStep` | IrDocument.Clients → Axios-специфичные файлы |
+| `FetchClientStep` | IrDocument.Clients → Fetch-специфичные файлы |
+| `ZodSchemasStep` | IrDocument.Models → Zod schema файлы |
+| `TanStackQueryStep` | IrDocument.Clients → TanStack Query hooks |
+| `TypeScriptParamsStep` | IrDocument.Clients → params объекты |
+
+Каждый Step:
+```csharp
+public interface ICodeGenerationStep
+{
+    int Order { get; }  // порядок выполнения
+    string Name { get; }  // для логирования
+    Task ExecuteAsync(GenerationContext context, CancellationToken ct);
+}
+
+public class GenerationContext
+{
+    public IrDocument IrDocument { get; }
+    public GenerationConfiguration Config { get; }
+    public Dictionary<string, string> GeneratedFiles { get; } = new();
+    public List<string> Warnings { get; } = new();
+    public List<string> Errors { get; } = new();
+}
+```
+
+---
+
+## 11. Сводная таблица всех удалений
+
+### ValIO.Core/Interfaces/ — удалить файлы
+
+| Файл | Причина |
+|------|---------|
+| `IClientRenderer.cs` | TemplateData legacy |
+| `IModelRenderer.cs` | TemplateData legacy |
+| `IEnumRenderer.cs` | TemplateData legacy |
+| `IModelFormatRenderer.cs` | TemplateData + GenerationLanguage legacy |
+| `IEnumFormatRenderer.cs` | TemplateData + GenerationLanguage legacy |
+| `IOperationRenderer.cs` | TemplateData legacy |
+| `IQueryWrapperRenderer.cs` | TemplateData + QueryWrapperLibrary legacy |
+| `IDependencyAnalyzer.cs` | Заменён IrTypeDependencyGraph |
+| `IEnumExtractor.cs` | Заменён IrBuilder.ExtractEnums |
+| `IModelExtractor.cs` | Заменён IrBuilder.ExtractModels |
+| `IOperationExtractor.cs` | Заменён IrBuilder.ExtractClients |
+| `ITypeInfoBuilder.cs` | TypeInfo legacy |
+| `IClientTemplateData.cs` | TemplateData legacy |
+| `IModelTemplateData.cs` | TemplateData legacy |
+| `IEnumTemplateData.cs` | TemplateData legacy |
+| `IOperationTemplateData.cs` | TemplateData legacy |
+| `ICodeRenderer.cs` | TemplateData + GenerationLanguage legacy |
+| `ICodeGenerator.cs` | GenerationLanguage + GenerationOptions legacy — заменяется ICodeGenerationPipeline |
+| `ITypeMapper.cs` | Работает с OpenAPI schema напрямую — заменяется IIrTypeMapper |
+
+### ValIO.Core/Services/ — удалить файлы
+
+| Файл | Причина |
+|------|---------|
+| `BaseDependencyAnalyzer.cs` | Заменён IrTypeDependencyGraph |
+| `BaseEnumExtractor.cs` | Заменён IrBuilder.ExtractEnums |
+| `BaseTypeInfoBuilder.cs` | TypeInfo legacy |
+| `BaseTypeMapper.cs` | Заменён IIrTypeMapper |
+| `DependencyCollector.cs` | TypeInfo legacy |
+| `ModelExtractor.cs` | Заменён IrBuilder |
+| `OperationExtractor.cs` | Заменён IrBuilder |
+| `BaseCodeGenerator.cs` | Реструктурируется в BaseCodeGenerationPipeline |
+
+### ValIO.Core/Models/ — удалить файлы
+
+| Файл | Причина |
+|------|---------|
+| `TypeInfo.cs` | Заменён IrType иерархией |
+| `GenerationOptions.cs` | Заменён plugin-специфичными опциями |
+| `GenerationLanguage.cs` | Заменён PluginId строкой |
+| `ValidationLibrary.cs` | Заменён PluginId; опечатка Valli→Valibot |
+| `QueryWrapperLibrary.cs` | Заменён PluginId |
+| `ApiParameter.cs` | Заменён IrParameter |
+| `ApiProperty.cs` | Заменён IrProperty |
+| `ApiRequestBody.cs` | Заменён IrRequestBody |
+| `ApiResponse.cs` | Заменён IrResponse |
+| `SchemaCompositionInfo.cs` | Заменён IrComposition |
+| `TemplateData/ModelTemplateData.cs` | TemplateData legacy |
+| `TemplateData/OperationTemplateData.cs` | TemplateData legacy |
+| `TemplateData/ClientTemplateData.cs` | TemplateData legacy |
+| `TemplateData/EnumTemplateData.cs` | TemplateData legacy |
+| `TemplateData/Options/*.cs` (6 файлов) | TemplateData legacy |
+
+### ValIO.Core/Ast/Visitors/ — удалить файлы
+
+| Файл | Причина |
+|------|---------|
+| `IAstRenderer.cs` | Пустой маркерный интерфейс |
+| `HttpAstVisitorBase.cs` | Не нужен после исправления IAstVisitor |
+
+### ValIO.Core/Ast/Enums/ — удалить
+
+| Файл | Причина |
+|------|---------|
+| `AstNodeKind.cs` | 130+ значений, заменяется системой типов |
+
+### ValIO/Factories/ — удалить файлы
+
+| Файл | Причина |
+|------|---------|
+| `CodeGeneratorFactory.cs` | switch на GenerationLanguage, заменяется GeneratorRegistry |
+| `TypeMapperFactory.cs` | switch на GenerationLanguage, заменяется DI |
+
+### Отдельные проекты
+
+| Проект | Причина |
+|--------|---------|
+| `ValIO.Generators.TypeScript.Zod/` | Почти пустой, единственный файл ZodAstVisitorBase.cs — legacy |
+
+### ValIO.Core/Models/ — изменить (не удалять)
+
+| Файл | Изменение |
+|------|-----------|
+| `GenerationConfiguration.cs` | Убрать `Language`, `Options`; добавить `PluginId`, `PluginOptions` |
+
+### ValIO.Core/Interfaces/ — оставить и переработать
+
+| Файл | Изменение |
+|------|-----------|
+| `ITypeMapper.cs` | Заменить на `IIrTypeMapper.cs` — работает с `IrType`, не с OpenAPI schema |
+| `ISchemaResolver.cs` | Оставить, возможно переместить в `ValIO.Core/IR/` |
+
+### Ключевые новые файлы (создать)
+
+| Файл | Назначение |
+|------|-----------|
+| `ValIO.Core/Pipeline/ICodeGenerationPipeline.cs` | Новый контракт генератора |
+| `ValIO.Core/Pipeline/ICodeGenerationStep.cs` | Контракт шага генерации |
+| `ValIO.Core/Pipeline/GenerationContext.cs` | Контекст, передаваемый между шагами |
+| `ValIO.Core/Pipeline/BaseCodeGenerationPipeline.cs` | Базовый pipeline |
+| `ValIO.Core/Interfaces/IIrTypeMapper.cs` | Новый маппер IrType → AST TypeNode |
+| `ValIO.Core/Plugin/IGeneratorPlugin.cs` | Контракт плагина |
+| `ValIO.Core/Plugin/GeneratorRegistry.cs` | Реестр плагинов |
