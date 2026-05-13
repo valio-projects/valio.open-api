@@ -164,6 +164,24 @@ public class TypeScriptCodeGeneratorIntegrationTests
     }
 
     [Test]
+    public async Task GenerateSchemas_WithZod4_UsesZod4Import()
+    {
+        var opts = new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "zod4"
+        };
+        var context = await RunPipeline(opts);
+
+        var schemaFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".schema.ts"))
+            .ToList();
+
+        schemaFiles.Should().NotBeEmpty("should generate schema files with zod4");
+        schemaFiles[0].Content.Should().Contain("zod/v4", "zod4 should use the zod/v4 import path");
+    }
+
+    [Test]
     public async Task GeneratorRegistry_FindsTypeScriptPlugin()
     {
         var registry = _services.GetRequiredService<IGeneratorRegistry>();
