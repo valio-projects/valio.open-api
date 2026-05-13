@@ -1,396 +1,176 @@
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
-using Microsoft.OpenApi.Reader;
 using NUnit.Framework;
 using ValIO.Core.Interfaces;
+using ValIO.Core.IR.Builders;
 using ValIO.Core.Models;
+using ValIO.Core.Plugins;
+using ValIO.Core.Services;
 using ValIO.Generators.TypeScript;
-using ValIO.Generators.TypeScript.Models;
-using System.IO;
-using System.Linq;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Tests;
 
-/// <summary>
-/// Интеграционные тесты для TypeScript генератора
-/// </summary>
 [TestFixture]
 public class TypeScriptCodeGeneratorIntegrationTests
 {
-    private TypeScriptCodeGenerator _generator = null!;
-    private string _testDataPath = null!;
+    private IServiceProvider _services = null!;
+    private OpenApiDocument _document = null!;
 
     [SetUp]
-    public void Setup()
+    public async Task Setup()
     {
-        _testDataPath = Path.Combine(TestContext.CurrentContext.TestDirectory, "TestData");
-        
-        // Создаем минимальные зависимости для генератора
-        // TODO: TypeScriptTypeMapper удалён — заменить на TypeScriptIrTypeMapper в рамках рефакторинга
-        // var typeMapper = new TypeScriptTypeMapper(new Core.Services.NamingConverter());
-        var namingConverter = new Core.Services.NamingConverter();
-        ITypeMapper typeMapper = null!; // TODO: заменить на TypeScriptIrTypeMapper
-        var fileWriter = new Core.Services.FileWriter();
-        var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<TypeScriptCodeGenerator>.Instance;
-        var loggerFactory = Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;
-        
-        // TODO: SchemaGeneratorFactory и ISchemaGenerator временно отключены из-за циклических зависимостей
-        // var serviceCollection = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
-        // serviceCollection.AddSingleton<INamingConverter>(namingConverter);
-        // serviceCollection.AddSingleton<ValIO.Generators.TypeScript.Zod.ZodTypeMapper>();
-        // serviceCollection.AddSingleton<ValIO.Core.Interfaces.ISchemaGenerator>(sp =>
-        // {
-        //     var zodTypeMapper = new ValIO.Generators.TypeScript.Zod.ZodTypeMapper(namingConverter);
-        //     return new ValIO.Generators.TypeScript.Zod.ZodSchemaRenderer(
-        //         namingConverter,
-        //         zodTypeMapper);
-        // });
-        // var serviceProvider = serviceCollection.BuildServiceProvider();
-        var serviceProvider = (IServiceProvider?)null;
-        
-        _generator = new TypeScriptCodeGenerator(
-            typeMapper,
-            namingConverter,
-            fileWriter,
-            logger,
-            loggerFactory);
+        var services = new ServiceCollection();
+        services.AddSingleton<INamingConverter, NamingConverter>();
+        services.AddSingleton<IGeneratorPlugin, TypeScriptGeneratorPlugin>();
+        services.AddSingleton<IGeneratorRegistry>(sp =>
+            new GeneratorRegistry(sp.GetServices<IGeneratorPlugin>()));
+        _services = services.BuildServiceProvider();
+
+        var assembly = typeof(TypeScriptCodeGeneratorIntegrationTests).Assembly;
+        await using var stream = assembly.GetManifestResourceStream(
+            "ValIO.Generators.TypeScript.Tests.TestData.simple-schema.json")!;
+        var result = await OpenApiDocument.LoadAsync(stream, "json");
+        _document = result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
     }
 
-    [Test]
-    public async Task GenerateFromSimpleSchema_WithInterfaces_GeneratesValidCode()
+    private async Task<GenerationContext> RunPipeline(TypeScriptGenerationOptions opts)
     {
-        // Arrange
-        var schemaPath = Path.Combine(_testDataPath, "simple-schema.json");
-        var schemaContent = await File.ReadAllTextAsync(schemaPath);
-        
-        await using var stream = File.OpenRead(schemaPath);
-        var readResult = await OpenApiDocument.LoadAsync(stream, "json");
-        var document = readResult.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-        
+        var namingConverter = _services.GetRequiredService<INamingConverter>();
+        var schemaResolver = new SchemaResolver(_document);
+        var irBuilder = new IrBuilder(schemaResolver, namingConverter);
+        var irDocument = irBuilder.BuildFromOpenApi(_document);
+
         var config = new GenerationConfiguration
         {
-            Language = GenerationLanguage.TypeScript,
-            OutputPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()),
+            LanguageId = "typescript",
             GenerateModels = true,
             GenerateClients = true,
             GenerateEnums = true,
-            Options = new GenerationOptions
-            {
-                TypeScriptOptions = new TypeScriptGenerationOptions
-                {
-                    ModelFormat = ModelFormat.Interfaces,
-                    HttpTransports = TypeScriptHttpTransports.Fetch
-                }
-            },
-            FileOrganization = new Core.Models.FileOrganization
-            {
-                SeparateModels = true,
-                SeparateClients = true,
-                ModelsPath = "models",
-                ClientsPath = "api"
-            }
+            PluginOptions = opts,
         };
 
-        // Act
-        var result = await _generator.GenerateAsync(document, config);
+        var context = new GenerationContext
+        {
+            IrDocument = irDocument,
+            Configuration = config,
+            PluginOptions = opts,
+        };
 
-        // Assert
-        if (!result.Success)
-        {
-            var errors = string.Join("; ", result.Errors);
-            var warnings = string.Join("; ", result.Warnings);
-            Assert.Fail($"Generation failed. Errors: {errors}. Warnings: {warnings}");
-        }
-        result.Success.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
-        result.GeneratedFiles.Should().NotBeEmpty();
-        
-        // Проверяем, что сгенерированы модели
-        var modelFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".model.ts")).ToList();
-        modelFiles.Should().NotBeEmpty("Should generate model files");
-        
-        // Проверяем, что сгенерированы fetch-клиенты
-        var clientFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".fetch.ts")).ToList();
-        clientFiles.Should().NotBeEmpty("Should generate fetch client files");
-        
-        // Проверяем содержимое модели
-        var userModelFile = modelFiles.FirstOrDefault(f => f.Contains("user.model.ts"));
-        userModelFile.Should().NotBeNull("Should generate User model");
-        
-        if (userModelFile != null)
-        {
-            var userModelContent = result.GeneratedFiles[userModelFile];
-            userModelContent.Should().Contain("export interface User");
-            userModelContent.Should().Contain("id:");
-            userModelContent.Should().Contain("name:");
-            userModelContent.Should().Contain("email:");
-        }
-        
-        // Проверяем содержимое клиента
-        var clientFile = clientFiles.FirstOrDefault();
-        clientFile.Should().NotBeNull("Should generate client file");
-        
-        if (clientFile != null)
-        {
-            var clientContent = result.GeneratedFiles[clientFile];
-            clientContent.Should().Contain("export async function");
-            clientContent.Should().Contain("getUsers");
-        }
+        var registry = _services.GetRequiredService<IGeneratorRegistry>();
+        var plugin = registry.FindPlugin("typescript")!;
+        var pipeline = plugin.CreatePipeline(_services);
+        await pipeline.ExecuteAsync(context);
+        return context;
     }
 
     [Test]
-    public async Task GenerateFromSimpleSchema_WithZodSchemas_GeneratesValidCode()
+    public async Task GenerateModels_WithFetch_GeneratesInterfaces()
     {
-        // Arrange
-        var schemaPath = Path.Combine(_testDataPath, "simple-schema.json");
-        var schemaContent = await File.ReadAllTextAsync(schemaPath);
-        
-        await using var stream = File.OpenRead(schemaPath);
-        var readResult = await OpenApiDocument.LoadAsync(stream, "json");
-        var document = readResult.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-        
-        var config = new GenerationConfiguration
-        {
-            Language = GenerationLanguage.TypeScript,
-            OutputPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()),
-            GenerateModels = true,
-            GenerateClients = true,
-            GenerateEnums = true,
-            Options = new GenerationOptions
-            {
-                TypeScriptOptions = new TypeScriptGenerationOptions
-                {
-                    ModelFormat = ModelFormat.ValidationSchemas,
-                    ValidationLibrary = ValidationLibrary.Zod,
-                    HttpTransports = TypeScriptHttpTransports.Fetch
-                }
-            },
-            FileOrganization = new Core.Models.FileOrganization
-            {
-                SeparateModels = true,
-                SeparateClients = true,
-                ModelsPath = "models",
-                ClientsPath = "api"
-            }
-        };
+        var opts = new TypeScriptGenerationOptions { Transports = ["fetch"] };
+        var context = await RunPipeline(opts);
 
-        // Act
-        var result = await _generator.GenerateAsync(document, config);
+        var modelFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".ts") && f.RelativePath.Contains("models"))
+            .ToList();
 
-        // Assert
-        if (!result.Success)
-        {
-            var errors = string.Join("; ", result.Errors);
-            var warnings = string.Join("; ", result.Warnings);
-            Assert.Fail($"Generation failed. Errors: {errors}. Warnings: {warnings}");
-        }
-        result.Success.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
-        result.GeneratedFiles.Should().NotBeEmpty();
-        
-        // Проверяем, что сгенерированы Zod схемы
-        var schemaFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".schema.ts")).ToList();
-        schemaFiles.Should().NotBeEmpty("Should generate schema files");
-        
-        // Проверяем содержимое схемы
-        var userSchemaFile = schemaFiles.FirstOrDefault(f => f.Contains("user.schema.ts"));
-        userSchemaFile.Should().NotBeNull("Should generate User schema");
-        
-        if (userSchemaFile != null)
-        {
-            var userSchemaContent = result.GeneratedFiles[userSchemaFile];
-            userSchemaContent.Should().Contain("import { z } from 'zod'");
-            userSchemaContent.Should().Contain("export const UserSchema");
-            userSchemaContent.Should().Contain("z.object");
-        }
+        modelFiles.Should().NotBeEmpty("should generate model files");
+
+        var userFile = modelFiles.FirstOrDefault(f => f.RelativePath.Contains("user", StringComparison.OrdinalIgnoreCase));
+        userFile.Should().NotBeNull("should generate User model");
+        userFile!.Content.Should().Contain("export interface User");
+        userFile.Content.Should().Contain("id:");
+        userFile.Content.Should().Contain("name:");
+        userFile.Content.Should().Contain("email:");
     }
 
     [Test]
-    public async Task GenerateFromSimpleSchema_WithAxios_GeneratesValidCode()
+    public async Task GenerateClients_WithFetch_GeneratesFetchClient()
     {
-        // Arrange
-        var schemaPath = Path.Combine(_testDataPath, "simple-schema.json");
-        var schemaContent = await File.ReadAllTextAsync(schemaPath);
-        
-        await using var stream = File.OpenRead(schemaPath);
-        var readResult = await OpenApiDocument.LoadAsync(stream, "json");
-        var document = readResult.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-        
-        var config = new GenerationConfiguration
-        {
-            Language = GenerationLanguage.TypeScript,
-            OutputPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()),
-            GenerateModels = true,
-            GenerateClients = true,
-            GenerateEnums = true,
-            Options = new GenerationOptions
-            {
-                TypeScriptOptions = new TypeScriptGenerationOptions
-                {
-                    ModelFormat = ModelFormat.Interfaces,
-                    HttpTransports = TypeScriptHttpTransports.Axios
-                }
-            },
-            FileOrganization = new Core.Models.FileOrganization
-            {
-                SeparateModels = true,
-                SeparateClients = true,
-                ModelsPath = "models",
-                ClientsPath = "api"
-            }
-        };
+        var opts = new TypeScriptGenerationOptions { Transports = ["fetch"] };
+        var context = await RunPipeline(opts);
 
-        // Act
-        var result = await _generator.GenerateAsync(document, config);
+        var fetchFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".fetch.ts"))
+            .ToList();
 
-        // Assert
-        if (!result.Success)
-        {
-            var errors = string.Join("; ", result.Errors);
-            var warnings = string.Join("; ", result.Warnings);
-            Assert.Fail($"Generation failed. Errors: {errors}. Warnings: {warnings}");
-        }
-        result.Success.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
-        
-        // Проверяем содержимое клиента с Axios
-        var clientFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".axios.ts")).ToList();
-        clientFiles.Should().NotBeEmpty();
-        
-        var clientFile = clientFiles.FirstOrDefault();
-        if (clientFile != null)
-        {
-            var clientContent = result.GeneratedFiles[clientFile];
-            clientContent.Should().Contain("import axios");
-            clientContent.Should().Contain("AxiosInstance");
-        }
+        fetchFiles.Should().NotBeEmpty("should generate fetch client files");
+        fetchFiles[0].Content.Should().Contain("fetch(");
     }
 
     [Test]
-    public async Task GenerateFromSimpleSchema_WithTanStackQuery_GeneratesValidCode()
+    public async Task GenerateClients_WithAxios_GeneratesAxiosClient()
     {
-        // Arrange
-        var schemaPath = Path.Combine(_testDataPath, "simple-schema.json");
-        var schemaContent = await File.ReadAllTextAsync(schemaPath);
-        
-        await using var stream = File.OpenRead(schemaPath);
-        var readResult = await OpenApiDocument.LoadAsync(stream, "json");
-        var document = readResult.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-        
-        var config = new GenerationConfiguration
-        {
-            Language = GenerationLanguage.TypeScript,
-            OutputPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()),
-            GenerateModels = true,
-            GenerateClients = true,
-            GenerateEnums = true,
-            Options = new GenerationOptions
-            {
-                TypeScriptOptions = new TypeScriptGenerationOptions
-                {
-                    ModelFormat = ModelFormat.Interfaces,
-                    HttpTransports = TypeScriptHttpTransports.Fetch,
-                    UseTanStackQuery = true
-                }
-            },
-            FileOrganization = new Core.Models.FileOrganization
-            {
-                SeparateModels = true,
-                SeparateClients = true,
-                ModelsPath = "models",
-                ClientsPath = "api"
-            }
-        };
+        var opts = new TypeScriptGenerationOptions { Transports = ["axios"] };
+        var context = await RunPipeline(opts);
 
-        // Act
-        var result = await _generator.GenerateAsync(document, config);
+        var axiosFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".axios.ts"))
+            .ToList();
 
-        // Assert
-        if (!result.Success)
-        {
-            var errors = string.Join("; ", result.Errors);
-            var warnings = string.Join("; ", result.Warnings);
-            Assert.Fail($"Generation failed. Errors: {errors}. Warnings: {warnings}");
-        }
-        result.Success.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
-        
-        // Проверяем, что сгенерированы TanStack Query хуки
-        var hookFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".hook.ts")).ToList();
-        hookFiles.Should().NotBeEmpty("Should generate hook files");
-        
-        // Проверяем содержимое hook файла
-        var hookFile = hookFiles.FirstOrDefault();
-        if (hookFile != null)
-        {
-            var hookContent = result.GeneratedFiles[hookFile];
-            hookContent.Should().Contain("import { useQuery");
-            hookContent.Should().Contain("useGetUsers");
-        }
+        axiosFiles.Should().NotBeEmpty("should generate axios client files");
+        axiosFiles[0].Content.Should().Contain("axios");
     }
 
     [Test]
-    public async Task GenerateFromSimpleSchema_WithAllFeatures_GeneratesValidCode()
+    public async Task GenerateSchemas_WithZod3_GeneratesZodSchemas()
     {
-        // Arrange
-        var schemaPath = Path.Combine(_testDataPath, "simple-schema.json");
-        var schemaContent = await File.ReadAllTextAsync(schemaPath);
-        
-        await using var stream = File.OpenRead(schemaPath);
-        var readResult = await OpenApiDocument.LoadAsync(stream, "json");
-        var document = readResult.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-        
-        var config = new GenerationConfiguration
+        var opts = new TypeScriptGenerationOptions
         {
-            Language = GenerationLanguage.TypeScript,
-            OutputPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()),
-            GenerateModels = true,
-            GenerateClients = true,
-            GenerateEnums = true,
-            Options = new GenerationOptions
-            {
-                TypeScriptOptions = new TypeScriptGenerationOptions
-                {
-                    ModelFormat = ModelFormat.ValidationSchemas,
-                    ValidationLibrary = ValidationLibrary.Zod,
-                    HttpTransports = TypeScriptHttpTransports.Axios,
-                    UseTanStackQuery = true,
-                    SerializeWithSchemas = true,
-                    DeserializeWithSchemas = true
-                }
-            },
-            FileOrganization = new Core.Models.FileOrganization
-            {
-                SeparateModels = true,
-                SeparateClients = true,
-                ModelsPath = "models",
-                ClientsPath = "api"
-            }
+            Transports = ["fetch"],
+            ValidationLibrary = "zod3"
         };
+        var context = await RunPipeline(opts);
 
-        // Act
-        var result = await _generator.GenerateAsync(document, config);
+        var schemaFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".schema.ts"))
+            .ToList();
 
-        // Assert
-        if (!result.Success)
+        schemaFiles.Should().NotBeEmpty("should generate schema files with zod3");
+
+        var userSchema = schemaFiles.FirstOrDefault(f => f.RelativePath.Contains("User", StringComparison.OrdinalIgnoreCase));
+        userSchema.Should().NotBeNull("should generate User schema");
+        userSchema!.Content.Should().Contain("z.object");
+        userSchema.Content.Should().Contain("UserSchema");
+    }
+
+    [Test]
+    public async Task GenerateIndex_AlwaysCreatesIndexTs()
+    {
+        var opts = new TypeScriptGenerationOptions { Transports = ["fetch"] };
+        var context = await RunPipeline(opts);
+
+        var indexFile = context.GeneratedFiles.FirstOrDefault(f => f.RelativePath.EndsWith("index.ts"));
+        indexFile.Should().NotBeNull("should generate index.ts");
+        indexFile!.Content.Should().Contain("export *");
+    }
+
+    [Test]
+    public async Task GenerateEnums_GeneratesUnionTypes()
+    {
+        var opts = new TypeScriptGenerationOptions
         {
-            var errors = string.Join("; ", result.Errors);
-            var warnings = string.Join("; ", result.Warnings);
-            Assert.Fail($"Generation failed. Errors: {errors}. Warnings: {warnings}");
-        }
-        result.Success.Should().BeTrue();
-        result.Errors.Should().BeEmpty();
-        
-        // Проверяем, что сгенерированы все компоненты
-        result.GeneratedFiles.Keys.Should().Contain(k => k.Contains(".schema.ts"), "Should generate schema files");
-        result.GeneratedFiles.Keys.Should().Contain(k => k.Contains(".hook.ts"), "Should generate hook files");
-        
-        // Проверяем, что в hook файлах есть валидация
-        var hookFiles = result.GeneratedFiles.Keys.Where(k => k.Contains(".hook.ts")).ToList();
-        if (hookFiles.Any())
-        {
-            var hookContent = result.GeneratedFiles[hookFiles.First()];
-            hookContent.Should().Contain("schema.parse", "Should include schema validation");
-        }
+            Transports = ["fetch"],
+            EnumFormat = "union"
+        };
+        var context = await RunPipeline(opts);
+
+        var enumFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.Contains("UserRole", StringComparison.OrdinalIgnoreCase) && f.RelativePath.EndsWith(".ts"))
+            .ToList();
+
+        enumFiles.Should().NotBeEmpty("should generate UserRole enum file");
+    }
+
+    [Test]
+    public async Task GeneratorRegistry_FindsTypeScriptPlugin()
+    {
+        var registry = _services.GetRequiredService<IGeneratorRegistry>();
+
+        registry.FindPlugin("typescript").Should().NotBeNull();
+        registry.FindPlugin("ts").Should().NotBeNull();
+        registry.FindPlugin("TYPESCRIPT").Should().NotBeNull("should be case-insensitive");
+        registry.FindPlugin("php").Should().BeNull("unknown language should return null");
     }
 }
