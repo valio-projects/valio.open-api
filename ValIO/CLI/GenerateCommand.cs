@@ -4,8 +4,11 @@ using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
+using ValIO.Core.Interfaces;
+using ValIO.Core.IR.Builders;
 using ValIO.Core.Models;
 using ValIO.Core.Plugins;
+using ValIO.Core.Services;
 using ValIO.Parsers.Interfaces;
 
 namespace ValIO.CLI;
@@ -63,6 +66,8 @@ public class GenerateCommand : Command
             var configLoader = serviceProvider.GetRequiredService<IConfigurationLoader>();
             var configValidator = serviceProvider.GetRequiredService<IConfigurationValidator>();
             var registry = serviceProvider.GetRequiredService<IGeneratorRegistry>();
+            var namingConverter = serviceProvider.GetRequiredService<INamingConverter>();
+            var fileWriter = serviceProvider.GetRequiredService<IFileWriter>();
 
             try
             {
@@ -103,7 +108,7 @@ public class GenerateCommand : Command
                         generationConfig = configLoader.MapToGenerationConfiguration(projectConfig);
                         generationConfig.OutputPath = projOutput;
 
-                        var result = await RunGenerationAsync(generationConfig, projSchema, logger, parser, registry);
+                        var result = await RunGenerationAsync(generationConfig, projSchema, logger, parser, registry, namingConverter, fileWriter, serviceProvider);
                         if (!result)
                             hasErrors = true;
                     }
@@ -128,7 +133,7 @@ public class GenerateCommand : Command
                     };
                 }
 
-                var success = await RunGenerationAsync(generationConfig, schema!, logger, parser, registry);
+                var success = await RunGenerationAsync(generationConfig, schema!, logger, parser, registry, namingConverter, fileWriter, serviceProvider);
                 return success ? 0 : 1;
             }
             catch (Exception ex)
@@ -141,11 +146,20 @@ public class GenerateCommand : Command
 
     private static async Task<bool> RunGenerationAsync(
         GenerationConfiguration config,
-        string schemaPath,
+        string? schemaPath,
         ILogger logger,
         IOpenApiDocumentParser parser,
-        IGeneratorRegistry registry)
+        IGeneratorRegistry registry,
+        INamingConverter namingConverter,
+        IFileWriter fileWriter,
+        IServiceProvider serviceProvider)
     {
+        if (string.IsNullOrWhiteSpace(schemaPath))
+        {
+            logger.LogError("Schema path is required");
+            return false;
+        }
+
         var plugin = registry.FindPlugin(config.LanguageId);
         if (plugin == null)
         {
@@ -171,8 +185,41 @@ public class GenerateCommand : Command
 
         logger.LogInformation("OpenAPI document parsed successfully");
 
-        // TODO Phase 1: wire IrBuilder + plugin.CreatePipeline() + pipeline.ExecuteAsync()
-        logger.LogWarning("Code generation pipeline not yet implemented (Phase 1)");
+        var schemaResolver = new SchemaResolver(doc);
+        var irBuilder = new IrBuilder(schemaResolver, namingConverter);
+        var warnings = new List<string>();
+        var irDocument = irBuilder.BuildFromOpenApi(doc, warnings);
+
+        foreach (var w in warnings)
+            logger.LogWarning("{Warning}", w);
+
+        logger.LogInformation("IR built: {Models} models, {Enums} enums, {Clients} clients",
+            irDocument.Models.Count, irDocument.Enums.Count, irDocument.Clients.Count);
+
+        var context = new GenerationContext
+        {
+            IrDocument = irDocument,
+            Configuration = config,
+            PluginOptions = config.PluginOptions,
+        };
+
+        var pipeline = plugin.CreatePipeline(serviceProvider);
+        await pipeline.ExecuteAsync(context);
+
+        logger.LogInformation("Generated {Count} files", context.GeneratedFiles.Count);
+
+        var outputPath = config.OutputPath ?? ".";
+        fileWriter.EnsureDirectoryExists(outputPath);
+
+        foreach (var file in context.GeneratedFiles)
+        {
+            var fullPath = Path.Combine(outputPath, file.RelativePath);
+            fileWriter.EnsureDirectoryExists(Path.GetDirectoryName(fullPath)!);
+            await fileWriter.WriteFileAsync(fullPath, file.Content);
+            logger.LogDebug("Written: {Path}", fullPath);
+        }
+
+        logger.LogInformation("Code generation complete. Output: {Output}", outputPath);
         return true;
     }
 }
