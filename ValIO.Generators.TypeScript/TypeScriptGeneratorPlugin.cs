@@ -24,6 +24,7 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
         {
             new TypeScriptModelsStep(namingConverter),
             new TypeScriptEnumsStep(namingConverter),
+            new ZodSchemasStep(namingConverter),
             new FetchClientStep(namingConverter),
             new AxiosClientStep(namingConverter),
             new TypeScriptIndexStep(),
