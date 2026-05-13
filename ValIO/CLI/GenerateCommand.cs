@@ -185,7 +185,7 @@ public class GenerateCommand : Command
 
         logger.LogInformation("OpenAPI document parsed successfully");
 
-        var schemaResolver = new SchemaResolver(doc);
+        var schemaResolver = new CachingSchemaResolver(new SchemaResolver(doc));
         var irBuilder = new IrBuilder(schemaResolver, namingConverter);
         var warnings = new List<string>();
         var irDocument = irBuilder.BuildFromOpenApi(doc, warnings);
