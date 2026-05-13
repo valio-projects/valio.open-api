@@ -1,21 +1,13 @@
 using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.OpenApi;
 using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
-using ValIO.Core.Interfaces;
-using ValIO.Core.IR.Builders;
 using ValIO.Core.Models;
-using ValIO.Core.Plugins;
-using ValIO.Core.Services;
-using ValIO.Parsers.Interfaces;
+using ValIO.Services;
 
 namespace ValIO.CLI;
 
-/// <summary>
-/// Команда генерации кода
-/// </summary>
 public class GenerateCommand : Command
 {
     public GenerateCommand(IServiceProvider serviceProvider)
@@ -62,17 +54,11 @@ public class GenerateCommand : Command
             var projectNames = parseResult.GetValue(projectsOption) ?? Array.Empty<string>();
 
             var logger = serviceProvider.GetRequiredService<ILogger<GenerateCommand>>();
-            var parser = serviceProvider.GetRequiredService<IOpenApiDocumentParser>();
             var configLoader = serviceProvider.GetRequiredService<IConfigurationLoader>();
-            var configValidator = serviceProvider.GetRequiredService<IConfigurationValidator>();
-            var registry = serviceProvider.GetRequiredService<IGeneratorRegistry>();
-            var namingConverter = serviceProvider.GetRequiredService<INamingConverter>();
-            var fileWriter = serviceProvider.GetRequiredService<IFileWriter>();
+            var orchestrator = serviceProvider.GetRequiredService<GenerationOrchestrator>();
 
             try
             {
-                GenerationConfiguration generationConfig;
-
                 if (configFile != null && configFile.Exists)
                 {
                     var config = await configLoader.LoadConfigFromFileAsync(configFile.FullName);
@@ -103,38 +89,33 @@ public class GenerateCommand : Command
                         logger.LogInformation("Using project: {ProjectName}", projName);
 
                         var projSchema = string.IsNullOrWhiteSpace(schema) ? projectConfig.Schema : schema;
-                        var projOutput = string.IsNullOrWhiteSpace(output) ? projectConfig.OutputPath : output;
+                        var generationConfig = configLoader.MapToGenerationConfiguration(projectConfig);
+                        if (!string.IsNullOrWhiteSpace(output))
+                            generationConfig.OutputPath = output;
 
-                        generationConfig = configLoader.MapToGenerationConfiguration(projectConfig);
-                        generationConfig.OutputPath = projOutput;
-
-                        var result = await RunGenerationAsync(generationConfig, projSchema, logger, parser, registry, namingConverter, fileWriter, serviceProvider);
-                        if (!result)
-                            hasErrors = true;
+                        var success = await orchestrator.GenerateAsync(generationConfig, projSchema ?? "");
+                        if (!success) hasErrors = true;
                     }
 
                     return hasErrors ? 1 : 0;
                 }
-                else
-                {
-                    if (string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(output) || string.IsNullOrWhiteSpace(languageId))
-                    {
-                        logger.LogError("--schema, --output, and --language are required when not using --config");
-                        return 1;
-                    }
 
-                    generationConfig = new GenerationConfiguration
-                    {
-                        LanguageId = languageId,
-                        OutputPath = output,
-                        GenerateModels = true,
-                        GenerateClients = true,
-                        GenerateEnums = true
-                    };
+                if (string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(output) || string.IsNullOrWhiteSpace(languageId))
+                {
+                    logger.LogError("--schema, --output, and --language are required when not using --config");
+                    return 1;
                 }
 
-                var success = await RunGenerationAsync(generationConfig, schema!, logger, parser, registry, namingConverter, fileWriter, serviceProvider);
-                return success ? 0 : 1;
+                var quickConfig = new GenerationConfiguration
+                {
+                    LanguageId = languageId,
+                    OutputPath = output,
+                    GenerateModels = true,
+                    GenerateClients = true,
+                    GenerateEnums = true
+                };
+
+                return await orchestrator.GenerateAsync(quickConfig, schema) ? 0 : 1;
             }
             catch (Exception ex)
             {
@@ -142,84 +123,5 @@ public class GenerateCommand : Command
                 return 1;
             }
         });
-    }
-
-    private static async Task<bool> RunGenerationAsync(
-        GenerationConfiguration config,
-        string? schemaPath,
-        ILogger logger,
-        IOpenApiDocumentParser parser,
-        IGeneratorRegistry registry,
-        INamingConverter namingConverter,
-        IFileWriter fileWriter,
-        IServiceProvider serviceProvider)
-    {
-        if (string.IsNullOrWhiteSpace(schemaPath))
-        {
-            logger.LogError("Schema path is required");
-            return false;
-        }
-
-        var plugin = registry.FindPlugin(config.LanguageId);
-        if (plugin == null)
-        {
-            logger.LogError("No generator found for language: {LanguageId}", config.LanguageId);
-            return false;
-        }
-
-        logger.LogInformation("Using generator: {DisplayName}", plugin.DisplayName);
-        logger.LogInformation("Parsing OpenAPI schema from: {Schema}", schemaPath);
-
-        OpenApiDocument doc;
-        if (Uri.TryCreate(schemaPath, UriKind.Absolute, out var uri) &&
-            (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
-             uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
-             uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
-        {
-            doc = await parser.ParseFromUrlAsync(schemaPath);
-        }
-        else
-        {
-            doc = await parser.ParseFromFileAsync(schemaPath);
-        }
-
-        logger.LogInformation("OpenAPI document parsed successfully");
-
-        var schemaResolver = new CachingSchemaResolver(new SchemaResolver(doc));
-        var irBuilder = new IrBuilder(schemaResolver, namingConverter);
-        var warnings = new List<string>();
-        var irDocument = irBuilder.BuildFromOpenApi(doc, warnings);
-
-        foreach (var w in warnings)
-            logger.LogWarning("{Warning}", w);
-
-        logger.LogInformation("IR built: {Models} models, {Enums} enums, {Clients} clients",
-            irDocument.Models.Count, irDocument.Enums.Count, irDocument.Clients.Count);
-
-        var context = new GenerationContext
-        {
-            IrDocument = irDocument,
-            Configuration = config,
-            PluginOptions = config.PluginOptions,
-        };
-
-        var pipeline = plugin.CreatePipeline(serviceProvider);
-        await pipeline.ExecuteAsync(context);
-
-        logger.LogInformation("Generated {Count} files", context.GeneratedFiles.Count);
-
-        var outputPath = config.OutputPath ?? ".";
-        fileWriter.EnsureDirectoryExists(outputPath);
-
-        foreach (var file in context.GeneratedFiles)
-        {
-            var fullPath = Path.Combine(outputPath, file.RelativePath);
-            fileWriter.EnsureDirectoryExists(Path.GetDirectoryName(fullPath)!);
-            await fileWriter.WriteFileAsync(fullPath, file.Content);
-            logger.LogDebug("Written: {Path}", fullPath);
-        }
-
-        logger.LogInformation("Code generation complete. Output: {Output}", outputPath);
-        return true;
     }
 }

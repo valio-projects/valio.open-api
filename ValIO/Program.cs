@@ -11,6 +11,7 @@ using ValIO.Generators.TypeScript;
 using ValIO.Parsers.Interfaces;
 using ValIO.Parsers.Services;
 using ValIO.ServiceRegistration;
+using ValIO.Services;
 
 namespace ValIO;
 
@@ -56,6 +57,9 @@ class Program
         services.AddGeneratorPlugin<TypeScriptGeneratorPlugin>();
         services.AddSingleton<ICSharpAstRenderer, CSharpAstRenderer>();
         services.AddGeneratorPlugin<CSharpGeneratorPlugin>();
+
+        // Orchestrator
+        services.AddSingleton<GenerationOrchestrator>();
 
         // CLI
         services.AddSingleton<RootCommand>();
