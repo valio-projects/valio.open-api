@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes.Http;
@@ -19,7 +18,6 @@ public sealed class RouteNode : AstNode
     /// </summary>
     public IReadOnlyList<PathParameterNode> PathParameters { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.Route;
     
     public override IReadOnlyList<AstNode> Children => PathParameters.Cast<AstNode>().ToImmutableList();
     

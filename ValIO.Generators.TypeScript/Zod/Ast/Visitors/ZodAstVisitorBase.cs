@@ -1,4 +1,3 @@
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Http;
@@ -19,34 +18,9 @@ public abstract class ZodAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IZod
     /// </summary>
     public override TResult Visit(AstNode node)
     {
-        // Обрабатываем Zod-специфичные узлы, которые не являются ExpressionNode
-        return node.Kind switch
-        {
-            AstNodeKind.ZodProperty => VisitZodProperty((ZodPropertyNode)node),
-            AstNodeKind.ZodEnumValue => VisitZodEnumValue((ZodEnumValueNode)node),
-            _ => node.Accept(this) // Для остальных узлов используем Accept
-        };
+        return node.Accept(this);
     }
-    
-    /// <summary>
-    /// Переопределяем VisitExpression для обработки Zod-специфичных выражений
-    /// </summary>
-    public override TResult VisitExpression(ExpressionNode node)
-    {
-        return node.Kind switch
-        {
-            AstNodeKind.ZodSchema => VisitZodSchema((ZodSchemaNode)node),
-            AstNodeKind.ZodObject => VisitZodObject((ZodObjectNode)node),
-            AstNodeKind.ZodArray => VisitZodArray((ZodArrayNode)node),
-            AstNodeKind.ZodUnion => VisitZodUnion((ZodUnionNode)node),
-            AstNodeKind.ZodIntersection => VisitZodIntersection((ZodIntersectionNode)node),
-            AstNodeKind.ZodEnum => VisitZodEnum((ZodEnumNode)node),
-            AstNodeKind.ZodEffects => VisitZodEffects((ZodEffectsNode)node),
-            _ => base.VisitExpression(node)
-        };
-    }
-    
-    
+
     public override TResult VisitBlankLineStatement(BlankLineStatementNode node) => VisitDefault(node);
 
     // Реализация методов IAstVisitor - делегируем в VisitDefault для неизвестных узлов
@@ -72,4 +46,6 @@ public abstract class ZodAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IZod
     public abstract TResult VisitZodEnumValue(ZodEnumValueNode node);
     public abstract TResult VisitZodProperty(ZodPropertyNode node);
     public abstract TResult VisitZodEffects(ZodEffectsNode node);
+    public abstract TResult VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node);
+    public abstract TResult VisitZodExpressionSchema(ZodExpressionSchemaNode node);
 }

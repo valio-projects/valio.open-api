@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -26,7 +25,6 @@ public sealed class UEnumValueNode : AstNode
     /// </summary>
     public string? DisplayName { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.EnumMemberDeclaration;
     public override IReadOnlyList<AstNode> Children => Value != null ? new AstNode[] { Name, Value } : new AstNode[] { Name };
 
     public UEnumValueNode(
@@ -70,7 +68,6 @@ public sealed class UEnumDeclarationNode : DeclarationNode
     /// </summary>
     public IReadOnlyList<UEnumValueNode> Values { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.UEnum;
 
     public override IReadOnlyList<AstNode> Children
     {

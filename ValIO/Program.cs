@@ -5,7 +5,6 @@ using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Services;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Services;
-using ValIO.Factories;
 using ValIO.Parsers.Interfaces;
 using ValIO.Parsers.Services;
 using ValIO.ServiceRegistration;
@@ -54,12 +53,12 @@ class Program
         services.AddSingleton<IConfigurationLoader, ConfigurationLoader>();
         services.AddSingleton<IConfigurationValidator, ConfigurationValidator>();
 
-        // Регистрация всех генераторов, мапперов и рендеров через расширения DI
-        services.AddAllGenerators();
-
-        // Factories
-        services.AddSingleton<TypeMapperFactory>();
-        services.AddSingleton<CodeGeneratorFactory>();
+        // Plugin registry и core plugin infrastructure
+        services.AddValIOCore();
+        // Когда плагины будут готовы:
+        // services.AddGeneratorPlugin<TypeScriptGeneratorPlugin>();
+        // services.AddGeneratorPlugin<CSharpGeneratorPlugin>();
+        // services.AddGeneratorPlugin<CppGeneratorPlugin>();
 
         // CLI
         services.AddSingleton<RootCommand>();

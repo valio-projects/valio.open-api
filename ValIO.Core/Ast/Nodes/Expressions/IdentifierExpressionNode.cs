@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes.Expressions;
@@ -14,7 +13,6 @@ public sealed class IdentifierExpressionNode : ExpressionNode
     /// </summary>
     public IdentifierNode Identifier { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.IdentifierExpression;
     
     public override IReadOnlyList<AstNode> Children
     {

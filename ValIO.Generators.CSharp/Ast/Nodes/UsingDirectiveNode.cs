@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.CSharp.Ast.Visitors;
@@ -21,7 +20,6 @@ public sealed class UsingDirectiveNode : AstNode
     /// </summary>
     public IdentifierNode? Alias { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.UsingDirective;
     
     public override IReadOnlyList<AstNode> Children
     {

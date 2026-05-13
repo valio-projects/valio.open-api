@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -23,7 +22,6 @@ public sealed class ArrayLiteralExpressionNode : ExpressionNode
     /// </summary>
     public bool PreferMultilineFormat { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ObjectLiteralExpression; // Временно используем ObjectLiteralExpression, можно добавить ArrayLiteralExpression позже
     
     public override IReadOnlyList<AstNode> Children => Elements.Cast<AstNode>().ToImmutableList();
     
@@ -48,7 +46,7 @@ public sealed class ArrayLiteralExpressionNode : ExpressionNode
             return typescriptVisitor.VisitArrayLiteralExpression(this);
         }
         // Если visitor не поддерживает TypeScript, делегируем в VisitExpression
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()

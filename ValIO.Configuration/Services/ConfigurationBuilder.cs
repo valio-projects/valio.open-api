@@ -7,8 +7,8 @@ namespace ValIO.Configuration.Services;
 /// </summary>
 public class ConfigurationBuilder
 {
-    private GenerationLanguage _language;
-    private GenerationOptions? _options;
+    private string _languageId = string.Empty;
+    private object? _pluginOptions;
     private FileOrganization _fileOrganization = new();
     private NamingConventions _namingConvention = new();
     private string _outputPath = string.Empty;
@@ -17,15 +17,15 @@ public class ConfigurationBuilder
     private bool _generateModels = true;
     private bool _generateClients = true;
 
-    public ConfigurationBuilder WithLanguage(GenerationLanguage language)
+    public ConfigurationBuilder WithLanguage(string languageId)
     {
-        _language = language;
+        _languageId = languageId;
         return this;
     }
 
-    public ConfigurationBuilder WithOptions(GenerationOptions options)
+    public ConfigurationBuilder WithPluginOptions(object? options)
     {
-        _options = options;
+        _pluginOptions = options;
         return this;
     }
 
@@ -75,8 +75,8 @@ public class ConfigurationBuilder
     {
         return new GenerationConfiguration
         {
-            Language = _language,
-            Options = _options,
+            LanguageId = _languageId,
+            PluginOptions = _pluginOptions,
             FileOrganization = _fileOrganization,
             NamingConvention = _namingConvention,
             OutputPath = _outputPath,
@@ -87,4 +87,3 @@ public class ConfigurationBuilder
         };
     }
 }
-

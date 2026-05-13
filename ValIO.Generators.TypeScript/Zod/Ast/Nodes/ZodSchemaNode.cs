@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
@@ -18,7 +17,6 @@ public abstract class ZodSchemaNode : ExpressionNode
     /// </summary>
     public ZodSchemaKind SchemaKind { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ZodSchema;
     
     /// <summary>
     /// Конструктор
@@ -38,7 +36,7 @@ public abstract class ZodSchemaNode : ExpressionNode
         {
             return zodVisitor.VisitZodSchema(this);
         }
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
     
     public abstract override AstNode Clone();

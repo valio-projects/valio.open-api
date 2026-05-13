@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Http;
@@ -57,7 +56,6 @@ public sealed class AxiosConfigNode : ExpressionNode
     /// </summary>
     public IReadOnlyList<PropertyAssignmentNode> Properties { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ObjectLiteralExpression; // Используем существующий kind
     
     public override IReadOnlyList<AstNode> Children
     {
@@ -117,7 +115,7 @@ public sealed class AxiosConfigNode : ExpressionNode
             var objectLiteral = new ObjectLiteralExpressionNode(Properties, Type, Metadata, preferMultilineFormat: true);
             return typescriptVisitor.VisitObjectLiteralExpression(objectLiteral);
         }
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()

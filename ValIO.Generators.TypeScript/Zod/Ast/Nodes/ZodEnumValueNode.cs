@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -22,7 +21,6 @@ public sealed class ZodEnumValueNode : AstNode
     /// </summary>
     public LiteralExpressionNode Value { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ZodEnumValue;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Value };
     
@@ -45,7 +43,7 @@ public sealed class ZodEnumValueNode : AstNode
         {
             return zodVisitor.VisitZodEnumValue(this);
         }
-        return visitor.Visit(this);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
 
@@ -20,7 +19,6 @@ public sealed class PathParameterNode : AstNode
     /// </summary>
     public TypeNode Type { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.PathParameter;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Type };
     

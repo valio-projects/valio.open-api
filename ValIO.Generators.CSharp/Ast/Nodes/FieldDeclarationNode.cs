@@ -37,7 +37,6 @@ public sealed class FieldDeclarationNode : DeclarationNode
     /// </summary>
     public bool IsStatic { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.FieldDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

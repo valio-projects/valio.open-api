@@ -1,4 +1,3 @@
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
@@ -12,100 +11,13 @@ namespace ValIO.Core.Ast.Visitors;
 public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
     /// <summary>
-    /// Посещает узел (диспетчеризация по типу)
+    /// Посещает узел (диспетчеризация через Accept)
     /// </summary>
-    /// <remarks>
-    /// BaseAstVisitor реализует только IBaseAstVisitor, но Accept требует IAstVisitor.
-    /// Поэтому этот метод должен быть переопределен в классах, которые реализуют IAstVisitor.
-    /// </remarks>
     public virtual TResult Visit(AstNode node)
     {
-        // BaseAstVisitor не реализует IAstVisitor, поэтому не может напрямую вызвать Accept
-        // Этот метод должен быть переопределен в классах, которые реализуют IAstVisitor
         throw new NotSupportedException("BaseAstVisitor.Visit must be overridden in classes that implement IAstVisitor");
     }
-    
-    /// <summary>
-    /// Посещает объявление
-    /// </summary>
-    /// <remarks>
-    /// EnumDeclaration и InterfaceDeclaration обрабатываются через IAstVisitor.VisitEnumDeclaration и IAstVisitor.VisitInterfaceDeclaration
-    /// в языковых visitor'ах, так как BaseAstVisitor не реализует IAstVisitor.
-    /// </remarks>
-    public virtual TResult VisitDeclaration(DeclarationNode node)
-    {
-        return node.Kind switch
-        {
-            AstNodeKind.TypeDeclaration => VisitTypeDeclaration((TypeDeclarationNode)node),
-            AstNodeKind.PropertyDeclaration => VisitPropertyDeclaration((PropertyDeclarationNode)node),
-            AstNodeKind.MethodDeclaration => VisitMethodDeclaration((MethodDeclarationNode)node),
-            AstNodeKind.ParameterDeclaration => VisitParameterDeclaration((ParameterDeclarationNode)node),
-            AstNodeKind.EnumMemberDeclaration => VisitEnumMemberDeclaration((EnumMemberDeclarationNode)node),
-            // EnumDeclaration и InterfaceDeclaration обрабатываются через IAstVisitor в языковых visitor'ах
-            _ => VisitDefault(node)
-        };
-    }
-    
-    /// <summary>
-    /// Посещает тип
-    /// </summary>
-    public virtual TResult VisitType(TypeNode node)
-    {
-        return node.Kind switch
-        {
-            AstNodeKind.RawType => VisitRawType((RawTypeNode)node),
-            AstNodeKind.SimpleType => VisitSimpleType((SimpleTypeNode)node),
-            AstNodeKind.GenericType => VisitGenericType((GenericTypeNode)node),
-            AstNodeKind.NullableType => VisitNullableType((NullableTypeNode)node),
-            AstNodeKind.OptionalType => VisitOptionalType((OptionalTypeNode)node),
-            AstNodeKind.ArrayType => VisitArrayType((ArrayTypeNode)node),
-            AstNodeKind.UnionType => VisitUnionType((UnionTypeNode)node),
-            AstNodeKind.IntersectionType => VisitIntersectionType((IntersectionTypeNode)node),
-            AstNodeKind.DictionaryType => VisitDictionaryType((DictionaryTypeNode)node),
-            _ => VisitDefault(node)
-        };
-    }
-    
-    /// <summary>
-    /// Посещает выражение
-    /// </summary>
-    public virtual TResult VisitExpression(ExpressionNode node)
-    {
-        return node.Kind switch
-        {
-            AstNodeKind.LiteralExpression => VisitLiteralExpression((LiteralExpressionNode)node),
-            AstNodeKind.IdentifierExpression => VisitIdentifierExpression((IdentifierExpressionNode)node),
-            AstNodeKind.CallExpression => VisitCallExpression((CallExpressionNode)node),
-            AstNodeKind.MemberAccessExpression => VisitMemberAccessExpression((MemberAccessExpressionNode)node),
-            AstNodeKind.UnaryExpression => VisitUnaryExpression((UnaryExpressionNode)node),
-            AstNodeKind.BinaryExpression => VisitBinaryExpression((BinaryExpressionNode)node),
-            AstNodeKind.ConditionalExpression => VisitConditionalExpression((ConditionalExpressionNode)node),
-            AstNodeKind.AwaitExpression => VisitAwaitExpression((AwaitExpressionNode)node),
-            AstNodeKind.CastExpression => VisitCastExpression((CastExpressionNode)node),
-            _ => VisitDefault(node)
-        };
-    }
-    
-    /// <summary>
-    /// Посещает statement
-    /// </summary>
-    public virtual TResult VisitStatement(StatementNode node)
-    {
-        return node.Kind switch
-        {
-            AstNodeKind.BlankLineStatement => VisitBlankLineStatement((BlankLineStatementNode)node),
-            AstNodeKind.ReturnStatement => VisitReturnStatement((ReturnStatementNode)node),
-            AstNodeKind.IfStatement => VisitIfStatement((IfStatementNode)node),
-            AstNodeKind.ForEachStatement => VisitForEachStatement((ForEachStatementNode)node),
-            AstNodeKind.ExpressionStatement => VisitExpressionStatement((ExpressionStatementNode)node),
-            AstNodeKind.VariableDeclarationStatement => VisitVariableDeclarationStatement((VariableDeclarationStatementNode)node),
-            AstNodeKind.ThrowStatement => VisitThrowStatement((ThrowStatementNode)node),
-            AstNodeKind.UsingStatement => VisitUsingStatement((UsingStatementNode)node),
-            AstNodeKind.TryCatchStatement => VisitTryCatchStatement((TryCatchStatementNode)node),
-            _ => VisitDefault(node)
-        };
-    }
-    
+
     // Базовые узлы
     public abstract TResult VisitIdentifier(IdentifierNode node);
     public abstract TResult VisitComment(CommentNode node);
@@ -160,6 +72,11 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     /// </summary>
     public virtual TResult VisitDefault(AstNode node)
     {
-        throw new NotSupportedException($"Visit for node kind {node.Kind} is not supported");
+        throw new NotSupportedException($"Visit for node type {node.GetType().Name} is not supported");
     }
+
+    /// <summary>
+    /// Обработка по умолчанию для неизвестных или неподдерживаемых узлов (реализация IBaseAstVisitor)
+    /// </summary>
+    public virtual TResult DefaultVisit(AstNode node) => VisitDefault(node);
 }

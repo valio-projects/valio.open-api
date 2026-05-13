@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Visitors;
@@ -61,7 +60,6 @@ public sealed class CallExpressionNode : ExpressionNode
     /// </summary>
     public VariableDeclarationStatementNode? VariableDeclaration { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.CallExpression;
     
     public override IReadOnlyList<AstNode> Children
     {

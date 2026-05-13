@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
@@ -29,7 +28,6 @@ public sealed class ZodEffectsNode : ZodSchemaNode
     /// </summary>
     public ExpressionNode? EffectFunction { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ZodEffects;
     
     public override IReadOnlyList<AstNode> Children
     {

@@ -2,6 +2,7 @@ using FluentAssertions;
 using Microsoft.OpenApi;
 using Microsoft.OpenApi.Reader;
 using NUnit.Framework;
+using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript;
 using ValIO.Generators.TypeScript.Models;
@@ -25,8 +26,10 @@ public class TypeScriptCodeGeneratorIntegrationTests
         _testDataPath = Path.Combine(TestContext.CurrentContext.TestDirectory, "TestData");
         
         // Создаем минимальные зависимости для генератора
-        var typeMapper = new TypeScriptTypeMapper(new Core.Services.NamingConverter());
+        // TODO: TypeScriptTypeMapper удалён — заменить на TypeScriptIrTypeMapper в рамках рефакторинга
+        // var typeMapper = new TypeScriptTypeMapper(new Core.Services.NamingConverter());
         var namingConverter = new Core.Services.NamingConverter();
+        ITypeMapper typeMapper = null!; // TODO: заменить на TypeScriptIrTypeMapper
         var fileWriter = new Core.Services.FileWriter();
         var logger = Microsoft.Extensions.Logging.Abstractions.NullLogger<TypeScriptCodeGenerator>.Instance;
         var loggerFactory = Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance;

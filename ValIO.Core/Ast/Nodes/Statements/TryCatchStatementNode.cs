@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -25,7 +24,6 @@ public sealed class TryCatchStatementNode : StatementNode
     /// </summary>
     public BlockNode? FinallyBlock { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.TryCatchStatement;
     
     public override IReadOnlyList<AstNode> Children
     {
@@ -93,7 +91,6 @@ public sealed class CatchClauseNode : AstNode
     /// </summary>
     public BlockNode Body { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.CatchClause;
     
     public override IReadOnlyList<AstNode> Children
     {

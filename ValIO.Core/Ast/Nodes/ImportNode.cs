@@ -29,7 +29,6 @@ public sealed class ImportNode : AstNode
     /// </summary>
     public bool IsTypeOnly { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.Import;
     
     public override IReadOnlyList<AstNode> Children => Items.Cast<AstNode>().ToImmutableList();
     

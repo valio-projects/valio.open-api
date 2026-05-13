@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -37,7 +36,6 @@ public sealed class CppParameterNode : DeclarationNode
     /// </summary>
     public ExpressionNode? DefaultValue { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppParameter;
 
     public override IReadOnlyList<AstNode> Children
     {

@@ -16,7 +16,6 @@ public sealed class StructDeclarationNode : TypeDeclarationNode
     /// </summary>
     public bool IsReadOnly { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.StructDeclaration;
     
     /// <summary>
     /// Конструктор

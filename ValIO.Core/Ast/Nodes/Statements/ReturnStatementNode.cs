@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -15,7 +14,6 @@ public sealed class ReturnStatementNode : StatementNode
     /// </summary>
     public ExpressionNode? Value { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ReturnStatement;
     
     public override IReadOnlyList<AstNode> Children
     {

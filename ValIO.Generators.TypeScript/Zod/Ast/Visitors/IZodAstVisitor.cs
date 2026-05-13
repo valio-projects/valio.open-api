@@ -52,4 +52,14 @@ public interface IZodAstVisitor<TResult> : IAstVisitor<TResult>
     /// Посещает Zod effects схему
     /// </summary>
     TResult VisitZodEffects(ZodEffectsNode node);
+
+    /// <summary>
+    /// Посещает Zod primitive схему (string, number, boolean, null, any)
+    /// </summary>
+    TResult VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node);
+
+    /// <summary>
+    /// Посещает Zod expression схему (цепочка вызовов)
+    /// </summary>
+    TResult VisitZodExpressionSchema(ZodExpressionSchemaNode node);
 }

@@ -5,7 +5,7 @@ using Microsoft.OpenApi;
 using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Models;
 using ValIO.Core.Models;
-using ValIO.Factories;
+using ValIO.Core.Plugins;
 using ValIO.Parsers.Interfaces;
 
 namespace ValIO.CLI;
@@ -15,10 +15,9 @@ namespace ValIO.CLI;
 /// </summary>
 public class GenerateCommand : Command
 {
-    public GenerateCommand(IServiceProvider serviceProvider) 
+    public GenerateCommand(IServiceProvider serviceProvider)
         : base("generate", "Generate code from OpenAPI schema")
     {
-        // Опциональные аргументы для прямого указания параметров (без конфига)
         var schemaOption = new Option<string?>("--schema", "-s")
         {
             Description = "Path or URL to OpenAPI schema file (required if not using config)"
@@ -29,12 +28,11 @@ public class GenerateCommand : Command
             Description = "Output directory path (required if not using config)"
         };
 
-        var languageOption = new Option<GenerationLanguage?>("--language", "-l")
+        var languageOption = new Option<string?>("--language", "-l")
         {
-            Description = "Target programming language (required if not using config)"
+            Description = "Target programming language id (e.g. typescript, csharp)"
         };
 
-        // Обязательный аргумент - путь к конфигу или название проекта
         var configOption = new Option<FileInfo?>("--config", "-c")
         {
             Description = "Path to configuration file (JSON or YAML)"
@@ -42,7 +40,7 @@ public class GenerateCommand : Command
 
         var projectsOption = new Option<string[]>("--projects", "-p")
         {
-            Description = "Project name(s) from configuration file. If omitted, all projects from config are run.",
+            Description = "Project name(s) from configuration file.",
             AllowMultipleArgumentsPerToken = true
         };
 
@@ -56,7 +54,7 @@ public class GenerateCommand : Command
         {
             var schema = parseResult.GetValue(schemaOption);
             var output = parseResult.GetValue(outputOption);
-            var language = parseResult.GetValue(languageOption);
+            var languageId = parseResult.GetValue(languageOption);
             var configFile = parseResult.GetValue(configOption);
             var projectNames = parseResult.GetValue(projectsOption) ?? Array.Empty<string>();
 
@@ -64,14 +62,12 @@ public class GenerateCommand : Command
             var parser = serviceProvider.GetRequiredService<IOpenApiDocumentParser>();
             var configLoader = serviceProvider.GetRequiredService<IConfigurationLoader>();
             var configValidator = serviceProvider.GetRequiredService<IConfigurationValidator>();
-            var factory = serviceProvider.GetRequiredService<CodeGeneratorFactory>();
+            var registry = serviceProvider.GetRequiredService<IGeneratorRegistry>();
 
             try
             {
-                ProjectConfig? projectConfig = null;
                 GenerationConfiguration generationConfig;
 
-                // Если указан конфиг, загружаем его
                 if (configFile != null && configFile.Exists)
                 {
                     var config = await configLoader.LoadConfigFromFileAsync(configFile.FullName);
@@ -83,7 +79,6 @@ public class GenerateCommand : Command
                         return 1;
                     }
 
-                    // Определяем список проектов для генерации
                     var projectsToRun = projectNames.Length > 0
                         ? projectNames.Where(name => config.Projects.ContainsKey(name)).ToList()
                         : config.Projects.Keys.ToList();
@@ -96,12 +91,10 @@ public class GenerateCommand : Command
                         return 1;
                     }
 
-                    var totalFiles = 0;
                     var hasErrors = false;
-
                     foreach (var projName in projectsToRun)
                     {
-                        projectConfig = config.Projects[projName];
+                        var projectConfig = config.Projects[projName];
                         logger.LogInformation("Using project: {ProjectName}", projName);
 
                         var projSchema = string.IsNullOrWhiteSpace(schema) ? projectConfig.Schema : schema;
@@ -110,164 +103,33 @@ public class GenerateCommand : Command
                         generationConfig = configLoader.MapToGenerationConfiguration(projectConfig);
                         generationConfig.OutputPath = projOutput;
 
-                        var projValidation = configValidator.Validate(generationConfig);
-                        if (!projValidation.IsValid)
-                        {
-                            logger.LogError("Configuration validation failed for {Project}: {Errors}",
-                                projName, string.Join(", ", projValidation.Errors));
+                        var result = await RunGenerationAsync(generationConfig, projSchema, logger, parser, registry);
+                        if (!result)
                             hasErrors = true;
-                            continue;
-                        }
-
-                        foreach (var warning in projValidation.Warnings)
-                            logger.LogWarning(warning);
-
-                        logger.LogInformation("Parsing OpenAPI schema from: {Schema}", projSchema);
-                        OpenApiDocument doc;
-                        if (Uri.TryCreate(projSchema, UriKind.Absolute, out var schemaUri) &&
-                            (schemaUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
-                             schemaUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
-                             schemaUri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
-                        {
-                            doc = await parser.ParseFromUrlAsync(projSchema);
-                        }
-                        else
-                        {
-                            doc = await parser.ParseFromFileAsync(projSchema);
-                        }
-
-                        logger.LogInformation("OpenAPI document parsed successfully for {Project}", projName);
-                        var gen = factory.CreateGenerator(generationConfig.Language, generationConfig.Options);
-                        logger.LogInformation("Using generator for language: {Language}", generationConfig.Language);
-                        logger.LogInformation("Generating code to: {Output}", projOutput);
-                        var genResult = await gen.GenerateAsync(doc, generationConfig);
-
-                        if (genResult.Success)
-                        {
-                            totalFiles += genResult.GeneratedFiles.Count;
-                            logger.LogInformation("Code generation completed for {Project}. Generated {FileCount} files",
-                                projName, genResult.GeneratedFiles.Count);
-                            foreach (var w in genResult.Warnings)
-                                logger.LogWarning(w);
-                        }
-                        else
-                        {
-                            logger.LogError("Code generation failed for {Project}: {Errors}",
-                                projName, string.Join(", ", genResult.Errors));
-                            hasErrors = true;
-                        }
                     }
 
-                    if (hasErrors)
-                        return 1;
-                    logger.LogInformation("Code generation completed successfully. Total generated {FileCount} files", totalFiles);
-                    return 0;
+                    return hasErrors ? 1 : 0;
                 }
                 else
                 {
-                    // Работа без конфига - все параметры обязательны
-                    if (string.IsNullOrWhiteSpace(schema))
+                    if (string.IsNullOrWhiteSpace(schema) || string.IsNullOrWhiteSpace(output) || string.IsNullOrWhiteSpace(languageId))
                     {
-                        logger.LogError("Schema path or URL is required (use --schema or --config)");
+                        logger.LogError("--schema, --output, and --language are required when not using --config");
                         return 1;
                     }
 
-                    if (string.IsNullOrWhiteSpace(output))
-                    {
-                        logger.LogError("Output directory path is required (use --output or --config)");
-                        return 1;
-                    }
-
-                    if (!language.HasValue)
-                    {
-                        logger.LogError("Language is required (use --language or --config)");
-                        return 1;
-                    }
-
-                    // Создание конфигурации по умолчанию
                     generationConfig = new GenerationConfiguration
                     {
-                        Language = language.Value,
+                        LanguageId = languageId,
                         OutputPath = output,
                         GenerateModels = true,
                         GenerateClients = true,
                         GenerateEnums = true
                     };
-                    logger.LogInformation("Using default configuration");
                 }
 
-                // Переопределение output path при указании -o
-                if (!string.IsNullOrWhiteSpace(output))
-                {
-                    generationConfig.OutputPath = output;
-                }
-
-                // Валидация конфигурации
-                var validationResult = configValidator.Validate(generationConfig);
-                if (!validationResult.IsValid)
-                {
-                    logger.LogError("Configuration validation failed: {Errors}", 
-                        string.Join(", ", validationResult.Errors));
-                    return 1;
-                }
-
-                if (validationResult.Warnings.Any())
-                {
-                    foreach (var warning in validationResult.Warnings)
-                    {
-                        logger.LogWarning(warning);
-                    }
-                }
-
-                // Парсинг OpenAPI документа
-                logger.LogInformation("Parsing OpenAPI schema from: {Schema}", schema);
-                
-                OpenApiDocument document;
-                // Проверяем, является ли путь URL (http/https) или локальным файлом
-                if (Uri.TryCreate(schema, UriKind.Absolute, out var uri) && 
-                    (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) || 
-                     uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
-                     uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
-                {
-                    document = await parser.ParseFromUrlAsync(schema);
-                }
-                else
-                {
-                    // Локальный файл
-                    document = await parser.ParseFromFileAsync(schema);
-                }
-
-                logger.LogInformation("OpenAPI document parsed successfully");
-
-                // Создание генератора
-                var generator = factory.CreateGenerator(generationConfig.Language, generationConfig.Options);
-                logger.LogInformation("Using generator for language: {Language}", generationConfig.Language);
-
-                // Генерация кода
-                logger.LogInformation("Generating code to: {Output}", output);
-                var result = await generator.GenerateAsync(document, generationConfig);
-
-                if (result.Success)
-                {
-                    logger.LogInformation("Code generation completed successfully. Generated {FileCount} files", 
-                        result.GeneratedFiles.Count);
-                    
-                    if (result.Warnings.Any())
-                    {
-                        foreach (var warning in result.Warnings)
-                        {
-                            logger.LogWarning(warning);
-                        }
-                    }
-
-                    return 0;
-                }
-                else
-                {
-                    logger.LogError("Code generation failed: {Errors}", 
-                        string.Join(", ", result.Errors));
-                    return 1;
-                }
+                var success = await RunGenerationAsync(generationConfig, schema!, logger, parser, registry);
+                return success ? 0 : 1;
             }
             catch (Exception ex)
             {
@@ -275,5 +137,42 @@ public class GenerateCommand : Command
                 return 1;
             }
         });
+    }
+
+    private static async Task<bool> RunGenerationAsync(
+        GenerationConfiguration config,
+        string schemaPath,
+        ILogger logger,
+        IOpenApiDocumentParser parser,
+        IGeneratorRegistry registry)
+    {
+        var plugin = registry.FindPlugin(config.LanguageId);
+        if (plugin == null)
+        {
+            logger.LogError("No generator found for language: {LanguageId}", config.LanguageId);
+            return false;
+        }
+
+        logger.LogInformation("Using generator: {DisplayName}", plugin.DisplayName);
+        logger.LogInformation("Parsing OpenAPI schema from: {Schema}", schemaPath);
+
+        OpenApiDocument doc;
+        if (Uri.TryCreate(schemaPath, UriKind.Absolute, out var uri) &&
+            (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
+             uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
+             uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
+        {
+            doc = await parser.ParseFromUrlAsync(schemaPath);
+        }
+        else
+        {
+            doc = await parser.ParseFromFileAsync(schemaPath);
+        }
+
+        logger.LogInformation("OpenAPI document parsed successfully");
+
+        // TODO Phase 1: wire IrBuilder + plugin.CreatePipeline() + pipeline.ExecuteAsync()
+        logger.LogWarning("Code generation pipeline not yet implemented (Phase 1)");
+        return true;
     }
 }

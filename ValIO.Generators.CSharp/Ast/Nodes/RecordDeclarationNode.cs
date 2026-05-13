@@ -21,7 +21,6 @@ public sealed class RecordDeclarationNode : TypeDeclarationNode
     /// </summary>
     public IReadOnlyList<ParameterDeclarationNode> PrimaryConstructorParameters { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.RecordDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

@@ -9,7 +9,6 @@ namespace ValIO.Core.Ast.Nodes;
 /// </summary>
 public sealed class InterfaceDeclarationNode : TypeDeclarationNode
 {
-    public override AstNodeKind Kind => AstNodeKind.InterfaceDeclaration;
     
     /// <summary>
     /// Конструктор

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -15,7 +14,6 @@ public sealed class CppAsyncActivateImplementationNode : AstNode
     public IdentifierNode ClassName { get; }
     public BlockNode Body { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppAsyncActivateImplementation;
 
     public override IReadOnlyList<AstNode> Children => new List<AstNode> { ClassName, Body };
 

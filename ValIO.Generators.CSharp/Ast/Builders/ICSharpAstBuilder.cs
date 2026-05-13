@@ -1,9 +1,6 @@
 using ValIO.Core.Ast.Nodes;
-using ValIO.Core.Ast.Nodes.Expressions;
-using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
-using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Ast.Nodes;
 
 namespace ValIO.Generators.CSharp.Ast.Builders;
@@ -18,18 +15,8 @@ public interface ICSharpAstBuilder
     /// </summary>
     NamespaceDeclarationNode BuildNamespace(string name, IReadOnlyList<DeclarationNode> declarations);
     
-    /// <summary>
-    /// Строит Type из TypeInfo
-    /// </summary>
-    TypeNode BuildType(TypeInfo typeInfo);
-    
-    /// <summary>
-    /// Строит Literal Expression
-    /// </summary>
-    LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo);
-    
     // IR → AST методы
-    
+
     /// <summary>
     /// Строит TypeNode из IrType
     /// </summary>

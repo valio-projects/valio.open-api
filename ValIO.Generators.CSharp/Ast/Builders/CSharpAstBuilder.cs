@@ -11,7 +11,6 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
-using ValIO.Core.Models;
 using ValIO.Generators.CSharp.Ast.Nodes;
 using ValIO.Generators.CSharp.Models;
 
@@ -42,49 +41,6 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             declarations: declarations.ToImmutableList());
     }
     
-    public TypeNode BuildType(TypeInfo typeInfo)
-    {
-        if (typeInfo.IsCollection)
-        {
-            var elementType = BuildTypeFromBaseType(typeInfo.GenericArguments.FirstOrDefault() ?? TypeInfo.Simple(typeInfo.BaseType));
-            return new ArrayTypeNode(elementType, isNullable: typeInfo.IsNullable);
-        }
-        
-        if (typeInfo.IsDictionary)
-        {
-            var keyType = BuildTypeFromBaseType(typeInfo.GenericArguments.ElementAtOrDefault(0) ?? TypeInfo.Simple("string"));
-            var valueType = BuildTypeFromBaseType(typeInfo.GenericArguments.ElementAtOrDefault(1) ?? TypeInfo.Simple("object"));
-            return new DictionaryTypeNode(keyType, valueType, isNullable: typeInfo.IsNullable);
-        }
-        
-        if (!string.IsNullOrEmpty(typeInfo.BaseType) && typeInfo.GenericArguments.Count > 0)
-        {
-            var genericArgs = typeInfo.GenericArguments.Select(BuildType).ToImmutableList();
-            var genericType = new GenericTypeNode(
-                name: new IdentifierNode(typeInfo.BaseType),
-                typeArguments: genericArgs,
-                isNullable: typeInfo.IsNullable);
-            return genericType;
-        }
-        
-        return BuildTypeFromBaseType(typeInfo);
-    }
-    
-    public LiteralExpressionNode BuildLiteral(object value, TypeInfo typeInfo)
-    {
-        var literalKind = value switch
-        {
-            string => LiteralKind.String,
-            int or long or short or byte => LiteralKind.Number,
-            float or double or decimal => LiteralKind.Number,
-            bool => LiteralKind.Boolean,
-            null => LiteralKind.Null,
-            _ => LiteralKind.String
-        };
-        
-        return new LiteralExpressionNode(value ?? string.Empty, literalKind);
-    }
-    
     // Приватные вспомогательные методы
     
     private IReadOnlyList<UsingDirectiveNode> BuildUsingDirectives(IReadOnlyList<string> dependencies)
@@ -92,15 +48,6 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         return dependencies
             .Select(dep => new UsingDirectiveNode(new IdentifierNode(dep)))
             .ToImmutableList();
-    }
-    
-    private TypeNode BuildTypeFromBaseType(TypeInfo typeInfo)
-    {
-        var simpleType = new SimpleTypeNode(
-            name: new IdentifierNode(typeInfo.BaseType),
-            isPrimitive: typeInfo.IsPrimitive,
-            isNullable: typeInfo.IsNullable);
-        return simpleType;
     }
     
     private SimpleTypeNode BuildSimpleType(string typeName)
@@ -115,17 +62,17 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// </summary>
     public TypeNode BuildType(IrType irType)
     {
-        return irType.Kind switch
+        return irType switch
         {
-            IrTypeKind.Primitive => BuildPrimitiveType((IrPrimitiveType)irType),
-            IrTypeKind.ModelReference => BuildModelReference((IrModelReference)irType),
-            IrTypeKind.Array => BuildArrayType((IrArrayType)irType),
-            IrTypeKind.Dictionary => BuildDictionaryType((IrDictionaryType)irType),
-            IrTypeKind.Union => BuildUnionType((IrUnionType)irType),
-            IrTypeKind.Intersection => BuildIntersectionType((IrIntersectionType)irType),
-            IrTypeKind.Nullable => BuildNullableType((IrNullableType)irType),
-            IrTypeKind.Optional => BuildType(((IrOptionalType)irType).InnerType), // Optional не используется в C#
-            _ => throw new NotSupportedException($"IrTypeKind {irType.Kind} is not supported")
+            IrPrimitiveType p => BuildPrimitiveType(p),
+            IrModelReference r => BuildModelReference(r),
+            IrArrayType arr => BuildArrayType(arr),
+            IrDictionaryType dict => BuildDictionaryType(dict),
+            IrUnionType union => BuildUnionType(union),
+            IrIntersectionType intersection => BuildIntersectionType(intersection),
+            IrNullableType nullable => BuildNullableType(nullable),
+            IrOptionalType optional => BuildType(optional.InnerType), // Optional не используется в C#
+            _ => throw new NotSupportedException($"IrType {irType.GetType().Name} is not supported")
         };
     }
     
@@ -227,7 +174,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             : null;
         
         var defaultValue = property.Constraints?.DefaultValue != null
-            ? BuildLiteral(property.Constraints.DefaultValue, InferTypeInfo(property.Type))
+            ? BuildLiteral(property.Constraints.DefaultValue)
             : null;
         
         // Собираем атрибуты
@@ -817,14 +764,13 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         if (constraints.DefaultValue != null)
         {
             var comment = new CommentNode($"Значение по умолчанию для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
-            var defaultValueType = InferTypeInfo(property.Type);
             var defaultValueField = new FieldDeclarationNode(
                 name: new IdentifierNode("DefaultValue"),
                 type: BuildType(property.Type),
                 accessModifier: AccessModifier.Public,
                 isReadOnly: false, // const не требует readonly, если примитивный тип
                 isStatic: true,
-                defaultValue: BuildLiteral(constraints.DefaultValue, defaultValueType),
+                defaultValue: BuildLiteral(constraints.DefaultValue),
                 documentation: comment);
             members.Add(defaultValueField);
         }
@@ -895,7 +841,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             else
             {
                 // Для числовых enum'ов используем обычное присваивание значения
-                value = v.Value != null ? BuildLiteral(v.Value, TypeInfo.Simple("int")) : null;
+                value = v.Value != null ? BuildLiteral(v.Value) : null;
             }
             
             return new EnumMemberDeclarationNode(
@@ -1092,18 +1038,21 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         }
     }
     
-    private TypeInfo InferTypeInfo(IrType irType)
+    private LiteralExpressionNode BuildLiteral(object value)
     {
-        // Простая реализация для определения TypeInfo из IrType
-        // Используется только для BuildLiteral
-        return irType.Kind switch
+        var literalKind = value switch
         {
-            IrTypeKind.Primitive => TypeInfo.Simple(MapPrimitiveToCSharp(((IrPrimitiveType)irType).PrimitiveKind), isPrimitive: true),
-            IrTypeKind.ModelReference => TypeInfo.Simple(((IrModelReference)irType).ModelName),
-            _ => TypeInfo.Simple("object")
+            string => LiteralKind.String,
+            int or long or short or byte => LiteralKind.Number,
+            float or double or decimal => LiteralKind.Number,
+            bool => LiteralKind.Boolean,
+            null => LiteralKind.Null,
+            _ => LiteralKind.String
         };
+        return new LiteralExpressionNode(value ?? string.Empty, literalKind);
     }
-    
+
+
     /// <summary>
     /// Строит MethodDeclarationNode из IrOperation
     /// </summary>

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -15,7 +14,6 @@ public sealed class CppLambdaExpressionNode : ExpressionNode
     public IReadOnlyList<CppParameterNode> Parameters { get; }
     public BlockNode Body { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppLambdaExpression;
 
     public override IReadOnlyList<AstNode> Children
     {

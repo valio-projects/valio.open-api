@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -47,7 +46,6 @@ public sealed class CppHeaderFileNode : AstNode
     /// </summary>
     public IReadOnlyList<AstNode> Declarations { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppHeaderFile;
 
     public override IReadOnlyList<AstNode> Children
     {

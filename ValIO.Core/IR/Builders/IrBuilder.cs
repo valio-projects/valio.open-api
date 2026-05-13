@@ -9,7 +9,6 @@ using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.IR.Utilities;
-using ValIO.Core.Utilities;
 
 namespace ValIO.Core.IR.Builders;
 
@@ -129,7 +128,7 @@ public class IrBuilder
             // Берем свойства только из inline-схем (без $ref), которые определяют собственные свойства дочернего класса
             foreach (var subSchema in resolvedSchema.AllOf)
             {
-                var referencedSchemaName = SchemaCompositionHelper.GetSchemaNameRaw(subSchema, _schemaResolver);
+                var referencedSchemaName = GetSchemaNameRaw(subSchema);
                 bool isBaseClass = !string.IsNullOrEmpty(referencedSchemaName);
                 
                 if (!isBaseClass)
@@ -1507,5 +1506,24 @@ public class IrBuilder
         
         // Fallback: используем счетчик
         return _namingConverter.SanitizeIdentifier($"InlineModel{_inlineModelCounter++}");
+    }
+
+    /// <summary>
+    /// Возвращает оригинальное имя схемы из ссылки или через resolver, без преобразования регистра.
+    /// </summary>
+    private string? GetSchemaNameRaw(IOpenApiSchema schema)
+    {
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> refHolder)
+        {
+            var reference = refHolder.Reference;
+            if (reference != null && !string.IsNullOrEmpty(reference.Id))
+                return reference.Id;
+        }
+
+        var schemaName = _schemaResolver.GetSchemaName(schema, string.Empty);
+        if (!string.IsNullOrEmpty(schemaName) && schemaName != "object")
+            return schemaName;
+
+        return null;
     }
 }

@@ -35,7 +35,6 @@ public sealed class BinaryExpressionNode : ExpressionNode
     /// </summary>
     public bool IsNamedArgument { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.BinaryExpression;
     
     public override IReadOnlyList<AstNode> Children => new[] { Left, Right };
     

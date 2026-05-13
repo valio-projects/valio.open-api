@@ -10,16 +10,14 @@ namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Factories;
 public class TanStackQueryAstFactory
 {
     private readonly INamingConverter _namingConverter;
-    private readonly ITypeMapper _typeMapper;
     private TanStackQueryAstBuilder? _builder;
     private ITanStackQueryAstRenderer? _renderer;
-    
-    public TanStackQueryAstFactory(INamingConverter namingConverter, ITypeMapper typeMapper)
+
+    public TanStackQueryAstFactory(INamingConverter namingConverter)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
     }
-    
+
     /// <summary>
     /// Создает или возвращает существующий TanStackQueryAstBuilder
     /// </summary>
@@ -27,7 +25,7 @@ public class TanStackQueryAstFactory
     {
         return _builder ??= new TanStackQueryAstBuilder(_namingConverter);
     }
-    
+
     /// <summary>
     /// Создает или возвращает существующий TanStackQueryAstRenderer
     /// </summary>

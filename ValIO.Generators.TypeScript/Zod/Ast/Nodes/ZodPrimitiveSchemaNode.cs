@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
@@ -23,7 +22,6 @@ public sealed class ZodPrimitiveSchemaNode : ZodSchemaNode
     /// </summary>
     public bool IsLazy { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.ZodSchema;
     
     public override IReadOnlyList<AstNode> Children => Array.Empty<AstNode>();
     
@@ -57,9 +55,9 @@ public sealed class ZodPrimitiveSchemaNode : ZodSchemaNode
     {
         if (visitor is IZodAstVisitor<TResult> zodVisitor)
         {
-            return zodVisitor.VisitZodSchema(this);
+            return zodVisitor.VisitZodPrimitiveSchema(this);
         }
-        return base.Accept(visitor);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()

@@ -7,7 +7,7 @@ namespace ValIO.Generators.CSharp.Ast.Renderers;
 /// <summary>
 /// Интерфейс рендерера AST для C#
 /// </summary>
-public interface ICSharpAstRenderer : IAstRenderer
+public interface ICSharpAstRenderer : IAstVisitor<string>
 {
     /// <summary>
     /// Рендерит CompilationUnit

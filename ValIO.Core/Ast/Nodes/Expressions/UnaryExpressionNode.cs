@@ -11,7 +11,6 @@ public sealed class UnaryExpressionNode : ExpressionNode
     public UnaryOperator Operator { get; }
     public ExpressionNode Operand { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.UnaryExpression;
 
     public override IReadOnlyList<AstNode> Children => new[] { Operand };
 

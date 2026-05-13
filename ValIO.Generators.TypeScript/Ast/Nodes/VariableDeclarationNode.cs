@@ -46,7 +46,6 @@ public sealed class VariableDeclarationNode : DeclarationNode
     /// </summary>
     public TypeNode? SatisfiesType { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.VariableDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

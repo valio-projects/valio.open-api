@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes.Statements;
@@ -9,7 +8,6 @@ namespace ValIO.Core.Ast.Nodes.Statements;
 /// </summary>
 public sealed class BlankLineStatementNode : StatementNode
 {
-    public override AstNodeKind Kind => AstNodeKind.BlankLineStatement;
 
     public override IReadOnlyList<AstNode> Children => ImmutableArray<AstNode>.Empty;
 

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
@@ -25,7 +24,6 @@ public sealed class UseMutationNode : ExpressionNode
     /// </summary>
     public MutationOptionsNode? Options { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.UseMutation;
     
     public override IReadOnlyList<AstNode> Children
     {
@@ -59,7 +57,7 @@ public sealed class UseMutationNode : ExpressionNode
         {
             return queryVisitor.VisitUseMutation(this);
         }
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()

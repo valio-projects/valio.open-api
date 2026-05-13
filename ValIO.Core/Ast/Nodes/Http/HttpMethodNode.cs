@@ -14,7 +14,6 @@ public sealed class HttpMethodNode : AstNode
     /// </summary>
     public HttpMethodKind Method { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.HttpMethod;
     
     public override IReadOnlyList<AstNode> Children => Array.Empty<AstNode>();
     

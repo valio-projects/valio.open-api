@@ -26,7 +26,6 @@ public sealed class ClassDeclarationNode : TypeDeclarationNode
     /// </summary>
     public bool IsPartial { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ClassDeclaration;
     
     /// <summary>
     /// Конструктор

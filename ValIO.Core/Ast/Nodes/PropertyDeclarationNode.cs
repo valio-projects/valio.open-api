@@ -66,7 +66,6 @@ public sealed class PropertyDeclarationNode : DeclarationNode
     /// </summary>
     public bool IsConstant { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.PropertyDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

@@ -55,7 +55,6 @@ public sealed class MethodDeclarationNode : DeclarationNode
     /// </summary>
     public IReadOnlyList<string>? GenericTypeParameters { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.MethodDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

@@ -689,15 +689,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     private string RenderDeclaration(DeclarationNode declaration)
     {
-        return declaration.Kind switch
-        {
-            AstNodeKind.ClassDeclaration => Visit((ClassDeclarationNode)declaration),
-            AstNodeKind.RecordDeclaration => Visit((RecordDeclarationNode)declaration),
-            AstNodeKind.StructDeclaration => Visit((StructDeclarationNode)declaration),
-            AstNodeKind.InterfaceDeclaration => Visit((InterfaceDeclarationNode)declaration),
-            AstNodeKind.EnumDeclaration => Visit((EnumDeclarationNode)declaration),
-            _ => throw new NotSupportedException($"Declaration kind {declaration.Kind} is not supported")
-        };
+        return declaration.Accept(this);
     }
 
     private void RenderClass(StringBuilder sb, ClassDeclarationNode node, int indentLevel)
@@ -1093,30 +1085,30 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     private void RenderMember(StringBuilder sb, DeclarationNode member, int indentLevel)
     {
-        switch (member.Kind)
+        switch (member)
         {
-            case AstNodeKind.PropertyDeclaration:
-                RenderProperty(sb, (PropertyDeclarationNode)member, indentLevel);
+            case PropertyDeclarationNode property:
+                RenderProperty(sb, property, indentLevel);
                 CodeFormatter.AppendEmptyLine(sb);
                 break;
-            case AstNodeKind.MethodDeclaration:
-                RenderMethod(sb, (MethodDeclarationNode)member, indentLevel);
+            case MethodDeclarationNode method:
+                RenderMethod(sb, method, indentLevel);
                 CodeFormatter.AppendEmptyLine(sb);
                 break;
-            case AstNodeKind.FieldDeclaration:
-                RenderField(sb, (FieldDeclarationNode)member, indentLevel);
+            case FieldDeclarationNode field:
+                RenderField(sb, field, indentLevel);
                 CodeFormatter.AppendEmptyLine(sb);
                 break;
-            case AstNodeKind.ConstructorDeclaration:
-                RenderConstructor(sb, (ConstructorDeclarationNode)member, indentLevel);
+            case ConstructorDeclarationNode ctor:
+                RenderConstructor(sb, ctor, indentLevel);
                 CodeFormatter.AppendEmptyLine(sb);
                 break;
-            case AstNodeKind.ClassDeclaration:
-                RenderClass(sb, (ClassDeclarationNode)member, indentLevel);
+            case ClassDeclarationNode cls:
+                RenderClass(sb, cls, indentLevel);
                 CodeFormatter.AppendEmptyLine(sb);
                 break;
             default:
-                throw new NotSupportedException($"Member kind {member.Kind} is not supported");
+                throw new NotSupportedException($"Member type {member.GetType().Name} is not supported");
         }
     }
 
@@ -1177,19 +1169,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     private string RenderType(TypeNode type)
     {
-        return type.Kind switch
-        {
-            AstNodeKind.RawType => Visit((RawTypeNode)type),
-            AstNodeKind.SimpleType => Visit((SimpleTypeNode)type),
-            AstNodeKind.NullableType => Visit((NullableTypeNode)type),
-            AstNodeKind.ArrayType => Visit((ArrayTypeNode)type),
-            AstNodeKind.GenericType => Visit((GenericTypeNode)type),
-            AstNodeKind.DictionaryType => Visit((DictionaryTypeNode)type),
-            AstNodeKind.UnionType => Visit((UnionTypeNode)type),
-            AstNodeKind.IntersectionType => Visit((IntersectionTypeNode)type),
-            AstNodeKind.OptionalType => Visit((OptionalTypeNode)type),
-            _ => throw new NotSupportedException($"Type kind {type.Kind} is not supported")
-        };
+        return type.Accept(this);
     }
 
     private void RenderComment(StringBuilder sb, CommentNode comment, int indentLevel)

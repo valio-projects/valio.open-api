@@ -5,8 +5,8 @@ namespace ValIO.Core.Models;
 /// </summary>
 public class GenerationConfiguration
 {
-    public GenerationLanguage Language { get; set; }
-    public GenerationOptions? Options { get; set; }
+    public string LanguageId { get; set; } = string.Empty;
+    public object? PluginOptions { get; set; }
     public FileOrganization FileOrganization { get; set; } = new();
     public NamingConventions NamingConvention { get; set; } = new();
     public string OutputPath { get; set; } = string.Empty;

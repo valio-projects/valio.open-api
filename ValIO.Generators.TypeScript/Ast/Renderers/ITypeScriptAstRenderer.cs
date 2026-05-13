@@ -7,7 +7,7 @@ namespace ValIO.Generators.TypeScript.Ast.Renderers;
 /// <summary>
 /// Интерфейс рендерера AST для TypeScript
 /// </summary>
-public interface ITypeScriptAstRenderer : IAstRenderer
+public interface ITypeScriptAstRenderer : IAstVisitor<string>
 {
     /// <summary>
     /// Рендерит SourceFile

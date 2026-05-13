@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
@@ -18,7 +17,6 @@ public sealed class ZodEnumNode : ZodSchemaNode
     /// </summary>
     public IReadOnlyList<ZodEnumValueNode> Values { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ZodEnum;
     
     public override IReadOnlyList<AstNode> Children => Values.Cast<AstNode>().ToImmutableList();
     

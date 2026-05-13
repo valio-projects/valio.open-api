@@ -636,15 +636,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     private string RenderDeclaration(DeclarationNode declaration)
     {
-        return declaration.Kind switch
-        {
-            AstNodeKind.InterfaceDeclaration => Visit((InterfaceDeclarationNode)declaration),
-            AstNodeKind.TypeAliasDeclaration => Visit((TypeAliasDeclarationNode)declaration),
-            AstNodeKind.FunctionDeclaration => Visit((FunctionDeclarationNode)declaration),
-            AstNodeKind.VariableDeclaration => Visit((VariableDeclarationNode)declaration),
-            AstNodeKind.EnumDeclaration => Visit((EnumDeclarationNode)declaration),
-            _ => throw new NotSupportedException($"Declaration kind {declaration.Kind} is not supported")
-        };
+        return declaration.Accept(this);
     }
 
     private void RenderInterface(StringBuilder sb, InterfaceDeclarationNode node, int indentLevel)
@@ -1148,19 +1140,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     private string RenderType(TypeNode type)
     {
-        return type.Kind switch
-        {
-            AstNodeKind.RawType => Visit((RawTypeNode)type),
-            AstNodeKind.SimpleType => Visit((SimpleTypeNode)type),
-            AstNodeKind.NullableType => Visit((NullableTypeNode)type),
-            AstNodeKind.OptionalType => Visit((OptionalTypeNode)type),
-            AstNodeKind.ArrayType => Visit((ArrayTypeNode)type),
-            AstNodeKind.GenericType => Visit((GenericTypeNode)type),
-            AstNodeKind.UnionType => Visit((UnionTypeNode)type),
-            AstNodeKind.IntersectionType => Visit((IntersectionTypeNode)type),
-            AstNodeKind.DictionaryType => Visit((DictionaryTypeNode)type),
-            _ => throw new NotSupportedException($"Type kind {type.Kind} is not supported")
-        };
+        return type.Accept(this);
     }
 
     private string RenderLiteral(LiteralExpressionNode node)

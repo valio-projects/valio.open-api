@@ -32,8 +32,4 @@ public abstract class ExpressionNode : AstNode
         Type = type;
     }
     
-    public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
-    {
-        return visitor.VisitExpression(this);
-    }
 }

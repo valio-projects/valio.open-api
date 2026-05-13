@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
@@ -14,7 +13,6 @@ public sealed class BlockNode : AstNode
     /// </summary>
     public IReadOnlyList<StatementNode> Statements { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.Block;
     
     public override IReadOnlyList<AstNode> Children => Statements.Cast<AstNode>().ToImmutableList();
     

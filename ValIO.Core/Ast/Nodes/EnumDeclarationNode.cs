@@ -14,7 +14,6 @@ public sealed class EnumDeclarationNode : TypeDeclarationNode
     /// </summary>
     public TypeNode? UnderlyingType { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.EnumDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

@@ -1,5 +1,3 @@
-using ValIO.Core.IR.Enums;
-
 namespace ValIO.Core.IR.Types;
 
 /// <summary>
@@ -7,13 +5,11 @@ namespace ValIO.Core.IR.Types;
 /// </summary>
 public sealed record IrDictionaryType : IrType
 {
-    public override IrTypeKind Kind => IrTypeKind.Dictionary;
-    
     /// <summary>
     /// Тип ключа
     /// </summary>
     public required IrType KeyType { get; init; }
-    
+
     /// <summary>
     /// Тип значения
     /// </summary>

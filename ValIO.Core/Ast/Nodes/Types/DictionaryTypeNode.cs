@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -20,7 +19,6 @@ public sealed class DictionaryTypeNode : TypeNode
     /// </summary>
     public TypeNode ValueType { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.DictionaryType;
     
     public override IReadOnlyList<AstNode> Children => new[] { KeyType, ValueType };
     
