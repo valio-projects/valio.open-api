@@ -7,4 +7,6 @@ riderModule.iml
 /out/
 .vs
 .idea
+.claude/worktrees/
+.claude/settings.local.json
 docs/query-5.90.3

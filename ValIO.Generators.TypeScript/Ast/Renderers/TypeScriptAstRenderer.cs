@@ -369,7 +369,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var parameters = string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
         if (node.BodyExpression != null)
         {
-            return $"{asyncKw}({parameters}) => {Visit(node.BodyExpression)}";
+            var bodyText = Visit(node.BodyExpression);
+            // ObjectLiteral как тело arrow function должен быть в скобках,
+            // иначе TS парсит `() => { ... }` как блок с labeled statements.
+            if (node.BodyExpression is ObjectLiteralExpressionNode)
+                bodyText = $"({bodyText})";
+            return $"{asyncKw}({parameters}) => {bodyText}";
         }
         var blockContent = string.Join(" ", node.BodyBlock!.Statements.Select(Visit));
         return $"{asyncKw}({parameters}) => {{ {blockContent} }}";

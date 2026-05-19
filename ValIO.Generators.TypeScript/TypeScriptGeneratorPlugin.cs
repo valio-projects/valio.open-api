@@ -47,6 +47,9 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new SolidStartClientStep(namingConverter, nodeRenderers),
             new TanStackQueryStep(namingConverter, nodeRenderers),
             new TanStackVueStep(namingConverter, nodeRenderers),
+            new TanStackAngularStep(namingConverter, nodeRenderers),
+            new TanStackSolidStep(namingConverter, nodeRenderers),
+            new TanStackSvelteStep(namingConverter, nodeRenderers),
             new MswStep(namingConverter, nodeRenderers),
             new TypeScriptIndexStep(),
         };
