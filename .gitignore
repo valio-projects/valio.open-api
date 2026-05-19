@@ -8,3 +8,4 @@ riderModule.iml
 .vs
 .idea
 docs/query-5.90.3
+.angular-check/
