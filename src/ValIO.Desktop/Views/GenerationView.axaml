@@ -1,0 +1,116 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ValIO.Desktop.ViewModels"
+             xmlns:plug="using:ValIO.Core.Plugins"
+             mc:Ignorable="d"
+             d:DesignWidth="1000" d:DesignHeight="700"
+             x:Class="ValIO.Desktop.Views.GenerationView"
+             x:DataType="vm:GenerationViewModel">
+
+  <UserControl.Resources>
+    <DataTemplate x:Key="OptionFieldTemplate" DataType="vm:OptionFieldViewModel">
+      <StackPanel Margin="0,4">
+        <TextBlock Text="{Binding Description.Name}" FontWeight="SemiBold" />
+        <TextBlock Text="{Binding Description.Description}" TextWrapping="Wrap"
+                   Foreground="{DynamicResource SystemBaseMediumColor}" FontSize="11"
+                   IsVisible="{Binding Description.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+        <ContentControl Content="{Binding}">
+          <ContentControl.Styles>
+            <Style Selector="ContentControl">
+              <Setter Property="ContentTemplate">
+                <DataTemplate DataType="vm:OptionFieldViewModel">
+                  <Panel>
+                    <CheckBox IsChecked="{Binding BoolValue}"
+                              IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsBool}}" />
+                    <TextBox Text="{Binding StringValue}"
+                             IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsString}}" />
+                    <NumericUpDown Value="{Binding IntValue}"
+                                   IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsInt}}" />
+                    <ComboBox ItemsSource="{Binding EnumChoices}"
+                              SelectedItem="{Binding EnumSingleValue}"
+                              IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsEnumSingle}}" />
+                    <ListBox ItemsSource="{Binding EnumChoices}"
+                             SelectionMode="Multiple"
+                             SelectedItems="{Binding EnumMultiSelected}"
+                             IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsEnumMulti}}" />
+                  </Panel>
+                </DataTemplate>
+              </Setter>
+            </Style>
+          </ContentControl.Styles>
+        </ContentControl>
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <ScrollViewer>
+    <Grid ColumnDefinitions="*,16,*" RowDefinitions="Auto,Auto,*,Auto" Margin="0,8">
+
+      <!-- Schema -->
+      <Border Grid.Column="0" Grid.Row="0" Classes="card" Padding="16" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource SystemBaseLowColor}">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Schema" FontSize="16" FontWeight="SemiBold" />
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Grid.Column="0" Text="{Binding SchemaPath}" Watermark="Path to OpenAPI schema (.json / .yaml)" />
+            <Button Grid.Column="1" Content="Browse..." Command="{Binding PickSchemaCommand}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Language + plugin options -->
+      <Border Grid.Column="2" Grid.Row="0" Classes="card" Padding="16" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource SystemBaseLowColor}">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Language" FontSize="16" FontWeight="SemiBold" />
+          <ComboBox ItemsSource="{Binding AvailablePlugins}"
+                    SelectedItem="{Binding SelectedPlugin}"
+                    DisplayMemberBinding="{Binding DisplayName}" />
+        </StackPanel>
+      </Border>
+
+      <!-- General options -->
+      <Border Grid.Column="0" Grid.Row="1" Classes="card" Padding="16" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,0">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Output structure" FontSize="16" FontWeight="SemiBold" />
+          <CheckBox Content="Generate models" IsChecked="{Binding GenerateModels}" />
+          <CheckBox Content="Generate clients" IsChecked="{Binding GenerateClients}" />
+          <CheckBox Content="Generate enums" IsChecked="{Binding GenerateEnums}" />
+          <TextBox Text="{Binding NamespaceName}" Watermark="Namespace / package (optional)" Margin="0,6,0,0" />
+        </StackPanel>
+      </Border>
+
+      <!-- Plugin options -->
+      <Border Grid.Column="2" Grid.Row="1" Classes="card" Padding="16" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,0">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Plugin options" FontSize="16" FontWeight="SemiBold" />
+          <ItemsControl ItemsSource="{Binding OptionFields}" ItemTemplate="{StaticResource OptionFieldTemplate}" />
+          <TextBlock Text="(no configurable options)" Foreground="{DynamicResource SystemBaseMediumColor}"
+                     IsVisible="{Binding OptionFields.Count, Converter={x:Static plug:OptionKindConverters.IsZero}}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Output destination -->
+      <Border Grid.Column="0" Grid.ColumnSpan="3" Grid.Row="2" Classes="card" Padding="16" CornerRadius="6" BorderThickness="1" BorderBrush="{DynamicResource SystemBaseLowColor}" Margin="0,12,0,0">
+        <StackPanel Spacing="6">
+          <TextBlock Text="Output destination" FontSize="16" FontWeight="SemiBold" />
+          <StackPanel Orientation="Horizontal" Spacing="12">
+            <RadioButton GroupName="Fmt" Content="Folder" IsChecked="{Binding Format, Converter={x:Static plug:OptionKindConverters.FormatIsFolder}}" />
+            <RadioButton GroupName="Fmt" Content="Zip archive" IsChecked="{Binding Format, Converter={x:Static plug:OptionKindConverters.FormatIsZip}}" />
+          </StackPanel>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Grid.Column="0" Text="{Binding OutputPath}" Watermark="Output folder or .zip path" />
+            <Button Grid.Column="1" Content="Browse..." Command="{Binding PickOutputCommand}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Action bar -->
+      <DockPanel Grid.Column="0" Grid.ColumnSpan="3" Grid.Row="3" Margin="0,12,0,0">
+        <TextBlock DockPanel.Dock="Left" Text="{Binding StatusMessage}" VerticalAlignment="Center" Foreground="{DynamicResource SystemBaseMediumHighColor}" />
+        <Button DockPanel.Dock="Right" Content="Generate" Command="{Binding GenerateCommand}"
+                Padding="20,8" HorizontalAlignment="Right" Classes="accent" />
+      </DockPanel>
+    </Grid>
+  </ScrollViewer>
+</UserControl>

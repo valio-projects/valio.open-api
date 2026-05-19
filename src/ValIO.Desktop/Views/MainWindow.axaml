@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:ValIO.Desktop.ViewModels"
+        xmlns:v="using:ValIO.Desktop.Views"
+        mc:Ignorable="d"
+        d:DesignWidth="1100" d:DesignHeight="780"
+        x:Class="ValIO.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1100" Height="780"
+        MinWidth="900" MinHeight="600"
+        Title="ValIO — OpenAPI Code Generator">
+
+  <Window.DataTemplates>
+    <DataTemplate DataType="{x:Type vm:GenerationViewModel}">
+      <v:GenerationView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+      <v:SettingsView />
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <Grid RowDefinitions="48,*">
+    <Border Grid.Row="0" Background="{DynamicResource SystemRegionBrush}" BorderBrush="{DynamicResource SystemBaseLowColor}" BorderThickness="0,0,0,1">
+      <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0">
+        <TextBlock Text="ValIO" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+        <Button Content="Generate" Margin="20,0,0,0" Click="OnShowGenerate" />
+        <Button Content="Settings" Margin="8,0,0,0" Click="OnShowSettings" />
+      </StackPanel>
+    </Border>
+    <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" Margin="16" />
+  </Grid>
+</Window>
