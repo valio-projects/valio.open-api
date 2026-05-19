@@ -22,6 +22,7 @@
       <ProjectReference Include="..\ValIO.Generators.CSharp\ValIO.Generators.CSharp.csproj" />
       <ProjectReference Include="..\ValIO.Generators.TypeScript\ValIO.Generators.TypeScript.csproj" />
       <ProjectReference Include="..\ValIO.Generators.Cpp\ValIO.Generators.Cpp.csproj" />
+      <ProjectReference Include="..\ValIO.Generators.Php\ValIO.Generators.Php.csproj" />
       <ProjectReference Include="..\ValIO.Generators.Python\ValIO.Generators.Python.csproj" />
     </ItemGroup>
 

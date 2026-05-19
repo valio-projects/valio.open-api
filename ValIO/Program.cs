@@ -7,6 +7,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Services;
 using ValIO.Generators.CSharp;
 using ValIO.Generators.CSharp.Ast.Renderers;
+using ValIO.Generators.Php;
 using ValIO.Generators.Python;
 using ValIO.Generators.TypeScript;
 using ValIO.Parsers.Interfaces;
@@ -59,6 +60,7 @@ class Program
         services.AddSingleton<ICSharpAstRenderer, CSharpAstRenderer>();
         services.AddGeneratorPlugin<CSharpGeneratorPlugin>();
         services.AddGeneratorPlugin<PythonGeneratorPlugin>();
+        services.AddGeneratorPlugin<PhpGeneratorPlugin>();
 
         // Orchestrator
         services.AddSingleton<GenerationOrchestrator>();

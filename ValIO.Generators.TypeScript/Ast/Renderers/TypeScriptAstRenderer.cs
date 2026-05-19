@@ -29,7 +29,17 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     {
         _sb.Clear();
         _indentLevel = 0;
-        
+
+        // Top-of-file directive prologue (e.g. "use server"; for Solid Start /
+        // "use client"; for React Server Components). Pass via
+        // SourceFileNode.Metadata["directive"] = "use server" (no quotes).
+        if (node.Metadata.TryGetValue("directive", out var directiveObj) && directiveObj is string directive && !string.IsNullOrEmpty(directive))
+        {
+            _sb.Append('"').Append(directive).Append("\";");
+            CodeFormatter.AppendEmptyLine(_sb);
+            CodeFormatter.AppendEmptyLine(_sb);
+        }
+
         // Рендерим imports
         if (node.Imports.Count > 0)
         {
