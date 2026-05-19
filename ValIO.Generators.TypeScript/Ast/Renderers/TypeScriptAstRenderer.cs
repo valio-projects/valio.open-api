@@ -643,8 +643,116 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             AstNodeKind.FunctionDeclaration => Visit((FunctionDeclarationNode)declaration),
             AstNodeKind.VariableDeclaration => Visit((VariableDeclarationNode)declaration),
             AstNodeKind.EnumDeclaration => Visit((EnumDeclarationNode)declaration),
+            AstNodeKind.ClassDeclaration when declaration is Angular.Ast.Nodes.TypeScriptClassDeclarationNode tsClass => RenderTypeScriptClass(tsClass),
             _ => throw new NotSupportedException($"Declaration kind {declaration.Kind} is not supported")
         };
+    }
+
+    /// <summary>
+    /// Рендерит TypeScript-класс (Angular @Injectable сервис).
+    /// </summary>
+    private string RenderTypeScriptClass(Angular.Ast.Nodes.TypeScriptClassDeclarationNode node)
+    {
+        var sb = new StringBuilder();
+        var indentLevel = 0;
+
+        // JSDoc
+        if (node.Documentation != null)
+        {
+            RenderComment(sb, node.Documentation, indentLevel);
+        }
+
+        // Декораторы (@Injectable({ providedIn: 'root' }))
+        foreach (var attr in node.Attributes)
+        {
+            RenderDecorator(sb, attr, indentLevel);
+        }
+
+        var exportKw = node.IsExported ? "export " : "";
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKw}class {node.Name.Name} {{");
+
+        // Конструктор с инъекцией зависимостей.
+        if (node.ConstructorParameters.Count > 0)
+        {
+            RenderTypeScriptCtor(sb, node.ConstructorParameters, indentLevel + 1);
+        }
+
+        // Члены — каждый метод как блок.
+        foreach (var member in node.Members)
+        {
+            if (member is MethodDeclarationNode method)
+            {
+                sb.AppendLine();
+                RenderTypeScriptClassMethod(sb, method, indentLevel + 1);
+            }
+        }
+
+        CodeFormatter.AppendLine(sb, indentLevel, "}");
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Рендерит декоратор класса: <c>@Name(args)</c>.
+    /// </summary>
+    private void RenderDecorator(StringBuilder sb, AttributeNode attr, int indentLevel)
+    {
+        var args = attr.Arguments.Count > 0
+            ? "(" + string.Join(", ", attr.Arguments.Select(Visit)) + ")"
+            : "";
+        CodeFormatter.AppendLine(sb, indentLevel, $"@{attr.Name.Name}{args}");
+    }
+
+    /// <summary>
+    /// Рендерит конструктор класса с inline-инъекцией: <c>constructor(private readonly http: HttpClient) {}</c>.
+    /// Модификаторы (private/readonly) берутся из <see cref="ParameterDeclarationNode.Metadata"/>.
+    /// </summary>
+    private void RenderTypeScriptCtor(StringBuilder sb, IReadOnlyList<ParameterDeclarationNode> ctorParams, int indentLevel)
+    {
+        var parts = ctorParams.Select(p =>
+        {
+            var modifiers = new List<string>();
+            if (p.Metadata.TryGetValue("accessModifier", out var am) && am is string amStr && !string.IsNullOrEmpty(amStr))
+                modifiers.Add(amStr);
+            if (p.Metadata.TryGetValue("isReadonly", out var ro) && ro is bool roBool && roBool)
+                modifiers.Add("readonly");
+            var prefix = modifiers.Count > 0 ? string.Join(" ", modifiers) + " " : "";
+            var optional = p.IsRequired ? "" : "?";
+            var type = RenderType(p.Type);
+            return $"{prefix}{p.Name.Name}{optional}: {type}";
+        });
+
+        CodeFormatter.AppendLine(sb, indentLevel, $"constructor({string.Join(", ", parts)}) {{}}");
+    }
+
+    /// <summary>
+    /// Рендерит метод класса (для Angular сервиса). Не путать с <see cref="VisitMethodDeclaration"/>,
+    /// которая в TypeScript-рендерере делегирует в default.
+    /// </summary>
+    private void RenderTypeScriptClassMethod(StringBuilder sb, MethodDeclarationNode method, int indentLevel)
+    {
+        if (method.Documentation != null && !string.IsNullOrWhiteSpace(method.Documentation.Text))
+        {
+            RenderComment(sb, method.Documentation, indentLevel);
+        }
+
+        var asyncKw = method.IsAsync ? "async " : "";
+        var parametersStr = string.Join(", ", method.Parameters.Select(RenderParameterDeclaration));
+        var returnType = method.ReturnType != null ? $": {RenderType(method.ReturnType)}" : "";
+
+        CodeFormatter.AppendLine(sb, indentLevel, $"{asyncKw}{method.Name.Name}({parametersStr}){returnType} {{");
+
+        if (method.Body != null && method.Body.Statements.Count > 0)
+        {
+            var savedIndent = _indentLevel;
+            _indentLevel = indentLevel + 1;
+            foreach (var stmt in method.Body.Statements)
+            {
+                var rendered = Visit(stmt);
+                CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+            }
+            _indentLevel = savedIndent;
+        }
+        CodeFormatter.AppendLine(sb, indentLevel, "}");
     }
 
     private void RenderInterface(StringBuilder sb, InterfaceDeclarationNode node, int indentLevel)
