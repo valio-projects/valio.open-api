@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.OpenApi;
@@ -179,6 +180,183 @@ public class TypeScriptCodeGeneratorIntegrationTests
 
         schemaFiles.Should().NotBeEmpty("should generate schema files with zod4");
         schemaFiles[0].Content.Should().Contain("zod/v4", "zod4 should use the zod/v4 import path");
+    }
+
+    [Test]
+    public async Task GenerateSchemas_WithTypeBox_GeneratesTypeBoxSchemas()
+    {
+        var opts = new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "typebox"
+        };
+        var context = await RunPipeline(opts);
+
+        var schemaFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".schema.ts"))
+            .ToList();
+
+        schemaFiles.Should().NotBeEmpty("should generate schema files with TypeBox");
+        var userSchema = schemaFiles.FirstOrDefault(f => f.RelativePath.Contains("User", StringComparison.OrdinalIgnoreCase));
+        userSchema.Should().NotBeNull("should generate User TypeBox schema");
+        userSchema!.Content.Should().Contain("@sinclair/typebox");
+        userSchema.Content.Should().Contain("export const UserSchema");
+        userSchema.Content.Should().Contain("Type.Object");
+        userSchema.Content.Should().Contain("Static<typeof UserSchema>");
+    }
+
+    [Test]
+    public async Task GenerateSchemas_WithValibot_GeneratesValibotSchemas()
+    {
+        var opts = new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "valibot"
+        };
+        var context = await RunPipeline(opts);
+
+        var schemaFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".schema.ts"))
+            .ToList();
+
+        schemaFiles.Should().NotBeEmpty("should generate schema files with Valibot");
+        var userSchema = schemaFiles.FirstOrDefault(f => f.RelativePath.Contains("User", StringComparison.OrdinalIgnoreCase));
+        userSchema.Should().NotBeNull("should generate User Valibot schema");
+        userSchema!.Content.Should().Contain("import * as v from \"valibot\"");
+        userSchema.Content.Should().Contain("export const UserSchema");
+        userSchema.Content.Should().Contain("v.object");
+        userSchema.Content.Should().Contain("v.InferOutput<typeof UserSchema>");
+    }
+
+    [Test]
+    public async Task GenerateClients_WithKy_GeneratesKyClient()
+    {
+        var opts = new TypeScriptGenerationOptions { Transports = ["ky"] };
+        var context = await RunPipeline(opts);
+
+        var kyFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".ky.ts"))
+            .ToList();
+
+        kyFiles.Should().NotBeEmpty("should generate ky client files");
+        kyFiles[0].Content.Should().Contain("import ky");
+        kyFiles[0].Content.Should().Contain("ky.get");
+    }
+
+    [Test]
+    public async Task GenerateClients_WithTanStackQuery_GeneratesQueryHooks()
+    {
+        var opts = new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            QueryWrapper = "tanstack-react"
+        };
+        var context = await RunPipeline(opts);
+
+        var queryFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".query.ts"))
+            .ToList();
+
+        queryFiles.Should().NotBeEmpty("should generate TanStack Query hook files");
+        var getUsersQuery = queryFiles.FirstOrDefault(f => f.Content.Contains("getGetUsersQueryKey"));
+        getUsersQuery.Should().NotBeNull("should generate query helper for getUsers");
+        getUsersQuery!.Content.Should().Contain("@tanstack/react-query");
+        getUsersQuery.Content.Should().Contain("useQuery");
+        getUsersQuery.Content.Should().Contain("./getUsers.fetch");
+    }
+
+    [Test]
+    public async Task GenerateClients_WithTanStackReactAndKy_ImportsKyClient()
+    {
+        var opts = new TypeScriptGenerationOptions
+        {
+            Transports = ["ky"],
+            QueryWrapper = "tanstack-react"
+        };
+        var context = await RunPipeline(opts);
+
+        var getUsersQuery = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".query.ts"))
+            .FirstOrDefault(f => f.Content.Contains("getGetUsersQueryKey"));
+
+        getUsersQuery.Should().NotBeNull("should generate React TanStack query helper");
+        getUsersQuery!.Content.Should().Contain("./getUsers.ky");
+        getUsersQuery.Content.Should().NotContain("./getUsers.fetch");
+    }
+
+    [Test]
+    public async Task GenerateClients_WithTanStackVue_GeneratesVueQueryHooks()
+    {
+        var opts = new TypeScriptGenerationOptions
+        {
+            Transports = ["ky"],
+            QueryWrapper = "tanstack-vue"
+        };
+        var context = await RunPipeline(opts);
+
+        var getUsersQuery = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".query.ts"))
+            .FirstOrDefault(f => f.Content.Contains("getGetUserByIdQueryKey"));
+
+        getUsersQuery.Should().NotBeNull("should generate Vue TanStack query helper with params");
+        getUsersQuery!.Content.Should().Contain("@tanstack/vue-query");
+        getUsersQuery.Content.Should().Contain("MaybeRef");
+        getUsersQuery.Content.Should().Contain("computed");
+        getUsersQuery.Content.Should().Contain("unref");
+        getUsersQuery.Content.Should().Contain("./getUserById.ky");
+    }
+
+    [Test]
+    public void TypeScriptOptionsDescriptor_NormalizesTanStackAlias()
+    {
+        using var document = JsonDocument.Parse("{\"queryWrapper\":\"tanstack\"}");
+        var rawOptions = new Dictionary<string, JsonElement>
+        {
+            ["queryWrapper"] = document.RootElement.GetProperty("queryWrapper")
+        };
+
+        var descriptor = new TypeScriptOptionsDescriptor();
+        var options = descriptor.ParseOptions(rawOptions, out var errors);
+
+        errors.Should().BeEmpty();
+        options.Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.QueryWrapper.Should().Be("tanstack-react");
+    }
+
+    [Test]
+    public void TypeScriptOptionsDescriptor_NormalizesNewTransportAndValidationAliases()
+    {
+        using var document = JsonDocument.Parse("{\"transports\":[\"Ky\"],\"validation\":\"@sinclair/typebox\"}");
+        var rawOptions = new Dictionary<string, JsonElement>
+        {
+            ["transports"] = document.RootElement.GetProperty("transports"),
+            ["validation"] = document.RootElement.GetProperty("validation")
+        };
+
+        var descriptor = new TypeScriptOptionsDescriptor();
+        var options = descriptor.ParseOptions(rawOptions, out var errors);
+
+        errors.Should().BeEmpty();
+        var tsOptions = options.Should().BeOfType<TypeScriptGenerationOptions>().Subject;
+        tsOptions.Transports.Should().Equal("ky");
+        tsOptions.ValidationLibrary.Should().Be("typebox");
+    }
+
+    [Test]
+    public void TypeScriptOptionsDescriptor_ReportsUnknownTransport()
+    {
+        using var document = JsonDocument.Parse("{\"transports\":[\"mystery\"]}");
+        var rawOptions = new Dictionary<string, JsonElement>
+        {
+            ["transports"] = document.RootElement.GetProperty("transports")
+        };
+
+        var descriptor = new TypeScriptOptionsDescriptor();
+        var options = descriptor.ParseOptions(rawOptions, out var errors);
+
+        options.Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.Transports.Should().BeEmpty();
+        errors.Should().ContainSingle(e => e.Contains("Unknown transport"));
     }
 
     [Test]
