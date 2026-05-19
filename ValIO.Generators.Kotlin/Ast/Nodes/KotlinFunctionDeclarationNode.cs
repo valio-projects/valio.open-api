@@ -33,6 +33,12 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
     /// <summary>Visibility modifier (e.g. <c>private</c>, <c>internal</c>).</summary>
     public string? Visibility { get; }
 
+    /// <summary>
+    /// When true, emit the function as <c>fun name(...) = expression</c>
+    /// (the body's first non-blank line is used as the expression).
+    /// </summary>
+    public bool IsExpressionBody { get; }
+
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -55,6 +61,7 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
         IReadOnlyList<KotlinAnnotationNode>? annotations = null,
         string? visibility = null,
         CommentNode? documentation = null,
+        bool isExpressionBody = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation, attributes: null, metadata)
     {
@@ -64,6 +71,7 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
         Body = body?.ToImmutableList() ?? ImmutableList<string>.Empty;
         KotlinAnnotations = annotations?.ToImmutableList() ?? ImmutableList<KotlinAnnotationNode>.Empty;
         Visibility = visibility;
+        IsExpressionBody = isExpressionBody;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -83,5 +91,6 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
             KotlinAnnotations.Select(a => (KotlinAnnotationNode)a.Clone()).ToImmutableList(),
             Visibility,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
+            IsExpressionBody,
             Metadata.ToImmutableDictionary());
 }

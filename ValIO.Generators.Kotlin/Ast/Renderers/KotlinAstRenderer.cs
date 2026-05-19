@@ -272,8 +272,26 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
             return sb.ToString();
         }
 
+        if (node.IsExpressionBody)
+        {
+            // Expression body: `fun name(...): Type = expression`.
+            // The first body line is appended right after `= `. Continuation
+            // lines align with the function's own indent — builders are
+            // expected to manage any further nesting (lambdas, etc.).
+            sb.Append($"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation} = ");
+            for (var i = 0; i < node.Body.Count; i++)
+            {
+                var line = node.Body[i];
+                if (i == 0)
+                    sb.AppendLine(line);
+                else
+                    sb.AppendLine($"{prefix}{line}");
+            }
+            return sb.ToString();
+        }
+
         sb.AppendLine($"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation} {{");
-        var bodyIndent = indent + 1;
+        var blockIndent = indent + 1;
         foreach (var line in node.Body)
         {
             if (string.IsNullOrEmpty(line))
@@ -281,7 +299,7 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
                 sb.AppendLine();
                 continue;
             }
-            sb.AppendLine($"{Indent(bodyIndent)}{line}");
+            sb.AppendLine($"{Indent(blockIndent)}{line}");
         }
         sb.AppendLine($"{prefix}}}");
         return sb.ToString();

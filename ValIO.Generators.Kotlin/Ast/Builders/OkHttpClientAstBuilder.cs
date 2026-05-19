@@ -136,6 +136,7 @@ public sealed class OkHttpClientAstBuilder
         var successResponse = op.Responses.FirstOrDefault(r => r.StatusCode.StartsWith("2", StringComparison.Ordinal));
         TypeNode returnType;
         string? responseModelName = null;
+        string? responseModelNameForList = null;
         bool isVoidReturn = false;
         bool isBinaryReturn = false;
         if (successResponse?.Type != null)
@@ -143,6 +144,7 @@ public sealed class OkHttpClientAstBuilder
             KotlinTypeImportScanner.Walk(successResponse.Type, importScan);
             returnType = _typeMapper.MapType(successResponse.Type);
             responseModelName = TryGetSimpleModelName(successResponse.Type);
+            responseModelNameForList = TryGetArrayOfSimpleModelName(successResponse.Type);
             isBinaryReturn = successResponse.Type is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File };
         }
         else
@@ -151,7 +153,7 @@ public sealed class OkHttpClientAstBuilder
             isVoidReturn = true;
         }
 
-        var body = BuildMethodBody(op, responseModelName, isVoidReturn, isBinaryReturn);
+        var body = BuildMethodBody(op, responseModelName, responseModelNameForList, isVoidReturn, isBinaryReturn);
 
         return new KotlinFunctionDeclarationNode(
             new IdentifierNode(methodName),
@@ -161,7 +163,8 @@ public sealed class OkHttpClientAstBuilder
             isSuspend: true,
             annotations: null,
             visibility: null,
-            documentation: BuildOperationDocstring(op));
+            documentation: BuildOperationDocstring(op),
+            isExpressionBody: true);
     }
 
     private static CommentNode? BuildOperationDocstring(IrOperation op)
@@ -180,16 +183,23 @@ public sealed class OkHttpClientAstBuilder
     private IReadOnlyList<string> BuildMethodBody(
         IrOperation op,
         string? responseModelName,
+        string? responseModelNameForList,
         bool isVoidReturn,
         bool isBinaryReturn)
     {
+        // Lines are emitted WITHOUT outer indentation — the renderer adds the
+        // function-body indent. Inside the withContext lambda we still need a
+        // one-level offset relative to the outer function body, so we use a
+        // single 4-space indent within those lines.
+        const string Inner = "    ";
+
         var lines = new List<string>
         {
             "withContext(Dispatchers.IO) {",
-            "    val urlBuilder = baseUrl.newBuilder()",
+            $"{Inner}val urlBuilder = baseUrl.newBuilder()",
         };
 
-        // Path template — replace {name} with $name (Kotlin string templates).
+        // Path template — replace {name} with ${name} (Kotlin string templates).
         var pathTemplate = op.Path;
         foreach (var p in op.PathParameters)
         {
@@ -197,81 +207,84 @@ public sealed class OkHttpClientAstBuilder
             pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "${" + camel + "}", StringComparison.Ordinal);
         }
         var trimmedPath = pathTemplate.TrimStart('/');
-        lines.Add($"    urlBuilder.addPathSegments(\"{EscapeStringLiteral(trimmedPath)}\")");
+        lines.Add($"{Inner}urlBuilder.addPathSegments(\"{EscapeStringLiteral(trimmedPath)}\")");
 
         // Query parameters.
         foreach (var p in op.QueryParameters)
         {
             var camel = KotlinReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name));
             if (p.IsRequired)
-                lines.Add($"    urlBuilder.addQueryParameter(\"{EscapeStringLiteral(p.Name)}\", {camel}.toString())");
+                lines.Add($"{Inner}urlBuilder.addQueryParameter(\"{EscapeStringLiteral(p.Name)}\", {camel}.toString())");
             else
-                lines.Add($"    if ({camel} != null) urlBuilder.addQueryParameter(\"{EscapeStringLiteral(p.Name)}\", {camel}.toString())");
+                lines.Add($"{Inner}if ({camel} != null) urlBuilder.addQueryParameter(\"{EscapeStringLiteral(p.Name)}\", {camel}.toString())");
         }
 
-        lines.Add("    val url = urlBuilder.build()");
-        lines.Add("    val requestBuilder = Request.Builder().url(url)");
+        lines.Add($"{Inner}val url = urlBuilder.build()");
+        lines.Add($"{Inner}val requestBuilder = Request.Builder().url(url)");
 
         var httpMethod = op.HttpMethod.ToUpperInvariant();
         if (op.RequestBody != null)
         {
-            // JSON serialization via kotlinx.serialization.
             if (op.RequestBody.IsJson)
             {
                 var bodyModelName = TryGetSimpleModelName(op.RequestBody.Type);
                 if (bodyModelName != null)
                 {
-                    lines.Add($"    val jsonBody = json.encodeToString({bodyModelName}.serializer(), body)");
-                    lines.Add("    val requestBody = jsonBody.toRequestBody(\"application/json\".toMediaType())");
+                    lines.Add($"{Inner}val jsonBody = json.encodeToString({bodyModelName}.serializer(), body)");
+                    lines.Add($"{Inner}val requestBody = jsonBody.toRequestBody(\"application/json\".toMediaType())");
                 }
                 else
                 {
-                    // Fallback: serialize Any (uses default polymorphic / contextual serializers).
-                    lines.Add("    val jsonBody = json.encodeToString(body)");
-                    lines.Add("    val requestBody = jsonBody.toRequestBody(\"application/json\".toMediaType())");
+                    // Fallback: rely on the polymorphic default serializer.
+                    lines.Add($"{Inner}val jsonBody = json.encodeToString(body)");
+                    lines.Add($"{Inner}val requestBody = jsonBody.toRequestBody(\"application/json\".toMediaType())");
                 }
             }
             else
             {
-                // Treat raw bodies as octet-stream for now (TODO multipart/form support).
-                lines.Add("    val requestBody = (body?.toString() ?: \"\").toRequestBody(\"application/octet-stream\".toMediaType())");
+                // TODO multipart/form support.
+                lines.Add($"{Inner}val requestBody = (body?.toString() ?: \"\").toRequestBody(\"application/octet-stream\".toMediaType())");
             }
-            lines.Add($"    requestBuilder.method(\"{httpMethod}\", requestBody)");
+            lines.Add($"{Inner}requestBuilder.method(\"{httpMethod}\", requestBody)");
         }
         else if (httpMethod is "POST" or "PUT" or "PATCH" or "DELETE")
         {
-            // Some verbs require an explicit empty body.
-            lines.Add($"    requestBuilder.method(\"{httpMethod}\", \"\".toRequestBody(\"application/json\".toMediaType()))");
+            lines.Add($"{Inner}requestBuilder.method(\"{httpMethod}\", \"\".toRequestBody(\"application/json\".toMediaType()))");
         }
         else
         {
-            lines.Add($"    requestBuilder.method(\"{httpMethod}\", null)");
+            lines.Add($"{Inner}requestBuilder.method(\"{httpMethod}\", null)");
         }
 
-        lines.Add("    val request = requestBuilder.build()");
-        lines.Add("    client.newCall(request).execute().use { response ->");
-        lines.Add("        if (!response.isSuccessful) error(\"HTTP ${response.code}: ${response.message}\")");
+        lines.Add($"{Inner}val request = requestBuilder.build()");
+        lines.Add($"{Inner}client.newCall(request).execute().use {{ response ->");
+        lines.Add($"{Inner}{Inner}if (!response.isSuccessful) error(\"HTTP ${{response.code}}: ${{response.message}}\")");
 
         if (isVoidReturn)
         {
-            lines.Add("        Unit");
+            lines.Add($"{Inner}{Inner}Unit");
         }
         else if (isBinaryReturn)
         {
-            lines.Add("        response.body?.bytes() ?: ByteArray(0)");
+            lines.Add($"{Inner}{Inner}response.body?.bytes() ?: ByteArray(0)");
         }
         else if (responseModelName != null)
         {
-            lines.Add("        val raw = response.body?.string() ?: error(\"Empty body\")");
-            lines.Add($"        json.decodeFromString({responseModelName}.serializer(), raw)");
+            lines.Add($"{Inner}{Inner}val raw = response.body?.string() ?: error(\"Empty body\")");
+            lines.Add($"{Inner}{Inner}json.decodeFromString({responseModelName}.serializer(), raw)");
+        }
+        else if (responseModelNameForList != null)
+        {
+            lines.Add($"{Inner}{Inner}val raw = response.body?.string() ?: error(\"Empty body\")");
+            lines.Add($"{Inner}{Inner}json.decodeFromString(kotlinx.serialization.builtins.ListSerializer({responseModelNameForList}.serializer()), raw)");
         }
         else
         {
-            // Plain primitive — return the body as a String. The caller may need to parse it.
-            lines.Add("        response.body?.string() ?: error(\"Empty body\")");
+            // Plain primitive — caller may need to parse the body manually.
+            lines.Add($"{Inner}{Inner}response.body?.string() ?: error(\"Empty body\")");
         }
 
-        lines.Add("    }");
+        lines.Add($"{Inner}}}");
         lines.Add("}");
         return lines;
     }
@@ -281,6 +294,15 @@ public sealed class OkHttpClientAstBuilder
         IrModelReference r => r.ModelName,
         IrNullableType n   => TryGetSimpleModelName(n.InnerType),
         IrOptionalType o   => TryGetSimpleModelName(o.InnerType),
+        _ => null,
+    };
+
+    /// <summary>Returns the inner model name when <paramref name="type"/> is <c>List&lt;Model&gt;</c>.</summary>
+    private static string? TryGetArrayOfSimpleModelName(IrType type) => type switch
+    {
+        IrArrayType a       => TryGetSimpleModelName(a.ElementType),
+        IrNullableType n    => TryGetArrayOfSimpleModelName(n.InnerType),
+        IrOptionalType o    => TryGetArrayOfSimpleModelName(o.InnerType),
         _ => null,
     };
 
