@@ -9,13 +9,20 @@ namespace ValIO.Generators.TypeScript.Steps;
 public sealed class TypeBoxSchemasStep : ICodeGenerationStep
 {
     private readonly INamingConverter _namingConverter;
+    private readonly IReadOnlyList<ITypeScriptNodeRenderer> _nodeRenderers;
 
     public string Name => "typescript-typebox-schemas";
     public int Order => 31;
 
     public TypeBoxSchemasStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public TypeBoxSchemasStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter;
+        _nodeRenderers = nodeRenderers as IReadOnlyList<ITypeScriptNodeRenderer> ?? nodeRenderers.ToArray();
     }
 
     public bool ShouldExecute(GenerationContext context)
@@ -30,7 +37,7 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         var modelsPath = fileOrg.ModelsPath ?? "models";
         var schemasPath = $"{modelsPath}/schemas";
         var builder = new TypeBoxSchemaSourceFileBuilder(_namingConverter);
-        var renderer = new TypeScriptAstRenderer();
+        var renderer = new TypeScriptAstRenderer(_nodeRenderers);
 
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
         var byName = context.IrDocument.Models.ToDictionary(m => m.Name);

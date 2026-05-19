@@ -18,9 +18,14 @@ public sealed class TypeScriptEnumsStep : ICodeGenerationStep
     public int Order => 20;
 
     public TypeScriptEnumsStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public TypeScriptEnumsStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter;
-        _renderer = new TypeScriptAstRenderer();
+        _renderer = new TypeScriptAstRenderer(nodeRenderers);
     }
 
     public bool ShouldExecute(GenerationContext context)

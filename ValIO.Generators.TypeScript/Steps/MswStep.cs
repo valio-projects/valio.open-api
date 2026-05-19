@@ -18,14 +18,20 @@ namespace ValIO.Generators.TypeScript.Steps;
 public sealed class MswStep : ICodeGenerationStep
 {
     private readonly INamingConverter _namingConverter;
-    private readonly TypeScriptAstRenderer _renderer = new();
+    private readonly TypeScriptAstRenderer _renderer;
 
     public string Name => "typescript-msw-handlers";
     public int Order => 80;
 
     public MswStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public MswStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        _renderer = new TypeScriptAstRenderer(nodeRenderers);
     }
 
     public bool ShouldExecute(GenerationContext context)

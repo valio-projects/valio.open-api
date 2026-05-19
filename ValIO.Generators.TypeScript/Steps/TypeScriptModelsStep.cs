@@ -19,9 +19,14 @@ public sealed class TypeScriptModelsStep : ICodeGenerationStep
     public int Order => 10;
 
     public TypeScriptModelsStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public TypeScriptModelsStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter;
-        _renderer = new TypeScriptAstRenderer();
+        _renderer = new TypeScriptAstRenderer(nodeRenderers);
     }
 
     public bool ShouldExecute(GenerationContext context)

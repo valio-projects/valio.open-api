@@ -13,14 +13,20 @@ namespace ValIO.Generators.TypeScript.Steps;
 public sealed class OFetchClientStep : ICodeGenerationStep
 {
     private readonly INamingConverter _namingConverter;
-    private readonly TypeScriptAstRenderer _renderer = new();
+    private readonly TypeScriptAstRenderer _renderer;
 
     public string Name => "typescript-ofetch-client";
     public int Order => 44;
 
     public OFetchClientStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public OFetchClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        _renderer = new TypeScriptAstRenderer(nodeRenderers);
     }
 
     public bool ShouldExecute(GenerationContext context)

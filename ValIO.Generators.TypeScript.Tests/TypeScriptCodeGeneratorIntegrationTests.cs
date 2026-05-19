@@ -27,6 +27,9 @@ public class TypeScriptCodeGeneratorIntegrationTests
         services.AddSingleton<IGeneratorPlugin, TypeScriptGeneratorPlugin>();
         services.AddSingleton<IGeneratorRegistry>(sp =>
             new GeneratorRegistry(sp.GetServices<IGeneratorPlugin>()));
+        // Mirror ServiceCollectionExtensions.AddGeneratorPlugin: the plugin owns its
+        // service registrations (including the ITypeScriptNodeRenderer chain).
+        new TypeScriptGeneratorPlugin().ConfigureServices(services);
         _services = services.BuildServiceProvider();
 
         var assembly = typeof(TypeScriptCodeGeneratorIntegrationTests).Assembly;
