@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.TypeScript.Ast.Visitors;
@@ -71,7 +70,6 @@ public sealed class FunctionDeclarationNode : DeclarationNode
     /// </summary>
     public IReadOnlyList<GenericParameterNode> GenericParameters { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.FunctionDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

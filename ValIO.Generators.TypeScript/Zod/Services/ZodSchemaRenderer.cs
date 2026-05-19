@@ -22,22 +22,21 @@ public class ZodSchemaRenderer
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, ValIO.Core.Ast.Nodes.TypeNode> _typeBuilder;
     private readonly bool _useBigInt;
-    
-    /// <summary>
-    /// Конструктор
-    /// </summary>
-    /// <param name="namingConverter">Конвертер имен</param>
-    /// <param name="typeBuilder">Функция для построения TypeNode из IrType</param>
-    /// <param name="useBigInt">Использовать bigint для int64. По умолчанию false — number.</param>
+    private readonly string _zodImportPath;
+
     public ZodSchemaRenderer(
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
-        bool useBigInt = false)
+        bool useBigInt = false,
+        string zodVersion = "zod3")
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
         _useBigInt = useBigInt;
+        _zodImportPath = zodVersion == "zod4" ? "zod/v4" : "zod";
     }
+
+    private string ZodImportLine => $"import {{ z, ZodSchema }} from '{_zodImportPath}';";
     
     /// <summary>
     /// Рендерит Zod схему для IR модели
@@ -57,7 +56,7 @@ public class ZodSchemaRenderer
         var schemaName = $"{model.Name}Schema";
         var modelFileName = _namingConverter.ToCamelCase(model.Name);
         
-        sb.AppendLine("import { z, ZodSchema } from 'zod';");
+        sb.AppendLine(ZodImportLine);
         sb.AppendLine();
         var hasConstraints = model.Properties.Any(p => p.Constraints != null && HasAnyConstraint(p.Constraints));
         if (hasConstraints)
@@ -117,7 +116,7 @@ public class ZodSchemaRenderer
         var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
         var constArrayName = $"{typeName}Values";
         
-        sb.AppendLine("import { z, ZodSchema } from 'zod';");
+        sb.AppendLine(ZodImportLine);
         sb.AppendLine();
         sb.AppendLine($"import type {{ {typeName} }} from \"./{enumFileName}\";");
         sb.AppendLine();
@@ -402,7 +401,7 @@ public class ZodSchemaRenderer
         if (queryInterfaceForGeneric != null && queryInterfaceForGeneric != routeInterfaceForGeneric)
             typesToImport.Add(queryInterfaceForGeneric);
 
-        sb.AppendLine("import { z, ZodSchema } from 'zod';");
+        sb.AppendLine(ZodImportLine);
         if (typesToImport.Count > 0)
         {
             sb.AppendLine($"import type {{ {string.Join(", ", typesToImport.Distinct())} }} from './{fileBase}.params';");

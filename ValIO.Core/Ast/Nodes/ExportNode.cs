@@ -19,14 +19,13 @@ public sealed class ExportNode : AstNode
     /// </summary>
     public ExportKind ExportKind { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.Export;
     
     public override IReadOnlyList<AstNode> Children => new[] { Declaration };
     
     /// <summary>
     /// Конструктор
     /// </summary>
-    public ExportNode(DeclarationNode declaration, ExportKind exportKind = Enums.ExportKind.Named, IReadOnlyDictionary<string, object>? metadata = null)
+    public ExportNode(DeclarationNode declaration, ExportKind exportKind = ExportKind.Named, IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
         Declaration = declaration ?? throw new ArgumentNullException(nameof(declaration));

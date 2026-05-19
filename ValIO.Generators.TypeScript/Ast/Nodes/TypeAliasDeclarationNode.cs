@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.TypeScript.Ast.Visitors;
@@ -16,7 +15,6 @@ public sealed class TypeAliasDeclarationNode : DeclarationNode
     /// </summary>
     public TypeNode Type { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.TypeAliasDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

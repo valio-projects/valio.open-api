@@ -19,7 +19,6 @@ public sealed class LiteralExpressionNode : ExpressionNode
     /// </summary>
     public LiteralKind LiteralKind { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.LiteralExpression;
     
     public override IReadOnlyList<AstNode> Children => Type != null ? new[] { Type } : Array.Empty<AstNode>();
     

@@ -263,15 +263,21 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
+        var generic = node.GenericTypeArgument != null
+            ? $"<{RenderType(node.GenericTypeArgument)}>"
+            : !string.IsNullOrWhiteSpace(node.GenericTypeName)
+                ? $"<{node.GenericTypeName}>"
+                : "";
+        var prefix = node.IsNewExpression ? "new " : "";
         if (node.Arguments.Count >= 2)
         {
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var argLines = node.Arguments.Select(a => indent + Visit(a));
-            return $"{target}(\n{string.Join(",\n", argLines)}\n{closingIndent})";
+            return $"{prefix}{target}{generic}(\n{string.Join(",\n", argLines)}\n{closingIndent})";
         }
         var args = string.Join(", ", node.Arguments.Select(Visit));
-        return $"{target}({args})";
+        return $"{prefix}{target}{generic}({args})";
     }
 
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
@@ -283,6 +289,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
     {
+        if (node.Properties.Count == 0)
+            return node.AsConstAssertion ? "{} as const" : "{}";
+
         string result;
         if (node.PreferMultilineFormat && node.Properties.Count > 0)
         {
@@ -636,15 +645,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     private string RenderDeclaration(DeclarationNode declaration)
     {
-        return declaration.Kind switch
-        {
-            AstNodeKind.InterfaceDeclaration => Visit((InterfaceDeclarationNode)declaration),
-            AstNodeKind.TypeAliasDeclaration => Visit((TypeAliasDeclarationNode)declaration),
-            AstNodeKind.FunctionDeclaration => Visit((FunctionDeclarationNode)declaration),
-            AstNodeKind.VariableDeclaration => Visit((VariableDeclarationNode)declaration),
-            AstNodeKind.EnumDeclaration => Visit((EnumDeclarationNode)declaration),
-            _ => throw new NotSupportedException($"Declaration kind {declaration.Kind} is not supported")
-        };
+        return declaration.Accept(this);
     }
 
     private void RenderInterface(StringBuilder sb, InterfaceDeclarationNode node, int indentLevel)
@@ -1148,19 +1149,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     private string RenderType(TypeNode type)
     {
-        return type.Kind switch
-        {
-            AstNodeKind.RawType => Visit((RawTypeNode)type),
-            AstNodeKind.SimpleType => Visit((SimpleTypeNode)type),
-            AstNodeKind.NullableType => Visit((NullableTypeNode)type),
-            AstNodeKind.OptionalType => Visit((OptionalTypeNode)type),
-            AstNodeKind.ArrayType => Visit((ArrayTypeNode)type),
-            AstNodeKind.GenericType => Visit((GenericTypeNode)type),
-            AstNodeKind.UnionType => Visit((UnionTypeNode)type),
-            AstNodeKind.IntersectionType => Visit((IntersectionTypeNode)type),
-            AstNodeKind.DictionaryType => Visit((DictionaryTypeNode)type),
-            _ => throw new NotSupportedException($"Type kind {type.Kind} is not supported")
-        };
+        return type.Accept(this);
     }
 
     private string RenderLiteral(LiteralExpressionNode node)

@@ -30,7 +30,6 @@ public sealed class ParameterDeclarationNode : DeclarationNode
     /// </summary>
     public ParameterKind ParameterKind { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ParameterDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

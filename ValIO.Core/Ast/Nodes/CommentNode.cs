@@ -19,7 +19,6 @@ public sealed class CommentNode : AstNode
     /// </summary>
     public CommentKind CommentKind { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.Comment;
     
     public override IReadOnlyList<AstNode> Children => Array.Empty<AstNode>();
     

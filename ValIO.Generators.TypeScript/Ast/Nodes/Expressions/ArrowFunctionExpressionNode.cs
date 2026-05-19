@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
@@ -13,7 +12,6 @@ namespace ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 /// </summary>
 public sealed class ArrowFunctionExpressionNode : ExpressionNode
 {
-    public override AstNodeKind Kind => AstNodeKind.ConditionalExpression; // Используем существующий, arrow function пока не в enum
     public IReadOnlyList<ParameterDeclarationNode> Parameters { get; }
     public ExpressionNode? BodyExpression { get; }
     public BlockNode? BodyBlock { get; }
@@ -65,7 +63,7 @@ public sealed class ArrowFunctionExpressionNode : ExpressionNode
     {
         if (visitor is ITypeScriptAstVisitor<TResult> tsVisitor)
             return tsVisitor.VisitArrowFunctionExpression(this);
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
 
     public override AstNode Clone()

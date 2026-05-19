@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
@@ -14,7 +13,6 @@ public sealed class IdentifierNode : AstNode
     /// </summary>
     public string Name { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.Identifier;
     
     public override IReadOnlyList<AstNode> Children => Array.Empty<AstNode>();
     

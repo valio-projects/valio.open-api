@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -28,7 +27,6 @@ public sealed class UDelegateDeclarationNode : AstNode
     /// </summary>
     public IReadOnlyList<UDelegateParameter> Parameters { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.UDelegate;
 
     public override IReadOnlyList<AstNode> Children
     {

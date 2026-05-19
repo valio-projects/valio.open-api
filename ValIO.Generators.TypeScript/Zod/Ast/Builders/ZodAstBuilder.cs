@@ -144,21 +144,21 @@ public class ZodAstBuilder
         IrProperty? property = null,
         string? constraintsObjectName = null)
     {
-        return irType.Kind switch
+        return irType switch
         {
-            IrTypeKind.Primitive => BuildZodPrimitive(
-                (IrPrimitiveType)irType,
+            IrPrimitiveType p => BuildZodPrimitive(
+                p,
                 property?.Constraints,
                 property != null && !string.IsNullOrEmpty(constraintsObjectName)
                     ? $"{constraintsObjectName}.{property.Name}"
                     : null),
-            IrTypeKind.ModelReference => BuildZodModelReference((IrModelReference)irType, currentModelName),
-            IrTypeKind.Array => BuildZodArray((IrArrayType)irType, currentModelName),
-            IrTypeKind.Dictionary => BuildZodDictionary((IrDictionaryType)irType),
-            IrTypeKind.Union => BuildZodUnion((IrUnionType)irType, currentModelName, property, constraintsObjectName),
-            IrTypeKind.Intersection => BuildZodIntersection((IrIntersectionType)irType, currentModelName, property, constraintsObjectName),
-            IrTypeKind.Nullable => BuildZodNullable((IrNullableType)irType, currentModelName, property, constraintsObjectName),
-            IrTypeKind.Optional => BuildZodOptional((IrOptionalType)irType, currentModelName, property, constraintsObjectName),
+            IrModelReference r => BuildZodModelReference(r, currentModelName),
+            IrArrayType arr => BuildZodArray(arr, currentModelName),
+            IrDictionaryType dict => BuildZodDictionary(dict),
+            IrUnionType union => BuildZodUnion(union, currentModelName, property, constraintsObjectName),
+            IrIntersectionType intersection => BuildZodIntersection(intersection, currentModelName, property, constraintsObjectName),
+            IrNullableType nullable => BuildZodNullable(nullable, currentModelName, property, constraintsObjectName),
+            IrOptionalType optional => BuildZodOptional(optional, currentModelName, property, constraintsObjectName),
             _ => BuildZodAny()
         };
     }

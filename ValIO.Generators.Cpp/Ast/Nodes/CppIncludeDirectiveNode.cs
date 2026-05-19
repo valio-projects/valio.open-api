@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -23,7 +22,6 @@ public sealed class CppIncludeDirectiveNode : AstNode
     /// </summary>
     public bool IsSystemInclude { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppIncludeDirective;
 
     public override IReadOnlyList<AstNode> Children => Array.Empty<AstNode>();
 

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -25,7 +24,6 @@ public sealed class ForEachStatementNode : StatementNode
     /// </summary>
     public BlockNode Body { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ForEachStatement;
     
     public override IReadOnlyList<AstNode> Children
     {

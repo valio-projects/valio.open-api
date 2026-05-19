@@ -14,6 +14,11 @@ public interface IBaseAstVisitor<TResult>
     /// Посещает узел (диспетчеризация по типу)
     /// </summary>
     TResult Visit(AstNode node);
+
+    /// <summary>
+    /// Обработка по умолчанию для неизвестных или неподдерживаемых узлов
+    /// </summary>
+    TResult DefaultVisit(AstNode node);
     
     // Базовые узлы (общие для всех языков)
     TResult VisitIdentifier(IdentifierNode node);

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -22,7 +21,6 @@ public sealed class AxiosCallExpressionNode : ExpressionNode
     /// </summary>
     public ExpressionNode Config { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.AxiosCallExpression;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Instance, Config };
     

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
@@ -19,7 +18,6 @@ public sealed class AttributeNode : AstNode
     /// </summary>
     public IReadOnlyList<ExpressionNode> Arguments { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.Attribute;
     
     public override IReadOnlyList<AstNode> Children
     {

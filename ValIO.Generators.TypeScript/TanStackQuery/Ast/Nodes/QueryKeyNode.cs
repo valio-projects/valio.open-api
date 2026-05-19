@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -17,7 +16,6 @@ public sealed class QueryKeyNode : ExpressionNode
     /// </summary>
     public IReadOnlyList<ExpressionNode> Parts { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.QueryKey;
     
     public override IReadOnlyList<AstNode> Children => Parts.Cast<AstNode>().ToImmutableList();
     
@@ -42,7 +40,7 @@ public sealed class QueryKeyNode : ExpressionNode
         {
             return queryVisitor.VisitQueryKey(this);
         }
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()

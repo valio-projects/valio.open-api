@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
@@ -20,7 +19,6 @@ public sealed class ZodExpressionSchemaNode : ZodSchemaNode
     /// </summary>
     public ExpressionNode Expression { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.ZodSchema;
 
     public override IReadOnlyList<AstNode> Children => new[] { Expression };
 
@@ -38,9 +36,9 @@ public sealed class ZodExpressionSchemaNode : ZodSchemaNode
     {
         if (visitor is IZodAstVisitor<TResult> zodVisitor)
         {
-            return zodVisitor.VisitZodSchema(this);
+            return zodVisitor.VisitZodExpressionSchema(this);
         }
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
 
     public override AstNode Clone()

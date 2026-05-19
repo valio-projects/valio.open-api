@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes.Types;
@@ -14,7 +13,6 @@ public sealed class RawTypeNode : TypeNode
     /// </summary>
     public string RawTypeString { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.RawType;
 
     public override IReadOnlyList<AstNode> Children => ImmutableArray<AstNode>.Empty;
 

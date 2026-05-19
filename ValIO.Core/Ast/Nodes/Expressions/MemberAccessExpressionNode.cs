@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -40,7 +39,6 @@ public sealed class MemberAccessExpressionNode : ExpressionNode
     /// </summary>
     public bool UseOptionalChaining { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.MemberAccessExpression;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Object, Member };
     

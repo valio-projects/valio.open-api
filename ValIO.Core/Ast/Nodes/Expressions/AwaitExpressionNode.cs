@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -15,7 +14,6 @@ public sealed class AwaitExpressionNode : ExpressionNode
     /// </summary>
     public ExpressionNode Expression { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.AwaitExpression;
     
     public override IReadOnlyList<AstNode> Children
     {

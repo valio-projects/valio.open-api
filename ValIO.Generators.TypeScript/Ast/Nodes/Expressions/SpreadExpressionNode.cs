@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -12,7 +11,6 @@ namespace ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 /// </summary>
 public sealed class SpreadExpressionNode : ExpressionNode
 {
-    public override AstNodeKind Kind => AstNodeKind.UnaryExpression; // Spread - унарная операция
     /// <summary>
     /// Выражение для spread
     /// </summary>
@@ -35,7 +33,7 @@ public sealed class SpreadExpressionNode : ExpressionNode
         {
             return tsVisitor.VisitSpreadExpression(this);
         }
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
 
     public override AstNode Clone()

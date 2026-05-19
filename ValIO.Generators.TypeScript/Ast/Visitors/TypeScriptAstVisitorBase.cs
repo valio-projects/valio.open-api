@@ -1,4 +1,3 @@
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
@@ -21,26 +20,6 @@ public abstract class TypeScriptAstVisitorBase<TResult> : BaseAstVisitor<TResult
     public override TResult Visit(AstNode node)
     {
         return node.Accept(this);
-    }
-    
-    /// <summary>
-    /// Переопределяем VisitExpression для обработки TypeScript-специфичных выражений
-    /// </summary>
-    public override TResult VisitExpression(ExpressionNode node)
-    {
-        if (node is ArrayLiteralExpressionNode arrayLiteral)
-            return VisitArrayLiteralExpression(arrayLiteral);
-        if (node is SpreadExpressionNode spreadExpr)
-            return VisitSpreadExpression(spreadExpr);
-        if (node is ArrowFunctionExpressionNode arrowFn)
-            return VisitArrowFunctionExpression(arrowFn);
-
-        return node.Kind switch
-        {
-            AstNodeKind.ObjectLiteralExpression => VisitObjectLiteralExpression((ObjectLiteralExpressionNode)node),
-            AstNodeKind.TemplateLiteralExpression => VisitTemplateLiteralExpression((TemplateLiteralExpressionNode)node),
-            _ => base.VisitExpression(node) // Делегируем базовым выражениям
-        };
     }
     
     // Реализация методов IAstVisitor - делегируем в VisitDefault для неизвестных узлов

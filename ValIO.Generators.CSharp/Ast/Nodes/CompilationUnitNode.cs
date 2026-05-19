@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.CSharp.Ast.Visitors;
@@ -26,7 +25,6 @@ public sealed class CompilationUnitNode : AstNode
     /// </summary>
     public IReadOnlyList<DeclarationNode> Declarations { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.CompilationUnit;
     
     public override IReadOnlyList<AstNode> Children
     {

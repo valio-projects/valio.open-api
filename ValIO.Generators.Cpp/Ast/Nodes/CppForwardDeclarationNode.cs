@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -43,7 +42,6 @@ public sealed class CppForwardDeclarationNode : AstNode
     /// </summary>
     public IdentifierNode Name { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppForwardDeclaration;
 
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Name };
 

@@ -32,8 +32,4 @@ public abstract class StatementNode : AstNode
         Documentation = documentation;
     }
     
-    public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
-    {
-        return visitor.VisitStatement(this);
-    }
 }

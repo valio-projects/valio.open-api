@@ -1,5 +1,3 @@
-using ValIO.Core.Models;
-
 namespace ValIO.Configuration.Models;
 
 /// <summary>

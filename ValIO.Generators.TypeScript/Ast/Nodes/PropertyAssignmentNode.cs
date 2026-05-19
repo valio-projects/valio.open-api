@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -32,7 +31,6 @@ public sealed class PropertyAssignmentNode : AstNode
     /// </summary>
     public bool IsSpread { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.PropertyAssignment;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Value };
     

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
@@ -35,7 +34,6 @@ public sealed class UClassDeclarationNode : TypeDeclarationNode
     /// </summary>
     public IReadOnlyList<AstNode> ProtectedMembers { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.UClass;
 
     public override IReadOnlyList<AstNode> Children
     {

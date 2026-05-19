@@ -62,6 +62,6 @@ public abstract class TypeDeclarationNode : DeclarationNode
             ? $" : {string.Join(", ", BaseTypes)}" 
             : "";
         var membersCount = Members.Count;
-        return $"{Kind}({AccessModifier} {Name.Name}{baseTypesStr}) [{membersCount} members]";
+        return $"{GetType().Name}({AccessModifier} {Name.Name}{baseTypesStr}) [{membersCount} members]";
     }
 }

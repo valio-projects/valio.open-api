@@ -39,7 +39,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return node switch
         {
             ZodPrimitiveSchemaNode primitive => VisitZodPrimitiveSchema(primitive),
-            ZodExpressionSchemaNode exprNode => VisitExpression(exprNode.Expression),
+            ZodExpressionSchemaNode exprNode => VisitZodExpressionSchema(exprNode),
             ZodObjectNode obj => VisitZodObject(obj),
             ZodArrayNode array => VisitZodArray(array),
             ZodUnionNode union => VisitZodUnion(union),
@@ -90,7 +90,7 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     /// <summary>
     /// Рендерит примитивную Zod схему (z.string(), z.number(), и т.д.)
     /// </summary>
-    private string VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node)
+    public override string VisitZodPrimitiveSchema(ZodPrimitiveSchemaNode node)
     {
         if (!string.IsNullOrEmpty(node.SchemaReference))
         {
@@ -112,6 +112,14 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         };
     }
     
+    /// <summary>
+    /// Рендерит Zod expression схему (цепочка вызовов)
+    /// </summary>
+    public override string VisitZodExpressionSchema(ZodExpressionSchemaNode node)
+    {
+        return VisitExpression(node.Expression);
+    }
+
     public override string VisitZodObject(ZodObjectNode node)
     {
         var sb = new StringBuilder();
@@ -266,17 +274,6 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     public override string VisitIdentifierExpression(IdentifierExpressionNode node)
     {
         return node.Identifier.Name;
-    }
-    
-    // Обработка ZodPrimitiveSchemaNode
-    public override string VisitDefault(AstNode node)
-    {
-        if (node is ZodPrimitiveSchemaNode primitiveNode)
-        {
-            return RenderZodPrimitive(primitiveNode.SchemaKind);
-        }
-        
-        return base.VisitDefault(node);
     }
     
     // Реализация всех абстрактных методов BaseAstVisitor через VisitDefault

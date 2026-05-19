@@ -5,14 +5,15 @@ using ValIO.Configuration.Interfaces;
 using ValIO.Configuration.Services;
 using ValIO.Core.Interfaces;
 using ValIO.Core.Services;
-using ValIO.Factories;
+using ValIO.Generators.CSharp;
+using ValIO.Generators.CSharp.Ast.Renderers;
+using ValIO.Generators.TypeScript;
 using ValIO.Parsers.Interfaces;
 using ValIO.Parsers.Services;
 using ValIO.ServiceRegistration;
+using ValIO.Services;
 
 namespace ValIO;
-
-// generate --schema "C:\Workspace\ValIO\\out\\swagger.json" --output C:\\Workspace\\ValIO\\out --config "C:\\Workspace\\ValIO\\valio.config.json"
 
 class Program
 {
@@ -43,9 +44,6 @@ class Program
         // Core services
         services.AddSingleton<INamingConverter, NamingConverter>();
         services.AddSingleton<IFileWriter, FileWriter>();
-        
-        // Note: Extractors создаются внутри генераторов, так как они требуют SchemaResolver,
-        // который создается для каждого документа. Генераторы создают их самостоятельно.
 
         // Parsers
         services.AddSingleton<IOpenApiDocumentParser, OpenApiDocumentParser>();
@@ -54,12 +52,14 @@ class Program
         services.AddSingleton<IConfigurationLoader, ConfigurationLoader>();
         services.AddSingleton<IConfigurationValidator, ConfigurationValidator>();
 
-        // Регистрация всех генераторов, мапперов и рендеров через расширения DI
-        services.AddAllGenerators();
+        // Plugin registry и core plugin infrastructure
+        services.AddValIOCore();
+        services.AddGeneratorPlugin<TypeScriptGeneratorPlugin>();
+        services.AddSingleton<ICSharpAstRenderer, CSharpAstRenderer>();
+        services.AddGeneratorPlugin<CSharpGeneratorPlugin>();
 
-        // Factories
-        services.AddSingleton<TypeMapperFactory>();
-        services.AddSingleton<CodeGeneratorFactory>();
+        // Orchestrator
+        services.AddSingleton<GenerationOrchestrator>();
 
         // CLI
         services.AddSingleton<RootCommand>();

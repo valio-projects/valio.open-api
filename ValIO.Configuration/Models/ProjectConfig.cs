@@ -1,5 +1,3 @@
-using ValIO.Core.Models;
-
 namespace ValIO.Configuration.Models;
 
 /// <summary>
@@ -35,7 +33,7 @@ public class ProjectConfig
     /// <summary>
     /// Опции генерации (language-specific)
     /// </summary>
-    public ConfigOptions? Options { get; set; }
+    public Dictionary<string, System.Text.Json.JsonElement>? Options { get; set; }
     
     /// <summary>
     /// Организация файлов

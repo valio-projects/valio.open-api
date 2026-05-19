@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
@@ -33,7 +32,6 @@ public sealed class UPropertyFieldNode : DeclarationNode
     /// </summary>
     public bool SkipUProperty { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.UPropertyField;
 
     public override IReadOnlyList<AstNode> Children
     {

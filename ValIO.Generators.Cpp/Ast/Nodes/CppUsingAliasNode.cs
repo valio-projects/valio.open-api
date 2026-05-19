@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -22,7 +21,6 @@ public sealed class CppUsingAliasNode : AstNode
     /// </summary>
     public TypeNode TargetType { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppUsingAlias;
 
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Alias, TargetType };
 

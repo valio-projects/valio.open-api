@@ -9,7 +9,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
-using ValIO.Generators.TypeScript.Models;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
@@ -31,8 +31,7 @@ public partial class TypeScriptAstBuilder
     private HttpParamSourcesContext PrepareHttpParamSourcesWithOptionalZod(IrOperation operation)
     {
         var ctx = new HttpParamSourcesContext();
-        var useZod = _options?.ValidationLibrary == ValidationLibrary.Zod
-            && (_options.SerializeWithSchemas || _options.DeserializeWithSchemas);
+        var useZod = _options?.ValidationLibrary is "zod3" or "zod4";
 
         var hasRoute = operation.PathParameters.Count > 0;
         var hasQuery = operation.QueryParameters.Count > 0;
@@ -64,7 +63,7 @@ public partial class TypeScriptAstBuilder
             if (hasHeaders) headersSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("headers"));
         }
 
-        if (useZod && _options!.SerializeWithSchemas)
+        if (useZod)
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             if (hasRoute)
@@ -275,8 +274,7 @@ public partial class TypeScriptAstBuilder
             initializer: new AwaitExpressionNode(jsonCall)));
         statements.Add(CreateBlankLineStatement());
 
-        var useZod = _options?.ValidationLibrary == ValidationLibrary.Zod
-            && (_options.SerializeWithSchemas || _options.DeserializeWithSchemas);
+        var useZod = _options?.ValidationLibrary is "zod3" or "zod4";
         var useResultType = operation.Responses.Any(r => r.Type != null);
         var operationReturnType = useResultType
             ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false)
@@ -298,7 +296,7 @@ public partial class TypeScriptAstBuilder
                 var isSuccessful = statusCode >= 200 && statusCode < 300;
                 var modelRef = (IrModelReference)resp.Type!;
                 var schemaName = $"{modelRef.ModelName}Schema";
-                var parseCall = useZod && _options!.DeserializeWithSchemas
+                var parseCall = useZod
                     ? CreateZodParseCall(schemaName, responseDataRef)
                     : (ExpressionNode)responseDataRef;
 
@@ -342,7 +340,7 @@ public partial class TypeScriptAstBuilder
         }
         else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
         {
-            if (useZod && _options!.DeserializeWithSchemas)
+            if (useZod)
             {
                 var successResponse = operation.Responses.FirstOrDefault(r =>
                     int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300);
@@ -370,11 +368,5 @@ public partial class TypeScriptAstBuilder
         return new BlockNode(statements.ToImmutableList());
     }
 
-    private string GetFetchImplementationName()
-    {
-        var fetchOpts = _options?.Fetch;
-        if (!string.IsNullOrWhiteSpace(fetchOpts?.CustomFetcherPath) && !string.IsNullOrWhiteSpace(fetchOpts?.CustomFetcherName))
-            return fetchOpts.CustomFetcherName;
-        return "fetch";
-    }
+    private string GetFetchImplementationName() => "fetch";
 }

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
 
@@ -25,7 +24,6 @@ public sealed class ResponseTypeNode : AstNode
     /// </summary>
     public bool IsSuccess { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ResponseType;
     
     public override IReadOnlyList<AstNode> Children => new[] { Type };
     

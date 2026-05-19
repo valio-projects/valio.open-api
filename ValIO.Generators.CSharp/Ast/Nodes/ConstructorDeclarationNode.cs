@@ -31,7 +31,6 @@ public sealed class ConstructorDeclarationNode : DeclarationNode
     /// </summary>
     public IReadOnlyList<ExpressionNode> BaseConstructorArguments { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ConstructorDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

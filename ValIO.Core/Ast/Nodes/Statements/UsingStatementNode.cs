@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -21,7 +20,6 @@ public sealed class UsingStatementNode : StatementNode
     /// </summary>
     public BlockNode Body { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.UsingStatement;
     
     public override IReadOnlyList<AstNode> Children
     {

@@ -1,8 +1,5 @@
 using ValIO.Core.Ast.Nodes;
-using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Http;
-using ValIO.Core.Ast.Nodes.Statements;
-using ValIO.Core.Ast.Nodes.Types;
 
 namespace ValIO.Core.Ast.Visitors;
 
@@ -18,26 +15,6 @@ namespace ValIO.Core.Ast.Visitors;
 /// </remarks>
 public interface IAstVisitor<TResult> : IBaseAstVisitor<TResult>
 {
-    /// <summary>
-    /// Посещает объявление (диспетчеризация по типу)
-    /// </summary>
-    TResult VisitDeclaration(DeclarationNode node);
-    
-    /// <summary>
-    /// Посещает тип (диспетчеризация по типу)
-    /// </summary>
-    TResult VisitType(TypeNode node);
-    
-    /// <summary>
-    /// Посещает выражение (диспетчеризация по типу)
-    /// </summary>
-    TResult VisitExpression(ExpressionNode node);
-    
-    /// <summary>
-    /// Посещает statement (диспетчеризация по типу)
-    /// </summary>
-    TResult VisitStatement(StatementNode node);
-    
     // Enum (общий для C# и TypeScript)
     TResult VisitEnumDeclaration(EnumDeclarationNode node);
     

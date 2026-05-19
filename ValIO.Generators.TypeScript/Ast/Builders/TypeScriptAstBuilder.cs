@@ -2,11 +2,11 @@ using System.Collections.Immutable;
 using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Interfaces;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
-using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
@@ -15,7 +15,7 @@ using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
-using ValIO.Generators.TypeScript.Models;
+using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Axios;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -37,28 +37,24 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     private readonly INamingConverter _namingConverter;
-    private readonly ITypeMapper _typeMapper;
     private readonly HttpAstBuilder _httpBuilder;
     private readonly TypeScriptGenerationOptions? _options;
 
     /// <summary>
     /// Транспорт генерируемого endpoint-файла (axios / fetch). Устанавливается в <see cref="BuildSourceFileForOperation"/>.
     /// </summary>
-    private TypeScriptEndpointTransport _activeEndpointTransport = TypeScriptEndpointTransport.Axios;
-    
+    private string _activeEndpointTransport = "axios";
+
     /// <summary>
     /// Конструктор
     /// </summary>
     /// <param name="namingConverter">Конвертер имен</param>
-    /// <param name="typeMapper">Маппер типов</param>
     /// <param name="options">Опции генерации TypeScript (опционально)</param>
     public TypeScriptAstBuilder(
-        INamingConverter namingConverter, 
-        ITypeMapper typeMapper,
+        INamingConverter namingConverter,
         TypeScriptGenerationOptions? options = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
         _options = options;
         _httpBuilder = new HttpAstBuilder();
     }
@@ -69,51 +65,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             name: new IdentifierNode(name),
             type: type);
     }
-    
-    public TypeNode BuildType(TypeInfo typeInfo)
-    {
-        if (typeInfo.IsCollection)
-        {
-            var elementType = BuildTypeFromBaseType(typeInfo.GenericArguments.FirstOrDefault() ?? TypeInfo.Simple(typeInfo.BaseType));
-            return new ArrayTypeNode(elementType, isNullable: typeInfo.IsNullable, isOptional: typeInfo.IsOptional);
-        }
-        
-        if (typeInfo.IsDictionary)
-        {
-            var keyType = BuildTypeFromBaseType(typeInfo.GenericArguments.ElementAtOrDefault(0) ?? TypeInfo.Simple("string"));
-            var valueType = BuildTypeFromBaseType(typeInfo.GenericArguments.ElementAtOrDefault(1) ?? TypeInfo.Simple("object"));
-            return new DictionaryTypeNode(keyType, valueType, isNullable: typeInfo.IsNullable, isOptional: typeInfo.IsOptional);
-        }
-        
-        if (!string.IsNullOrEmpty(typeInfo.BaseType) && typeInfo.GenericArguments.Count > 0)
-        {
-            var genericArgs = typeInfo.GenericArguments.Select(BuildType).ToImmutableList();
-            var genericType = new GenericTypeNode(
-                name: new IdentifierNode(typeInfo.BaseType),
-                typeArguments: genericArgs,
-                isNullable: typeInfo.IsNullable,
-                isOptional: typeInfo.IsOptional);
-            return genericType;
-        }
-        
-        return BuildTypeFromBaseType(typeInfo);
-    }
-    
-    public LiteralExpressionNode BuildLiteral(object? value, TypeInfo typeInfo)
-    {
-        var literalKind = value switch
-        {
-            string => LiteralKind.String,
-            int or long or short or byte => LiteralKind.Number,
-            float or double or decimal => LiteralKind.Number,
-            bool => LiteralKind.Boolean,
-            null => LiteralKind.Null,
-            _ => LiteralKind.String
-        };
-        
-        return new LiteralExpressionNode(value ?? (object)"", literalKind);
-    }
-    
+
     // Приватные вспомогательные методы
     
     private IReadOnlyList<ImportNode> BuildImports(
@@ -288,16 +240,18 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         return _namingConverter.ToCamelCase(typeName);
     }
     
-    private TypeNode BuildTypeFromBaseType(TypeInfo typeInfo)
+    private static LiteralExpressionNode BuildLiteralFromValue(object value)
     {
-        var simpleType = new SimpleTypeNode(
-            name: new IdentifierNode(typeInfo.BaseType),
-            isPrimitive: typeInfo.IsPrimitive,
-            isNullable: typeInfo.IsNullable,
-            isOptional: typeInfo.IsOptional);
-        return simpleType;
+        var kind = value switch
+        {
+            string => LiteralKind.String,
+            bool => LiteralKind.Boolean,
+            null => LiteralKind.Null,
+            _ => LiteralKind.Number
+        };
+        return new LiteralExpressionNode(value, kind);
     }
-    
+
     private SimpleTypeNode BuildSimpleType(string typeName)
     {
         return new SimpleTypeNode(new IdentifierNode(typeName), isPrimitive: false);
@@ -310,17 +264,17 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     public TypeNode BuildType(IrType irType)
     {
-        return irType.Kind switch
+        return irType switch
         {
-            IrTypeKind.Primitive => BuildPrimitiveType((IrPrimitiveType)irType),
-            IrTypeKind.ModelReference => BuildModelReference((IrModelReference)irType),
-            IrTypeKind.Array => BuildArrayType((IrArrayType)irType),
-            IrTypeKind.Dictionary => BuildDictionaryType((IrDictionaryType)irType),
-            IrTypeKind.Union => BuildUnionType((IrUnionType)irType),
-            IrTypeKind.Intersection => BuildIntersectionType((IrIntersectionType)irType),
-            IrTypeKind.Nullable => BuildNullableType((IrNullableType)irType),
-            IrTypeKind.Optional => BuildOptionalType((IrOptionalType)irType),
-            _ => throw new NotSupportedException($"IrTypeKind {irType.Kind} is not supported")
+            IrPrimitiveType p => BuildPrimitiveType(p),
+            IrModelReference r => BuildModelReference(r),
+            IrArrayType arr => BuildArrayType(arr),
+            IrDictionaryType dict => BuildDictionaryType(dict),
+            IrUnionType union => BuildUnionType(union),
+            IrIntersectionType intersection => BuildIntersectionType(intersection),
+            IrNullableType nullable => BuildNullableType(nullable),
+            IrOptionalType optional => BuildOptionalType(optional),
+            _ => throw new NotSupportedException($"IrType {irType.GetType().Name} is not supported")
         };
     }
     
@@ -471,7 +425,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             : null;
         
         var defaultValue = property.Constraints?.DefaultValue != null
-            ? BuildLiteral(property.Constraints.DefaultValue, InferTypeInfo(property.Type))
+            ? BuildLiteralFromValue(property.Constraints.DefaultValue)
             : null;
         
         return new PropertyDeclarationNode(
@@ -761,7 +715,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             IrPrimitiveKind.String => "string",
             IrPrimitiveKind.Number => "number",
             IrPrimitiveKind.Integer => "number",
-            IrPrimitiveKind.Long => (_options?.UseBigInt == true) ? "bigint" : "number",
+            IrPrimitiveKind.Long => "number",
             IrPrimitiveKind.Boolean => "boolean",
             IrPrimitiveKind.DateTime => "string", // ISO string в TypeScript
             IrPrimitiveKind.Date => "string",
@@ -825,18 +779,6 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 ExtractDependenciesFromType(optionalType.InnerType, dependencies);
                 break;
         }
-    }
-    
-    private TypeInfo InferTypeInfo(IrType irType)
-    {
-        // Простая реализация для определения TypeInfo из IrType
-        // Используется только для BuildLiteral
-        return irType.Kind switch
-        {
-            IrTypeKind.Primitive => TypeInfo.Simple(MapPrimitiveToTypeScript(((IrPrimitiveType)irType).PrimitiveKind), isPrimitive: true, language: GenerationLanguage.TypeScript),
-            IrTypeKind.ModelReference => TypeInfo.Simple(((IrModelReference)irType).ModelName, language: GenerationLanguage.TypeScript),
-            _ => TypeInfo.Simple("unknown", language: GenerationLanguage.TypeScript)
-        };
     }
     
     /// <summary>
@@ -929,14 +871,13 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
 
     private bool UseParamsStyleEndpointTransport() =>
-        _activeEndpointTransport is TypeScriptEndpointTransport.Axios or TypeScriptEndpointTransport.Fetch;
+        _activeEndpointTransport is "axios" or "fetch";
 
-    private TypeScriptEndpointTransport InferDefaultEndpointTransport()
+    private string InferDefaultEndpointTransport()
     {
-        var t = _options?.HttpTransports ?? TypeScriptHttpTransports.Fetch;
-        if (t.HasFlag(TypeScriptHttpTransports.Axios))
-            return TypeScriptEndpointTransport.Axios;
-        return TypeScriptEndpointTransport.Fetch;
+        if (_options?.Transports?.Contains("axios") == true)
+            return "axios";
+        return "fetch";
     }
     
     /// <summary>
@@ -959,10 +900,10 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         }
         finally
         {
-            _activeEndpointTransport = TypeScriptEndpointTransport.Axios;
+            _activeEndpointTransport = "axios";
         }
     }
-    
+
     /// <summary>
     /// Строит SourceFile для одной операции (endpoints/operationName/operationName.axios.ts или .fetch.ts).
     /// </summary>
@@ -970,7 +911,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         IrOperation operation,
         string? importPath = null,
         FileOrganization? fileOrganization = null,
-        TypeScriptEndpointTransport transport = TypeScriptEndpointTransport.Axios)
+        string transport = "axios")
     {
         var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
         _activeEndpointTransport = transport;
@@ -984,8 +925,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
             imports = transport switch
             {
-                TypeScriptEndpointTransport.Axios => AddAxiosAndParamsImports(imports, operation, fileOrganization),
-                TypeScriptEndpointTransport.Fetch => AddFetchAndParamsImports(imports, operation, fileOrganization),
+                "axios" => AddAxiosAndParamsImports(imports, operation, fileOrganization),
+                "fetch" => AddFetchAndParamsImports(imports, operation, fileOrganization),
                 _ => imports
             };
 
@@ -999,7 +940,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         }
         finally
         {
-            _activeEndpointTransport = TypeScriptEndpointTransport.Axios;
+            _activeEndpointTransport = "axios";
         }
     }
 
@@ -1009,16 +950,6 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     private (string InstanceName, ImportNode Import) GetAxiosInstanceImport()
     {
-        var axios = _options?.Axios;
-        var path = axios?.CustomInstancePath;
-        var name = axios?.CustomInstanceName;
-        if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name))
-        {
-            return (name, new ImportNode(
-                items: new[] { new IdentifierNode(name) }.ToImmutableList(),
-                from: path,
-                kind: ImportKind.Named));
-        }
         return ("axios", new ImportNode(
             items: new[] { new IdentifierNode("axios") }.ToImmutableList(),
             from: "axios",
@@ -1069,7 +1000,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         }
 
         // При Zod добавляем импорты схем
-        if (_options?.ValidationLibrary == ValidationLibrary.Zod && _options.SerializeWithSchemas)
+        if (_options?.ValidationLibrary is "zod3" or "zod4")
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             var operationFileName = GetModelFileName(operation.MethodName);
@@ -1128,15 +1059,6 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var result = new List<ImportNode>();
 
-        var fetchOpts = _options?.Fetch;
-        if (!string.IsNullOrWhiteSpace(fetchOpts?.CustomFetcherPath) && !string.IsNullOrWhiteSpace(fetchOpts?.CustomFetcherName))
-        {
-            result.Add(new ImportNode(
-                items: new[] { new IdentifierNode(fetchOpts!.CustomFetcherName!) }.ToImmutableList(),
-                from: fetchOpts.CustomFetcherPath!,
-                kind: ImportKind.Named));
-        }
-
         var paramsParamsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
         if (paramsParamsBuilder.HasParameters(operation))
         {
@@ -1161,7 +1083,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
-        if (_options?.ValidationLibrary == ValidationLibrary.Zod && _options.SerializeWithSchemas)
+        if (_options?.ValidationLibrary is "zod3" or "zod4")
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             var operationFileName = GetModelFileName(operation.MethodName);
@@ -1225,11 +1147,11 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                         isRequired: true));
             }
 
-            var optionsTypeName = _activeEndpointTransport == TypeScriptEndpointTransport.Axios
+            var optionsTypeName = _activeEndpointTransport == "axios"
                 ? "AxiosRequestConfig"
                 : "RequestInit";
             var optionsType = new SimpleTypeNode(new IdentifierNode(optionsTypeName), isPrimitive: false, isNullable: false, isOptional: false);
-            var optionsDoc = _activeEndpointTransport == TypeScriptEndpointTransport.Axios
+            var optionsDoc = _activeEndpointTransport == "axios"
                 ? "Optional Axios request config (headers, timeout, etc.)"
                 : "Optional RequestInit (headers, credentials, etc.)";
             endpointParams.Add(new ParameterDeclarationNode(
@@ -1295,8 +1217,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         return _activeEndpointTransport switch
         {
-            TypeScriptEndpointTransport.Axios => BuildAxiosFunctionBody(operation),
-            TypeScriptEndpointTransport.Fetch => BuildFetchFunctionBody(operation),
+            "axios" => BuildAxiosFunctionBody(operation),
+            "fetch" => BuildFetchFunctionBody(operation),
             _ => null
         };
     }
@@ -1315,8 +1237,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var bodySource = ctx.BodySource;
         var headersSource = ctx.HeadersSource;
 
-        var useZod = _options?.ValidationLibrary == ValidationLibrary.Zod
-            && (_options.SerializeWithSchemas || _options.DeserializeWithSchemas);
+        var useZod = _options?.ValidationLibrary is "zod3" or "zod4";
 
         var (axiosInstanceName, _) = GetAxiosInstanceImport();
         var axiosInstanceType = new SimpleTypeNode(new IdentifierNode("AxiosInstance"), isPrimitive: false);
@@ -1411,7 +1332,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 var dataAccess = new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"));
-                var parseCall = useZod && _options!.DeserializeWithSchemas
+                var parseCall = useZod
                     ? CreateZodParseCall(schemaName, dataAccess)
                     : (ExpressionNode)dataAccess;
 
@@ -1462,7 +1383,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"))));
 
-            if (useZod && _options!.DeserializeWithSchemas)
+            if (useZod)
             {
                 var successResponse = operation.Responses.FirstOrDefault(r =>
                     int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300);

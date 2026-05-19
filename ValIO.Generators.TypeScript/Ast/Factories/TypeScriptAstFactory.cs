@@ -10,24 +10,22 @@ namespace ValIO.Generators.TypeScript.Ast.Factories;
 public class TypeScriptAstFactory
 {
     private readonly INamingConverter _namingConverter;
-    private readonly ITypeMapper _typeMapper;
     private ITypeScriptAstBuilder? _builder;
     private ITypeScriptAstRenderer? _renderer;
-    
-    public TypeScriptAstFactory(INamingConverter namingConverter, ITypeMapper typeMapper)
+
+    public TypeScriptAstFactory(INamingConverter namingConverter)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
     }
-    
+
     /// <summary>
     /// Создает или возвращает существующий TypeScriptAstBuilder
     /// </summary>
     public ITypeScriptAstBuilder GetBuilder()
     {
-        return _builder ??= new TypeScriptAstBuilder(_namingConverter, _typeMapper);
+        return _builder ??= new TypeScriptAstBuilder(_namingConverter);
     }
-    
+
     /// <summary>
     /// Создает или возвращает существующий TypeScriptAstRenderer
     /// </summary>

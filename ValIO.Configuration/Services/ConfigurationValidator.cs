@@ -14,27 +14,12 @@ public class ConfigurationValidator : IConfigurationValidator
         var errors = new List<string>();
         var warnings = new List<string>();
 
-        // Проверка обязательных полей
         if (string.IsNullOrWhiteSpace(config.OutputPath))
             errors.Add("OutputPath is required");
 
-        // Валидация языка
-        if (!Enum.IsDefined(typeof(GenerationLanguage), config.Language))
-            errors.Add($"Invalid language: {config.Language}");
+        if (string.IsNullOrWhiteSpace(config.LanguageId))
+            errors.Add("LanguageId is required");
 
-        // Валидация опций для TypeScript
-        if (config.Language == GenerationLanguage.TypeScript && config.Options != null)
-        {
-            if (config.Options.ValidationLibrary.HasValue && 
-                !Enum.IsDefined(typeof(ValidationLibrary), config.Options.ValidationLibrary.Value))
-                errors.Add($"Invalid validation library: {config.Options.ValidationLibrary}");
-
-            if (config.Options.QueryWrapperLibrary.HasValue &&
-                !Enum.IsDefined(typeof(QueryWrapperLibrary), config.Options.QueryWrapperLibrary.Value))
-                errors.Add($"Invalid query wrapper library: {config.Options.QueryWrapperLibrary}");
-        }
-
-        // Предупреждения
         if (!config.GenerateModels && !config.GenerateClients && !config.GenerateEnums)
             warnings.Add("All generation options are disabled. No code will be generated.");
 
@@ -52,4 +37,3 @@ public class ConfigurationValidator : IConfigurationValidator
         };
     }
 }
-

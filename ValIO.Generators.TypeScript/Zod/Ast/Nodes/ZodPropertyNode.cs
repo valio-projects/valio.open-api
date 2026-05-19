@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.TypeScript.Zod.Ast.Visitors;
@@ -36,7 +35,6 @@ public sealed class ZodPropertyNode : AstNode
     /// </summary>
     public bool IsOptional { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ZodProperty;
     
     public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Schema };
     
@@ -65,7 +63,7 @@ public sealed class ZodPropertyNode : AstNode
         {
             return zodVisitor.VisitZodProperty(this);
         }
-        return visitor.Visit(this);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()

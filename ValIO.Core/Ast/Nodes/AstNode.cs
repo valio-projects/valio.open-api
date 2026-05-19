@@ -1,6 +1,5 @@
 using System.Collections.Immutable;
 using System.Diagnostics;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
@@ -10,11 +9,6 @@ namespace ValIO.Core.Ast.Nodes;
 /// </summary>
 public abstract class AstNode
 {
-    /// <summary>
-    /// Тип узла
-    /// </summary>
-    public abstract AstNodeKind Kind { get; }
-    
     /// <summary>
     /// Дочерние узлы
     /// </summary>
@@ -46,8 +40,5 @@ public abstract class AstNode
     /// <summary>
     /// Возвращает строковое представление узла для отладки
     /// </summary>
-    public override string ToString()
-    {
-        return $"{Kind}";
-    }
+    public override string ToString() => GetType().Name;
 }

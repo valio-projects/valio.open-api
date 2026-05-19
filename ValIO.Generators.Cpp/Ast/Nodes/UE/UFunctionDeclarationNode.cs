@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Visitors;
@@ -55,7 +54,6 @@ public sealed class UFunctionDeclarationNode : DeclarationNode
     /// </summary>
     public BlockNode? Body { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.UFunction;
 
     public override IReadOnlyList<AstNode> Children
     {

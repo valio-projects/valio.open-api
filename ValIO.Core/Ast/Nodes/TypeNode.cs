@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
@@ -29,15 +28,10 @@ public abstract class TypeNode : AstNode
         IsOptional = isOptional;
     }
     
-    public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
-    {
-        return visitor.VisitType(this);
-    }
-    
     public override string ToString()
     {
-        var nullableStr = IsNullable ? "?" : "";
-        var optionalStr = IsOptional ? "?" : "";
-        return $"{Kind}{nullableStr}{optionalStr}";
+        var nullable = IsNullable ? "?" : "";
+        var optional = IsOptional ? " (optional)" : "";
+        return $"{GetType().Name}{nullable}{optional}";
     }
 }

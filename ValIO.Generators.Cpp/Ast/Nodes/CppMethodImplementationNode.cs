@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -52,7 +51,6 @@ public sealed class CppMethodImplementationNode : AstNode
     /// </summary>
     public CommentNode? Documentation { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppMethodImplementation;
 
     public override IReadOnlyList<AstNode> Children
     {

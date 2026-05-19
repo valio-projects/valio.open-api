@@ -489,3 +489,8 @@ public class BaseTypeInfoBuilder
 - [ ] Нет магических констант и строковых проверок для типов
 - [ ] Используется объектное представление TypeInfo
 - [ ] Код протестирован (юнит и интеграционные тесты)
+## AST-first TypeScript generation
+
+- TypeScript code generation is AST-first: steps, builders, and schema renderers create `SourceFileNode`, `ImportNode`, `VariableDeclarationNode`, `FunctionDeclarationNode`, `TypeAliasDeclarationNode`, `CallExpressionNode`, `ObjectLiteralExpressionNode`, and related nodes.
+- `StringBuilder`, `CodeFormatter.AppendLine`, and raw string concatenation for TypeScript syntax are allowed only inside dedicated AST renderer implementations or temporary legacy code explicitly scheduled for removal.
+- New TypeScript validators, transports, query wrappers, framework wrappers, methods, imports, exports, and variables must be expressed as AST nodes before rendering.

@@ -1,5 +1,3 @@
-using ValIO.Core.IR.Enums;
-
 namespace ValIO.Core.IR.Types;
 
 /// <summary>
@@ -7,8 +5,6 @@ namespace ValIO.Core.IR.Types;
 /// </summary>
 public sealed record IrNullableType : IrType
 {
-    public override IrTypeKind Kind => IrTypeKind.Nullable;
-    
     /// <summary>
     /// Внутренний тип
     /// </summary>

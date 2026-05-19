@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.CSharp.Ast.Visitors;
@@ -16,7 +15,6 @@ public sealed class NamespaceDeclarationNode : DeclarationNode
     /// </summary>
     public IReadOnlyList<DeclarationNode> Declarations { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.NamespaceDeclaration;
     
     public override IReadOnlyList<AstNode> Children
     {

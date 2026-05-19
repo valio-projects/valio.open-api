@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
@@ -56,7 +55,6 @@ public sealed class TemplateLiteralExpressionNode : ExpressionNode
     /// </summary>
     public IReadOnlyList<TemplateLiteralPart> Parts { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.TemplateLiteralExpression;
     
     public override IReadOnlyList<AstNode> Children
     {

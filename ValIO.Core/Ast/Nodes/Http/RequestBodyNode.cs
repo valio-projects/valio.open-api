@@ -30,7 +30,6 @@ public sealed class RequestBodyNode : AstNode
     /// </summary>
     public RequestBodyKind RequestBodyKind { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.RequestBody;
     
     public override IReadOnlyList<AstNode> Children => new[] { Type };
     

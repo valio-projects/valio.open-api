@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
@@ -51,13 +50,5 @@ public abstract class DeclarationNode : AstNode
         Attributes = attributes?.ToImmutableList() ?? ImmutableList<AttributeNode>.Empty;
     }
     
-    public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
-    {
-        return visitor.VisitDeclaration(this);
-    }
-    
-    public override string ToString()
-    {
-        return $"{Kind}({Name.Name})";
-    }
+    public override string ToString() => $"{GetType().Name}({Name.Name})";
 }

@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
@@ -26,7 +25,6 @@ public sealed class CastExpressionNode : ExpressionNode
     /// </summary>
     public bool UseAsOperator { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.CastExpression;
     
     public override IReadOnlyList<AstNode> Children
     {

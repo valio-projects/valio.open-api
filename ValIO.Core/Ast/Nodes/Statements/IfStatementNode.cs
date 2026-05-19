@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -25,7 +24,6 @@ public sealed class IfStatementNode : StatementNode
     /// </summary>
     public BlockNode? ElseBlock { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.IfStatement;
     
     public override IReadOnlyList<AstNode> Children
     {

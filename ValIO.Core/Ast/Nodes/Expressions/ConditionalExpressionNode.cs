@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -25,7 +24,6 @@ public sealed class ConditionalExpressionNode : ExpressionNode
     /// </summary>
     public ExpressionNode FalseExpression { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ConditionalExpression;
     
     public override IReadOnlyList<AstNode> Children => new[] { Condition, TrueExpression, FalseExpression };
     

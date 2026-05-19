@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 using ValIO.Generators.Cpp.Ast.Visitors;
@@ -17,7 +16,6 @@ public sealed class CppParseFunctionNode : AstNode
     public IReadOnlyList<CppParameterNode> Parameters { get; }
     public BlockNode Body { get; }
 
-    public override AstNodeKind Kind => AstNodeKind.CppParseFunction;
 
     public override IReadOnlyList<AstNode> Children
     {

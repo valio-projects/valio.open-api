@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
 
@@ -15,7 +14,6 @@ public sealed class UnionTypeNode : TypeNode
     /// </summary>
     public IReadOnlyList<TypeNode> Types { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.UnionType;
     
     public override IReadOnlyList<AstNode> Children => Types.Cast<AstNode>().ToImmutableList();
     

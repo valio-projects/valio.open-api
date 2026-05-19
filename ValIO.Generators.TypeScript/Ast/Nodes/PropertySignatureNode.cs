@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Ast.Visitors;
@@ -52,7 +51,6 @@ public sealed class PropertySignatureNode : DeclarationNode
     /// </summary>
     public bool IsConstant { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.PropertySignature;
     
     public override IReadOnlyList<AstNode> Children
     {

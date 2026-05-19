@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
@@ -36,7 +35,6 @@ public sealed class MutationOptionsNode : ExpressionNode
     /// </summary>
     public IReadOnlyList<PropertyAssignmentNode> Properties { get; }
     
-    public override AstNodeKind Kind => AstNodeKind.ObjectLiteralExpression; // Используем существующий kind
     
     public override IReadOnlyList<AstNode> Children
     {
@@ -83,7 +81,7 @@ public sealed class MutationOptionsNode : ExpressionNode
             var objectLiteral = new ObjectLiteralExpressionNode(Properties, Type, Metadata);
             return typescriptVisitor.VisitObjectLiteralExpression(objectLiteral);
         }
-        return visitor.VisitExpression(this);
+        return visitor.DefaultVisit(this);
     }
     
     public override AstNode Clone()
