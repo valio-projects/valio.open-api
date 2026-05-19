@@ -34,6 +34,7 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new AxiosClientStep(namingConverter),
             new KyClientStep(namingConverter),
             new UndiciClientStep(namingConverter),
+            new OFetchClientStep(namingConverter),
             new TanStackQueryStep(namingConverter),
             new TanStackVueStep(namingConverter),
             new TypeScriptIndexStep(),
