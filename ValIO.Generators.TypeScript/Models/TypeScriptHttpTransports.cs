@@ -9,15 +9,17 @@ public enum TypeScriptHttpTransports
     None = 0,
     Fetch = 1,
     Axios = 2,
+    AngularRxjs = 4,
 }
 
 /// <summary>
-/// Один сгенерированный endpoint-файл (axios или fetch).
+/// Один сгенерированный endpoint-файл (axios или fetch) или per-client сервис (angular-rxjs).
 /// </summary>
 public enum TypeScriptEndpointTransport
 {
     Axios,
     Fetch,
+    AngularRxjs,
 }
 
 /// <summary>
