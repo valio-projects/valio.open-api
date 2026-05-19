@@ -21,6 +21,7 @@ public sealed class TypeBoxAstBuilder
     {
         ArgumentNullException.ThrowIfNull(model);
 
+        ExpressionNode body;
         if (model.Composition != null && model.Composition.Types.Count > 0)
         {
             var expressions = model.Composition.Types
@@ -30,15 +31,77 @@ public sealed class TypeBoxAstBuilder
             if (model.Properties.Count > 0)
                 expressions.Add(BuildObjectSchema(model));
 
-            return model.Composition.Kind switch
+            body = model.Composition.Kind switch
             {
                 IrCompositionKind.AllOf => BuildIntersection(expressions),
                 IrCompositionKind.OneOf or IrCompositionKind.AnyOf => BuildUnion(expressions),
                 _ => BuildObjectSchema(model)
             };
         }
+        else
+        {
+            body = BuildObjectSchema(model);
+        }
 
-        return BuildObjectSchema(model);
+        // Если модель ссылается сама на себя — оборачиваем в Type.Recursive((This) => ...).
+        // BuildSchemaFromIrType при currentModelName подставит Id("This") вместо {ModelName}Schema.
+        if (IsSelfRecursive(model))
+        {
+            // Type.Recursive((This) => Type.Object({ ..., children: Type.Array(This) }))
+            var arrow = new ArrowFunctionExpressionNode(
+                ImmutableList.Create(
+                    new ParameterDeclarationNode(new IdentifierNode("This"), type: null, isRequired: true)),
+                body);
+            return Call("Recursive", arrow);
+        }
+        return body;
+    }
+
+    private static bool IsSelfRecursive(IrModel model)
+    {
+        var seen = new HashSet<IrType>();
+        foreach (var property in model.Properties)
+        {
+            if (ReferencesSelf(property.Type, model.Name, seen))
+                return true;
+        }
+        if (model.Composition != null)
+        {
+            foreach (var type in model.Composition.Types)
+            {
+                if (ReferencesSelf(type, model.Name, seen))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool IsRecursiveSelfReference(IrModelReference reference, string? currentModelName) =>
+        !string.IsNullOrEmpty(currentModelName)
+        && string.Equals(reference.ModelName, currentModelName, StringComparison.OrdinalIgnoreCase);
+
+    private static bool ReferencesSelf(IrType type, string ownName, HashSet<IrType> seen)
+    {
+        if (!seen.Add(type)) return false;
+        switch (type)
+        {
+            case IrModelReference m:
+                return string.Equals(m.ModelName, ownName, StringComparison.OrdinalIgnoreCase);
+            case IrArrayType a:
+                return ReferencesSelf(a.ElementType, ownName, seen);
+            case IrDictionaryType d:
+                return ReferencesSelf(d.KeyType, ownName, seen) || ReferencesSelf(d.ValueType, ownName, seen);
+            case IrNullableType n:
+                return ReferencesSelf(n.InnerType, ownName, seen);
+            case IrOptionalType o:
+                return ReferencesSelf(o.InnerType, ownName, seen);
+            case IrUnionType u:
+                return u.Types.Any(t => ReferencesSelf(t, ownName, seen));
+            case IrIntersectionType i:
+                return i.Types.Any(t => ReferencesSelf(t, ownName, seen));
+            default:
+                return false;
+        }
     }
 
     public ExpressionNode BuildEnumSchema(IrEnum enumModel)
@@ -60,7 +123,9 @@ public sealed class TypeBoxAstBuilder
         return irType switch
         {
             IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind, constraints),
-            IrModelReference reference => Id($"{reference.ModelName}Schema"),
+            IrModelReference reference => IsRecursiveSelfReference(reference, currentModelName)
+                ? Id("This")
+                : Id($"{reference.ModelName}Schema"),
             IrArrayType array => Call("Array", BuildSchemaFromIrType(array.ElementType, currentModelName)),
             IrDictionaryType dictionary => Call(
                 "Record",

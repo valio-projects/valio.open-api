@@ -722,7 +722,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // Добавляем параметры (@param). Для optional — [name], не ?name (? это спецификатор типа в сигнатуре)
         foreach (var param in node.Parameters)
         {
-            var paramType = RenderType(param.Type);
+            var paramType = param.Type != null ? RenderType(param.Type) : "unknown";
             var paramDescription = param.Documentation?.Text ?? "";
             var paramNameFormatted = param.IsRequired ? param.Name.Name : $"[{param.Name.Name}]";
             
@@ -1106,9 +1106,11 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     private void RenderParameter(StringBuilder sb, ParameterDeclarationNode node)
     {
         var optional = node.IsRequired ? "" : "?";
-        var type = RenderType(node.Type);
+        // Type=null означает «не выводить аннотацию» — используется для arrow‑callbacks
+        // (например, `(This) => ...` для Type.Recursive).
+        var type = node.Type != null ? $": {RenderType(node.Type)}" : "";
         var defaultValue = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        sb.Append($"{node.Name.Name}{optional}: {type}{defaultValue}");
+        sb.Append($"{node.Name.Name}{optional}{type}{defaultValue}");
     }
 
     private string RenderParameterDeclaration(ParameterDeclarationNode node)

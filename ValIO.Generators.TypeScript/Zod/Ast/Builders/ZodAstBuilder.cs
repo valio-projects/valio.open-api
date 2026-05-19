@@ -216,13 +216,25 @@ public class ZodAstBuilder
         string? constraintsRef = null)
     {
         var kind = primitiveType.PrimitiveKind;
-        // Binary, ByteArray, File — Any, без expression
-        if (kind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File)
-        {
-            return new ZodPrimitiveSchemaNode(ZodSchemaKind.Any);
-        }
-        
+        // Binary/ByteArray/File сериализуются runtime'ом как Blob/File.
+        // Используем z.instanceof(Blob|File) — это правильно типизируется
+        // (vs. z.any(), который выводится как `any | undefined` и ломает
+        // required‑поля).
+        if (kind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray)
+            return BuildZodInstanceOf("Blob");
+        if (kind is IrPrimitiveKind.File)
+            return BuildZodInstanceOf("File");
+
         return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef);
+    }
+
+    private static ZodExpressionSchemaNode BuildZodInstanceOf(string typeName)
+    {
+        return new ZodExpressionSchemaNode(new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("z")),
+                new IdentifierNode("instanceof")),
+            ImmutableList.Create<ExpressionNode>(new IdentifierExpressionNode(new IdentifierNode(typeName)))));
     }
     
     /// <summary>

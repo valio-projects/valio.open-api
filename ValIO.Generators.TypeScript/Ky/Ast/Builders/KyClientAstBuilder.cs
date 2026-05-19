@@ -346,16 +346,28 @@ public sealed class KyClientAstBuilder
         if (operation.RequestBody != null && sources.BodySource != null)
         {
             var bodyOptionName = operation.RequestBody.IsJson ? "json" : "body";
+            // Для form/binary body нужно соответствие типу Options["body"]
+            // (BodyInit). Узкий interface не подходит — кастуем через unknown.
+            var bodyExpression = operation.RequestBody.IsJson
+                ? sources.BodySource
+                : (ExpressionNode)new CastExpressionNode(
+                    new SimpleTypeNode(new IdentifierNode("Options[\"body\"]"), isPrimitive: false),
+                    new CastExpressionNode(
+                        new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
+                        sources.BodySource,
+                        useAsOperator: true),
+                    useAsOperator: true);
+
             if (sources.BodySourceMayBeUndefined)
             {
                 properties.Add(SpreadProperty(new ConditionalExpressionNode(
                     new BinaryExpressionNode(sources.BodySource, BinaryOperator.NotEqual, Id("undefined")),
-                    Object((bodyOptionName, sources.BodySource)),
+                    Object((bodyOptionName, bodyExpression)),
                     EmptyObject())));
             }
             else
             {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode(bodyOptionName), sources.BodySource));
+                properties.Add(new PropertyAssignmentNode(new IdentifierNode(bodyOptionName), bodyExpression));
             }
         }
 

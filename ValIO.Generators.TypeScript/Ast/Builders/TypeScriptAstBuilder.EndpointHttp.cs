@@ -230,7 +230,17 @@ public partial class TypeScriptAstBuilder
         }
         else if (operation.RequestBody != null && operation.RequestBody.IsForm && ctx.BodySource != null)
         {
-            initProps.Add(new PropertyAssignmentNode(new IdentifierNode("body"), ctx.BodySource));
+            // multipart/form-data: типизированный params.form (узкий интерфейс) не
+            // соответствует BodyInit. Кастуем через unknown — runtime пусть
+            // строит FormData сам.
+            var bodyCast = new CastExpressionNode(
+                new SimpleTypeNode(new IdentifierNode("BodyInit"), isPrimitive: false),
+                new CastExpressionNode(
+                    new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
+                    ctx.BodySource,
+                    useAsOperator: true),
+                useAsOperator: true);
+            initProps.Add(new PropertyAssignmentNode(new IdentifierNode("body"), bodyCast));
         }
 
         var signalRef = new IdentifierExpressionNode(new IdentifierNode("signal"));

@@ -1,0 +1,202 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Edge-case API", "version": "1.0.0" },
+  "paths": {
+    "/animals": {
+      "get": {
+        "operationId": "listAnimals",
+        "summary": "List animals (polymorphic)",
+        "parameters": [
+          { "name": "kind", "in": "query", "schema": { "type": "string", "enum": ["dog", "cat", "bird"] } },
+          { "name": "tags", "in": "query", "schema": { "type": "array", "items": { "type": "string" } }, "explode": true }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Animal" }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "operationId": "createAnimal",
+        "summary": "Create animal (oneOf body)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Animal" }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "created",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/Animal" } }
+            }
+          },
+          "400": {
+            "description": "bad",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ErrorPayload" } }
+            }
+          }
+        }
+      }
+    },
+    "/trees/{rootId}": {
+      "get": {
+        "operationId": "getTree",
+        "summary": "Get recursive tree",
+        "parameters": [
+          { "name": "rootId", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TreeNode" } }
+            }
+          }
+        }
+      }
+    },
+    "/upload": {
+      "post": {
+        "operationId": "uploadMultipart",
+        "summary": "Multipart with mixed fields",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/UploadForm" }
+            }
+          }
+        },
+        "responses": {
+          "204": { "description": "ok" }
+        }
+      }
+    },
+    "/dictionary": {
+      "get": {
+        "operationId": "getDictionary",
+        "summary": "Dictionary of nested objects",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": { "$ref": "#/components/schemas/Animal" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AnimalBase": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": { "type": "string" }
+        },
+        "required": ["id", "name", "kind"]
+      },
+      "Dog": {
+        "allOf": [
+          { "$ref": "#/components/schemas/AnimalBase" },
+          {
+            "type": "object",
+            "properties": {
+              "breed": { "type": "string" },
+              "isGoodBoy": { "type": "boolean", "default": true }
+            },
+            "required": ["breed"]
+          }
+        ]
+      },
+      "Cat": {
+        "allOf": [
+          { "$ref": "#/components/schemas/AnimalBase" },
+          {
+            "type": "object",
+            "properties": {
+              "indoor": { "type": "boolean" },
+              "livesLeft": { "type": "integer", "minimum": 0, "maximum": 9 }
+            }
+          }
+        ]
+      },
+      "Bird": {
+        "allOf": [
+          { "$ref": "#/components/schemas/AnimalBase" },
+          {
+            "type": "object",
+            "properties": {
+              "canFly": { "type": "boolean" },
+              "wingSpanCm": { "type": "number", "format": "float" }
+            }
+          }
+        ]
+      },
+      "Animal": {
+        "oneOf": [
+          { "$ref": "#/components/schemas/Dog" },
+          { "$ref": "#/components/schemas/Cat" },
+          { "$ref": "#/components/schemas/Bird" }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": { "dog": "#/components/schemas/Dog", "cat": "#/components/schemas/Cat", "bird": "#/components/schemas/Bird" }
+        }
+      },
+      "TreeNode": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "label": { "type": "string", "nullable": true },
+          "children": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TreeNode" }
+          }
+        },
+        "required": ["id", "children"]
+      },
+      "ErrorPayload": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "integer" },
+          "message": { "type": "string" },
+          "details": {
+            "type": "object",
+            "additionalProperties": { "type": "string" }
+          }
+        },
+        "required": ["code", "message"]
+      },
+      "UploadForm": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "file": { "type": "string", "format": "binary" }
+        },
+        "required": ["title", "file"]
+      }
+    }
+  }
+}

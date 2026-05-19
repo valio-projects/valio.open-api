@@ -29,16 +29,67 @@ public sealed class ValibotSchemaSourceFileBuilder
         ArgumentNullException.ThrowIfNull(model);
 
         var schemaName = GetSchemaName(model.Name);
+        var isRecursive = IsSelfRecursive(model);
+        // Для рекурсивных схем TS не может вывести тип из v.lazy(...) без явной аннотации.
+        // Декларируем `: v.GenericSchema<{ModelName}>` и подтягиваем тип модели.
+        var schemaType = isRecursive
+            ? (TypeNode)new RawTypeNode($"v.GenericSchema<{model.Name}>")
+            : null;
+
         return new SourceFileNode(
-            imports: BuildImports(model, separateModels),
+            imports: BuildImports(model, separateModels, includeOwnModelType: isRecursive),
             declarations: ImmutableList<DeclarationNode>.Empty
                 .Add(new VariableDeclarationNode(
                     name: new IdentifierNode(schemaName),
                     declarationKind: VariableDeclarationKind.Const,
+                    type: schemaType,
                     initializer: _builder.BuildSchemaFromIrModel(model),
                     documentation: BuildDocumentation(model.Description),
                     isExported: true))
                 .Add(BuildInferOutputTypeAlias(model.Name, schemaName)));
+    }
+
+    private static bool IsSelfRecursive(IrModel model)
+    {
+        var seen = new HashSet<IrType>();
+        foreach (var property in model.Properties)
+        {
+            if (ReferencesSelf(property.Type, model.Name, seen))
+                return true;
+        }
+        if (model.Composition != null)
+        {
+            foreach (var type in model.Composition.Types)
+            {
+                if (ReferencesSelf(type, model.Name, seen))
+                    return true;
+            }
+        }
+        return false;
+    }
+
+    private static bool ReferencesSelf(IrType type, string ownName, HashSet<IrType> seen)
+    {
+        if (!seen.Add(type)) return false;
+        switch (type)
+        {
+            case IrModelReference m:
+                return string.Equals(m.ModelName, ownName, StringComparison.OrdinalIgnoreCase);
+            case IrArrayType a:
+                return ReferencesSelf(a.ElementType, ownName, seen);
+            case IrDictionaryType d:
+                return ReferencesSelf(d.KeyType, ownName, seen) || ReferencesSelf(d.ValueType, ownName, seen);
+            case IrNullableType n:
+                return ReferencesSelf(n.InnerType, ownName, seen);
+            case IrOptionalType o:
+                return ReferencesSelf(o.InnerType, ownName, seen);
+            case IrUnionType u:
+                return u.Types.Any(t => ReferencesSelf(t, ownName, seen));
+            case IrIntersectionType i:
+                return i.Types.Any(t => ReferencesSelf(t, ownName, seen));
+            default:
+                return false;
+        }
     }
 
     public SourceFileNode BuildEnumSchemaSourceFile(IrEnum enumModel)
@@ -79,10 +130,25 @@ public sealed class ValibotSchemaSourceFileBuilder
             kind: ImportKind.Namespace));
     }
 
-    private IReadOnlyList<ImportNode> BuildImports(IrModel model, bool separateModels)
+    private IReadOnlyList<ImportNode> BuildImports(IrModel model, bool separateModels, bool includeOwnModelType = false)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
         imports.AddRange(BuildValibotImport());
+
+        // Для рекурсивных схем — нужен тип самой модели (для аннотации v.GenericSchema<T>).
+        if (includeOwnModelType)
+        {
+            var ownFileName = _namingConverter.ToCamelCase(model.Name);
+            var ownPath = separateModels
+                ? $"../../{ownFileName}/{ownFileName}"
+                : $"../{ownFileName}";
+            imports.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode(model.Name)),
+                from: ownPath,
+                kind: ImportKind.Named,
+                isTypeOnly: true));
+        }
+
         var dependencies = ExtractDependencies(model)
             .Where(dep => !dep.Equals(model.Name, StringComparison.OrdinalIgnoreCase))
             .OrderBy(dep => dep, StringComparer.Ordinal)

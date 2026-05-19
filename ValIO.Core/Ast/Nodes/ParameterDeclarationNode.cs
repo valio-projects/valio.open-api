@@ -11,9 +11,10 @@ namespace ValIO.Core.Ast.Nodes;
 public sealed class ParameterDeclarationNode : DeclarationNode
 {
     /// <summary>
-    /// Тип параметра
+    /// Тип параметра. Null означает, что аннотация типа должна быть опущена
+    /// в выводе (например, для arrow‑callback с TS‑инференцией: <c>(This) => ...</c>).
     /// </summary>
-    public TypeNode Type { get; }
+    public TypeNode? Type { get; }
     
     /// <summary>
     /// Значение по умолчанию
@@ -35,7 +36,9 @@ public sealed class ParameterDeclarationNode : DeclarationNode
     {
         get
         {
-            var children = new List<AstNode> { Name, Type };
+            var children = new List<AstNode> { Name };
+            if (Type != null)
+                children.Add(Type);
             if (Documentation != null)
                 children.Add(Documentation);
             children.AddRange(Attributes);
@@ -44,13 +47,13 @@ public sealed class ParameterDeclarationNode : DeclarationNode
             return children;
         }
     }
-    
+
     /// <summary>
     /// Конструктор
     /// </summary>
     public ParameterDeclarationNode(
         IdentifierNode name,
-        TypeNode type,
+        TypeNode? type,
         bool isRequired = true,
         ParameterKind parameterKind = ParameterKind.Normal,
         ExpressionNode? defaultValue = null,
@@ -59,22 +62,22 @@ public sealed class ParameterDeclarationNode : DeclarationNode
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation, attributes, metadata)
     {
-        Type = type ?? throw new ArgumentNullException(nameof(type));
+        Type = type;
         IsRequired = isRequired;
         ParameterKind = parameterKind;
         DefaultValue = defaultValue;
     }
-    
+
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
         return visitor.VisitParameterDeclaration(this);
     }
-    
+
     public override AstNode Clone()
     {
         return new ParameterDeclarationNode(
             (IdentifierNode)Name.Clone(),
-            (TypeNode)Type.Clone(),
+            Type != null ? (TypeNode)Type.Clone() : null,
             IsRequired,
             ParameterKind,
             DefaultValue != null ? (ExpressionNode)DefaultValue.Clone() : null,
@@ -82,11 +85,12 @@ public sealed class ParameterDeclarationNode : DeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
-    
+
     public override string ToString()
     {
         var requiredStr = IsRequired ? "" : "?";
         var defaultValueStr = DefaultValue != null ? $" = {DefaultValue}" : "";
-        return $"{Type}{requiredStr} {Name.Name}{defaultValueStr}";
+        var typeStr = Type?.ToString() ?? "";
+        return $"{typeStr}{requiredStr} {Name.Name}{defaultValueStr}";
     }
 }
