@@ -10,3 +10,18 @@ riderModule.iml
 .claude/worktrees/
 .claude/settings.local.json
 docs/query-5.90.3
+
+# Web frontend test artefacts
+*.User
+appsettings.Development.json.local
+
+# Desktop user settings
+**/.avaloniacache/
+
+# Docs site
+docs-site/node_modules/
+docs-site/dist/
+docs-site/.astro/
+docs-site/.cache/
+docs-site/pnpm-lock.yaml
+docs-site/yarn.lock
