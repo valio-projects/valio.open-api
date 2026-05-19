@@ -8,6 +8,7 @@ using ValIO.Core.Services;
 using ValIO.Generators.CSharp;
 using ValIO.Generators.CSharp.Ast.Renderers;
 using ValIO.Generators.Java;
+using ValIO.Generators.Kotlin;
 using ValIO.Generators.Php;
 using ValIO.Generators.Python;
 using ValIO.Generators.TypeScript;
@@ -63,6 +64,7 @@ class Program
         services.AddGeneratorPlugin<PythonGeneratorPlugin>();
         services.AddGeneratorPlugin<PhpGeneratorPlugin>();
         services.AddGeneratorPlugin<JavaGeneratorPlugin>();
+        services.AddGeneratorPlugin<KotlinGeneratorPlugin>();
 
         // Orchestrator
         services.AddSingleton<GenerationOrchestrator>();
