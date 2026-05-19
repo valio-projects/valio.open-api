@@ -32,4 +32,9 @@ public static class TypeScriptOptionIds
         public const string TanStackSvelte = "tanstack-svelte";
         public const string Swr = "swr";
     }
+
+    public static class MockLibrary
+    {
+        public const string Msw = "msw";
+    }
 }

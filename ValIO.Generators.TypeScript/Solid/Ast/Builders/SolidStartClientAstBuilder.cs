@@ -1,0 +1,58 @@
+using System.Collections.Immutable;
+using ValIO.Core.Interfaces;
+using ValIO.Core.IR;
+using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.Nodes;
+using ValIO.Generators.TypeScript.Options;
+
+namespace ValIO.Generators.TypeScript.Solid.Ast.Builders;
+
+/// <summary>
+/// Builds a SolidStart server-function client for a single IR operation.
+/// The generated file has <c>"use server";</c> as its first directive (emitted via
+/// <see cref="SourceFileNode"/>.Metadata["directive"]) and a fetch-based async function
+/// body identical to what <see cref="FetchClientStep"/> emits — Solid's
+/// <c>$server</c>-transform compiles the file into an RPC handler on the server
+/// and a typed RPC client on the browser.
+/// </summary>
+public sealed class SolidStartClientAstBuilder
+{
+    private readonly TypeScriptAstBuilder _innerBuilder;
+
+    public SolidStartClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+    {
+        ArgumentNullException.ThrowIfNull(namingConverter);
+        _innerBuilder = new TypeScriptAstBuilder(namingConverter, options);
+    }
+
+    /// <summary>
+    /// Build a <see cref="SourceFileNode"/> whose body is a fetch-based async function
+    /// (delegated to <see cref="TypeScriptAstBuilder.BuildSourceFileForOperation"/>) and
+    /// whose metadata carries <c>directive = "use server"</c> so the renderer emits the
+    /// SolidStart server-function prologue.
+    /// </summary>
+    public SourceFileNode BuildOperationClientSourceFile(IrOperation operation, FileOrganization fileOrganization)
+    {
+        ArgumentNullException.ThrowIfNull(operation);
+
+        var fetchSource = _innerBuilder.BuildSourceFileForOperation(
+            operation,
+            importPath: null,
+            fileOrganization: fileOrganization,
+            transport: "fetch");
+
+        // Wrap with the "use server" directive. SourceFileNode is immutable; rebuild
+        // with the same imports/exports/declarations and a metadata dictionary.
+        var metadata = new Dictionary<string, object>(fetchSource.Metadata)
+        {
+            ["directive"] = "use server"
+        };
+
+        return new SourceFileNode(
+            imports: fetchSource.Imports,
+            exports: fetchSource.Exports,
+            declarations: fetchSource.Declarations,
+            metadata: metadata);
+    }
+}

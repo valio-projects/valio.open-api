@@ -40,6 +40,13 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         if (rawOptions.TryGetValue("queryWrapper", out var qw) && qw.ValueKind == JsonValueKind.String)
             opts.QueryWrapper = NormalizeQueryWrapper(qw.GetString(), errorList);
 
+        // Accept both "mocks" and "mockLibrary" config keys for symmetry with
+        // "validation" / "validationLibrary"-style aliases the user may already use.
+        if (rawOptions.TryGetValue("mocks", out var mocks) && mocks.ValueKind == JsonValueKind.String)
+            opts.MockLibrary = NormalizeMockLibrary(mocks.GetString(), errorList);
+        else if (rawOptions.TryGetValue("mockLibrary", out var mockLibrary) && mockLibrary.ValueKind == JsonValueKind.String)
+            opts.MockLibrary = NormalizeMockLibrary(mockLibrary.GetString(), errorList);
+
         errors = errorList.AsReadOnly();
         return opts;
     }
@@ -54,10 +61,11 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("transports", "HTTP transport(s) to generate: fetch, axios, ky, undici, ofetch, got, angular", "fetch", false),
+        new("transports", "HTTP transport(s) to generate: fetch, axios, ky, undici, ofetch, got, angular, solid", "fetch", false),
         new("enumFormat", "TypeScript enum format: enum, union, constObject", "union", false),
         new("validation", "Validation library: zod3, zod4, valibot, typebox", null, false),
         new("queryWrapper", "Query wrapper: tanstack-react, tanstack-vue, tanstack-angular, swr", null, false),
+        new("mocks", "Mock library to emit: msw (writes single mocks/handlers.ts). Alias: mockLibrary", null, false),
     ];
 
     private static string? NormalizeTransport(string? value, List<string> errors)
@@ -112,6 +120,18 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             "tanstack-svelte" => TypeScriptOptionIds.QueryWrapper.TanStackSvelte,
             "swr" => TypeScriptOptionIds.QueryWrapper.Swr,
             var unknown => AddError(errors, $"Unknown queryWrapper: '{unknown}'")
+        };
+    }
+
+    private static string? NormalizeMockLibrary(string? value, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "msw" => TypeScriptOptionIds.MockLibrary.Msw,
+            var unknown => AddError(errors, $"Unknown mock library: '{unknown}'")
         };
     }
 
