@@ -1,10 +1,10 @@
 using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ValIO.Application.Services;
 using ValIO.Configuration.Interfaces;
-using ValIO.Configuration.Models;
 using ValIO.Core.Models;
-using ValIO.Services;
+using ValIO.Output.Abstractions;
 
 namespace ValIO.CLI;
 
@@ -20,7 +20,7 @@ public class GenerateCommand : Command
 
         var outputOption = new Option<string?>("--output", "-o")
         {
-            Description = "Output directory path (required if not using config)"
+            Description = "Output directory path or .zip file (required if not using config)"
         };
 
         var languageOption = new Option<string?>("--language", "-l")
@@ -55,7 +55,8 @@ public class GenerateCommand : Command
 
             var logger = serviceProvider.GetRequiredService<ILogger<GenerateCommand>>();
             var configLoader = serviceProvider.GetRequiredService<IConfigurationLoader>();
-            var orchestrator = serviceProvider.GetRequiredService<GenerationOrchestrator>();
+            var orchestrator = serviceProvider.GetRequiredService<IGenerationOrchestrator>();
+            var sinkFactory = serviceProvider.GetRequiredService<IOutputSinkFactory>();
 
             try
             {
@@ -93,8 +94,15 @@ public class GenerateCommand : Command
                         if (!string.IsNullOrWhiteSpace(output))
                             generationConfig.OutputPath = output;
 
-                        var success = await orchestrator.GenerateAsync(generationConfig, projSchema ?? "");
-                        if (!success) hasErrors = true;
+                        var result = await orchestrator.GenerateAsync(generationConfig, projSchema ?? "");
+                        if (!result.Success)
+                        {
+                            logger.LogError("{Error}", result.ErrorMessage);
+                            hasErrors = true;
+                            continue;
+                        }
+
+                        await WriteResultAsync(sinkFactory, generationConfig.OutputPath, result, logger);
                     }
 
                     return hasErrors ? 1 : 0;
@@ -115,7 +123,15 @@ public class GenerateCommand : Command
                     GenerateEnums = true
                 };
 
-                return await orchestrator.GenerateAsync(quickConfig, schema) ? 0 : 1;
+                var quickResult = await orchestrator.GenerateAsync(quickConfig, schema);
+                if (!quickResult.Success)
+                {
+                    logger.LogError("{Error}", quickResult.ErrorMessage);
+                    return 1;
+                }
+
+                await WriteResultAsync(sinkFactory, output, quickResult, logger);
+                return 0;
             }
             catch (Exception ex)
             {
@@ -123,5 +139,17 @@ public class GenerateCommand : Command
                 return 1;
             }
         });
+    }
+
+    private static async Task WriteResultAsync(
+        IOutputSinkFactory sinkFactory,
+        string outputPath,
+        OrchestrationResult result,
+        ILogger logger)
+    {
+        var target = OutputTarget.Folder(string.IsNullOrWhiteSpace(outputPath) ? "." : outputPath);
+        await using var sink = sinkFactory.Create(target);
+        await sink.WriteAsync(result.Files);
+        logger.LogInformation("Wrote {Count} files to {Output}", result.Files.Count, target.Path);
     }
 }

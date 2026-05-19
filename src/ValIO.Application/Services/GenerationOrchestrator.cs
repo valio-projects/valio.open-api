@@ -7,18 +7,17 @@ using ValIO.Core.Plugins;
 using ValIO.Core.Services;
 using ValIO.Parsers.Interfaces;
 
-namespace ValIO.Services;
+namespace ValIO.Application.Services;
 
 /// <summary>
-/// Facade: скрывает сложность конвейера генерации от CLI.
-/// Единственная точка входа: ParseAsync + BuildIr + ExecutePipeline + WriteFiles.
+/// Default orchestrator. Stateless — same instance is safe for concurrent generation requests
+/// (each call gets its own <see cref="GenerationContext"/>).
 /// </summary>
-public sealed class GenerationOrchestrator
+public sealed class GenerationOrchestrator : IGenerationOrchestrator
 {
     private readonly IOpenApiDocumentParser _parser;
     private readonly IGeneratorRegistry _registry;
     private readonly INamingConverter _namingConverter;
-    private readonly IFileWriter _fileWriter;
     private readonly ILogger<GenerationOrchestrator> _logger;
     private readonly IServiceProvider _services;
 
@@ -26,50 +25,50 @@ public sealed class GenerationOrchestrator
         IOpenApiDocumentParser parser,
         IGeneratorRegistry registry,
         INamingConverter namingConverter,
-        IFileWriter fileWriter,
         ILogger<GenerationOrchestrator> logger,
         IServiceProvider services)
     {
         _parser = parser;
         _registry = registry;
         _namingConverter = namingConverter;
-        _fileWriter = fileWriter;
         _logger = logger;
         _services = services;
     }
 
-    public async Task<bool> GenerateAsync(
+    public async Task<OrchestrationResult> GenerateAsync(
         GenerationConfiguration config,
         string schemaPath,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(schemaPath))
-        {
-            _logger.LogError("Schema path is required");
-            return false;
-        }
+            return OrchestrationResult.Failure("Schema path is required");
 
         var plugin = _registry.FindPlugin(config.LanguageId);
-        if (plugin == null)
-        {
-            _logger.LogError("No generator found for language: {LanguageId}", config.LanguageId);
-            return false;
-        }
+        if (plugin is null)
+            return OrchestrationResult.Failure($"No generator found for language: {config.LanguageId}");
 
         _logger.LogInformation("Using generator: {DisplayName}", plugin.DisplayName);
         _logger.LogInformation("Parsing OpenAPI schema from: {Schema}", schemaPath);
 
         OpenApiDocument doc;
-        if (Uri.TryCreate(schemaPath, UriKind.Absolute, out var uri) &&
-            (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
-             uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
-             uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
+        try
         {
-            doc = await _parser.ParseFromUrlAsync(schemaPath);
+            if (Uri.TryCreate(schemaPath, UriKind.Absolute, out var uri) &&
+                (uri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
+                 uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ||
+                 uri.Scheme.Equals("file", StringComparison.OrdinalIgnoreCase)))
+            {
+                doc = await _parser.ParseFromUrlAsync(schemaPath);
+            }
+            else
+            {
+                doc = await _parser.ParseFromFileAsync(schemaPath);
+            }
         }
-        else
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            doc = await _parser.ParseFromFileAsync(schemaPath);
+            _logger.LogError(ex, "Failed to parse OpenAPI schema");
+            return OrchestrationResult.Failure($"Failed to parse OpenAPI schema: {ex.Message}");
         }
 
         _logger.LogInformation("OpenAPI document parsed successfully");
@@ -82,7 +81,8 @@ public sealed class GenerationOrchestrator
         foreach (var w in warnings)
             _logger.LogWarning("{Warning}", w);
 
-        _logger.LogInformation("IR built: {Models} models, {Enums} enums, {Clients} clients",
+        _logger.LogInformation(
+            "IR built: {Models} models, {Enums} enums, {Clients} clients",
             irDocument.Models.Count, irDocument.Enums.Count, irDocument.Clients.Count);
 
         var context = new GenerationContext
@@ -92,24 +92,27 @@ public sealed class GenerationOrchestrator
             PluginOptions = config.PluginOptions,
         };
 
-        var pipeline = plugin.CreatePipeline(_services);
-        await pipeline.ExecuteAsync(context, ct);
+        try
+        {
+            var pipeline = plugin.CreatePipeline(_services);
+            await pipeline.ExecuteAsync(context, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Generator pipeline threw");
+            return OrchestrationResult.Failure($"Generator pipeline failed: {ex.Message}");
+        }
 
         _logger.LogInformation("Generated {Count} files", context.GeneratedFiles.Count);
 
-        var outputPath = config.OutputPath ?? ".";
-        _fileWriter.EnsureDirectoryExists(outputPath);
-
-        foreach (var file in context.GeneratedFiles)
-        {
-            ct.ThrowIfCancellationRequested();
-            var fullPath = Path.Combine(outputPath, file.RelativePath);
-            _fileWriter.EnsureDirectoryExists(Path.GetDirectoryName(fullPath)!);
-            await _fileWriter.WriteFileAsync(fullPath, file.Content);
-            _logger.LogDebug("Written: {Path}", fullPath);
-        }
-
-        _logger.LogInformation("Code generation complete. Output: {Output}", outputPath);
-        return true;
+        return new OrchestrationResult(
+            Success: true,
+            Files: context.GeneratedFiles.ToArray(),
+            Warnings: warnings,
+            ErrorMessage: null);
     }
 }

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
+    <ProjectReference Include="..\ValIO.Parsers\ValIO.Parsers.csproj" />
+    <ProjectReference Include="..\ValIO.Configuration\ValIO.Configuration.csproj" />
+    <ProjectReference Include="..\ValIO.Output\ValIO.Output.csproj" />
+    <ProjectReference Include="..\ValIO.Localization\ValIO.Localization.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Http" />
+  </ItemGroup>
+
+</Project>

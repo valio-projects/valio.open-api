@@ -1,28 +1,16 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ValIO.Application.DependencyInjection;
 using ValIO.CLI;
-using ValIO.Configuration.Interfaces;
-using ValIO.Configuration.Services;
-using ValIO.Core.Interfaces;
-using ValIO.Core.Services;
-using ValIO.Generators.CSharp;
-using ValIO.Generators.CSharp.Ast.Renderers;
-using ValIO.Generators.Java;
-using ValIO.Generators.Kotlin;
-using ValIO.Generators.Php;
-using ValIO.Generators.Python;
-using ValIO.Generators.Swift;
-using ValIO.Generators.TypeScript;
-using ValIO.Parsers.Interfaces;
-using ValIO.Parsers.Services;
-using ValIO.ServiceRegistration;
-using ValIO.Services;
+using ValIO.Localization.DependencyInjection;
+using ValIO.Output.DependencyInjection;
+using ValIO.Plugins.Bootstrap;
 
 namespace ValIO;
 
-class Program
+internal static class Program
 {
-    static async Task<int> Main(string[] args)
+    private static async Task<int> Main(string[] args)
     {
         var services = new ServiceCollection();
         ConfigureServices(services);
@@ -34,44 +22,21 @@ class Program
         return await parseResult.InvokeAsync();
     }
 
-    static void ConfigureServices(IServiceCollection services)
+    private static void ConfigureServices(IServiceCollection services)
     {
-        // Logging
-        services.AddLogging(builder =>
+        services.AddLogging(b =>
         {
-            builder.AddConsole();
-            builder.SetMinimumLevel(LogLevel.Information);
+            b.AddConsole();
+            b.SetMinimumLevel(LogLevel.Information);
         });
-
-        // HTTP Client
         services.AddHttpClient();
 
-        // Core services
-        services.AddSingleton<INamingConverter, NamingConverter>();
-        services.AddSingleton<IFileWriter, FileWriter>();
-
-        // Parsers
-        services.AddSingleton<IOpenApiDocumentParser, OpenApiDocumentParser>();
-
-        // Configuration
-        services.AddSingleton<IConfigurationLoader, ConfigurationLoader>();
-        services.AddSingleton<IConfigurationValidator, ConfigurationValidator>();
-
-        // Plugin registry и core plugin infrastructure
         services.AddValIOCore();
-        services.AddGeneratorPlugin<TypeScriptGeneratorPlugin>();
-        services.AddSingleton<ICSharpAstRenderer, CSharpAstRenderer>();
-        services.AddGeneratorPlugin<CSharpGeneratorPlugin>();
-        services.AddGeneratorPlugin<PythonGeneratorPlugin>();
-        services.AddGeneratorPlugin<PhpGeneratorPlugin>();
-        services.AddGeneratorPlugin<JavaGeneratorPlugin>();
-        services.AddGeneratorPlugin<KotlinGeneratorPlugin>();
-        services.AddGeneratorPlugin<SwiftGeneratorPlugin>();
+        services.AddValIOLocalization();
+        services.AddValIOOutputs();
+        services.AddValIOApplication();
+        services.AddAllGeneratorPlugins();
 
-        // Orchestrator
-        services.AddSingleton<GenerationOrchestrator>();
-
-        // CLI
         services.AddSingleton<RootCommand>();
     }
 }

@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:import namespace="http://www.w3.org/XML/1998/namespace" />
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+                <xsd:element name="comment" type="xsd:string" minOccurs="0" msdata:Ordinal="2" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+              <xsd:attribute name="type" type="xsd:string" msdata:Ordinal="3" />
+              <xsd:attribute name="mimetype" type="xsd:string" msdata:Ordinal="4" />
+              <xsd:attribute ref="xml:space" />
+            </xsd:complexType>
+          </xsd:element>
+          <xsd:element name="resheader">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" use="required" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <data name="ts.transports.desc" xml:space="preserve"><value>HTTP client libraries to generate (fetch, axios, ky, undici, ofetch, got, angular, solid).</value></data>
+  <data name="ts.validationLibrary.desc" xml:space="preserve"><value>Validation library for runtime schemas (zod, valibot, typebox or none).</value></data>
+  <data name="ts.queryWrapper.desc" xml:space="preserve"><value>Optional React/Vue/Solid/Svelte/Angular query wrapper integration.</value></data>
+  <data name="ts.mockLibrary.desc" xml:space="preserve"><value>Generate MSW mock handlers alongside clients.</value></data>
+  <data name="csharp.namespace.desc" xml:space="preserve"><value>Root namespace for generated C# code.</value></data>
+  <data name="csharp.nullable.desc" xml:space="preserve"><value>Emit nullable-reference annotations on generated types.</value></data>
+  <data name="java.package.desc" xml:space="preserve"><value>Java package for generated classes.</value></data>
+  <data name="java.httpClient.desc" xml:space="preserve"><value>HTTP client to use (okhttp).</value></data>
+  <data name="java.buildFiles.desc" xml:space="preserve"><value>Also generate Gradle/Maven build files.</value></data>
+  <data name="kotlin.package.desc" xml:space="preserve"><value>Kotlin package for generated classes.</value></data>
+  <data name="kotlin.serialization.desc" xml:space="preserve"><value>Serialization library (kotlinx, moshi).</value></data>
+  <data name="kotlin.buildFiles.desc" xml:space="preserve"><value>Also generate Gradle build files with required dependencies.</value></data>
+  <data name="python.version.desc" xml:space="preserve"><value>Target Python version (3.10+).</value></data>
+  <data name="python.httpxMode.desc" xml:space="preserve"><value>Generate async (httpx.AsyncClient) or sync (httpx.Client) clients.</value></data>
+  <data name="python.validator.desc" xml:space="preserve"><value>Validator stack (pydantic).</value></data>
+  <data name="python.rootModule.desc" xml:space="preserve"><value>Top-level Python module name.</value></data>
+  <data name="php.namespace.desc" xml:space="preserve"><value>PHP namespace for generated classes.</value></data>
+  <data name="php.httpClient.desc" xml:space="preserve"><value>HTTP client to use (guzzle).</value></data>
+  <data name="php.composer.desc" xml:space="preserve"><value>Also generate composer.json with required dependencies.</value></data>
+  <data name="cpp.moduleApiMacro.desc" xml:space="preserve"><value>Unreal Engine module API export macro (e.g., MYGAME_API).</value></data>
+  <data name="cpp.blueprintCategory.desc" xml:space="preserve"><value>UFUNCTION/UPROPERTY Blueprint category name.</value></data>
+  <data name="cpp.baseAsyncActionClassName.desc" xml:space="preserve"><value>Base UBlueprintAsyncActionBase descendant class for async ops.</value></data>
+  <data name="swift.module.desc" xml:space="preserve"><value>Swift module name for generated sources.</value></data>
+</root>
