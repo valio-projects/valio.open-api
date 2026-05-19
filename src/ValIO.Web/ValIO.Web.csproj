@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>ValIO.Web</RootNamespace>
+    <AssemblyName>ValIO.Web</AssemblyName>
+    <UserSecretsId>valio-web-secrets</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ValIO.Application\ValIO.Application.csproj" />
+    <ProjectReference Include="..\ValIO.Output\ValIO.Output.csproj" />
+    <ProjectReference Include="..\ValIO.Localization\ValIO.Localization.csproj" />
+    <ProjectReference Include="..\ValIO.Plugins.Bootstrap\ValIO.Plugins.Bootstrap.csproj" />
+    <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
+    <ProjectReference Include="..\ValIO.Parsers\ValIO.Parsers.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MudBlazor" />
+    <PackageReference Include="Microsoft.Extensions.Localization" />
+  </ItemGroup>
+
+</Project>

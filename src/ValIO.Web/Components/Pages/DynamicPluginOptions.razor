@@ -1,0 +1,104 @@
+@using ValIO.Core.Plugins
+
+@if (_descriptions.Count == 0)
+{
+    <MudText Typo="Typo.caption" Class="mt-2">No configurable options.</MudText>
+}
+else
+{
+    @foreach (var desc in _descriptions)
+    {
+        <div class="mt-2">
+            @switch (desc.Kind)
+            {
+                case OptionKind.Bool:
+                    <MudCheckBox T="bool"
+                                 Value="@AsBool(desc)"
+                                 ValueChanged="@(v => Set(desc, (object)v))"
+                                 Label="@desc.Name" />
+                    break;
+                case OptionKind.Int:
+                    <MudNumericField T="int" Label="@desc.Name"
+                                     Value="@AsInt(desc)"
+                                     ValueChanged="@(v => Set(desc, (object)v))"
+                                     Variant="Variant.Outlined" />
+                    break;
+                case OptionKind.EnumSingle when desc.Choices is { Count: > 0 }:
+                    <MudSelect T="string" Label="@desc.Name"
+                               Value="@AsString(desc)"
+                               ValueChanged="@(v => Set(desc, (object?)v))"
+                               Variant="Variant.Outlined">
+                        @foreach (var c in desc.Choices)
+                        {
+                            <MudSelectItem T="string" Value="@c.Id">@c.DisplayName</MudSelectItem>
+                        }
+                    </MudSelect>
+                    break;
+                case OptionKind.EnumMulti when desc.Choices is { Count: > 0 }:
+                    <MudSelect T="string" Label="@desc.Name" MultiSelection="true"
+                               SelectedValues="@AsMultiSelection(desc)"
+                               SelectedValuesChanged="@(v => SetMulti(desc, v))"
+                               Variant="Variant.Outlined">
+                        @foreach (var c in desc.Choices)
+                        {
+                            <MudSelectItem T="string" Value="@c.Id">@c.DisplayName</MudSelectItem>
+                        }
+                    </MudSelect>
+                    break;
+                default:
+                    <MudTextField T="string" Label="@desc.Name"
+                                  Value="@AsString(desc)"
+                                  ValueChanged="@(v => Set(desc, (object?)v))"
+                                  Variant="Variant.Outlined" />
+                    break;
+            }
+            @if (!string.IsNullOrEmpty(desc.Description))
+            {
+                <MudText Typo="Typo.caption">@desc.Description</MudText>
+            }
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public IGeneratorPlugin? Plugin { get; set; }
+    [Parameter] public GenerationFormState State { get; set; } = default!;
+
+    private IReadOnlyList<OptionDescription> _descriptions = Array.Empty<OptionDescription>();
+    private IGeneratorPlugin? _previous;
+
+    protected override void OnParametersSet()
+    {
+        if (Plugin == _previous) return;
+        _previous = Plugin;
+        State.ResetPluginOptions();
+        _descriptions = Plugin?.OptionsDescriptor.GetOptionDescriptions() ?? Array.Empty<OptionDescription>();
+        foreach (var d in _descriptions)
+            if (d.DefaultValue is not null) State.PluginOptions[d.Name] = d.DefaultValue;
+    }
+
+    private bool AsBool(OptionDescription d) =>
+        State.PluginOptions.TryGetValue(d.Name, out var v) && v is bool b
+            ? b
+            : bool.TryParse(d.DefaultValue, out var def) && def;
+
+    private int AsInt(OptionDescription d) =>
+        State.PluginOptions.TryGetValue(d.Name, out var v) && v is int i
+            ? i
+            : int.TryParse(d.DefaultValue, out var def) ? def : 0;
+
+    private string? AsString(OptionDescription d) =>
+        State.PluginOptions.TryGetValue(d.Name, out var v) ? v?.ToString() : d.DefaultValue;
+
+    private IEnumerable<string> AsMultiSelection(OptionDescription d)
+    {
+        if (State.PluginOptions.TryGetValue(d.Name, out var v) && v is IEnumerable<string> xs)
+            return xs;
+        return Array.Empty<string>();
+    }
+
+    private void Set(OptionDescription d, object? value) => State.PluginOptions[d.Name] = value;
+
+    private void SetMulti(OptionDescription d, IEnumerable<string> values)
+        => State.PluginOptions[d.Name] = values.ToArray();
+}

@@ -1,0 +1,16 @@
+@inject NavigationManager Nav
+
+<MudMenu Icon="@Icons.Material.Filled.Language" Color="Color.Inherit" AriaLabel="Language">
+    <MudMenuItem OnClick="@(() => SetCulture("en"))">English</MudMenuItem>
+    <MudMenuItem OnClick="@(() => SetCulture("ru"))">Русский</MudMenuItem>
+    <MudMenuItem OnClick="@(() => SetCulture("de"))">Deutsch</MudMenuItem>
+    <MudMenuItem OnClick="@(() => SetCulture("zh-CN"))">简体中文</MudMenuItem>
+</MudMenu>
+
+@code {
+    private void SetCulture(string culture)
+    {
+        var uri = Uri.EscapeDataString(Nav.ToBaseRelativePath(Nav.Uri));
+        Nav.NavigateTo($"/culture/set?culture={culture}&returnUrl={uri}", forceLoad: true);
+    }
+}
