@@ -66,9 +66,10 @@ public sealed class TypeBoxSchemaSourceFileBuilder
 
         foreach (var dependency in dependencies.OrderBy(name => name, StringComparer.Ordinal))
         {
+            var depFileName = _namingConverter.ToCamelCase(dependency);
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(GetSchemaName(dependency))),
-                from: CalculateImportPath(currentFileName, dependency, schemasPath),
+                from: CalculateImportPath(currentFileName, depFileName, schemasPath),
                 kind: ImportKind.Named));
         }
 

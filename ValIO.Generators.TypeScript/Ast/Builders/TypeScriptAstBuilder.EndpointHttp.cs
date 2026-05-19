@@ -117,6 +117,10 @@ public partial class TypeScriptAstBuilder
         if (operation.QueryParameters.Count == 0 || querySource == null)
             return pathUrlExpr;
 
+        // Если все query параметры optional — querySource (params.query) сам может
+        // быть undefined, поэтому к доступу используем optional chaining.
+        var sourceMayBeUndefined = operation.QueryParameters.All(p => !p.IsRequired);
+
         var parts = new List<TemplateLiteralPart>
         {
             new(pathUrlExpr),
@@ -129,7 +133,10 @@ public partial class TypeScriptAstBuilder
             if (i > 0)
                 parts.Add(new TemplateLiteralPart("&"));
             parts.Add(new TemplateLiteralPart($"{qp.Name}="));
-            var member = new MemberAccessExpressionNode(querySource, new IdentifierNode(qp.Name));
+            var member = new MemberAccessExpressionNode(
+                querySource,
+                new IdentifierNode(qp.Name),
+                useOptionalChaining: sourceMayBeUndefined);
             var asString = new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("String")),
                 new[] { member }.ToImmutableList());
@@ -160,16 +167,26 @@ public partial class TypeScriptAstBuilder
         }
 
         if (!hasJsonBody && headersSource != null)
-            return headersSource;
+            return CastToHeadersInit(headersSource);
 
         var placeholder = new IdentifierNode("_");
         return new ObjectLiteralExpressionNode(new[]
         {
-            new PropertyAssignmentNode(placeholder, headersSource!, isSpread: true),
+            new PropertyAssignmentNode(placeholder, CastToHeadersInit(headersSource!), isSpread: true),
             new PropertyAssignmentNode(
                 new IdentifierNode("'Content-Type'"),
                 new LiteralExpressionNode("application/json", LiteralKind.String))
         }.ToImmutableList(), preferMultilineFormat: true);
+    }
+
+    private static CastExpressionNode CastToHeadersInit(ExpressionNode source)
+    {
+        // {Op}HeaderParams интерфейс не имеет index-signature, а HeadersInit
+        // требует Record<string, string>. Делаем `as HeadersInit`-cast.
+        return new CastExpressionNode(
+            new SimpleTypeNode(new IdentifierNode("HeadersInit"), isPrimitive: false),
+            source,
+            useAsOperator: true);
     }
 
     private BlockNode BuildFetchFunctionBody(IrOperation operation)

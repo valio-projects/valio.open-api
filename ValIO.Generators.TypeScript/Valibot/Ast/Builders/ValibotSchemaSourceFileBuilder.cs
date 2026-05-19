@@ -90,9 +90,10 @@ public sealed class ValibotSchemaSourceFileBuilder
 
         foreach (var dependency in dependencies)
         {
+            var depFileName = _namingConverter.ToCamelCase(dependency);
             var importPath = separateModels
-                ? $"../{dependency}/{dependency}.schema"
-                : $"./{dependency}.schema";
+                ? $"../{depFileName}/{depFileName}.schema"
+                : $"./{depFileName}.schema";
 
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(GetSchemaName(dependency))),

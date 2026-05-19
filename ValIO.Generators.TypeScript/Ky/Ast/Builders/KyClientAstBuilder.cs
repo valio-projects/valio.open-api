@@ -323,16 +323,23 @@ public sealed class KyClientAstBuilder
 
         if (operation.HeaderParameters.Count > 0 && sources.HeadersSource != null)
         {
+            // *HeaderParams интерфейс не имеет index-signature, а Options["headers"]
+            // требует индексированный тип. Делаем `as Options["headers"]`-cast.
+            var castedHeaders = new CastExpressionNode(
+                new SimpleTypeNode(new IdentifierNode("Options[\"headers\"]"), isPrimitive: false),
+                sources.HeadersSource,
+                useAsOperator: true);
+
             if (sources.HeadersSourceMayBeUndefined)
             {
                 properties.Add(SpreadProperty(new ConditionalExpressionNode(
                     sources.HeadersSource,
-                    Object(("headers", sources.HeadersSource)),
+                    Object(("headers", castedHeaders)),
                     EmptyObject())));
             }
             else
             {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), sources.HeadersSource));
+                properties.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), castedHeaders));
             }
         }
 
@@ -608,9 +615,10 @@ public sealed class KyClientAstBuilder
     private string BuildSchemaImportPath(string modelName, FileOrganization fileOrganization)
     {
         var modelsPath = fileOrganization.ModelsPath ?? "models";
+        var modelFileName = _namingConverter.ToCamelCase(modelName);
         return fileOrganization.SeparateModels
-            ? $"../../{modelsPath}/schemas/{modelName}/{modelName}.schema"
-            : $"../../{modelsPath}/schemas/{modelName}.schema";
+            ? $"../../{modelsPath}/schemas/{modelFileName}/{modelFileName}.schema"
+            : $"../../{modelsPath}/schemas/{modelFileName}.schema";
     }
 
     private static ExpressionNode BuildParameterAccess(ExpressionNode source, string name, bool sourceMayBeUndefined)
