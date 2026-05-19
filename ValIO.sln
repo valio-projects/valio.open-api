@@ -14,6 +14,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.TypeScript
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Cpp", "ValIO.Generators.Cpp\ValIO.Generators.Cpp.csproj", "{485183DC-B484-4CAC-A2C9-AB754D796ACD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.TypeScript.Tests", "ValIO.Generators.TypeScript.Tests\ValIO.Generators.TypeScript.Tests.csproj", "{302768DF-7EBC-468F-8B43-C6151DB739A7}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -108,6 +110,18 @@ Global
 		{485183DC-B484-4CAC-A2C9-AB754D796ACD}.Release|x64.Build.0 = Release|Any CPU
 		{485183DC-B484-4CAC-A2C9-AB754D796ACD}.Release|x86.ActiveCfg = Release|Any CPU
 		{485183DC-B484-4CAC-A2C9-AB754D796ACD}.Release|x86.Build.0 = Release|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Debug|x64.Build.0 = Debug|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Debug|x86.Build.0 = Debug|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Release|Any CPU.Build.0 = Release|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Release|x64.ActiveCfg = Release|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Release|x64.Build.0 = Release|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Release|x86.ActiveCfg = Release|Any CPU
+		{302768DF-7EBC-468F-8B43-C6151DB739A7}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
