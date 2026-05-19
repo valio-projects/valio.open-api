@@ -372,7 +372,7 @@ public sealed class KyClientAstBuilder
         return new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
     }
 
-    private ObjectLiteralExpressionNode BuildSearchParamsObject(IrOperation operation, ParameterSources sources)
+    private ExpressionNode BuildSearchParamsObject(IrOperation operation, ParameterSources sources)
     {
         var properties = new List<PropertyAssignmentNode>();
 
@@ -392,7 +392,20 @@ public sealed class KyClientAstBuilder
             }
         }
 
-        return new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
+        var literal = new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
+        // Ky's SearchParamsOption — это `string | object | URLSearchParams | Array<[string, ...]>`,
+        // но конкретный object‑тип допускает только примитивы. Массивные query‑параметры
+        // (например, `tags: string[]`) сериализуются ky в runtime через String(), поэтому
+        // приводим через `unknown` к Options["searchParams"] чтобы избежать жёсткой
+        // проверки пересечения.
+        var unknownCast = new CastExpressionNode(
+            new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
+            literal,
+            useAsOperator: true);
+        return new CastExpressionNode(
+            new SimpleTypeNode(new IdentifierNode("Options[\"searchParams\"]"), isPrimitive: false),
+            unknownCast,
+            useAsOperator: true);
     }
 
     private CallExpressionNode BuildKyCallExpression(IrOperation operation)
@@ -516,7 +529,8 @@ public sealed class KyClientAstBuilder
 
     private static ExpressionNode BodyPropertyAccess(IrRequestBody requestBody, ExpressionNode source)
     {
-        return Member(source, requestBody.IsJson ? "body" : "form");
+        // form-data/url-encoded — отдельное поле `form`. JSON и бинарные — `body`.
+        return Member(source, requestBody.IsForm ? "form" : "body");
     }
 
     private ExpressionNode BuildParameterObjectSchema(IReadOnlyList<IrParameter> parameters)

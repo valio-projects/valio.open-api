@@ -97,7 +97,9 @@ public sealed class TypeScriptParamsAstBuilder
         var hasRoute = operation.PathParameters.Count > 0;
         var hasQuery = operation.QueryParameters.Count > 0;
         var rb = operation.RequestBody;
-        var hasBody = rb != null && rb.IsJson;
+        // body — для JSON и бинарных контентов (octet-stream и т.п.).
+        // form — отдельно для multipart/form-data и url-encoded (становится FormData/URLSearchParams).
+        var hasBody = rb != null && !rb.IsForm;
         var hasForm = rb != null && rb.IsForm;
         var hasHeaders = operation.HeaderParameters.Count > 0;
 

@@ -177,7 +177,11 @@ public sealed class TanStackVueQueryHookAstBuilder
                 ImmutableList<ParameterDeclarationNode>.Empty,
                 new CallExpressionNode(Id(operation.MethodName), BuildMaybeUnrefParamsArgs(hasParams))))
         };
-        queryOptions.Add(new PropertyAssignmentNode(new IdentifierNode("options"), Id("options"), isSpread: true));
+        // Защита от undefined и нарушения spread‑контракта (unknown нельзя спредить).
+        queryOptions.Add(new PropertyAssignmentNode(
+            new IdentifierNode("options"),
+            new BinaryExpressionNode(Id("options"), BinaryOperator.NullishCoalescing, new ObjectLiteralExpressionNode(ImmutableList<PropertyAssignmentNode>.Empty)),
+            isSpread: true));
 
         var useQueryCall = new CallExpressionNode(
             Id("useQuery"),
@@ -187,11 +191,16 @@ public sealed class TanStackVueQueryHookAstBuilder
         var parameters = new List<ParameterDeclarationNode>();
         if (hasParams && paramsTypeName != null)
             parameters.Add(new ParameterDeclarationNode(new IdentifierNode("params"), MaybeRef(Simple(paramsTypeName)), isRequired: true));
-        parameters.Add(new ParameterDeclarationNode(new IdentifierNode("options"), Simple("unknown", isPrimitive: true), isRequired: false));
+        parameters.Add(new ParameterDeclarationNode(
+            new IdentifierNode("options"),
+            new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: true),
+            isRequired: false));
 
         return new FunctionDeclarationNode(
             name: new IdentifierNode($"use{hookBaseName}"),
-            returnType: new RawTypeNode("ReturnType<typeof useQuery>"),
+            // Возвращаемый тип не аннотируем — пусть TS выведет конкретный
+            // UseQueryReturnType<TResult, Error> из useQuery<TResult>(...).
+            returnType: null,
             parameters: parameters.ToImmutableList(),
             body: new BlockNode(ImmutableList.Create<StatementNode>(new ReturnStatementNode(useQueryCall))),
             isArrowFunction: true,
@@ -220,7 +229,10 @@ public sealed class TanStackVueQueryHookAstBuilder
             new(new IdentifierNode("mutationFn"), new ArrowFunctionExpressionNode(
                 mutationFnParameters,
                 new CallExpressionNode(Id(operation.MethodName), clientArgs))),
-            new(new IdentifierNode("options"), Id("options"), isSpread: true)
+            new(
+                new IdentifierNode("options"),
+                new BinaryExpressionNode(Id("options"), BinaryOperator.NullishCoalescing, new ObjectLiteralExpressionNode(ImmutableList<PropertyAssignmentNode>.Empty)),
+                isSpread: true)
         };
 
         var generic = resultTypeName != null
@@ -233,8 +245,11 @@ public sealed class TanStackVueQueryHookAstBuilder
 
         return new FunctionDeclarationNode(
             name: new IdentifierNode($"use{hookBaseName}"),
-            returnType: new RawTypeNode("ReturnType<typeof useMutation>"),
-            parameters: ImmutableList.Create(new ParameterDeclarationNode(new IdentifierNode("options"), Simple("unknown", isPrimitive: true), isRequired: false)),
+            returnType: null,
+            parameters: ImmutableList.Create(new ParameterDeclarationNode(
+                new IdentifierNode("options"),
+                new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: true),
+                isRequired: false)),
             body: new BlockNode(ImmutableList.Create<StatementNode>(new ReturnStatementNode(useMutationCall))),
             isArrowFunction: true,
             isExported: true);
