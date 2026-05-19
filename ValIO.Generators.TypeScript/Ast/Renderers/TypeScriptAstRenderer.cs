@@ -263,15 +263,21 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
+        var generic = node.GenericTypeArgument != null
+            ? $"<{RenderType(node.GenericTypeArgument)}>"
+            : !string.IsNullOrWhiteSpace(node.GenericTypeName)
+                ? $"<{node.GenericTypeName}>"
+                : "";
+        var prefix = node.IsNewExpression ? "new " : "";
         if (node.Arguments.Count >= 2)
         {
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var argLines = node.Arguments.Select(a => indent + Visit(a));
-            return $"{target}(\n{string.Join(",\n", argLines)}\n{closingIndent})";
+            return $"{prefix}{target}{generic}(\n{string.Join(",\n", argLines)}\n{closingIndent})";
         }
         var args = string.Join(", ", node.Arguments.Select(Visit));
-        return $"{target}({args})";
+        return $"{prefix}{target}{generic}({args})";
     }
 
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
@@ -283,6 +289,9 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
     {
+        if (node.Properties.Count == 0)
+            return node.AsConstAssertion ? "{} as const" : "{}";
+
         string result;
         if (node.PreferMultilineFormat && node.Properties.Count > 0)
         {

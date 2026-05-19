@@ -22,17 +22,19 @@ public sealed class TanStackQueryHookAstBuilder
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly TanStackQueryTypeBuilder _typeBuilder;
     private readonly bool _hookUsesAxios;
+    private readonly string _clientSuffix;
 
     public TanStackQueryHookAstBuilder(
         INamingConverter namingConverter,
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder,
-        bool hookUsesAxios = true)
+        string clientSuffix = "axios")
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _hookUsesAxios = hookUsesAxios;
+        _clientSuffix = string.IsNullOrWhiteSpace(clientSuffix) ? "fetch" : clientSuffix;
+        _hookUsesAxios = _clientSuffix.Equals("axios", StringComparison.OrdinalIgnoreCase);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
         _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder);
-        _typeBuilder = new TanStackQueryTypeBuilder(namingConverter, hookUsesAxios);
+        _typeBuilder = new TanStackQueryTypeBuilder(namingConverter, _hookUsesAxios);
     }
 
     /// <summary>
@@ -54,7 +56,7 @@ public sealed class TanStackQueryHookAstBuilder
         var dataType = _typeBuilder.BuildDataType(resultTypeName);
         var variablesType = _typeBuilder.BuildVariablesType(paramsTypeName);
 
-        var imports = BuildImports(operation, operationFileName, hasParams, paramsTypeName, resultTypeName, isMutation, hookUsesAxios: _hookUsesAxios);
+        var imports = BuildImports(operation, operationFileName, hasParams, paramsTypeName, resultTypeName, isMutation, _clientSuffix, _hookUsesAxios);
         var declarations = isMutation
             ? BuildMutationDeclarations(operation, hookBaseName, paramsTypeName, resultTypeName, dataType, variablesType)
             : BuildQueryDeclarations(operation, hookBaseName, paramsTypeName, hasParams, resultTypeName, dataType);
@@ -69,6 +71,7 @@ public sealed class TanStackQueryHookAstBuilder
         string? paramsTypeName,
         string? resultTypeName,
         bool isMutation,
+        string clientSuffix,
         bool hookUsesAxios)
     {
         var tanstackItems = isMutation
@@ -96,8 +99,6 @@ public sealed class TanStackQueryHookAstBuilder
                 new IdentifierNode("UseInfiniteQueryResult"),
                 new IdentifierNode("InfiniteData"),
             };
-
-        var clientSuffix = hookUsesAxios ? "axios" : "fetch";
 
         var items = new List<ImportNode>
         {

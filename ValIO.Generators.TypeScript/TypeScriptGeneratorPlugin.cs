@@ -25,8 +25,13 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new TypeScriptModelsStep(namingConverter),
             new TypeScriptEnumsStep(namingConverter),
             new ZodSchemasStep(namingConverter),
+            new ValibotSchemasStep(namingConverter),
+            new TypeBoxSchemasStep(namingConverter),
             new FetchClientStep(namingConverter),
             new AxiosClientStep(namingConverter),
+            new KyClientStep(namingConverter),
+            new TanStackQueryStep(namingConverter),
+            new TanStackVueStep(namingConverter),
             new TypeScriptIndexStep(),
         };
         return new CodeGenerationPipeline(steps);
