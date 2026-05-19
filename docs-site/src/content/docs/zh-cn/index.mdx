@@ -1,0 +1,32 @@
+---
+title: ValIO
+description: 面向 8 种语言的类型安全 OpenAPI 代码生成器。
+template: splash
+hero:
+  tagline: 从 OpenAPI 3.x 生成 HTTP 客户端、模型和验证架构 —— 适用于 TypeScript、C#、Java、Kotlin、Python、PHP、Swift 以及 Unreal C++。
+  actions:
+    - text: 开始使用
+      link: /zh-cn/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: 查看 GitHub
+      link: https://github.com/your-org/valio
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="CLI" icon="terminal">
+    一条命令 `valio generate -s ./openapi.json -o ./clients -l typescript` 即可完成。
+  </Card>
+  <Card title="网页应用" icon="rocket">
+    在浏览器中打开、上传 schema、下载 zip，无需安装。
+  </Card>
+  <Card title="桌面应用" icon="laptop">
+    基于 Avalonia 的原生应用，支持 Windows、macOS 和 Linux，可离线使用。
+  </Card>
+  <Card title="插件化" icon="puzzle">
+    每种语言都是独立的插件，拥有自己的选项描述。
+  </Card>
+</CardGrid>
