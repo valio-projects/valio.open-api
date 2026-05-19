@@ -26,6 +26,7 @@
       <ProjectReference Include="..\ValIO.Generators.Python\ValIO.Generators.Python.csproj" />
       <ProjectReference Include="..\ValIO.Generators.Java\ValIO.Generators.Java.csproj" />
       <ProjectReference Include="..\ValIO.Generators.Kotlin\ValIO.Generators.Kotlin.csproj" />
+      <ProjectReference Include="..\ValIO.Generators.Swift\ValIO.Generators.Swift.csproj" />
     </ItemGroup>
 
     <ItemGroup>
