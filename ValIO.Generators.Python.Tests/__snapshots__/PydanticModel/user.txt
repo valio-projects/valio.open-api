@@ -1,0 +1,17 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from .user_role import UserRole
+
+class User(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    name: str
+    email: str
+    role: "UserRole | None" = None
+
+User.model_rebuild()
