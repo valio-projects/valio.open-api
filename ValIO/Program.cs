@@ -11,6 +11,7 @@ using ValIO.Generators.Java;
 using ValIO.Generators.Kotlin;
 using ValIO.Generators.Php;
 using ValIO.Generators.Python;
+using ValIO.Generators.Swift;
 using ValIO.Generators.TypeScript;
 using ValIO.Parsers.Interfaces;
 using ValIO.Parsers.Services;
@@ -65,6 +66,7 @@ class Program
         services.AddGeneratorPlugin<PhpGeneratorPlugin>();
         services.AddGeneratorPlugin<JavaGeneratorPlugin>();
         services.AddGeneratorPlugin<KotlinGeneratorPlugin>();
+        services.AddGeneratorPlugin<SwiftGeneratorPlugin>();
 
         // Orchestrator
         services.AddSingleton<GenerationOrchestrator>();
