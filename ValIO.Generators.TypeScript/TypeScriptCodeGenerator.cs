@@ -290,9 +290,20 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         }
 
         GenerateEndpointTransportClientFiles(files, irDocument, config, tsOptions, astBuilder, astRenderer, httpTransports);
-        
-        // 4. Генерация params файлов (стиль params для axios и/или fetch)
-        if (httpTransports.HasFlag(TypeScriptHttpTransports.Axios) || httpTransports.HasFlag(TypeScriptHttpTransports.Fetch))
+
+        if (httpTransports.HasFlag(TypeScriptHttpTransports.AngularRxjs))
+        {
+            var angularFiles = GenerateAngularServiceFiles(irDocument, config, tsOptions);
+            foreach (var file in angularFiles)
+            {
+                files[file.Key] = file.Value;
+            }
+        }
+
+        // 4. Генерация params файлов (стиль params для axios и/или fetch и/или angular-rxjs)
+        if (httpTransports.HasFlag(TypeScriptHttpTransports.Axios)
+            || httpTransports.HasFlag(TypeScriptHttpTransports.Fetch)
+            || httpTransports.HasFlag(TypeScriptHttpTransports.AngularRxjs))
         {
             var paramsFiles = GenerateParamsFiles(irDocument, config, tsOptions);
             foreach (var file in paramsFiles)
@@ -304,6 +315,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         // 4b. Генерация results файлов (discriminated union по status codes)
         if (httpTransports.HasFlag(TypeScriptHttpTransports.Axios)
             || httpTransports.HasFlag(TypeScriptHttpTransports.Fetch)
+            || httpTransports.HasFlag(TypeScriptHttpTransports.AngularRxjs)
             || tsOptions.UseTanStackQuery)
         {
             var resultsFiles = GenerateResultsFiles(irDocument, config, tsOptions);
@@ -388,6 +400,34 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Генерирует Angular RxJS HttpClient сервисы: один <c>{ClientName}Service.service.ts</c>
+    /// на каждый <see cref="IrClient"/> (один класс с одним методом на операцию).
+    /// </summary>
+    private Dictionary<string, string> GenerateAngularServiceFiles(
+        IrDocument irDocument,
+        GenerationConfiguration config,
+        TypeScriptGenerationOptions tsOptions)
+    {
+        var files = new Dictionary<string, string>();
+        var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
+        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
+            irType => astBuilder.BuildType(irType);
+        var serviceBuilder = new Angular.Ast.Builders.AngularServiceAstBuilder(NamingConverter, typeBuilder, tsOptions);
+        var astRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+
+        foreach (var client in irDocument.Clients)
+        {
+            var sourceFile = serviceBuilder.BuildServiceSourceFile(client, config.FileOrganization);
+            var code = astRenderer.Render(sourceFile);
+            var fileName = $"{serviceBuilder.ServiceFileName(client)}.service.ts";
+            var filePath = ResolveFilePath(fileName, config, FileCategory.Clients);
+            files[filePath] = code;
+        }
+
+        return files;
     }
 
     /// <summary>
