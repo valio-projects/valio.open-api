@@ -4,7 +4,8 @@ using ValIO.Core.Plugins;
 namespace ValIO.Generators.TypeScript.Steps;
 
 /// <summary>
-/// Step: генерирует index.ts с re-export всех моделей и enum-ов.
+/// Step: генерирует корневой <c>index.ts</c> с re-export всех сгенерированных
+/// TypeScript файлов (моделей, схем, клиентов, params/results/query).
 /// </summary>
 public sealed class TypeScriptIndexStep : ICodeGenerationStep
 {
@@ -12,46 +13,30 @@ public sealed class TypeScriptIndexStep : ICodeGenerationStep
     public int Order => 70;
 
     public bool ShouldExecute(GenerationContext context)
-        => context.GeneratedFiles.Any(f =>
-            f.RelativePath.EndsWith(".ts") && !f.RelativePath.Contains("/api/"));
+        => context.GeneratedFiles.Any(f => f.RelativePath.EndsWith(".ts"));
 
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var sb = new StringBuilder();
 
-        // Собираем все .ts файлы, которые не являются клиентскими (api/)
-        var modelFiles = context.GeneratedFiles
-            .Where(f => f.RelativePath.EndsWith(".ts")
-                        && !f.RelativePath.Contains("/api/")
-                        && !f.RelativePath.EndsWith("index.ts"))
-            .OrderBy(f => f.RelativePath)
+        var tsFiles = context.GeneratedFiles
+            .Where(f => f.RelativePath.EndsWith(".ts"))
+            .Select(f => f.RelativePath.Replace('\\', '/'))
+            .Where(p => p != "index.ts" && !p.EndsWith("/index.ts"))
+            .OrderBy(p => p, StringComparer.Ordinal)
             .ToList();
 
-        foreach (var file in modelFiles)
+        foreach (var path in tsFiles)
         {
-            // Убираем расширение .ts из пути импорта
-            var importPath = "./" + file.RelativePath.Replace('\\', '/');
-            if (importPath.EndsWith(".ts"))
+            var importPath = "./" + path;
+            if (importPath.EndsWith(".ts", StringComparison.Ordinal))
                 importPath = importPath[..^3];
-
             sb.AppendLine($"export * from \"{importPath}\";");
         }
 
         if (sb.Length > 0)
         {
-            var indexPath = "index.ts";
-            if (modelFiles.Count > 0)
-            {
-                // Кладём index.ts рядом с первым файлом (в корне models/)
-                var firstFile = modelFiles[0].RelativePath.Replace('\\', '/');
-                var dir = firstFile.Contains('/') ? firstFile[..firstFile.LastIndexOf('/')] : "";
-                // Определяем корень: если SeparateModels — models/, иначе рядом
-                if (dir.Contains('/'))
-                    dir = dir[..dir.LastIndexOf('/')]; // поднимаемся на уровень выше
-                indexPath = dir.Length > 0 ? $"{dir}/index.ts" : "index.ts";
-            }
-
-            context.GeneratedFiles.Add(new GeneratedFile(indexPath, sb.ToString()));
+            context.GeneratedFiles.Add(new GeneratedFile("index.ts", sb.ToString()));
         }
 
         return Task.CompletedTask;

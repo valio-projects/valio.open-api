@@ -1020,27 +1020,24 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                     kind: ImportKind.Named));
             }
 
-            // Body schema - из models
+            // Body + response schemas из models/schemas (объединяем чтобы не было дубликатов)
+            var modelSchemaNames = new HashSet<string>(StringComparer.Ordinal);
             if (operation.RequestBody != null && operation.RequestBody.Type is IrModelReference bodyModelRef)
+                modelSchemaNames.Add(bodyModelRef.ModelName);
+
+            foreach (var modelRef in operation.Responses
+                         .Where(r => r.Type is IrModelReference)
+                         .Select(r => (IrModelReference)r.Type!))
             {
-                var bodyModelFileName = GetModelFileName(bodyModelRef.ModelName);
-                result.Add(new ImportNode(
-                    items: new[] { new IdentifierNode($"{bodyModelRef.ModelName}Schema") }.ToImmutableList(),
-                    from: $"../../{modelsPath}/{bodyModelFileName}/{bodyModelFileName}.schema",
-                    kind: ImportKind.Named));
+                modelSchemaNames.Add(modelRef.ModelName);
             }
 
-            // Response schemas - для всех ответов с телом (parse по status)
-            var responseModelRefs = operation.Responses
-                .Where(r => r.Type is IrModelReference)
-                .Select(r => (IrModelReference)r.Type!)
-                .DistinctBy(m => m.ModelName);
-            foreach (var modelRef in responseModelRefs)
+            foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
             {
-                var responseModelFileName = GetModelFileName(modelRef.ModelName);
+                var modelFileName = GetModelFileName(modelName);
                 result.Add(new ImportNode(
-                    items: new[] { new IdentifierNode($"{modelRef.ModelName}Schema") }.ToImmutableList(),
-                    from: $"../../{modelsPath}/{responseModelFileName}/{responseModelFileName}.schema",
+                    items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
+                    from: $"../../{modelsPath}/schemas/{modelFileName}/{modelFileName}.schema",
                     kind: ImportKind.Named));
             }
         }
@@ -1103,25 +1100,24 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                     kind: ImportKind.Named));
             }
 
+            // Body + response schemas из models/schemas (объединяем чтобы не было дубликатов)
+            var modelSchemaNames = new HashSet<string>(StringComparer.Ordinal);
             if (operation.RequestBody != null && operation.RequestBody.Type is IrModelReference bodyModelRef)
+                modelSchemaNames.Add(bodyModelRef.ModelName);
+
+            foreach (var modelRef in operation.Responses
+                         .Where(r => r.Type is IrModelReference)
+                         .Select(r => (IrModelReference)r.Type!))
             {
-                var bodyModelFileName = GetModelFileName(bodyModelRef.ModelName);
-                result.Add(new ImportNode(
-                    items: new[] { new IdentifierNode($"{bodyModelRef.ModelName}Schema") }.ToImmutableList(),
-                    from: $"../../{modelsPath}/{bodyModelFileName}/{bodyModelFileName}.schema",
-                    kind: ImportKind.Named));
+                modelSchemaNames.Add(modelRef.ModelName);
             }
 
-            var responseModelRefs = operation.Responses
-                .Where(r => r.Type is IrModelReference)
-                .Select(r => (IrModelReference)r.Type!)
-                .DistinctBy(m => m.ModelName);
-            foreach (var modelRef in responseModelRefs)
+            foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
             {
-                var responseModelFileName = GetModelFileName(modelRef.ModelName);
+                var modelFileName = GetModelFileName(modelName);
                 result.Add(new ImportNode(
-                    items: new[] { new IdentifierNode($"{modelRef.ModelName}Schema") }.ToImmutableList(),
-                    from: $"../../{modelsPath}/{responseModelFileName}/{responseModelFileName}.schema",
+                    items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
+                    from: $"../../{modelsPath}/schemas/{modelFileName}/{modelFileName}.schema",
                     kind: ImportKind.Named));
             }
         }
@@ -1129,7 +1125,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         result.AddRange(existingImports);
         return result;
     }
-    
+
     // Приватные вспомогательные методы для IR операций
     
     private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation)

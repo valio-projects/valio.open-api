@@ -58,24 +58,31 @@ public class ZodSchemaRenderer
         
         sb.AppendLine(ZodImportLine);
         sb.AppendLine();
+
+        // Путь к модели от файла схемы. Если importPath передан — используем его как
+        // полный путь к файлу модели (без расширения), иначе строим относительный.
+        var modelImportPath = !string.IsNullOrEmpty(importPath)
+            ? $"{NormalizePath(importPath)}/{modelFileName}/{modelFileName}"
+            : BuildModelImportPathFromSchema(currentFileName, schemasPath, modelFileName);
+
         var hasConstraints = model.Properties.Any(p => p.Constraints != null && HasAnyConstraint(p.Constraints));
         if (hasConstraints)
         {
-            sb.AppendLine($"import type {{ {model.Name} }} from \"./{modelFileName}\";");
-            sb.AppendLine($"import {{ {model.Name}Constraints }} from \"./{modelFileName}\";");
+            sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
+            sb.AppendLine($"import {{ {model.Name}Constraints }} from \"{modelImportPath}\";");
         }
         else
         {
-            sb.AppendLine($"import type {{ {model.Name} }} from \"./{modelFileName}\";");
+            sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
         }
-        
+
         var dependencies = ExtractDependencies(model);
         if (dependencies.Count > 0)
         {
             foreach (var dep in dependencies.OrderBy(d => d))
             {
                 var depFileName = SchemaNameToFileName(dep);
-                var relativePath = CalculateImportPath(currentFileName, depFileName, schemasPath, importPath);
+                var relativePath = CalculateImportPath(currentFileName, depFileName, schemasPath, importPath: null);
                 sb.AppendLine($"import {{ {dep} }} from '{relativePath}';");
             }
             sb.AppendLine();
@@ -118,7 +125,10 @@ public class ZodSchemaRenderer
         
         sb.AppendLine(ZodImportLine);
         sb.AppendLine();
-        sb.AppendLine($"import type {{ {typeName} }} from \"./{enumFileName}\";");
+        var enumImportPath = !string.IsNullOrEmpty(importPath)
+            ? $"{NormalizePath(importPath)}/{enumFileName}/{enumFileName}"
+            : BuildModelImportPathFromSchema(currentFileName, schemasPath, enumFileName);
+        sb.AppendLine($"import type {{ {typeName} }} from \"{enumImportPath}\";");
         sb.AppendLine();
         
         // Строим Zod AST из IR enum
@@ -262,6 +272,24 @@ public class ZodSchemaRenderer
         return _namingConverter.ToCamelCase(typeName);
     }
     
+    /// <summary>
+    /// Строит относительный путь от файла Zod‑схемы к файлу модели.
+    /// Схема живёт в {schemasPath}/{name}/{name}.schema.ts (separateModels=true)
+    /// или {schemasPath}/{name}.schema.ts (separateModels=false).
+    /// Модель — в parent_of_schemas/{name}/{name}.ts или parent_of_schemas/{name}.ts.
+    /// </summary>
+    private string BuildModelImportPathFromSchema(string? currentFileName, string? schemasPath, string modelFileName)
+    {
+        if (string.IsNullOrEmpty(schemasPath) || string.IsNullOrEmpty(currentFileName))
+            return $"./{modelFileName}";
+
+        // Структура с под‑директориями (наиболее частый случай). Схема:
+        // {schemasPath}/{currentFileName}/{currentFileName}.schema.ts.
+        // Поднимаемся на 2 уровня, до родителя schemas (например, "models/"),
+        // оттуда — в {modelFileName}/{modelFileName}.
+        return $"../../{modelFileName}/{modelFileName}";
+    }
+
     /// <summary>
     /// Вычисляет относительный путь для импорта схемы.
     /// При структуре models/modelName/ — из currentModel к depModel: ../depModel/depModel.schema

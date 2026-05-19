@@ -4,6 +4,7 @@ using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Http;
+using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Generators.TypeScript.Ast.Nodes;
@@ -107,9 +108,19 @@ public class AxiosAstBuilder
 
         if (paramsSource.HeadersSource != null && operation.HeaderParameters.Count > 0)
         {
+            // Axios.headers ожидает Record<string, AxiosHeaderValue> | AxiosHeaders.
+            // Узкоспециализированный *HeaderParams интерфейс не имеет index‑signature,
+            // поэтому приводим через `as AxiosRequestConfig["headers"]`.
+            var headersAsAxiosType = new SimpleTypeNode(
+                new IdentifierNode("AxiosRequestConfig[\"headers\"]"),
+                isPrimitive: false);
+            var headersCast = new CastExpressionNode(
+                headersAsAxiosType,
+                paramsSource.HeadersSource,
+                useAsOperator: true);
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("headers"),
-                paramsSource.HeadersSource));
+                headersCast));
         }
 
         if (paramsSource.BodySource != null && operation.RequestBody != null)

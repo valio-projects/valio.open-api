@@ -67,7 +67,7 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         return Task.CompletedTask;
     }
 
-    private static void AddModelSchema(
+    private void AddModelSchema(
         GenerationContext context,
         ValibotSchemaSourceFileBuilder builder,
         TypeScriptAstRenderer renderer,
@@ -76,14 +76,15 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         bool separateModels)
     {
         var content = renderer.Render(builder.BuildModelSchemaSourceFile(model, separateModels));
+        var fileName = _namingConverter.ToCamelCase(model.Name);
         var relativePath = separateModels
-            ? $"{schemasPath}/{model.Name}/{model.Name}.schema.ts"
-            : $"{schemasPath}/{model.Name}.schema.ts";
+            ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
+            : $"{schemasPath}/{fileName}.schema.ts";
 
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }
 
-    private static void AddEnumSchema(
+    private void AddEnumSchema(
         GenerationContext context,
         ValibotSchemaSourceFileBuilder builder,
         TypeScriptAstRenderer renderer,
@@ -92,9 +93,10 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         bool separateModels)
     {
         var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum));
+        var fileName = _namingConverter.ToCamelCase(irEnum.Name);
         var relativePath = separateModels
-            ? $"{schemasPath}/{irEnum.Name}/{irEnum.Name}.schema.ts"
-            : $"{schemasPath}/{irEnum.Name}.schema.ts";
+            ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
+            : $"{schemasPath}/{fileName}.schema.ts";
 
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }

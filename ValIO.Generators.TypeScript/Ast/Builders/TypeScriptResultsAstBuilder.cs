@@ -153,15 +153,15 @@ public sealed class TypeScriptResultsAstBuilder
                 new CommentNode($"Discriminated union result for {currentOperationName}. Check status to narrow type."));
             declarations.Add(resultTypeAlias);
 
-            var modelRefs = responsesWithType
-                .Select(r => r.Type)
-                .OfType<IrModelReference>()
-                .Select(m => m.ModelName)
-                .Distinct()
-                .ToList();
+            var modelRefs = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var response in responsesWithType)
+            {
+                if (response.Type != null)
+                    ExtractModelReferences(response.Type, modelRefs);
+            }
 
             var modelsPath = fileOrganization?.ModelsPath ?? "models";
-            foreach (var modelName in modelRefs)
+            foreach (var modelName in modelRefs.OrderBy(n => n, StringComparer.Ordinal))
             {
                 var modelFileName = _namingConverter.ToCamelCase(modelName);
                 var relativePath = $"../../{modelsPath}/{modelFileName}/{modelFileName}";
@@ -215,5 +215,34 @@ public sealed class TypeScriptResultsAstBuilder
     public bool HasResponsesWithBody(IrOperation operation)
     {
         return operation.Responses.Any(r => r.Type != null);
+    }
+
+    private static void ExtractModelReferences(IrType type, HashSet<string> sink)
+    {
+        switch (type)
+        {
+            case IrModelReference modelRef:
+                sink.Add(modelRef.ModelName);
+                break;
+            case IrArrayType arr:
+                ExtractModelReferences(arr.ElementType, sink);
+                break;
+            case IrDictionaryType dict:
+                ExtractModelReferences(dict.KeyType, sink);
+                ExtractModelReferences(dict.ValueType, sink);
+                break;
+            case IrUnionType union:
+                foreach (var t in union.Types) ExtractModelReferences(t, sink);
+                break;
+            case IrIntersectionType inter:
+                foreach (var t in inter.Types) ExtractModelReferences(t, sink);
+                break;
+            case IrNullableType nul:
+                ExtractModelReferences(nul.InnerType, sink);
+                break;
+            case IrOptionalType opt:
+                ExtractModelReferences(opt.InnerType, sink);
+                break;
+        }
     }
 }

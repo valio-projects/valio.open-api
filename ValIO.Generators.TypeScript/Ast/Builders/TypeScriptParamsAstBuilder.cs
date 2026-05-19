@@ -133,26 +133,18 @@ public sealed class TypeScriptParamsAstBuilder
 
         declarations.Add(paramsInterface);
 
-        // Импорты для типов body/form
-        if (hasBody || hasForm)
-        {
-            var bodyTypeName = BodyParamsTypeName(rb!);
-            if (bodyTypeName != "unknown")
-            {
-                imports.Add(CreateModelImport(bodyTypeName, fileOrganization));
-            }
-        }
+        // Собираем все модели-зависимости: body/form (включая массивы и т.п.) +
+        // route/query/header параметры. Дедупим по имени.
+        var allDependencies = new HashSet<string>(StringComparer.Ordinal);
+        if ((hasBody || hasForm) && rb != null)
+            ExtractDependenciesFromIrType(rb.Type, allDependencies);
 
-        // Импорты для моделей/enums, используемых в route/query/header params
-        var paramDependencies = ExtractParamTypeDependencies(operation);
-        var importedNames = new HashSet<string>(imports.SelectMany(i => i.Items.Select(item => item.Name)));
-        foreach (var dep in paramDependencies)
+        foreach (var dep in ExtractParamTypeDependencies(operation))
+            allDependencies.Add(dep);
+
+        foreach (var dep in allDependencies.OrderBy(n => n, StringComparer.Ordinal))
         {
-            if (!importedNames.Contains(dep))
-            {
-                importedNames.Add(dep);
-                imports.Add(CreateModelImport(dep, fileOrganization));
-            }
+            imports.Add(CreateModelImport(dep, fileOrganization));
         }
 
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();

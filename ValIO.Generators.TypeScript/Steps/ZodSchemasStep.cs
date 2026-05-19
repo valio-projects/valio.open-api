@@ -68,7 +68,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         return Task.CompletedTask;
     }
 
-    private static void AddModelSchema(
+    private void AddModelSchema(
         GenerationContext context,
         ZodSchemaRenderer renderer,
         ValIO.Core.IR.IrModel model,
@@ -76,9 +76,11 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         string schemasPath,
         bool separateModels)
     {
-        var fileName = model.Name;
+        var fileName = _namingConverter.ToCamelCase(model.Name);
+        // importPath=null — renderer построит относительный путь к модели
+        // из schemasPath + currentFileName сам.
         var content = renderer.RenderFromIr(model,
-            importPath: separateModels ? $"../{modelsPath}" : $"./{modelsPath}",
+            importPath: null,
             currentFileName: fileName,
             schemasPath: schemasPath);
 
@@ -89,7 +91,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }
 
-    private static void AddEnumSchema(
+    private void AddEnumSchema(
         GenerationContext context,
         ZodSchemaRenderer renderer,
         ValIO.Core.IR.IrEnum irEnum,
@@ -97,12 +99,15 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         string schemasPath,
         bool separateModels)
     {
+        var fileName = _namingConverter.ToCamelCase(irEnum.Name);
         var content = renderer.RenderEnumFromIr(irEnum,
-            importPath: separateModels ? $"../{modelsPath}" : $"./{modelsPath}");
+            importPath: null,
+            currentFileName: fileName,
+            schemasPath: schemasPath);
 
         var relativePath = separateModels
-            ? $"{schemasPath}/{irEnum.Name}/{irEnum.Name}.schema.ts"
-            : $"{schemasPath}/{irEnum.Name}.schema.ts";
+            ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
+            : $"{schemasPath}/{fileName}.schema.ts";
 
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }

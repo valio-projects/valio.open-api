@@ -793,7 +793,14 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             }
             else
             {
-                returnType = $": {RenderType(node.ReturnType)}";
+                var renderedReturnType = RenderType(node.ReturnType);
+                // Async function в TS обязательно возвращает Promise<T>.
+                // Билдеры задают «внутренний» T; рендерер оборачивает, если уже не обёрнут.
+                if (node.IsAsync && !renderedReturnType.StartsWith("Promise<", StringComparison.Ordinal))
+                {
+                    renderedReturnType = $"Promise<{renderedReturnType}>";
+                }
+                returnType = $": {renderedReturnType}";
             }
         }
         else
