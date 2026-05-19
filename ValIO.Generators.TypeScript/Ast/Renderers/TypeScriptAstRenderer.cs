@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -16,11 +17,37 @@ namespace ValIO.Generators.TypeScript.Ast.Renderers;
 /// <summary>
 /// Рендерер AST для генерации TypeScript кода
 /// Реализует ITypeScriptAstVisitor и IHttpAstVisitor для поддержки HTTP клиентов
+///
+/// Поддерживает Chain of Responsibility через <see cref="ITypeScriptNodeRenderer"/>:
+/// плагин-узлы (Zod / Valibot / TypeBox / Axios / TanStack), не известные базовому
+/// рендереру, попадают в <see cref="VisitDefault(AstNode)"/> и обрабатываются первым
+/// подходящим звеном цепочки (отсортирована по <see cref="ITypeScriptNodeRenderer.Priority"/>).
 /// </summary>
 public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScriptAstRenderer, IHttpAstVisitor<string>
 {
     private readonly StringBuilder _sb = new();
     private int _indentLevel = 0;
+    private readonly ImmutableArray<ITypeScriptNodeRenderer> _chain;
+
+    /// <summary>
+    /// Параметрless ctor — используется в тестах и в legacy-местах. Цепочка пуста,
+    /// поведение совпадает с прежним: <see cref="VisitDefault(AstNode)"/> бросает
+    /// <see cref="NotSupportedException"/>.
+    /// </summary>
+    public TypeScriptAstRenderer()
+    {
+        _chain = ImmutableArray<ITypeScriptNodeRenderer>.Empty;
+    }
+
+    /// <summary>
+    /// DI-ctor: получает цепочку плагин-рендереров (Zod / Valibot / TypeBox / Axios /
+    /// TanStack). Сортируется по убыванию <see cref="ITypeScriptNodeRenderer.Priority"/>.
+    /// </summary>
+    public TypeScriptAstRenderer(IEnumerable<ITypeScriptNodeRenderer> chain)
+    {
+        ArgumentNullException.ThrowIfNull(chain);
+        _chain = chain.OrderByDescending(r => r.Priority).ToImmutableArray();
+    }
 
     /// <summary>
     /// Рендерит SourceFile
@@ -1281,6 +1308,27 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var targetType = RenderType(node.TargetType);
         // TypeScript использует as для type assertion
         return $"({expression} as {targetType})";
+    }
+
+    /// <summary>
+    /// Catches AST nodes the base renderer can't dispatch directly (typically nodes
+    /// from feature plugins — Zod / Valibot / TypeBox / Axios / TanStack — whose
+    /// <c>Accept</c> falls back to <see cref="IBaseAstVisitor{TResult}.DefaultVisit(AstNode)"/>
+    /// because this renderer is not their specialised visitor).
+    ///
+    /// Walks the registered <see cref="ITypeScriptNodeRenderer"/> chain (sorted by
+    /// descending Priority) and returns the first matching renderer's output. If no
+    /// renderer claims the node, falls back to the base behaviour
+    /// (<see cref="NotSupportedException"/>).
+    /// </summary>
+    public override string VisitDefault(AstNode node)
+    {
+        foreach (var renderer in _chain)
+        {
+            if (renderer.CanRender(node))
+                return renderer.Render(node, this);
+        }
+        return base.VisitDefault(node);
     }
 
     #endregion
