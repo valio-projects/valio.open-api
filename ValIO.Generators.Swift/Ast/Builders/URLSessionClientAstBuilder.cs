@@ -217,13 +217,16 @@ public sealed class URLSessionClientAstBuilder
         var lines = new List<string>();
 
         // Build the path by substituting path params (using Swift string interpolation).
-        var pathTemplate = op.Path.TrimStart('/');
+        // We escape the literal portion first, then inject \(...) placeholders so the
+        // backslash that introduces Swift interpolation is not itself escaped.
+        var rawPath = op.Path.TrimStart('/');
+        var pathLiteral = EscapeStringLiteral(rawPath);
         foreach (var p in op.PathParameters)
         {
             var camel = SwiftReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name));
-            pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "\\(" + camel + ")", StringComparison.Ordinal);
+            pathLiteral = pathLiteral.Replace("{" + p.Name + "}", "\\(" + camel + ")", StringComparison.Ordinal);
         }
-        lines.Add($"var components = URLComponents(url: baseURL.appendingPathComponent(\"{EscapeStringLiteral(pathTemplate)}\"), resolvingAgainstBaseURL: false)");
+        lines.Add($"var components = URLComponents(url: baseURL.appendingPathComponent(\"{pathLiteral}\"), resolvingAgainstBaseURL: false)");
 
         // Query parameters via URLQueryItem.
         if (op.QueryParameters.Count > 0)
