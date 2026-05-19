@@ -24,6 +24,7 @@
       <ProjectReference Include="..\ValIO.Generators.Cpp\ValIO.Generators.Cpp.csproj" />
       <ProjectReference Include="..\ValIO.Generators.Php\ValIO.Generators.Php.csproj" />
       <ProjectReference Include="..\ValIO.Generators.Python\ValIO.Generators.Python.csproj" />
+      <ProjectReference Include="..\ValIO.Generators.Kotlin\ValIO.Generators.Kotlin.csproj" />
     </ItemGroup>
 
     <ItemGroup>
