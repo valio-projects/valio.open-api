@@ -27,17 +27,51 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
     private readonly TypeScriptTypeMapper _typescriptTypeMapper;
     private readonly ILoggerFactory _loggerFactory;
 
+    /// <summary>
+    /// Цепочка звеньев <see cref="ITypeScriptNodeRenderer"/>, передаваемая в
+    /// <see cref="TypeScriptAstRenderer"/> при каждом создании. Хранится в
+    /// собственном поле (а не получается из DI на каждый вызов) для совместимости
+    /// со старыми точками входа, где DI-контейнер недоступен.
+    /// </summary>
+    private readonly IReadOnlyList<ITypeScriptNodeRenderer> _nodeRenderers;
+
     public TypeScriptCodeGenerator(
         ITypeMapper typeMapper,
         INamingConverter namingConverter,
         IFileWriter fileWriter,
         ILogger<TypeScriptCodeGenerator> logger,
         ILoggerFactory loggerFactory)
+        : this(typeMapper, namingConverter, fileWriter, logger, loggerFactory, nodeRenderers: null)
+    {
+    }
+
+    /// <summary>
+    /// Конструктор, принимающий цепочку <see cref="ITypeScriptNodeRenderer"/>.
+    /// Если <paramref name="nodeRenderers"/> равно <c>null</c>, рендерер работает
+    /// как раньше (без подмен) — это обеспечивает совместимость с тестами и
+    /// прямой инстанцированием без DI.
+    /// </summary>
+    public TypeScriptCodeGenerator(
+        ITypeMapper typeMapper,
+        INamingConverter namingConverter,
+        IFileWriter fileWriter,
+        ILogger<TypeScriptCodeGenerator> logger,
+        ILoggerFactory loggerFactory,
+        IEnumerable<ITypeScriptNodeRenderer>? nodeRenderers)
         : base(typeMapper, namingConverter, fileWriter, logger, GenerationLanguage.TypeScript)
     {
         _typescriptTypeMapper = typeMapper as TypeScriptTypeMapper ?? throw new InvalidOperationException("TypeMapper must be TypeScriptTypeMapper");
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _nodeRenderers = nodeRenderers?.ToArray() ?? Array.Empty<ITypeScriptNodeRenderer>();
     }
+
+    /// <summary>
+    /// Создаёт <see cref="TypeScriptAstRenderer"/> с подмешанной цепочкой звеньев.
+    /// </summary>
+    private TypeScriptAstRenderer CreateAstRenderer()
+        => _nodeRenderers.Count == 0
+            ? new TypeScriptAstRenderer()
+            : new TypeScriptAstRenderer(_nodeRenderers);
 
 
     public override bool SupportsLanguage(GenerationLanguage language)
@@ -276,7 +310,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         var sourceFiles = astBuilder.BuildSourceFiles(irDocument, importPath: null, fileOrganization: config.FileOrganization, includeOperationEndpointFiles: false);
         
         // 3. AST → Code для моделей и enum'ов
-        var astRenderer = new TypeScriptAstRenderer();
+        var astRenderer = CreateAstRenderer();
         
         foreach (var sourceFile in sourceFiles)
         {
@@ -404,7 +438,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
             irType => astBuilder.BuildType(irType);
         var resultsAstBuilder = new Ast.Builders.TypeScriptResultsAstBuilder(NamingConverter, typeBuilder);
-        var astRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+        var astRenderer = CreateAstRenderer();
 
         foreach (var client in irDocument.Clients)
         {
@@ -494,7 +528,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
             irType => astBuilder.BuildType(irType);
         var paramsAstBuilder = new Ast.Builders.TypeScriptParamsAstBuilder(NamingConverter, typeBuilder);
-        var astRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+        var astRenderer = CreateAstRenderer();
 
         foreach (var client in irDocument.Clients)
         {
@@ -574,7 +608,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         
         var hookUsesAxios = TypeScriptHttpTransportsTanStack.PreferredHookTransport(tsOptions.HttpTransports) == TypeScriptEndpointTransport.Axios;
         var hookAstBuilder = new TanStackQuery.Ast.Builders.TanStackQueryHookAstBuilder(NamingConverter, typeBuilder, hookUsesAxios);
-        var tsRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+        var tsRenderer = CreateAstRenderer();
 
         foreach (var client in irDocument.Clients)
         {

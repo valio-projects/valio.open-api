@@ -4,6 +4,12 @@ using ValIO.Core.Interfaces;
 using ValIO.Generators.Cpp;
 using ValIO.Generators.CSharp;
 using ValIO.Generators.TypeScript;
+using ValIO.Generators.TypeScript.Ast.Renderers;
+using ValIO.Generators.TypeScript.Axios.Ast.Renderers;
+using ValIO.Generators.TypeScript.TanStackQuery.Ast.Renderers;
+using ValIO.Generators.TypeScript.TypeBox.Ast.Renderers;
+using ValIO.Generators.TypeScript.Valibot.Ast.Renderers;
+using ValIO.Generators.TypeScript.Zod.Ast.Renderers;
 
 namespace ValIO.ServiceRegistration;
 
@@ -51,7 +57,19 @@ public static class ServiceCollectionExtensions
         // Type Mappers (регистрируем и как интерфейс, и как конкретный тип для фабрики)
         services.AddSingleton<TypeScriptTypeMapper>();
         services.AddSingleton<ITypeMapper>(sp => sp.GetRequiredService<TypeScriptTypeMapper>());
-        
+
+        // Цепочка ответственности (ITypeScriptNodeRenderer): звенья опрашиваются
+        // монолитным TypeScriptAstRenderer в порядке убывания Priority. Каждое
+        // звено отвечает за рендеринг стек-специфичных узлов (Zod, Valibot,
+        // TypeBox, Axios, TanStack Query) и подменяет дефолтную диспетчеризацию
+        // visitor'а. Регистрируется AddSingleton — звенья stateless либо
+        // оборачивают stateless внутренние рендерера.
+        services.AddSingleton<ITypeScriptNodeRenderer, ZodNodeRenderer>();
+        services.AddSingleton<ITypeScriptNodeRenderer, ValibotNodeRenderer>();
+        services.AddSingleton<ITypeScriptNodeRenderer, TypeBoxNodeRenderer>();
+        services.AddSingleton<ITypeScriptNodeRenderer, AxiosNodeRenderer>();
+        services.AddSingleton<ITypeScriptNodeRenderer, TanStackNodeRenderer>();
+
         // Code Generators
         services.AddSingleton<TypeScriptCodeGenerator>(sp =>
         {
@@ -60,16 +78,18 @@ public static class ServiceCollectionExtensions
             var fileWriter = sp.GetRequiredService<IFileWriter>();
             var logger = sp.GetRequiredService<ILogger<TypeScriptCodeGenerator>>();
             var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
-            
+            var nodeRenderers = sp.GetServices<ITypeScriptNodeRenderer>();
+
             return new TypeScriptCodeGenerator(
                 typeMapper,
                 namingConverter,
                 fileWriter,
                 logger,
-                loggerFactory);
+                loggerFactory,
+                nodeRenderers);
         });
         services.AddSingleton<ICodeGenerator>(sp => sp.GetRequiredService<TypeScriptCodeGenerator>());
-        
+
         return services;
     }
     
