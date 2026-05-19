@@ -3,21 +3,21 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ValIO.Parsers.Interfaces;
 
-namespace ValIO.CLI;
+namespace ValIO.Cli.Commands;
 
 /// <summary>
-/// Команда валидации OpenAPI схемы
+/// Validates an OpenAPI schema file or URL by parsing it and printing basic info.
 /// </summary>
-public class ValidateCommand : Command
+public sealed class ValidateCommand : Command
 {
     public ValidateCommand(IServiceProvider serviceProvider)
         : base("validate", "Validate OpenAPI schema")
     {
         var schemaOption = new Option<string>("--schema", "-s")
         {
-            Description = "Path or URL to OpenAPI schema file"
+            Description = "Path or URL to OpenAPI schema file",
+            Arity = ArgumentArity.ExactlyOne
         };
-        schemaOption.Arity = ArgumentArity.ExactlyOne;
 
         Options.Add(schemaOption);
 
@@ -56,4 +56,3 @@ public class ValidateCommand : Command
         });
     }
 }
-

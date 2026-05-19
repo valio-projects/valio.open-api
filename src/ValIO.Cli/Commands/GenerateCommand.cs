@@ -6,21 +6,28 @@ using ValIO.Configuration.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Output.Abstractions;
 
-namespace ValIO.CLI;
+namespace ValIO.Cli.Commands;
 
-public class GenerateCommand : Command
+public enum OutputFormat
+{
+    Auto,
+    Folder,
+    Zip
+}
+
+public sealed class GenerateCommand : Command
 {
     public GenerateCommand(IServiceProvider serviceProvider)
         : base("generate", "Generate code from OpenAPI schema")
     {
         var schemaOption = new Option<string?>("--schema", "-s")
         {
-            Description = "Path or URL to OpenAPI schema file (required if not using config)"
+            Description = "Path or URL to OpenAPI schema file (required if not using --config)"
         };
 
         var outputOption = new Option<string?>("--output", "-o")
         {
-            Description = "Output directory path or .zip file (required if not using config)"
+            Description = "Output directory path or .zip file path (required if not using --config)"
         };
 
         var languageOption = new Option<string?>("--language", "-l")
@@ -39,11 +46,24 @@ public class GenerateCommand : Command
             AllowMultipleArgumentsPerToken = true
         };
 
+        var formatOption = new Option<OutputFormat>("--format")
+        {
+            Description = "Output format: folder, zip, or auto (detect from --output extension). Default: auto.",
+            DefaultValueFactory = _ => OutputFormat.Auto
+        };
+
+        var zipOption = new Option<bool>("--zip")
+        {
+            Description = "Shortcut for --format=zip."
+        };
+
         Options.Add(schemaOption);
         Options.Add(outputOption);
         Options.Add(languageOption);
         Options.Add(configOption);
         Options.Add(projectsOption);
+        Options.Add(formatOption);
+        Options.Add(zipOption);
 
         SetAction(async (ParseResult parseResult) =>
         {
@@ -52,6 +72,9 @@ public class GenerateCommand : Command
             var languageId = parseResult.GetValue(languageOption);
             var configFile = parseResult.GetValue(configOption);
             var projectNames = parseResult.GetValue(projectsOption) ?? Array.Empty<string>();
+            var format = parseResult.GetValue(formatOption);
+            var zip = parseResult.GetValue(zipOption);
+            if (zip) format = OutputFormat.Zip;
 
             var logger = serviceProvider.GetRequiredService<ILogger<GenerateCommand>>();
             var configLoader = serviceProvider.GetRequiredService<IConfigurationLoader>();
@@ -60,7 +83,7 @@ public class GenerateCommand : Command
 
             try
             {
-                if (configFile != null && configFile.Exists)
+                if (configFile is { Exists: true })
                 {
                     var config = await configLoader.LoadConfigFromFileAsync(configFile.FullName);
                     logger.LogInformation("Configuration loaded from: {ConfigPath}", configFile.FullName);
@@ -102,7 +125,7 @@ public class GenerateCommand : Command
                             continue;
                         }
 
-                        await WriteResultAsync(sinkFactory, generationConfig.OutputPath, result, logger);
+                        await WriteResultAsync(sinkFactory, generationConfig.OutputPath, format, result, logger);
                     }
 
                     return hasErrors ? 1 : 0;
@@ -130,7 +153,7 @@ public class GenerateCommand : Command
                     return 1;
                 }
 
-                await WriteResultAsync(sinkFactory, output, quickResult, logger);
+                await WriteResultAsync(sinkFactory, output, format, quickResult, logger);
                 return 0;
             }
             catch (Exception ex)
@@ -141,15 +164,50 @@ public class GenerateCommand : Command
         });
     }
 
+    /// <summary>
+    /// Builds an <see cref="OutputTarget"/> from the user-supplied --output and --format,
+    /// then materializes the result through the matching sink.
+    /// </summary>
     private static async Task WriteResultAsync(
         IOutputSinkFactory sinkFactory,
         string outputPath,
+        OutputFormat format,
         OrchestrationResult result,
         ILogger logger)
     {
-        var target = OutputTarget.Folder(string.IsNullOrWhiteSpace(outputPath) ? "." : outputPath);
+        var resolvedPath = string.IsNullOrWhiteSpace(outputPath) ? "." : outputPath;
+        var target = ResolveTarget(resolvedPath, format);
+
         await using var sink = sinkFactory.Create(target);
         await sink.WriteAsync(result.Files);
         logger.LogInformation("Wrote {Count} files to {Output}", result.Files.Count, target.Path);
+    }
+
+    /// <summary>
+    /// Decision matrix:
+    ///   -o ./out                          → folder
+    ///   -o ./out.zip                      → zip (auto-detected by extension)
+    ///   -o ./out --format zip             → zip (".zip" appended if missing)
+    ///   -o ./out.zip --format folder      → folder named "out.zip/" (explicit override wins)
+    /// </summary>
+    private static OutputTarget ResolveTarget(string outputPath, OutputFormat format)
+    {
+        switch (format)
+        {
+            case OutputFormat.Folder:
+                return OutputTarget.Folder(outputPath);
+
+            case OutputFormat.Zip:
+                var zipPath = outputPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                    ? outputPath
+                    : outputPath + ".zip";
+                return OutputTarget.ZipPath(zipPath);
+
+            case OutputFormat.Auto:
+            default:
+                return outputPath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+                    ? OutputTarget.ZipPath(outputPath)
+                    : OutputTarget.Folder(outputPath);
+        }
     }
 }
