@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -17,10 +18,80 @@ namespace ValIO.Generators.TypeScript.Ast.Renderers;
 /// Рендерер AST для генерации TypeScript кода
 /// Реализует ITypeScriptAstVisitor и IHttpAstVisitor для поддержки HTTP клиентов
 /// </summary>
+/// <remarks>
+/// Поддерживает <em>Chain of Responsibility</em>: при создании можно передать
+/// набор <see cref="ITypeScriptNodeRenderer"/>, которые подменяют рендеринг
+/// специфичных узлов (Zod, Valibot, TypeBox, Axios, TanStack Query). Звенья
+/// опрашиваются в <see cref="Visit(AstNode)"/> до обычной диспетчеризации
+/// visitor'а. Параметрless-конструктор сохранён ради обратной совместимости.
+/// </remarks>
 public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScriptAstRenderer, IHttpAstVisitor<string>
 {
     private readonly StringBuilder _sb = new();
     private int _indentLevel = 0;
+    private readonly ImmutableArray<ITypeScriptNodeRenderer> _chain;
+
+    /// <summary>
+    /// Создаёт рендерер без дополнительных звеньев Chain of Responsibility.
+    /// </summary>
+    public TypeScriptAstRenderer()
+    {
+        _chain = ImmutableArray<ITypeScriptNodeRenderer>.Empty;
+    }
+
+    /// <summary>
+    /// Создаёт рендерер с цепочкой звеньев. Звенья сортируются по убыванию
+    /// <see cref="ITypeScriptNodeRenderer.Priority"/> один раз при инициализации.
+    /// </summary>
+    public TypeScriptAstRenderer(IEnumerable<ITypeScriptNodeRenderer>? chain)
+    {
+        _chain = chain == null
+            ? ImmutableArray<ITypeScriptNodeRenderer>.Empty
+            : chain.OrderByDescending(c => c.Priority).ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Переопределение базового <see cref="TypeScriptAstVisitorBase{TResult}.Visit(AstNode)"/>:
+    /// перед стандартной диспетчеризацией опрашиваем цепочку
+    /// <see cref="ITypeScriptNodeRenderer"/>. Первое подходящее звено принимает узел.
+    /// </summary>
+    public override string Visit(AstNode node)
+    {
+        if (!_chain.IsDefaultOrEmpty)
+        {
+            for (int i = 0; i < _chain.Length; i++)
+            {
+                var renderer = _chain[i];
+                if (renderer.CanRender(node))
+                {
+                    return renderer.Render(node, this);
+                }
+            }
+        }
+        return base.Visit(node);
+    }
+
+    /// <summary>
+    /// Fallback для узлов, которые не обрабатываются обычной диспетчеризацией.
+    /// Перед бросанием исключения опрашиваем цепочку ещё раз — на случай если
+    /// узел не вызывает <see cref="Visit(AstNode)"/> напрямую (например, попал
+    /// сюда через VisitDeclaration / VisitExpression базового visitor'а).
+    /// </summary>
+    public override string VisitDefault(AstNode node)
+    {
+        if (!_chain.IsDefaultOrEmpty)
+        {
+            for (int i = 0; i < _chain.Length; i++)
+            {
+                var renderer = _chain[i];
+                if (renderer.CanRender(node))
+                {
+                    return renderer.Render(node, this);
+                }
+            }
+        }
+        return base.VisitDefault(node);
+    }
 
     /// <summary>
     /// Рендерит SourceFile
