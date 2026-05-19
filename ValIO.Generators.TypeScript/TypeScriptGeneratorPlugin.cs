@@ -24,7 +24,10 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
         {
             new TypeScriptModelsStep(namingConverter),
             new TypeScriptEnumsStep(namingConverter),
+            new TypeScriptParamsStep(namingConverter),
+            new TypeScriptResultsStep(namingConverter),
             new ZodSchemasStep(namingConverter),
+            new ZodParamsSchemasStep(namingConverter),
             new ValibotSchemasStep(namingConverter),
             new TypeBoxSchemasStep(namingConverter),
             new FetchClientStep(namingConverter),
