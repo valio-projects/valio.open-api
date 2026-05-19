@@ -19,9 +19,14 @@ public sealed class AxiosClientStep : ICodeGenerationStep
     public int Order => 41;
 
     public AxiosClientStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public AxiosClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter;
-        _renderer = new TypeScriptAstRenderer();
+        _renderer = new TypeScriptAstRenderer(nodeRenderers);
     }
 
     public bool ShouldExecute(GenerationContext context)

@@ -12,13 +12,20 @@ namespace ValIO.Generators.TypeScript.Steps;
 public sealed class ValibotSchemasStep : ICodeGenerationStep
 {
     private readonly INamingConverter _namingConverter;
+    private readonly IReadOnlyList<ITypeScriptNodeRenderer> _nodeRenderers;
 
     public string Name => "typescript-valibot-schemas";
     public int Order => 30;
 
     public ValibotSchemasStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public ValibotSchemasStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter;
+        _nodeRenderers = nodeRenderers as IReadOnlyList<ITypeScriptNodeRenderer> ?? nodeRenderers.ToArray();
     }
 
     public bool ShouldExecute(GenerationContext context)
@@ -33,7 +40,7 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         var modelsPath = fileOrg.ModelsPath ?? "models";
         var schemasPath = $"{modelsPath}/schemas";
         var builder = new ValibotSchemaSourceFileBuilder(_namingConverter);
-        var renderer = new TypeScriptAstRenderer();
+        var renderer = new TypeScriptAstRenderer(_nodeRenderers);
 
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
         var byName = context.IrDocument.Models.ToDictionary(model => model.Name);

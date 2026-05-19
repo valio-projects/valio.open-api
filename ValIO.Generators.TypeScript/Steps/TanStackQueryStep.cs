@@ -21,9 +21,14 @@ public sealed class TanStackQueryStep : ICodeGenerationStep
     public int Order => 50;
 
     public TanStackQueryStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public TanStackQueryStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter;
-        _renderer = new TypeScriptAstRenderer();
+        _renderer = new TypeScriptAstRenderer(nodeRenderers);
     }
 
     public bool ShouldExecute(GenerationContext context)

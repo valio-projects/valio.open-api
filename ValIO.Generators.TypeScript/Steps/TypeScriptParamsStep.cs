@@ -15,14 +15,20 @@ namespace ValIO.Generators.TypeScript.Steps;
 public sealed class TypeScriptParamsStep : ICodeGenerationStep
 {
     private readonly INamingConverter _namingConverter;
-    private readonly TypeScriptAstRenderer _renderer = new();
+    private readonly TypeScriptAstRenderer _renderer;
 
     public string Name => "typescript-operation-params";
     public int Order => 15;
 
     public TypeScriptParamsStep(INamingConverter namingConverter)
+        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
+    {
+    }
+
+    public TypeScriptParamsStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        _renderer = new TypeScriptAstRenderer(nodeRenderers);
     }
 
     public bool ShouldExecute(GenerationContext context)
