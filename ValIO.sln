@@ -18,6 +18,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.TypeScript
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Python", "ValIO.Generators.Python\ValIO.Generators.Python.csproj", "{44B44881-C4C9-460E-85AE-79A34C08EBD9}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Python.Tests", "ValIO.Generators.Python.Tests\ValIO.Generators.Python.Tests.csproj", "{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -136,6 +138,18 @@ Global
 		{44B44881-C4C9-460E-85AE-79A34C08EBD9}.Release|x64.Build.0 = Release|Any CPU
 		{44B44881-C4C9-460E-85AE-79A34C08EBD9}.Release|x86.ActiveCfg = Release|Any CPU
 		{44B44881-C4C9-460E-85AE-79A34C08EBD9}.Release|x86.Build.0 = Release|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Debug|x64.Build.0 = Debug|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Debug|x86.Build.0 = Debug|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Release|x64.ActiveCfg = Release|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Release|x64.Build.0 = Release|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Release|x86.ActiveCfg = Release|Any CPU
+		{CFABEAD1-E0BB-4BC5-9714-1AEA2D8616C1}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
