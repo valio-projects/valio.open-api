@@ -27,6 +27,12 @@ public class TypeScriptGenerationOptions
     /// Использовать TanStack Query
     /// </summary>
     public bool UseTanStackQuery { get; set; } = false;
+
+    /// <summary>
+    /// Целевой фреймворк для TanStack обёрток. По умолчанию <see cref="TanStackFramework.React"/>
+    /// (полный набор хуков); Angular/Solid/Svelte — лёгкие обёртки.
+    /// </summary>
+    public TanStackFramework TanStackFramework { get; set; } = TanStackFramework.React;
     
     /// <summary>
     /// Сериализовать/валидировать payload через схемы (только если ValidationLibrary задан)

@@ -126,6 +126,11 @@ public class ConfigTypeScriptOptions
     /// Использовать TanStack Query
     /// </summary>
     public bool? UseTanStackQuery { get; set; }
+
+    /// <summary>
+    /// Целевой фреймворк для TanStack обёрток: "react" (по умолчанию), "angular", "solid", "svelte".
+    /// </summary>
+    public string? TanStackFramework { get; set; }
     
     /// <summary>
     /// Сериализовать/валидировать payload через схемы

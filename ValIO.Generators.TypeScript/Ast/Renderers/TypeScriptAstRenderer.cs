@@ -321,12 +321,17 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     {
         var asyncKw = node.IsAsync ? "async " : "";
         var parameters = string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
+        var returnType = node.ReturnType != null ? $": {RenderType(node.ReturnType)}" : "";
         if (node.BodyExpression != null)
         {
-            return $"{asyncKw}({parameters}) => {Visit(node.BodyExpression)}";
+            var bodyExpr = Visit(node.BodyExpression);
+            // Object-literal body должен быть в скобках: `() => ({ ... })`, иначе парсер видит блок с label'ами.
+            if (node.BodyExpression is ObjectLiteralExpressionNode)
+                bodyExpr = $"({bodyExpr})";
+            return $"{asyncKw}({parameters}){returnType} => {bodyExpr}";
         }
         var blockContent = string.Join(" ", node.BodyBlock!.Statements.Select(Visit));
-        return $"{asyncKw}({parameters}) => {{ {blockContent} }}";
+        return $"{asyncKw}({parameters}){returnType} => {{ {blockContent} }}";
     }
 
     public override string VisitTemplateLiteralExpression(TemplateLiteralExpressionNode node)

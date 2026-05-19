@@ -566,15 +566,24 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
         TypeScriptGenerationOptions tsOptions)
     {
         var files = new Dictionary<string, string>();
-        
+
         // Создаем typeBuilder для TanStackQueryAstBuilder
         var astBuilder = new TypeScriptAstBuilder(NamingConverter, TypeMapper, tsOptions);
-        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder = 
+        Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder =
             irType => astBuilder.BuildType(irType);
-        
-        var hookUsesAxios = TypeScriptHttpTransportsTanStack.PreferredHookTransport(tsOptions.HttpTransports) == TypeScriptEndpointTransport.Axios;
-        var hookAstBuilder = new TanStackQuery.Ast.Builders.TanStackQueryHookAstBuilder(NamingConverter, typeBuilder, hookUsesAxios);
+
+        var preferredTransport = TypeScriptHttpTransportsTanStack.PreferredHookTransport(tsOptions.HttpTransports);
+        var hookUsesAxios = preferredTransport == TypeScriptEndpointTransport.Axios;
+        var clientSuffix = preferredTransport == TypeScriptEndpointTransport.Axios ? "axios" : "fetch";
         var tsRenderer = new Ast.Renderers.TypeScriptAstRenderer();
+
+        Func<IrOperation, string, bool, SourceFileNode> buildHook = tsOptions.TanStackFramework switch
+        {
+            TanStackFramework.Angular => new TanStackQuery.Angular.Builders.TanStackAngularHookAstBuilder(NamingConverter, typeBuilder, clientSuffix).BuildHookSourceFile,
+            TanStackFramework.Solid => new TanStackQuery.Solid.Builders.TanStackSolidHookAstBuilder(NamingConverter, typeBuilder, clientSuffix).BuildHookSourceFile,
+            TanStackFramework.Svelte => new TanStackQuery.Svelte.Builders.TanStackSvelteHookAstBuilder(NamingConverter, typeBuilder, clientSuffix).BuildHookSourceFile,
+            _ => new TanStackQuery.Ast.Builders.TanStackQueryHookAstBuilder(NamingConverter, typeBuilder, hookUsesAxios).BuildHookSourceFile,
+        };
 
         foreach (var client in irDocument.Clients)
         {
@@ -583,7 +592,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 var isMutation = operation.HttpMethod is "POST" or "PUT" or "PATCH" or "DELETE";
                 var operationFileName = GetModelFileNameInternal(operation.MethodName);
 
-                var hookSourceFile = hookAstBuilder.BuildHookSourceFile(operation, operationFileName, isMutation);
+                var hookSourceFile = buildHook(operation, operationFileName, isMutation);
                 var fullCode = tsRenderer.Render(hookSourceFile);
 
                 var fileName = $"{operationFileName}/{operationFileName}.hook.ts";
@@ -591,7 +600,7 @@ public class TypeScriptCodeGenerator : BaseCodeGenerator
                 files[filePath] = fullCode;
             }
         }
-        
+
         return files;
     }
     

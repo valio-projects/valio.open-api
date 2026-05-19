@@ -19,6 +19,11 @@ public sealed class ArrowFunctionExpressionNode : ExpressionNode
     public BlockNode? BodyBlock { get; }
     public bool IsAsync { get; }
 
+    /// <summary>
+    /// Возвращаемый тип стрелочной функции: <c>(p) =&gt; ReturnType</c> (TypeScript-only).
+    /// </summary>
+    public TypeNode? ReturnType { get; }
+
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -38,13 +43,15 @@ public sealed class ArrowFunctionExpressionNode : ExpressionNode
         ExpressionNode bodyExpression,
         bool isAsync = false,
         TypeNode? type = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        TypeNode? returnType = null)
         : base(type, metadata)
     {
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<ParameterDeclarationNode>.Empty;
         BodyExpression = bodyExpression;
         BodyBlock = null;
         IsAsync = isAsync;
+        ReturnType = returnType;
     }
 
     public ArrowFunctionExpressionNode(
@@ -52,13 +59,15 @@ public sealed class ArrowFunctionExpressionNode : ExpressionNode
         BlockNode bodyBlock,
         bool isAsync = false,
         TypeNode? type = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        TypeNode? returnType = null)
         : base(type, metadata)
     {
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<ParameterDeclarationNode>.Empty;
         BodyExpression = null;
         BodyBlock = bodyBlock;
         IsAsync = isAsync;
+        ReturnType = returnType;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -77,13 +86,15 @@ public sealed class ArrowFunctionExpressionNode : ExpressionNode
                 (ExpressionNode)BodyExpression.Clone(),
                 IsAsync,
                 Type != null ? (TypeNode)Type.Clone() : null,
-                Metadata.ToImmutableDictionary());
+                Metadata.ToImmutableDictionary(),
+                ReturnType != null ? (TypeNode)ReturnType.Clone() : null);
         }
         return new ArrowFunctionExpressionNode(
             Parameters.Select(p => (ParameterDeclarationNode)p.Clone()).ToImmutableList(),
             BodyBlock != null ? (BlockNode)BodyBlock.Clone() : null!,
             IsAsync,
             Type != null ? (TypeNode)Type.Clone() : null,
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            ReturnType != null ? (TypeNode)ReturnType.Clone() : null);
     }
 }

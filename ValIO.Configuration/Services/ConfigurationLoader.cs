@@ -391,6 +391,19 @@ public class ConfigurationLoader : IConfigurationLoader
             options.UseTanStackQuery = config.UseTanStackQuery.Value;
         }
 
+        // Парсинг TanStackFramework
+        if (!string.IsNullOrWhiteSpace(config.TanStackFramework))
+        {
+            options.TanStackFramework = config.TanStackFramework.Trim().ToLowerInvariant() switch
+            {
+                "angular" => TanStackFramework.Angular,
+                "solid" or "solidjs" => TanStackFramework.Solid,
+                "svelte" => TanStackFramework.Svelte,
+                "react" or "" => TanStackFramework.React,
+                _ => throw new ArgumentException($"Unknown TanStack framework: {config.TanStackFramework}")
+            };
+        }
+
         // Парсинг SerializeWithSchemas
         if (config.SerializeWithSchemas.HasValue)
         {
