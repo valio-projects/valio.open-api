@@ -1,0 +1,17 @@
+package com.example.generated.models;
+
+public enum UserRole {
+    ADMIN("admin"),
+    USER("user"),
+    GUEST("guest");
+
+    private final String value;
+
+    UserRole(String value) {
+        this.value = value;
+    }
+
+    public String value() {
+        return value;
+    }
+}
