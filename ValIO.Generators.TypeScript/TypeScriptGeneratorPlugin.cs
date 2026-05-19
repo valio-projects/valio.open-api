@@ -36,6 +36,7 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new UndiciClientStep(namingConverter),
             new OFetchClientStep(namingConverter),
             new GotClientStep(namingConverter),
+            new SolidStartClientStep(namingConverter),
             new TanStackQueryStep(namingConverter),
             new TanStackVueStep(namingConverter),
             new TypeScriptIndexStep(),
