@@ -17,6 +17,10 @@
     <ProjectReference Include="..\ValIO.Generators.Python\ValIO.Generators.Python.csproj" />
     <ProjectReference Include="..\ValIO.Generators.Php\ValIO.Generators.Php.csproj" />
     <ProjectReference Include="..\ValIO.Generators.Swift\ValIO.Generators.Swift.csproj" />
+    <ProjectReference Include="..\ValIO.Generators.Dart\ValIO.Generators.Dart.csproj" />
+    <ProjectReference Include="..\ValIO.Generators.FSharp\ValIO.Generators.FSharp.csproj" />
+    <ProjectReference Include="..\ValIO.Generators.Ruby\ValIO.Generators.Ruby.csproj" />
+    <ProjectReference Include="..\ValIO.Generators.Rust\ValIO.Generators.Rust.csproj" />
   </ItemGroup>
 
   <ItemGroup>
