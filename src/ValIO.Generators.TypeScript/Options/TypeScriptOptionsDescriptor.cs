@@ -5,6 +5,49 @@ namespace ValIO.Generators.TypeScript.Options;
 
 public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
 {
+    private static readonly OptionChoice[] TransportChoices =
+    [
+        new("fetch",            "Fetch API",            "ts.transports.fetch.desc"),
+        new("axios",            "Axios",                "ts.transports.axios.desc"),
+        new("ky",               "Ky",                   "ts.transports.ky.desc"),
+        new("undici",           "Undici",               "ts.transports.undici.desc"),
+        new("ofetch",           "ofetch",               "ts.transports.ofetch.desc"),
+        new("got",              "got",                  "ts.transports.got.desc"),
+        new("angular-rxjs",     "Angular HttpClient (RxJS)", "ts.transports.angularRxjs.desc"),
+        new("angular-promise",  "Angular HttpClient (Promise)", "ts.transports.angularPromise.desc"),
+        new("solid",            "SolidStart fetch",     "ts.transports.solid.desc"),
+    ];
+
+    private static readonly OptionChoice[] EnumFormatChoices =
+    [
+        new("union",       "String union",   "ts.enumFormat.union.desc"),
+        new("enum",        "TS enum",        "ts.enumFormat.enum.desc"),
+        new("constObject", "const object",   "ts.enumFormat.constObject.desc"),
+    ];
+
+    private static readonly OptionChoice[] ValidationChoices =
+    [
+        new("zod3",    "Zod 3",   "ts.validation.zod3.desc"),
+        new("zod4",    "Zod 4",   "ts.validation.zod4.desc"),
+        new("valibot", "Valibot", "ts.validation.valibot.desc"),
+        new("typebox", "TypeBox", "ts.validation.typebox.desc"),
+    ];
+
+    private static readonly OptionChoice[] QueryWrapperChoices =
+    [
+        new("tanstack-react",   "TanStack Query — React",   "ts.queryWrapper.tanstackReact.desc"),
+        new("tanstack-vue",     "TanStack Query — Vue",     "ts.queryWrapper.tanstackVue.desc"),
+        new("tanstack-angular", "TanStack Query — Angular", "ts.queryWrapper.tanstackAngular.desc"),
+        new("tanstack-solid",   "TanStack Query — Solid",   "ts.queryWrapper.tanstackSolid.desc"),
+        new("tanstack-svelte",  "TanStack Query — Svelte",  "ts.queryWrapper.tanstackSvelte.desc"),
+        new("swr",              "SWR",                      "ts.queryWrapper.swr.desc"),
+    ];
+
+    private static readonly OptionChoice[] MockChoices =
+    [
+        new("msw", "Mock Service Worker", "ts.mocks.msw.desc"),
+    ];
+
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
@@ -61,11 +104,56 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("transports", "HTTP transport(s) to generate: fetch, axios, ky, undici, ofetch, got, angular, solid", "fetch", false),
-        new("enumFormat", "TypeScript enum format: enum, union, constObject", "union", false),
-        new("validation", "Validation library: zod3, zod4, valibot, typebox", null, false),
-        new("queryWrapper", "Query wrapper: tanstack-react, tanstack-vue, tanstack-angular, swr", null, false),
-        new("mocks", "Mock library to emit: msw (writes single mocks/handlers.ts). Alias: mockLibrary", null, false),
+        new(
+            Name:           "transports",
+            Description:    "HTTP transport library to generate clients for. At least one is required.",
+            DefaultValue:   "fetch",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumMulti,
+            Choices:        TransportChoices,
+            DescriptionKey: "ts.transports.desc",
+            Group:          "Clients"),
+
+        new(
+            Name:           "enumFormat",
+            Description:    "How OpenAPI enums are represented in TypeScript.",
+            DefaultValue:   "union",
+            IsRequired:     false,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        EnumFormatChoices,
+            DescriptionKey: "ts.enumFormat.desc",
+            Group:          "Models"),
+
+        new(
+            Name:           "validation",
+            Description:    "Validation library to emit runtime schemas for. Leave empty to skip.",
+            DefaultValue:   null,
+            IsRequired:     false,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        ValidationChoices,
+            DescriptionKey: "ts.validationLibrary.desc",
+            Group:          "Validation"),
+
+        new(
+            Name:           "queryWrapper",
+            Description:    "Optional client wrapper integration (TanStack Query, SWR, ...).",
+            DefaultValue:   null,
+            IsRequired:     false,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        QueryWrapperChoices,
+            DescriptionKey: "ts.queryWrapper.desc",
+            Group:          "Query wrappers",
+            DependsOn:      "transports"),
+
+        new(
+            Name:           "mocks",
+            Description:    "Generate mock handlers alongside clients.",
+            DefaultValue:   null,
+            IsRequired:     false,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        MockChoices,
+            DescriptionKey: "ts.mockLibrary.desc",
+            Group:          "Testing"),
     ];
 
     private static string? NormalizeTransport(string? value, List<string> errors)

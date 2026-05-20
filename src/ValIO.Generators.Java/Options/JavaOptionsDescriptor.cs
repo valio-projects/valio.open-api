@@ -5,6 +5,11 @@ namespace ValIO.Generators.Java.Options;
 
 public sealed class JavaOptionsDescriptor : IGeneratorOptionsDescriptor
 {
+    private static readonly OptionChoice[] HttpClientChoices =
+    [
+        new("okhttp", "OkHttp 3.x", "java.httpClient.okhttp.desc"),
+    ];
+
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
@@ -52,9 +57,33 @@ public sealed class JavaOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("package", "Root package for generated Java classes", "com.example.generated", false),
-        new("useHttpClient", "HTTP client: okhttp (default)", "okhttp", false),
-        new("generateBuildFiles", "Also emit build.gradle.kts + gradle.properties with required deps", "false", false),
+        new(
+            Name:           "package",
+            Description:    "Root Java package for generated classes (com.example.api).",
+            DefaultValue:   "com.example.generated",
+            IsRequired:     true,
+            Kind:           OptionKind.String,
+            DescriptionKey: "java.package.desc",
+            Group:          "Project"),
+
+        new(
+            Name:           "useHttpClient",
+            Description:    "HTTP client implementation.",
+            DefaultValue:   "okhttp",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        HttpClientChoices,
+            DescriptionKey: "java.httpClient.desc",
+            Group:          "Clients"),
+
+        new(
+            Name:           "generateBuildFiles",
+            Description:    "Also emit build.gradle.kts + gradle.properties with required dependencies.",
+            DefaultValue:   "false",
+            IsRequired:     false,
+            Kind:           OptionKind.Bool,
+            DescriptionKey: "java.buildFiles.desc",
+            Group:          "Project"),
     ];
 
     private static string? NormalizeHttpClient(string? value, List<string> errors)

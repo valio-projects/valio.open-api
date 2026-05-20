@@ -5,6 +5,12 @@ namespace ValIO.Generators.Php.Options;
 
 public sealed class PhpOptionsDescriptor : IGeneratorOptionsDescriptor
 {
+    private static readonly OptionChoice[] HttpClientChoices =
+    [
+        new("guzzle",  "Guzzle",                "php.httpClient.guzzle.desc"),
+        new("laravel", "Laravel HTTP (reserved)", "php.httpClient.laravel.desc"),
+    ];
+
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
@@ -52,9 +58,33 @@ public sealed class PhpOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("namespace", "Root namespace for generated PHP classes", "App\\Generated", false),
-        new("useHttpClient", "HTTP client: guzzle (default) or laravel (reserved)", "guzzle", false),
-        new("generateComposerJson", "Also emit composer.json with required dependencies", "false", false),
+        new(
+            Name:           "namespace",
+            Description:    "Root PHP namespace for generated classes.",
+            DefaultValue:   "App\\Generated",
+            IsRequired:     true,
+            Kind:           OptionKind.String,
+            DescriptionKey: "php.namespace.desc",
+            Group:          "Project"),
+
+        new(
+            Name:           "useHttpClient",
+            Description:    "HTTP client to wrap.",
+            DefaultValue:   "guzzle",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        HttpClientChoices,
+            DescriptionKey: "php.httpClient.desc",
+            Group:          "Clients"),
+
+        new(
+            Name:           "generateComposerJson",
+            Description:    "Also emit composer.json with required dependencies.",
+            DefaultValue:   "false",
+            IsRequired:     false,
+            Kind:           OptionKind.Bool,
+            DescriptionKey: "php.composer.desc",
+            Group:          "Project"),
     ];
 
     private static string? NormalizeHttpClient(string? value, List<string> errors)

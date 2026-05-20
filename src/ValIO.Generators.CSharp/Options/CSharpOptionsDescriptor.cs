@@ -24,7 +24,22 @@ public sealed class CSharpOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("namespace", "Root namespace for generated C# code", "Generated", false),
-        new("nullableReferenceTypes", "Enable nullable reference types", "false", false),
+        new(
+            Name:           "namespace",
+            Description:    "Root namespace for generated C# code (e.g. MyOrg.Api.Client).",
+            DefaultValue:   "Generated",
+            IsRequired:     false,
+            Kind:           OptionKind.String,
+            DescriptionKey: "csharp.namespace.desc",
+            Group:          "Project"),
+
+        new(
+            Name:           "nullableReferenceTypes",
+            Description:    "Emit nullable-reference annotations on generated types.",
+            DefaultValue:   "false",
+            IsRequired:     false,
+            Kind:           OptionKind.Bool,
+            DescriptionKey: "csharp.nullable.desc",
+            Group:          "Language features"),
     ];
 }

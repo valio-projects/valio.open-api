@@ -3,11 +3,14 @@ using ValIO.Core.Plugins;
 
 namespace ValIO.Generators.Swift.Options;
 
-/// <summary>
-/// Parses and validates Swift plugin options from configuration.
-/// </summary>
 public sealed class SwiftOptionsDescriptor : IGeneratorOptionsDescriptor
 {
+    private static readonly OptionChoice[] AnyMappingChoices =
+    [
+        new("anycodable", "AnyCodable",            "swift.anyMapping.anyCodable.desc"),
+        new("string",     "String (lossy)",        "swift.anyMapping.string.desc"),
+    ];
+
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
@@ -59,9 +62,33 @@ public sealed class SwiftOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("moduleName", "Output module/folder name for generated Swift files", "Generated", false),
-        new("anyMapping", "How to map IR Any: anycodable (default) or string", "anycodable", false),
-        new("generateBuildFiles", "Emit Package.swift alongside sources", "false", false),
+        new(
+            Name:           "moduleName",
+            Description:    "Output module/folder name for generated Swift files.",
+            DefaultValue:   "Generated",
+            IsRequired:     true,
+            Kind:           OptionKind.String,
+            DescriptionKey: "swift.module.desc",
+            Group:          "Project"),
+
+        new(
+            Name:           "anyMapping",
+            Description:    "How IR Any type maps onto Swift.",
+            DefaultValue:   "anycodable",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        AnyMappingChoices,
+            DescriptionKey: "swift.anyMapping.desc",
+            Group:          "Models"),
+
+        new(
+            Name:           "generateBuildFiles",
+            Description:    "Emit Package.swift alongside sources.",
+            DefaultValue:   "false",
+            IsRequired:     false,
+            Kind:           OptionKind.Bool,
+            DescriptionKey: "swift.buildFiles.desc",
+            Group:          "Project"),
     ];
 
     private static string? NormalizeAnyMapping(string? value, List<string> errors)

@@ -3,11 +3,28 @@ using ValIO.Core.Plugins;
 
 namespace ValIO.Generators.Python.Options;
 
-/// <summary>
-/// Парсит и валидирует опции Python-плагина из конфигурации.
-/// </summary>
 public sealed class PythonOptionsDescriptor : IGeneratorOptionsDescriptor
 {
+    private static readonly OptionChoice[] HttpxModeChoices =
+    [
+        new("async", "httpx.AsyncClient (async)", "python.httpxMode.async.desc"),
+        new("sync",  "httpx.Client (sync)",       "python.httpxMode.sync.desc"),
+    ];
+
+    private static readonly OptionChoice[] ValidatorChoices =
+    [
+        new("pydantic", "Pydantic v2", "python.validator.pydantic.desc"),
+        new("msgspec",  "msgspec",      "python.validator.msgspec.desc"),
+    ];
+
+    private static readonly OptionChoice[] PythonVersionChoices =
+    [
+        new("3.10", "Python 3.10", null),
+        new("3.11", "Python 3.11", null),
+        new("3.12", "Python 3.12", null),
+        new("3.13", "Python 3.13", null),
+    ];
+
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
@@ -70,10 +87,44 @@ public sealed class PythonOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("pythonVersion", "Target Python version (3.11+)", "3.11", false),
-        new("httpxMode", "HTTPX client mode: async, sync", "async", false),
-        new("validator", "Model validator library: pydantic", "pydantic", false),
-        new("rootModule", "Root Python module name for generated package", "generated", false),
+        new(
+            Name:           "pythonVersion",
+            Description:    "Target Python version. Generated syntax assumes 3.10+ features.",
+            DefaultValue:   "3.11",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        PythonVersionChoices,
+            DescriptionKey: "python.version.desc",
+            Group:          "Runtime"),
+
+        new(
+            Name:           "httpxMode",
+            Description:    "Generate async or sync httpx clients.",
+            DefaultValue:   "async",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        HttpxModeChoices,
+            DescriptionKey: "python.httpxMode.desc",
+            Group:          "Clients"),
+
+        new(
+            Name:           "validator",
+            Description:    "Model validator library (Pydantic v2 fully supported).",
+            DefaultValue:   "pydantic",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        ValidatorChoices,
+            DescriptionKey: "python.validator.desc",
+            Group:          "Models"),
+
+        new(
+            Name:           "rootModule",
+            Description:    "Top-level Python module name for generated package.",
+            DefaultValue:   "generated",
+            IsRequired:     true,
+            Kind:           OptionKind.String,
+            DescriptionKey: "python.rootModule.desc",
+            Group:          "Project"),
     ];
 
     private static string? NormalizeHttpxMode(string? value, List<string> errors)

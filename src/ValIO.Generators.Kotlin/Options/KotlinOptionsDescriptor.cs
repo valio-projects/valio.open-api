@@ -3,11 +3,15 @@ using ValIO.Core.Plugins;
 
 namespace ValIO.Generators.Kotlin.Options;
 
-/// <summary>
-/// Parses and validates Kotlin plugin options from configuration.
-/// </summary>
 public sealed class KotlinOptionsDescriptor : IGeneratorOptionsDescriptor
 {
+    private static readonly OptionChoice[] SerializationChoices =
+    [
+        new("kotlinx", "kotlinx.serialization", "kotlin.serialization.kotlinx.desc"),
+        new("moshi",   "Moshi",                  "kotlin.serialization.moshi.desc"),
+        new("gson",    "Gson",                   "kotlin.serialization.gson.desc"),
+    ];
+
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
@@ -56,9 +60,33 @@ public sealed class KotlinOptionsDescriptor : IGeneratorOptionsDescriptor
 
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
-        new("package", "Root package name for generated Kotlin code", "com.example.generated", false),
-        new("serialization", "Serialization library: kotlinx (only supported value today)", "kotlinx", false),
-        new("generateBuildFiles", "Emit Gradle/build.kts files alongside sources", "false", false),
+        new(
+            Name:           "package",
+            Description:    "Root package name for generated Kotlin code.",
+            DefaultValue:   "com.example.generated",
+            IsRequired:     true,
+            Kind:           OptionKind.String,
+            DescriptionKey: "kotlin.package.desc",
+            Group:          "Project"),
+
+        new(
+            Name:           "serialization",
+            Description:    "Serialization library (only kotlinx.serialization is fully supported today).",
+            DefaultValue:   "kotlinx",
+            IsRequired:     true,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        SerializationChoices,
+            DescriptionKey: "kotlin.serialization.desc",
+            Group:          "Models"),
+
+        new(
+            Name:           "generateBuildFiles",
+            Description:    "Emit Gradle/build.kts files alongside sources.",
+            DefaultValue:   "false",
+            IsRequired:     false,
+            Kind:           OptionKind.Bool,
+            DescriptionKey: "kotlin.buildFiles.desc",
+            Group:          "Project"),
     ];
 
     private static string? NormalizeSerialization(string? value, List<string> errors)
