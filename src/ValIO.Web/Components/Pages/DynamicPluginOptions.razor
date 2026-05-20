@@ -1,0 +1,248 @@
+@using ValIO.Core.Plugins
+
+@* Renders plugin options grouped by OptionDescription.Group with progressive disclosure
+   driven by DependsOn — an option whose dependency is empty/false is hidden until it's filled. *@
+
+@if (_visibleDescriptions.Count == 0 && _hiddenCount == 0)
+{
+    <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-2">
+        This plugin has no configurable options.
+    </MudAlert>
+}
+else
+{
+    var groups = _visibleDescriptions
+        .GroupBy(d => d.Group ?? "Options")
+        .OrderBy(g => GroupOrder(g.Key))
+        .ToList();
+
+    <MudExpansionPanels Class="mt-2" MultiExpansion="true">
+        @foreach (var g in groups)
+        {
+            var groupName = g.Key;
+            var groupComplete = g.All(d => !d.IsRequired || HasValue(d));
+            var count = g.Count();
+            <MudExpansionPanel Expanded="@true">
+                <TitleContent>
+                    <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                        <MudText Typo="Typo.subtitle1">@groupName</MudText>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text"
+                                 Color="@(groupComplete ? Color.Success : Color.Default)">
+                            @Plural(count, "option")
+                        </MudChip>
+                    </MudStack>
+                </TitleContent>
+                <ChildContent>
+                    @foreach (var desc in g)
+                    {
+                        <div class="mt-2 mb-2">
+                            @switch (desc.Kind)
+                            {
+                                case OptionKind.Bool:
+                                    <MudSwitch T="bool"
+                                               Value="@AsBool(desc)"
+                                               ValueChanged="@(v => Set(desc, (object)v))"
+                                               Color="Color.Primary"
+                                               Label="@OptionLabel(desc)" />
+                                    @if (!string.IsNullOrEmpty(desc.Description))
+                                    {
+                                        <MudText Typo="Typo.caption" Color="Color.Default" Class="d-block ml-12">@desc.Description</MudText>
+                                    }
+                                    break;
+
+                                case OptionKind.Int:
+                                    <MudNumericField T="int" Label="@OptionLabel(desc)"
+                                                     Value="@AsInt(desc)"
+                                                     ValueChanged="@(v => Set(desc, (object)v))"
+                                                     Variant="Variant.Outlined"
+                                                     HelperText="@desc.Description"
+                                                     Required="@desc.IsRequired" />
+                                    break;
+
+                                case OptionKind.EnumSingle when desc.Choices is { Count: > 0 }:
+                                    <MudSelect T="string" Label="@OptionLabel(desc)"
+                                               Value="@AsString(desc)"
+                                               ValueChanged="@(v => Set(desc, (object?)v))"
+                                               Variant="Variant.Outlined"
+                                               Clearable="@(!desc.IsRequired)"
+                                               HelperText="@desc.Description"
+                                               Required="@desc.IsRequired"
+                                               Dense="true">
+                                        @foreach (var c in desc.Choices)
+                                        {
+                                            <MudSelectItem T="string" Value="@c.Id">
+                                                <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                                                    <span>@c.DisplayName</span>
+                                                    <MudSpacer />
+                                                    <MudText Typo="Typo.caption" Color="Color.Default">@c.Id</MudText>
+                                                </MudStack>
+                                            </MudSelectItem>
+                                        }
+                                    </MudSelect>
+                                    break;
+
+                                case OptionKind.EnumMulti when desc.Choices is { Count: > 0 }:
+                                    <MudStack Spacing="1">
+                                        <MudText Typo="Typo.subtitle2">@OptionLabel(desc)</MudText>
+                                        @if (!string.IsNullOrEmpty(desc.Description))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Default">@desc.Description</MudText>
+                                        }
+                                        <MudChipSet T="string"
+                                                    SelectionMode="SelectionMode.MultiSelection"
+                                                    SelectedValues="@AsMultiSet(desc)"
+                                                    SelectedValuesChanged="@(v => SetMulti(desc, v))"
+                                                    CheckMark="true">
+                                            @foreach (var c in desc.Choices)
+                                            {
+                                                <MudChip T="string" Value="@c.Id"
+                                                         Color="Color.Primary">@c.DisplayName</MudChip>
+                                            }
+                                        </MudChipSet>
+                                    </MudStack>
+                                    break;
+
+                                default:
+                                    <MudTextField T="string" Label="@OptionLabel(desc)"
+                                                  Value="@AsString(desc)"
+                                                  ValueChanged="@(v => Set(desc, (object?)v))"
+                                                  Variant="Variant.Outlined"
+                                                  HelperText="@desc.Description"
+                                                  Required="@desc.IsRequired" />
+                                    break;
+                            }
+                        </div>
+                    }
+                </ChildContent>
+            </MudExpansionPanel>
+        }
+    </MudExpansionPanels>
+
+    @if (_hiddenCount > 0)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Text" Dense="true" Class="mt-2">
+            <span>@Plural(_hiddenCount, "option") hidden until prerequisites are set.</span>
+        </MudAlert>
+    }
+}
+
+@code {
+    [Parameter] public IGeneratorPlugin? Plugin { get; set; }
+    [Parameter] public GenerationFormState State { get; set; } = default!;
+
+    private IReadOnlyList<OptionDescription> _allDescriptions = Array.Empty<OptionDescription>();
+    private List<OptionDescription> _visibleDescriptions = new();
+    private int _hiddenCount;
+    private IGeneratorPlugin? _previousPlugin;
+
+    protected override void OnParametersSet()
+    {
+        if (Plugin != _previousPlugin)
+        {
+            _previousPlugin = Plugin;
+            State.ResetPluginOptions();
+            _allDescriptions = Plugin?.OptionsDescriptor.GetOptionDescriptions() ?? Array.Empty<OptionDescription>();
+            foreach (var d in _allDescriptions)
+            {
+                if (d.DefaultValue is not null)
+                {
+                    if (d.Kind == OptionKind.EnumMulti)
+                        State.PluginOptions[d.Name] = new[] { d.DefaultValue };
+                    else
+                        State.PluginOptions[d.Name] = d.DefaultValue;
+                }
+            }
+        }
+        RecomputeVisibility();
+    }
+
+    private void RecomputeVisibility()
+    {
+        _visibleDescriptions = _allDescriptions.Where(d => IsVisible(d)).ToList();
+        _hiddenCount = _allDescriptions.Count - _visibleDescriptions.Count;
+    }
+
+    private bool IsVisible(OptionDescription d)
+    {
+        if (string.IsNullOrEmpty(d.DependsOn)) return true;
+        if (!State.PluginOptions.TryGetValue(d.DependsOn, out var depValue)) return false;
+        return depValue switch
+        {
+            null => false,
+            bool b => b,
+            string s => !string.IsNullOrWhiteSpace(s),
+            IEnumerable<string> xs => xs.Any(),
+            _ => true
+        };
+    }
+
+    private bool HasValue(OptionDescription d) => State.PluginOptions.TryGetValue(d.Name, out var v) && v switch
+    {
+        null => false,
+        bool b => b,
+        string s => !string.IsNullOrWhiteSpace(s),
+        IEnumerable<string> xs => xs.Any(),
+        _ => true,
+    };
+
+    private string OptionLabel(OptionDescription d) =>
+        d.IsRequired ? d.Name + " *" : d.Name;
+
+    private bool AsBool(OptionDescription d) =>
+        State.PluginOptions.TryGetValue(d.Name, out var v) && v is bool b
+            ? b
+            : bool.TryParse(d.DefaultValue, out var def) && def;
+
+    private int AsInt(OptionDescription d) =>
+        State.PluginOptions.TryGetValue(d.Name, out var v) && v is int i
+            ? i
+            : int.TryParse(d.DefaultValue, out var def) ? def : 0;
+
+    private string? AsString(OptionDescription d) =>
+        State.PluginOptions.TryGetValue(d.Name, out var v) ? v?.ToString() : d.DefaultValue;
+
+    private IReadOnlyCollection<string> AsMultiSet(OptionDescription d)
+    {
+        if (State.PluginOptions.TryGetValue(d.Name, out var v))
+        {
+            switch (v)
+            {
+                case IEnumerable<string> xs: return xs.ToHashSet();
+                case string s when !string.IsNullOrEmpty(s): return new HashSet<string> { s };
+            }
+        }
+        if (!string.IsNullOrEmpty(d.DefaultValue))
+            return new HashSet<string> { d.DefaultValue };
+        return Array.Empty<string>();
+    }
+
+    private void Set(OptionDescription d, object? value)
+    {
+        State.PluginOptions[d.Name] = value;
+        RecomputeVisibility();
+        StateHasChanged();
+    }
+
+    private void SetMulti(OptionDescription d, IReadOnlyCollection<string> values)
+    {
+        State.PluginOptions[d.Name] = values.ToArray();
+        RecomputeVisibility();
+        StateHasChanged();
+    }
+
+    private static string Plural(int n, string word) =>
+        n == 1 ? $"{n} {word}" : $"{n} {word}s";
+
+    private static int GroupOrder(string group) => group switch
+    {
+        "Project"           => 0,
+        "Runtime"           => 5,
+        "Models"            => 10,
+        "Clients"           => 20,
+        "Validation"        => 30,
+        "Query wrappers"    => 40,
+        "Testing"           => 50,
+        "Language features" => 60,
+        _ => 100,
+    };
+}

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType><xsd:choice maxOccurs="unbounded">
+        <xsd:element name="data">
+          <xsd:complexType><xsd:sequence>
+            <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+          </xsd:sequence>
+            <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+            <xsd:attribute ref="xml:space" />
+          </xsd:complexType>
+        </xsd:element>
+        <xsd:element name="resheader">
+          <xsd:complexType><xsd:sequence>
+            <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+          </xsd:sequence><xsd:attribute name="name" type="xsd:string" use="required" /></xsd:complexType>
+        </xsd:element>
+      </xsd:choice></xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <data name="window.title" xml:space="preserve"><value>ValIO — OpenAPI 代码生成器</value></data>
+  <data name="nav.generate" xml:space="preserve"><value>生成</value></data>
+  <data name="nav.settings" xml:space="preserve"><value>设置</value></data>
+  <data name="generate.title" xml:space="preserve"><value>生成代码</value></data>
+  <data name="generate.subtitle" xml:space="preserve"><value>输入 OpenAPI 规范,输出类型安全的客户端。选择目标语言并调整选项。</value></data>
+
+  <data name="schema.title" xml:space="preserve"><value>架构</value></data>
+  <data name="schema.placeholder" xml:space="preserve"><value>OpenAPI 架构路径 (.json / .yaml)</value></data>
+  <data name="schema.browse" xml:space="preserve"><value>浏览...</value></data>
+
+  <data name="language.title" xml:space="preserve"><value>目标语言</value></data>
+  <data name="language.placeholder" xml:space="preserve"><value>选择生成器插件</value></data>
+
+  <data name="pluginOptions.title" xml:space="preserve"><value>插件选项</value></data>
+  <data name="pluginOptions.empty" xml:space="preserve"><value>请先选择目标语言。</value></data>
+  <data name="pluginOptions.none" xml:space="preserve"><value>(无可配置选项)</value></data>
+  <data name="pluginOptions.hidden" xml:space="preserve"><value>{0} 个选项已隐藏 —— 需先满足前置条件。</value></data>
+
+  <data name="output.title" xml:space="preserve"><value>输出结构</value></data>
+  <data name="output.generateModels" xml:space="preserve"><value>模型 / DTO</value></data>
+  <data name="output.generateClients" xml:space="preserve"><value>HTTP 客户端</value></data>
+  <data name="output.generateEnums" xml:space="preserve"><value>枚举</value></data>
+  <data name="output.namespace" xml:space="preserve"><value>命名空间 / 包名 (可选)</value></data>
+
+  <data name="destination.title" xml:space="preserve"><value>输出目标</value></data>
+  <data name="destination.folder" xml:space="preserve"><value>文件夹</value></data>
+  <data name="destination.zip" xml:space="preserve"><value>ZIP 归档</value></data>
+  <data name="destination.placeholder" xml:space="preserve"><value>文件夹或 .zip 文件路径</value></data>
+
+  <data name="action.generate" xml:space="preserve"><value>生成</value></data>
+  <data name="action.generating" xml:space="preserve"><value>正在生成...</value></data>
+  <data name="action.cancel" xml:space="preserve"><value>取消</value></data>
+
+  <data name="settings.title" xml:space="preserve"><value>设置</value></data>
+  <data name="settings.language" xml:space="preserve"><value>界面语言</value></data>
+  <data name="settings.languageHint" xml:space="preserve"><value>更改即时生效。</value></data>
+  <data name="settings.appearance" xml:space="preserve"><value>外观</value></data>
+  <data name="settings.darkOn" xml:space="preserve"><value>深色模式已开启</value></data>
+  <data name="settings.darkOff" xml:space="preserve"><value>深色模式已关闭</value></data>
+
+  <data name="preview.title" xml:space="preserve"><value>架构预览</value></data>
+  <data name="preview.paths" xml:space="preserve"><value>路径</value></data>
+  <data name="preview.operations" xml:space="preserve"><value>操作</value></data>
+  <data name="preview.models" xml:space="preserve"><value>模型</value></data>
+  <data name="preview.error" xml:space="preserve"><value>无法解析架构</value></data>
+  <data name="schema.recent" xml:space="preserve"><value>最近</value></data>
+  <data name="schema.dropHere" xml:space="preserve"><value>将 OpenAPI 文件拖到窗口任意位置</value></data>
+</root>

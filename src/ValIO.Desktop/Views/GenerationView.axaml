@@ -1,0 +1,318 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:ValIO.Desktop.ViewModels"
+             xmlns:loc="using:ValIO.Desktop.Localization"
+             xmlns:plug="using:ValIO.Core.Plugins"
+             mc:Ignorable="d"
+             d:DesignWidth="1100" d:DesignHeight="800"
+             x:Class="ValIO.Desktop.Views.GenerationView"
+             x:DataType="vm:GenerationViewModel">
+
+  <UserControl.Styles>
+    <Style Selector="Border.card">
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseLowColor}" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="18" />
+    </Style>
+    <Style Selector="TextBlock.section-title">
+      <Setter Property="FontSize" Value="14" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,0,0,10" />
+    </Style>
+    <Style Selector="TextBlock.section-icon">
+      <Setter Property="FontSize" Value="16" />
+      <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="TextBlock.label">
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+      <Setter Property="Margin" Value="0,8,0,4" />
+    </Style>
+    <Style Selector="TextBlock.helper">
+      <Setter Property="FontSize" Value="11" />
+      <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}" />
+      <Setter Property="TextWrapping" Value="Wrap" />
+      <Setter Property="Margin" Value="0,2,0,0" />
+    </Style>
+    <Style Selector="Button.primary">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="Padding" Value="22,10" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="FontWeight" Value="SemiBold" />
+    </Style>
+    <Style Selector="Button.primary:disabled">
+      <Setter Property="Background" Value="{DynamicResource SystemBaseLowColor}" />
+      <Setter Property="Foreground" Value="{DynamicResource SystemBaseMediumColor}" />
+    </Style>
+    <Style Selector="ToggleButton.chip">
+      <Setter Property="Padding" Value="10,4" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+      <Setter Property="CornerRadius" Value="14" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="{DynamicResource SystemBaseLowColor}" />
+      <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="ToggleButton.chip:checked /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+      <Setter Property="TextElement.Foreground" Value="White" />
+    </Style>
+  </UserControl.Styles>
+
+  <UserControl.Resources>
+    <!-- Reusable template for one OptionField -->
+    <DataTemplate x:Key="OptionFieldTemplate" DataType="vm:OptionFieldViewModel">
+      <StackPanel IsVisible="{Binding IsVisible}" Margin="0,0,0,12">
+        <TextBlock Classes="label" Text="{Binding Description.Name}" />
+        <TextBlock Classes="helper"
+                   Text="{Binding Description.Description}"
+                   IsVisible="{Binding Description.Description, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <!-- Bool -->
+        <CheckBox Content="{Binding Description.Name}"
+                  IsChecked="{Binding BoolValue}"
+                  IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsBool}}" />
+
+        <!-- String -->
+        <TextBox Text="{Binding StringValue}"
+                 Watermark="{Binding Description.DefaultValue}"
+                 IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsString}}" />
+
+        <!-- Int -->
+        <NumericUpDown Value="{Binding IntValue}"
+                       FormatString="0"
+                       IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsInt}}" />
+
+        <!-- Enum single -->
+        <ComboBox ItemsSource="{Binding Choices}"
+                  SelectedValueBinding="{Binding Id}"
+                  SelectedValue="{Binding EnumSingleValue}"
+                  IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsEnumSingle}}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate DataType="plug:OptionChoice">
+              <TextBlock Text="{Binding DisplayName}" />
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <!-- Enum multi (chips) -->
+        <ItemsControl ItemsSource="{Binding Choices}"
+                      IsVisible="{Binding Description.Kind, Converter={x:Static plug:OptionKindConverters.IsEnumMulti}}">
+          <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+              <WrapPanel />
+            </ItemsPanelTemplate>
+          </ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="plug:OptionChoice">
+              <ToggleButton Classes="chip"
+                            Content="{Binding DisplayName}"
+                            Tag="{Binding Id}"
+                            Click="OnMultiChipClick" />
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </StackPanel>
+    </DataTemplate>
+  </UserControl.Resources>
+
+  <ScrollViewer>
+    <StackPanel Spacing="16" MaxWidth="1080" HorizontalAlignment="Stretch">
+
+      <!-- Header -->
+      <StackPanel Spacing="2">
+        <TextBlock Text="{loc:Tr generate.title}" FontSize="26" FontWeight="SemiBold" />
+        <TextBlock Text="{loc:Tr generate.subtitle}"
+                   FontSize="12"
+                   Foreground="{DynamicResource SystemBaseMediumColor}"
+                   TextWrapping="Wrap" />
+      </StackPanel>
+
+      <!-- Schema + Language row -->
+      <Grid ColumnDefinitions="*,16,*">
+        <Border Grid.Column="0" Classes="card">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="section-icon" Text="📄" />
+              <TextBlock Classes="section-title" Text="{loc:Tr schema.title}" />
+            </StackPanel>
+            <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+              <TextBox Grid.Column="0" Text="{Binding SchemaPath}"
+                       Watermark="{loc:Tr schema.placeholder}" />
+              <Button Grid.Column="1" Content="{loc:Tr schema.browse}"
+                      Command="{Binding PickSchemaCommand}" />
+              <Button Grid.Column="2" Content="{loc:Tr schema.recent}"
+                      IsEnabled="{Binding RecentSchemas.Count, Converter={x:Static plug:OptionKindConverters.IsGreaterThanZero}}">
+                <Button.Flyout>
+                  <MenuFlyout ItemsSource="{Binding RecentSchemas}">
+                    <MenuFlyout.ItemTemplate>
+                      <DataTemplate>
+                        <MenuItem Header="{Binding}" Click="OnRecentClicked" Tag="{Binding}" />
+                      </DataTemplate>
+                    </MenuFlyout.ItemTemplate>
+                  </MenuFlyout>
+                </Button.Flyout>
+              </Button>
+            </Grid>
+
+            <!-- Schema preview / error -->
+            <Border Margin="0,10,0,0" Padding="10,8" CornerRadius="6"
+                    Background="{DynamicResource SystemBaseLowColor}"
+                    IsVisible="{Binding HasSchemaPreview}">
+              <StackPanel Spacing="3">
+                <StackPanel Orientation="Horizontal" Spacing="6">
+                  <TextBlock Text="📘" />
+                  <TextBlock Text="{Binding SchemaTitle}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding SchemaVersion}"
+                             Foreground="{DynamicResource SystemBaseMediumColor}" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="14">
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="{Binding SchemaPathCount}" FontWeight="SemiBold" />
+                    <TextBlock Text="{loc:Tr preview.paths}" Foreground="{DynamicResource SystemBaseMediumColor}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="{Binding SchemaOperationCount}" FontWeight="SemiBold" />
+                    <TextBlock Text="{loc:Tr preview.operations}" Foreground="{DynamicResource SystemBaseMediumColor}" />
+                  </StackPanel>
+                  <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="{Binding SchemaModelCount}" FontWeight="SemiBold" />
+                    <TextBlock Text="{loc:Tr preview.models}" Foreground="{DynamicResource SystemBaseMediumColor}" />
+                  </StackPanel>
+                </StackPanel>
+              </StackPanel>
+            </Border>
+            <Border Margin="0,10,0,0" Padding="10,8" CornerRadius="6"
+                    Background="#33CC4040"
+                    IsVisible="{Binding SchemaError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+              <StackPanel Orientation="Horizontal" Spacing="6">
+                <TextBlock Text="⚠" />
+                <TextBlock Text="{loc:Tr preview.error}" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding SchemaError}" TextWrapping="Wrap" />
+              </StackPanel>
+            </Border>
+            <TextBlock Text="{loc:Tr schema.dropHere}"
+                       Margin="0,8,0,0"
+                       FontSize="11"
+                       Foreground="{DynamicResource SystemBaseMediumColor}"
+                       FontStyle="Italic" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="2" Classes="card">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="section-icon" Text="🧬" />
+              <TextBlock Classes="section-title" Text="{loc:Tr language.title}" />
+            </StackPanel>
+            <ComboBox ItemsSource="{Binding AvailablePlugins}"
+                      SelectedItem="{Binding SelectedPlugin}"
+                      DisplayMemberBinding="{Binding DisplayName}"
+                      PlaceholderText="{loc:Tr language.placeholder}"
+                      HorizontalAlignment="Stretch" />
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- Output structure + Plugin options row -->
+      <Grid ColumnDefinitions="*,16,*">
+        <Border Grid.Column="0" Classes="card">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="section-icon" Text="🧩" />
+              <TextBlock Classes="section-title" Text="{loc:Tr output.title}" />
+            </StackPanel>
+            <CheckBox Content="{loc:Tr output.generateModels}" IsChecked="{Binding GenerateModels}" />
+            <CheckBox Content="{loc:Tr output.generateClients}" IsChecked="{Binding GenerateClients}" Margin="0,4,0,0" />
+            <CheckBox Content="{loc:Tr output.generateEnums}" IsChecked="{Binding GenerateEnums}" Margin="0,4,0,0" />
+            <TextBlock Classes="label" Text="{loc:Tr output.namespace}" />
+            <TextBox Text="{Binding NamespaceName}" Watermark="{loc:Tr output.namespace}" />
+          </StackPanel>
+        </Border>
+
+        <Border Grid.Column="2" Classes="card">
+          <StackPanel>
+            <StackPanel Orientation="Horizontal">
+              <TextBlock Classes="section-icon" Text="⚙" />
+              <TextBlock Classes="section-title" Text="{loc:Tr pluginOptions.title}" />
+            </StackPanel>
+
+            <!-- Empty: no plugin chosen -->
+            <TextBlock Classes="helper"
+                       Text="{loc:Tr pluginOptions.empty}"
+                       IsVisible="{Binding SelectedPlugin, Converter={x:Static plug:OptionKindConverters.IsNull}}" />
+
+            <!-- No options for chosen plugin -->
+            <TextBlock Classes="helper"
+                       Text="{loc:Tr pluginOptions.none}"
+                       IsVisible="{Binding OptionFields.Count, Converter={x:Static plug:OptionKindConverters.IsZero}}" />
+
+            <ItemsControl ItemsSource="{Binding OptionFields}"
+                          ItemTemplate="{StaticResource OptionFieldTemplate}" />
+
+            <Border Background="{DynamicResource SystemBaseLowColor}"
+                    CornerRadius="6"
+                    Padding="10,6"
+                    Margin="0,8,0,0"
+                    IsVisible="{Binding HiddenOptionsCount, Converter={x:Static plug:OptionKindConverters.IsGreaterThanZero}}">
+              <TextBlock FontSize="11"
+                         Foreground="{DynamicResource SystemBaseMediumColor}">
+                <TextBlock.Text>
+                  <MultiBinding Converter="{x:Static plug:OptionKindConverters.FormatHidden}">
+                    <Binding Path="HiddenOptionsCount" />
+                    <Binding Source="{x:Static loc:Localizer.Instance}" Path="[pluginOptions.hidden]" />
+                  </MultiBinding>
+                </TextBlock.Text>
+              </TextBlock>
+            </Border>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- Destination -->
+      <Border Classes="card">
+        <StackPanel>
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Classes="section-icon" Text="💾" />
+            <TextBlock Classes="section-title" Text="{loc:Tr destination.title}" />
+          </StackPanel>
+          <StackPanel Orientation="Horizontal" Spacing="14" Margin="0,0,0,8">
+            <RadioButton GroupName="Fmt"
+                         Content="{loc:Tr destination.folder}"
+                         IsChecked="{Binding Format, Converter={x:Static plug:OptionKindConverters.FormatIsFolder}}" />
+            <RadioButton GroupName="Fmt"
+                         Content="{loc:Tr destination.zip}"
+                         IsChecked="{Binding Format, Converter={x:Static plug:OptionKindConverters.FormatIsZip}}" />
+          </StackPanel>
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBox Grid.Column="0" Text="{Binding OutputPath}"
+                     Watermark="{loc:Tr destination.placeholder}" />
+            <Button Grid.Column="1" Content="{loc:Tr schema.browse}"
+                    Command="{Binding PickOutputCommand}" />
+          </Grid>
+        </StackPanel>
+      </Border>
+
+      <!-- Action bar -->
+      <Grid ColumnDefinitions="*,Auto">
+        <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+          <ProgressBar IsIndeterminate="True" Width="120" Height="4"
+                       IsVisible="{Binding IsBusy}" />
+          <TextBlock Text="{Binding StatusMessage}"
+                     VerticalAlignment="Center"
+                     TextWrapping="Wrap"
+                     Foreground="{Binding HasError, Converter={x:Static plug:OptionKindConverters.ErrorBrush}}" />
+        </StackPanel>
+        <Button Grid.Column="1"
+                Classes="primary"
+                Command="{Binding GenerateCommand}">
+          <TextBlock Text="{Binding IsBusy, Converter={x:Static plug:OptionKindConverters.GenerateLabel}}" />
+        </Button>
+      </Grid>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

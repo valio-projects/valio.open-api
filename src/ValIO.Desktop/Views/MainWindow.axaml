@@ -1,0 +1,85 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:vm="using:ValIO.Desktop.ViewModels"
+        xmlns:v="using:ValIO.Desktop.Views"
+        xmlns:loc="using:ValIO.Desktop.Localization"
+        mc:Ignorable="d"
+        d:DesignWidth="1180" d:DesignHeight="800"
+        x:Class="ValIO.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1180" Height="800"
+        MinWidth="980" MinHeight="640"
+        Title="{loc:Tr window.title}"
+        DragDrop.AllowDrop="True">
+
+  <Window.DataTemplates>
+    <DataTemplate DataType="{x:Type vm:GenerationViewModel}">
+      <v:GenerationView />
+    </DataTemplate>
+    <DataTemplate DataType="{x:Type vm:SettingsViewModel}">
+      <v:SettingsView />
+    </DataTemplate>
+  </Window.DataTemplates>
+
+  <Window.Styles>
+    <Style Selector="Button.nav">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="Padding" Value="14,10" />
+      <Setter Property="CornerRadius" Value="6" />
+      <Setter Property="Margin" Value="6,2" />
+    </Style>
+    <Style Selector="Button.nav:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="{DynamicResource SystemBaseLowColor}" />
+    </Style>
+    <Style Selector="Button.nav.active">
+      <Setter Property="Background" Value="{DynamicResource SystemAccentColor}" />
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+  </Window.Styles>
+
+  <Grid ColumnDefinitions="220,*">
+    <!-- Sidebar -->
+    <Border Grid.Column="0"
+            Background="{DynamicResource SystemRegionBrush}"
+            BorderBrush="{DynamicResource SystemBaseLowColor}"
+            BorderThickness="0,0,1,0">
+      <DockPanel LastChildFill="True">
+        <Border DockPanel.Dock="Top" Padding="18,16,18,12">
+          <StackPanel Spacing="2">
+            <TextBlock Text="ValIO" FontSize="22" FontWeight="Bold" />
+            <TextBlock Text="OpenAPI → code"
+                       FontSize="11"
+                       Foreground="{DynamicResource SystemBaseMediumColor}" />
+          </StackPanel>
+        </Border>
+        <StackPanel DockPanel.Dock="Top" Spacing="0">
+          <Button Classes="nav active" Click="OnShowGenerate"
+                  x:Name="GenerateNavButton">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <TextBlock Text="⚙" FontSize="18" />
+              <TextBlock Text="{loc:Tr nav.generate}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+          <Button Classes="nav" Click="OnShowSettings" x:Name="SettingsNavButton">
+            <StackPanel Orientation="Horizontal" Spacing="10">
+              <TextBlock Text="🌐" FontSize="16" />
+              <TextBlock Text="{loc:Tr nav.settings}" VerticalAlignment="Center" />
+            </StackPanel>
+          </Button>
+        </StackPanel>
+        <Border VerticalAlignment="Bottom" Padding="18,10">
+          <TextBlock FontSize="10"
+                     Foreground="{DynamicResource SystemBaseMediumColor}"
+                     Text="v1.0 · .NET 10 + Avalonia 11" />
+        </Border>
+      </DockPanel>
+    </Border>
+
+    <!-- Page surface -->
+    <ContentControl Grid.Column="1" Content="{Binding CurrentPage}" Margin="20" />
+  </Grid>
+</Window>

@@ -1,3 +1,3 @@
-C:\\Workspace\\ValIO\\ValIO\\bin\\Debug\\net9.0\\ValIO.exe generate --schema "C:\Workspace\ValIO\\out\\swagger.json" --output C:\\Workspace\\ValIO\\out --config "C:\\Workspace\\ValIO\\valio.config.typescript.example.json"
-
-C:\\Workspace\\ValIO\\ValIO\\bin\\Debug\\net9.0\\ValIO.exe generate --schema "C:\Workspace\ValIO\\out\\swagger.json" --output C:\\Workspace\\ValIO\\out --config "C:\\Workspace\\ValIO\\valio.config"
+@echo off
+REM Wrapper around the ValIO CLI exe. Pass through all arguments.
+"%~dp0src\ValIO.Cli\bin\Debug\net10.0\valio.exe" %*

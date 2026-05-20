@@ -1,0 +1,32 @@
+---
+title: ValIO
+description: Typsicherer OpenAPI-Codegenerator für 8 Sprachen.
+template: splash
+hero:
+  tagline: HTTP-Clients, Modelle und Validierungsschemas aus OpenAPI 3.x — für TypeScript, C#, Java, Kotlin, Python, PHP, Swift und Unreal C++.
+  actions:
+    - text: Loslegen
+      link: /de/getting-started/
+      icon: right-arrow
+      variant: primary
+    - text: GitHub
+      link: https://github.com/your-org/valio
+      icon: external
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="CLI" icon="terminal">
+    `valio generate -s ./openapi.json -o ./clients -l typescript` — fertig.
+  </Card>
+  <Card title="Web-UI" icon="rocket">
+    Im Browser öffnen, Schema hochladen, ZIP herunterladen. Keine Installation.
+  </Card>
+  <Card title="Desktop" icon="laptop">
+    Natives Avalonia-Programm für Windows, macOS und Linux. Funktioniert offline.
+  </Card>
+  <Card title="Plugin-basiert" icon="puzzle">
+    Jede Sprache ist ein eigenes Plugin mit eigenem Optionssatz.
+  </Card>
+</CardGrid>
