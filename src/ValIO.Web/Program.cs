@@ -40,6 +40,8 @@ builder.Services.Configure<RequestLocalizationOptions>(o =>
     o.SupportedUICultures = supportedCultures;
 });
 
+builder.Services.AddHealthChecks();
+
 var app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
@@ -55,9 +57,22 @@ app.UseAntiforgery();
 
 app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
-// Minimal API endpoints
-app.MapPost("/api/generate", GenerateEndpoint.HandleAsync).DisableAntiforgery();
-app.MapGet("/culture/set", CultureEndpoint.SetCulture);
+// =========================================================================
+// Public REST API
+// =========================================================================
+var api = app.MapGroup("/api").WithTags("ValIO");
+
+api.MapGet("/languages", LanguagesEndpoint.Handle).WithName("ListLanguages");
+api.MapGet("/options/{language}", OptionsEndpoint.Handle).WithName("DescribeOptions");
+api.MapPost("/validate", ValidateEndpoint.HandleAsync).DisableAntiforgery().WithName("ValidateSchema");
+api.MapPost("/generate", GenerateEndpoint.HandleAsync).DisableAntiforgery().WithName("GenerateCode");
+api.MapGet("/spec", ApiSpecEndpoint.Handle).WithName("ApiSpec");
+
+// =========================================================================
+// Infra: health, culture cookie
+// =========================================================================
+app.MapHealthChecks("/healthz").AllowAnonymous();
+app.MapGet("/culture/set", CultureEndpoint.SetCulture).WithName("SetCulture");
 
 app.Run();
 

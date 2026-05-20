@@ -27,8 +27,9 @@
     <PackageVersion Include="System.CommandLine" Version="2.0.1" />
   </ItemGroup>
 
-  <ItemGroup Label="Web (Blazor Server + MudBlazor)">
+  <ItemGroup Label="Web (Blazor Server + MudBlazor + Swagger)">
     <PackageVersion Include="MudBlazor" Version="8.5.0" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.2.0" />
   </ItemGroup>
 
   <ItemGroup Label="Desktop (Avalonia 11)">
