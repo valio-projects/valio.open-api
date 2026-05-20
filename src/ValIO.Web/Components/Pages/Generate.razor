@@ -11,96 +11,181 @@
 
 <PageTitle>Generate — ValIO</PageTitle>
 
-<MudText Typo="Typo.h4" GutterBottom="true">Generate code</MudText>
-<MudText Class="mb-6" Typo="Typo.body1">
-    Pick an OpenAPI schema, choose a target language, tweak the options, get a zip.
-</MudText>
+<MudStack Spacing="0" Class="mb-6">
+    <MudText Typo="Typo.h3" Class="mb-1">Generate code</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Default">
+        OpenAPI schema in, type-safe clients out — pick the target stack and grab the result as a zip.
+    </MudText>
+</MudStack>
 
 <MudGrid>
-    <MudItem xs="12" md="6">
-        <MudPaper Class="pa-6" Elevation="1">
-            <MudText Typo="Typo.h6" GutterBottom="true">Schema</MudText>
 
-            <MudTabs Elevation="0" Rounded="true" ActivePanelIndexChanged="OnTabChanged">
-                <MudTabPanel Text="URL">
+    <!-- ============================== STEP 1. Schema ============================== -->
+    <MudItem xs="12" md="6">
+        <SectionCard Number="1"
+                     Title="Schema"
+                     Subtitle="JSON or YAML. Public URL or local upload."
+                     Icon="@Icons.Material.Filled.UploadFile"
+                     IsValid="@State.HasSchema">
+            <MudTabs Elevation="0" Rounded="true" Border="false"
+                     ActivePanelIndex="@((int)State.SchemaKind)"
+                     ActivePanelIndexChanged="OnTabChanged">
+                <MudTabPanel Text="URL" Icon="@Icons.Material.Filled.Link">
                     <MudTextField @bind-Value="State.SchemaUrl"
                                   Label="OpenAPI schema URL"
                                   Placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
-                                  Variant="Variant.Outlined" />
+                                  Variant="Variant.Outlined"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@Icons.Material.Filled.Public"
+                                  Class="mt-2" />
                 </MudTabPanel>
-                <MudTabPanel Text="Upload">
-                    <MudFileUpload T="IBrowserFile" FilesChanged="OnFileChanged" Accept=".json,.yaml,.yml">
-                        <ActivatorContent>
-                            <MudButton Variant="Variant.Outlined"
-                                       Color="Color.Primary"
-                                       StartIcon="@Icons.Material.Filled.Upload">
-                                Choose file
-                            </MudButton>
-                        </ActivatorContent>
-                    </MudFileUpload>
-                    @if (!string.IsNullOrEmpty(State.UploadedSchemaName))
-                    {
-                        <MudText Typo="Typo.caption" Class="mt-2">
-                            Selected: @State.UploadedSchemaName (@(State.UploadedSchemaBytes?.Length ?? 0) bytes)
+                <MudTabPanel Text="Upload" Icon="@Icons.Material.Filled.CloudUpload">
+                    <MudStack Class="mt-2" Spacing="2">
+                        <MudFileUpload T="IBrowserFile" FilesChanged="OnFileChanged"
+                                       Accept=".json,.yaml,.yml" MaximumFileCount="1">
+                            <ActivatorContent>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                           StartIcon="@Icons.Material.Filled.AttachFile">
+                                    Choose .json or .yaml file
+                                </MudButton>
+                            </ActivatorContent>
+                        </MudFileUpload>
+                        @if (!string.IsNullOrEmpty(State.UploadedSchemaName))
+                        {
+                            <MudChip T="string" Color="Color.Success"
+                                     Icon="@Icons.Material.Filled.CheckCircle"
+                                     OnClose="ClearUpload">
+                                @State.UploadedSchemaName · @FormatBytes(State.UploadedSchemaBytes?.Length ?? 0)
+                            </MudChip>
+                        }
+                        <MudText Typo="Typo.caption" Color="Color.Default">
+                            Maximum 10 MB. Schema never leaves the server — it's parsed in memory.
                         </MudText>
-                    }
+                    </MudStack>
                 </MudTabPanel>
             </MudTabs>
-        </MudPaper>
+        </SectionCard>
     </MudItem>
 
+    <!-- ============================== STEP 2. Language ============================== -->
     <MudItem xs="12" md="6">
-        <MudPaper Class="pa-6" Elevation="1">
-            <MudText Typo="Typo.h6" GutterBottom="true">Language</MudText>
-            <MudSelect T="string" @bind-Value="State.LanguageId"
-                       Label="Target language"
-                       Variant="Variant.Outlined">
+        <SectionCard Number="2"
+                     Title="Target language"
+                     Subtitle="Pick a generator plugin."
+                     Icon="@Icons.Material.Filled.Code"
+                     IsValid="@(CurrentPlugin is not null)">
+            <MudSelect T="string" Value="@State.LanguageId"
+                       ValueChanged="OnLanguageChanged"
+                       Label="Language"
+                       Variant="Variant.Outlined"
+                       Class="mt-2"
+                       Dense="true">
                 @foreach (var p in Registry.AllPlugins)
                 {
-                    <MudSelectItem T="string" Value="@p.LanguageId">@p.DisplayName</MudSelectItem>
+                    <MudSelectItem T="string" Value="@p.LanguageId">
+                        <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                            <MudIcon Icon="@LanguageIcon(p.LanguageId)" Size="Size.Small" />
+                            <span>@p.DisplayName</span>
+                            <MudSpacer />
+                            <MudText Typo="Typo.caption" Color="Color.Default">@p.LanguageId</MudText>
+                        </MudStack>
+                    </MudSelectItem>
                 }
             </MudSelect>
-
-            @if (CurrentPlugin is { } plugin)
+            @if (CurrentPlugin is { } plugin && plugin.LanguageAliases.Count > 0)
             {
-                <MudText Typo="Typo.subtitle2" Class="mt-4">Plugin: @plugin.DisplayName</MudText>
-                <DynamicPluginOptions Plugin="plugin" State="State" />
+                <MudText Typo="Typo.caption" Class="mt-2">
+                    Aliases: @string.Join(", ", plugin.LanguageAliases)
+                </MudText>
             }
-        </MudPaper>
+        </SectionCard>
     </MudItem>
 
+    <!-- ============================== STEP 3. Plugin options ============================== -->
+    <MudItem xs="12">
+        <SectionCard Number="3"
+                     Title="Plugin options"
+                     Subtitle="Configure how the generator emits code. Options with dependencies appear as you fill prerequisites."
+                     Icon="@Icons.Material.Filled.Tune"
+                     IsValid="@(CurrentPlugin is not null)">
+            @if (CurrentPlugin is null)
+            {
+                <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mt-2">
+                    Pick a target language first.
+                </MudAlert>
+            }
+            else
+            {
+                <DynamicPluginOptions Plugin="CurrentPlugin" State="State" />
+            }
+        </SectionCard>
+    </MudItem>
+
+    <!-- ============================== STEP 4. Output structure ============================== -->
     <MudItem xs="12" md="6">
-        <MudPaper Class="pa-6" Elevation="1">
-            <MudText Typo="Typo.h6" GutterBottom="true">Output structure</MudText>
-            <MudCheckBox T="bool" @bind-Value="State.GenerateModels" Label="Generate models" />
-            <MudCheckBox T="bool" @bind-Value="State.GenerateClients" Label="Generate clients" />
-            <MudCheckBox T="bool" @bind-Value="State.GenerateEnums" Label="Generate enums" />
+        <SectionCard Number="4"
+                     Title="What to generate"
+                     Subtitle="Toggle output categories and set a namespace/package."
+                     Icon="@Icons.Material.Filled.Layers"
+                     IsValid="true">
+            <MudStack Class="mt-2" Spacing="0">
+                <MudSwitch T="bool" @bind-Value="State.GenerateModels" Color="Color.Primary" Label="Models / DTOs" />
+                <MudSwitch T="bool" @bind-Value="State.GenerateClients" Color="Color.Primary" Label="HTTP clients" />
+                <MudSwitch T="bool" @bind-Value="State.GenerateEnums" Color="Color.Primary" Label="Enums" />
+            </MudStack>
             <MudTextField @bind-Value="State.NamespaceName"
-                          Label="Namespace / package (optional)"
-                          Variant="Variant.Outlined" Class="mt-2" />
-        </MudPaper>
+                          Label="Namespace / package"
+                          HelperText="Used by C#, Java, Kotlin, PHP. Ignored where not applicable."
+                          Variant="Variant.Outlined"
+                          Class="mt-4" />
+        </SectionCard>
     </MudItem>
 
+    <!-- ============================== STEP 5. Result ============================== -->
     <MudItem xs="12" md="6">
-        <MudPaper Class="pa-6" Elevation="1">
-            <MudText Typo="Typo.h6" GutterBottom="true">Result</MudText>
-            <MudText>Result is delivered as a downloadable ZIP archive.</MudText>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       Size="Size.Large"
-                       Disabled="@(!State.IsReady || _busy)"
-                       OnClick="GenerateAsync"
-                       Class="mt-4">
-                @if (_busy)
-                {
-                    <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
-                    <span>Generating...</span>
-                }
-                else
-                {
-                    <span>Generate &amp; download</span>
-                }
-            </MudButton>
-        </MudPaper>
+        <SectionCard Number="5"
+                     Title="Result"
+                     Subtitle="Download the generated tree as a zip."
+                     Icon="@Icons.Material.Filled.Download"
+                     IsValid="State.IsReady">
+
+            @if (State.IsReady)
+            {
+                <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mt-2">
+                    Ready to generate <strong>@CurrentPlugin?.DisplayName</strong>.
+                </MudAlert>
+            }
+            else
+            {
+                <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mt-2">
+                    @MissingFieldsMessage()
+                </MudAlert>
+            }
+
+            <MudStack Row="true" Class="mt-4" Spacing="2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           Size="Size.Large" FullWidth="true"
+                           StartIcon="@Icons.Material.Filled.RocketLaunch"
+                           Disabled="@(!State.IsReady || _busy)"
+                           OnClick="GenerateAsync">
+                    @if (_busy)
+                    {
+                        <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                        <span>Generating &amp; packaging...</span>
+                    }
+                    else
+                    {
+                        <span>Generate &amp; download zip</span>
+                    }
+                </MudButton>
+                <MudButton Variant="Variant.Outlined" Color="Color.Default"
+                           StartIcon="@Icons.Material.Filled.Refresh"
+                           OnClick="OnReset"
+                           Disabled="@_busy">
+                    Reset
+                </MudButton>
+            </MudStack>
+        </SectionCard>
     </MudItem>
 </MudGrid>
 
@@ -115,6 +200,12 @@
         State.SchemaKind = index == 0 ? SchemaSourceKind.Url : SchemaSourceKind.Upload;
     }
 
+    private void OnLanguageChanged(string? newId)
+    {
+        State.LanguageId = newId;
+        StateHasChanged();
+    }
+
     private async Task OnFileChanged(IBrowserFile file)
     {
         State.SchemaKind = SchemaSourceKind.Upload;
@@ -125,9 +216,40 @@
         State.UploadedSchemaName = file.Name;
     }
 
+    private void ClearUpload(MudChip<string> _)
+    {
+        State.UploadedSchemaBytes = null;
+        State.UploadedSchemaName = null;
+    }
+
+    private void OnReset()
+    {
+        State.SchemaUrl = null;
+        State.UploadedSchemaBytes = null;
+        State.UploadedSchemaName = null;
+        State.NamespaceName = null;
+        State.LanguageId = null;
+        State.GenerateModels = true;
+        State.GenerateClients = true;
+        State.GenerateEnums = true;
+        State.ResetPluginOptions();
+        Snackbar.Add("Form reset", Severity.Info);
+    }
+
+    private string MissingFieldsMessage()
+    {
+        var missing = new List<string>();
+        if (!State.HasSchema) missing.Add("schema");
+        if (string.IsNullOrWhiteSpace(State.LanguageId)) missing.Add("target language");
+        return missing.Count == 0
+            ? "Almost ready."
+            : "Still missing: " + string.Join(", ", missing) + ".";
+    }
+
     private async Task GenerateAsync()
     {
         _busy = true;
+        StateHasChanged();
         try
         {
             var payload = new
@@ -146,6 +268,7 @@
             };
 
             await JS.InvokeVoidAsync("valioDownload", "/api/generate", payload);
+            Snackbar.Add("Zip downloaded.", Severity.Success);
         }
         catch (Exception ex)
         {
@@ -154,6 +277,27 @@
         finally
         {
             _busy = false;
+            StateHasChanged();
         }
+    }
+
+    private static string LanguageIcon(string id) => id switch
+    {
+        "typescript" => Icons.Material.Filled.Code,
+        "csharp"     => Icons.Material.Filled.Tag,
+        "java"       => Icons.Material.Filled.Coffee,
+        "kotlin"     => Icons.Material.Filled.Bolt,
+        "python"     => Icons.Material.Filled.Pets,
+        "php"        => Icons.Material.Filled.Web,
+        "swift"      => Icons.Material.Filled.FlightTakeoff,
+        "cpp"        => Icons.Material.Filled.Memory,
+        _            => Icons.Material.Filled.Terminal,
+    };
+
+    private static string FormatBytes(int bytes)
+    {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return (bytes / 1024.0).ToString("F1") + " KB";
+        return (bytes / 1024.0 / 1024.0).ToString("F1") + " MB";
     }
 }

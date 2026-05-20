@@ -44,11 +44,12 @@ public sealed class GenerationFormState : INotifyPropertyChanged
 
     public void ResetPluginOptions() => _pluginOptions.Clear();
 
+    public bool HasSchema => SchemaKind == SchemaSourceKind.Url
+        ? !string.IsNullOrWhiteSpace(SchemaUrl)
+        : UploadedSchemaBytes is { Length: > 0 };
+
     public bool IsReady =>
-        !string.IsNullOrWhiteSpace(LanguageId) &&
-        (SchemaKind == SchemaSourceKind.Url
-            ? !string.IsNullOrWhiteSpace(SchemaUrl)
-            : UploadedSchemaBytes is { Length: > 0 });
+        !string.IsNullOrWhiteSpace(LanguageId) && HasSchema;
 
     public GenerationConfiguration ToConfiguration() => new()
     {
