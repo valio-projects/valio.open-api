@@ -26,6 +26,7 @@ builder.Services.AddAllGeneratorPlugins();
 
 // Web-specific
 builder.Services.AddScoped<GenerationFormState>();
+builder.Services.AddScoped<ThemeService>();
 builder.Services.AddSingleton<ISafeSchemaFetcher, SafeSchemaFetcher>();
 
 // Localization for Web UI

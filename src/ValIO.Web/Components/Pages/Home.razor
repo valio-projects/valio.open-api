@@ -1,36 +1,125 @@
 @page "/"
+@using ValIO.Core.Plugins
+@inject IGeneratorRegistry Registry
 
 <PageTitle>ValIO — OpenAPI Code Generator</PageTitle>
 
-<MudPaper Elevation="0" Class="pa-8 d-flex flex-column align-center text-center">
-    <MudText Typo="Typo.h2" GutterBottom="true">ValIO</MudText>
-    <MudText Typo="Typo.h6" Class="mb-6" Style="max-width:560px">
-        Generate type-safe HTTP clients, models, and validation schemas
-        for TypeScript, C#, Java, Kotlin, Python, PHP, Swift, and Unreal-flavored C++
-        from OpenAPI 3.x.
+<!-- Hero -->
+<MudPaper Elevation="0" Class="pa-12 d-flex flex-column align-center text-center mud-theme-primary"
+          Style="border-radius: 16px; background: linear-gradient(135deg, #5b6cf7 0%, #9c27b0 100%); color: white;">
+    <MudIcon Icon="@Icons.Material.Filled.Bolt" Size="Size.Large" Class="mb-4" Style="font-size: 64px;" />
+    <MudText Typo="Typo.h2" Style="font-weight: 700;">ValIO</MudText>
+    <MudText Typo="Typo.h5" Class="mt-2 mb-1" Style="opacity: 0.85;">OpenAPI → type-safe code</MudText>
+    <MudText Typo="Typo.body1" Class="mb-6" Style="max-width: 640px; opacity: 0.92;">
+        Generate HTTP clients, models, and validation schemas for
+        <strong>TypeScript</strong>, <strong>C#</strong>, <strong>Java</strong>,
+        <strong>Kotlin</strong>, <strong>Python</strong>, <strong>PHP</strong>,
+        <strong>Swift</strong>, and <strong>Unreal-flavored C++</strong> from any OpenAPI 3.x schema.
     </MudText>
-    <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Large" Href="/generate">
-        Generate code
-    </MudButton>
+    <MudStack Row="true" Spacing="2">
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.RocketLaunch" Href="/generate">
+            Generate code
+        </MudButton>
+        <MudButton Variant="Variant.Outlined" Color="Color.Inherit" Size="Size.Large"
+                   StartIcon="@Icons.Material.Filled.RuleFolder" Href="/validate">
+            Validate schema
+        </MudButton>
+    </MudStack>
 </MudPaper>
 
+<!-- What you get -->
 <MudGrid Class="mt-8">
     <MudItem xs="12" md="4">
-        <MudPaper Class="pa-6" Elevation="1">
-            <MudText Typo="Typo.h6" GutterBottom="true">CLI</MudText>
-            <MudText>One command from OpenAPI to clients. Configurable per language.</MudText>
-        </MudPaper>
+        <MudCard Elevation="2" Class="pa-2" Style="height:100%;">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.Terminal" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.h6" Class="mt-2">CLI</MudText>
+                <MudText Typo="Typo.body2">One command from OpenAPI to clients. Folder or zip output, plugin options, multiple targets per project.</MudText>
+                <MudText Typo="Typo.caption" Class="mt-3 d-block" Style="font-family: monospace;">
+                    valio generate -s api.json -l typescript -o ./out
+                </MudText>
+            </MudCardContent>
+        </MudCard>
     </MudItem>
     <MudItem xs="12" md="4">
-        <MudPaper Class="pa-6" Elevation="1">
-            <MudText Typo="Typo.h6" GutterBottom="true">Web UI</MudText>
-            <MudText>Browser-based playground — upload a schema, get a zip.</MudText>
-        </MudPaper>
+        <MudCard Elevation="2" Class="pa-2" Style="height:100%;">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.Public" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.h6" Class="mt-2">Web UI</MudText>
+                <MudText Typo="Typo.body2">This page. Upload a schema, configure visually, get a zip. No install required.</MudText>
+                <MudButton Class="mt-3" Href="/generate" Color="Color.Primary" Variant="Variant.Text" Size="Size.Small">
+                    Try the playground →
+                </MudButton>
+            </MudCardContent>
+        </MudCard>
     </MudItem>
     <MudItem xs="12" md="4">
-        <MudPaper Class="pa-6" Elevation="1">
-            <MudText Typo="Typo.h6" GutterBottom="true">Desktop</MudText>
-            <MudText>Native Avalonia app for offline use.</MudText>
-        </MudPaper>
+        <MudCard Elevation="2" Class="pa-2" Style="height:100%;">
+            <MudCardContent>
+                <MudIcon Icon="@Icons.Material.Filled.Laptop" Color="Color.Primary" Size="Size.Large" />
+                <MudText Typo="Typo.h6" Class="mt-2">Desktop</MudText>
+                <MudText Typo="Typo.body2">Native Avalonia app — works offline. Same plugins, same options, native file pickers, runs on Windows / macOS / Linux.</MudText>
+            </MudCardContent>
+        </MudCard>
     </MudItem>
 </MudGrid>
+
+<!-- Language matrix -->
+<MudPaper Elevation="0" Class="pa-6 mt-8" Style="border-radius: 12px; border: 1px solid var(--mud-palette-divider);">
+    <MudText Typo="Typo.h5" Class="mb-1">Supported languages</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-4">
+        @Registry.AllPlugins.Count generators registered, each with its own option set.
+    </MudText>
+    <MudGrid>
+        @foreach (var plugin in Registry.AllPlugins.OrderBy(p => p.DisplayName))
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Elevation="0" Class="pa-3 d-flex align-center"
+                          Style="border: 1px solid var(--mud-palette-divider); border-radius: 8px;">
+                    <MudIcon Icon="@LanguageIcon(plugin.LanguageId)" Color="Color.Primary" Class="mr-3" />
+                    <div>
+                        <MudText Typo="Typo.subtitle1" Style="line-height: 1.2;">@plugin.DisplayName</MudText>
+                        <MudText Typo="Typo.caption" Color="Color.Default">
+                            @plugin.OptionsDescriptor.GetOptionDescriptions().Count options
+                            · @plugin.LanguageAliases.Count alias@(plugin.LanguageAliases.Count == 1 ? "" : "es")
+                        </MudText>
+                    </div>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+</MudPaper>
+
+<!-- REST API hint -->
+<MudPaper Elevation="0" Class="pa-6 mt-8" Style="border-radius: 12px; border: 1px solid var(--mud-palette-divider);">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+        <MudIcon Icon="@Icons.Material.Filled.Api" Color="Color.Primary" />
+        <MudText Typo="Typo.h6">Also a REST API</MudText>
+    </MudStack>
+    <MudText Typo="Typo.body2" Color="Color.Default" Class="mb-3">
+        Every feature exposed in this UI is available as a REST endpoint — scriptable from any client.
+    </MudText>
+    <MudStack Row="true" Spacing="2">
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">GET /api/languages</MudChip>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">GET /api/options/{language}</MudChip>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">POST /api/validate</MudChip>
+        <MudChip T="string" Variant="Variant.Outlined" Color="Color.Primary">POST /api/generate</MudChip>
+        <MudChip T="string" Variant="Variant.Text" Color="Color.Default">Full spec at /api/spec</MudChip>
+    </MudStack>
+</MudPaper>
+
+@code {
+    private static string LanguageIcon(string id) => id switch
+    {
+        "typescript" => Icons.Material.Filled.Code,
+        "csharp"     => Icons.Material.Filled.Tag,
+        "java"       => Icons.Material.Filled.Coffee,
+        "kotlin"     => Icons.Material.Filled.Bolt,
+        "python"     => Icons.Material.Filled.Pets,
+        "php"        => Icons.Material.Filled.Web,
+        "swift"      => Icons.Material.Filled.FlightTakeoff,
+        "cpp"        => Icons.Material.Filled.Memory,
+        _            => Icons.Material.Filled.Terminal,
+    };
+}

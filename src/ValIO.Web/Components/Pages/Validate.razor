@@ -1,0 +1,161 @@
+@page "/validate"
+@rendermode InteractiveServer
+
+@using System.Text.Json
+@using Microsoft.OpenApi
+@using ValIO.Parsers.Interfaces
+@using ValIO.Web.Endpoints
+@using ValIO.Web.Services
+@inject IOpenApiDocumentParser Parser
+@inject ISafeSchemaFetcher Fetcher
+@inject ISnackbar Snackbar
+
+<PageTitle>Validate — ValIO</PageTitle>
+
+<MudStack Spacing="0" Class="mb-6">
+    <MudText Typo="Typo.h3" Class="mb-1">Validate OpenAPI schema</MudText>
+    <MudText Typo="Typo.body1" Color="Color.Default">
+        Parse the schema and see what's in it — without generating any code.
+    </MudText>
+</MudStack>
+
+<MudGrid>
+    <MudItem xs="12" md="@(_result is null ? 12 : 6)">
+        <MudPaper Class="pa-6" Elevation="1">
+            <MudText Typo="Typo.h6" Class="mb-3">Schema source</MudText>
+            <MudTabs Elevation="0" ActivePanelIndex="@_tabIndex" ActivePanelIndexChanged="@(i => _tabIndex = i)">
+                <MudTabPanel Text="URL" Icon="@Icons.Material.Filled.Link">
+                    <MudTextField @bind-Value="_url"
+                                  Label="OpenAPI schema URL"
+                                  Placeholder="https://petstore3.swagger.io/api/v3/openapi.json"
+                                  Variant="Variant.Outlined" Class="mt-2" />
+                </MudTabPanel>
+                <MudTabPanel Text="Upload" Icon="@Icons.Material.Filled.CloudUpload">
+                    <MudFileUpload T="IBrowserFile" FilesChanged="OnFileChanged" Accept=".json,.yaml,.yml" Class="mt-2">
+                        <ActivatorContent>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+                                       StartIcon="@Icons.Material.Filled.AttachFile">
+                                Choose .json or .yaml file
+                            </MudButton>
+                        </ActivatorContent>
+                    </MudFileUpload>
+                    @if (!string.IsNullOrEmpty(_fileName))
+                    {
+                        <MudChip T="string" Color="Color.Success" Class="mt-2">@_fileName · @(_fileBytes?.Length ?? 0) bytes</MudChip>
+                    }
+                </MudTabPanel>
+            </MudTabs>
+
+            <MudButton Class="mt-4" Variant="Variant.Filled" Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.RuleFolder"
+                       OnClick="OnValidate"
+                       Disabled="@(_busy || !CanValidate)">
+                @if (_busy)
+                {
+                    <MudProgressCircular Class="mr-2" Size="Size.Small" Indeterminate="true" />
+                    <span>Validating...</span>
+                }
+                else
+                {
+                    <span>Validate</span>
+                }
+            </MudButton>
+        </MudPaper>
+    </MudItem>
+
+    @if (_result is not null)
+    {
+        <MudItem xs="12" md="6">
+            <MudPaper Class="pa-6" Elevation="1">
+                @if (_result.IsValid)
+                {
+                    <MudAlert Severity="Severity.Success" Variant="Variant.Outlined" Class="mb-4">
+                        Schema is valid.
+                    </MudAlert>
+                    <MudSimpleTable Hover="true" Dense="true">
+                        <tbody>
+                            <tr><td><strong>Title</strong></td><td>@_result.Title</td></tr>
+                            <tr><td><strong>Version</strong></td><td>@_result.Version</td></tr>
+                            <tr><td><strong>Paths</strong></td><td>@_result.PathCount</td></tr>
+                            <tr><td><strong>Operations</strong></td><td>@_result.OperationCount</td></tr>
+                            <tr><td><strong>Component schemas</strong></td><td>@_result.ComponentSchemaCount</td></tr>
+                        </tbody>
+                    </MudSimpleTable>
+                }
+                else
+                {
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Outlined">
+                        <MudText Typo="Typo.subtitle2">Schema is not valid</MudText>
+                        <MudText Typo="Typo.body2" Class="mt-2">@_result.Error</MudText>
+                    </MudAlert>
+                }
+            </MudPaper>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    private int _tabIndex;
+    private string? _url;
+    private byte[]? _fileBytes;
+    private string? _fileName;
+    private bool _busy;
+    private ValidateEndpoint.ValidateResponse? _result;
+
+    private bool CanValidate =>
+        (_tabIndex == 0 && !string.IsNullOrWhiteSpace(_url)) ||
+        (_tabIndex == 1 && _fileBytes is { Length: > 0 });
+
+    private async Task OnFileChanged(IBrowserFile file)
+    {
+        using var ms = new MemoryStream();
+        await using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024);
+        await stream.CopyToAsync(ms);
+        _fileBytes = ms.ToArray();
+        _fileName = file.Name;
+    }
+
+    private async Task OnValidate()
+    {
+        _busy = true;
+        _result = null;
+        try
+        {
+            string schemaPath = _tabIndex == 0
+                ? await Fetcher.PrepareUrlAsync(_url!)
+                : await Fetcher.PrepareUploadAsync(_fileName!, _fileBytes!);
+
+            OpenApiDocument doc = Uri.TryCreate(schemaPath, UriKind.Absolute, out _)
+                ? await Parser.ParseFromUrlAsync(schemaPath)
+                : await Parser.ParseFromFileAsync(schemaPath);
+
+            var opCount = doc.Paths?.Sum(p => p.Value.Operations?.Count ?? 0) ?? 0;
+            _result = new ValidateEndpoint.ValidateResponse(
+                IsValid: true,
+                Title: doc.Info?.Title,
+                Version: doc.Info?.Version,
+                PathCount: doc.Paths?.Count ?? 0,
+                OperationCount: opCount,
+                ComponentSchemaCount: doc.Components?.Schemas?.Count ?? 0,
+                Warnings: Array.Empty<string>(),
+                Error: null);
+        }
+        catch (Exception ex)
+        {
+            _result = new ValidateEndpoint.ValidateResponse(
+                IsValid: false,
+                Title: null,
+                Version: null,
+                PathCount: 0,
+                OperationCount: 0,
+                ComponentSchemaCount: 0,
+                Warnings: Array.Empty<string>(),
+                Error: ex.Message);
+            Snackbar.Add($"Validation failed: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
