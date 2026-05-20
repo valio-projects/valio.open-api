@@ -1,0 +1,21 @@
+import { UserRole } from "../userRole/userRole";
+
+export interface User {
+    /**
+     * @type {number}
+     */
+    id: number;
+    /**
+     * @type {string}
+     */
+    name: string;
+    /**
+     * @type {string}
+     */
+    email: string;
+    /**
+     * @type {UserRole | null | undefined}
+     * @nullish
+     */
+    role?: UserRole | null | undefined;
+}

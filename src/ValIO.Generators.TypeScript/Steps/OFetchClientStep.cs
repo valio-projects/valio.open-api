@@ -1,5 +1,7 @@
 using ValIO.Core.Interfaces;
-using ValIO.Core.Plugins;
+using ValIO.Core.IR;
+using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Renderers;
 using ValIO.Generators.TypeScript.OFetch.Ast.Builders;
 using ValIO.Generators.TypeScript.Options;
@@ -7,56 +9,24 @@ using ValIO.Generators.TypeScript.Options;
 namespace ValIO.Generators.TypeScript.Steps;
 
 /// <summary>
-/// Step: emits an ofetch client (<c>{op}.ofetch.ts</c>) per IR operation via AST.
+/// Step: emits an <c>ofetch</c> client (<c>{op}.ofetch.ts</c>) per IR operation via AST.
 /// Activated when <c>options.Transports</c> contains "ofetch".
 /// </summary>
-public sealed class OFetchClientStep : ICodeGenerationStep
+public sealed class OFetchClientStep : TypeScriptClientStepBase
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly TypeScriptAstRenderer _renderer;
+    public override string Name => "typescript-ofetch-client";
+    public override int Order => 44;
+    protected override string TransportId => TypeScriptOptionIds.Transport.OFetch;
+    protected override string FileSuffix => ".ofetch.ts";
 
-    public string Name => "typescript-ofetch-client";
-    public int Order => 44;
-
-    public OFetchClientStep(INamingConverter namingConverter)
-        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
-    {
-    }
-
+    public OFetchClientStep(INamingConverter namingConverter) : base(namingConverter) { }
     public OFetchClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
+        : base(namingConverter, nodeRenderers) { }
+
+    protected override SourceFileNode BuildOperationSourceFile(
+        IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
-        _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _renderer = new TypeScriptAstRenderer(nodeRenderers);
-    }
-
-    public bool ShouldExecute(GenerationContext context)
-    {
-        if (!context.Configuration.GenerateClients) return false;
-        var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        return opts?.Transports?.Contains(TypeScriptOptionIds.Transport.OFetch, StringComparer.OrdinalIgnoreCase) == true;
-    }
-
-    public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
-    {
-        var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        var builder = new OFetchClientAstBuilder(_namingConverter, opts);
-        var fileOrg = context.Configuration.FileOrganization;
-        var clientsPath = fileOrg.ClientsPath ?? "api";
-
-        foreach (var client in context.IrDocument.Clients)
-        {
-            foreach (var operation in client.Operations)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var sourceFile = builder.BuildOperationClientSourceFile(operation, fileOrg);
-                var content = _renderer.Render(sourceFile);
-                var fileName = _namingConverter.ToCamelCase(operation.MethodName);
-                var relativePath = $"{clientsPath}/{fileName}/{fileName}.ofetch.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
-            }
-        }
-
-        return Task.CompletedTask;
+        var builder = new OFetchClientAstBuilder(NamingConverter, options);
+        return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

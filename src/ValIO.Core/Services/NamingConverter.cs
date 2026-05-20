@@ -71,14 +71,12 @@ public class NamingConverter : INamingConverter
         var words = new List<string>();
         var currentWord = new StringBuilder();
 
-        foreach (var c in input)
+        for (var i = 0; i < input.Length; i++)
         {
-            if (char.IsUpper(c) && currentWord.Length > 0)
-            {
-                words.Add(currentWord.ToString());
-                currentWord.Clear();
-            }
-            else if (c == '_' || c == '-' || c == ' ' || c == '.')
+            var c = input[i];
+
+            // Explicit separators flush the current word.
+            if (c == '_' || c == '-' || c == ' ' || c == '.')
             {
                 if (currentWord.Length > 0)
                 {
@@ -88,8 +86,37 @@ public class NamingConverter : INamingConverter
                 continue;
             }
 
-            if (char.IsLetterOrDigit(c))
-                currentWord.Append(c);
+            if (!char.IsLetterOrDigit(c))
+                continue;
+
+            // Boundary heuristics for camel/Pascal/ALL_CAPS mixes:
+            //   "myAPIClient" → ["my", "API", "Client"]
+            //   "USER_ID"     → split by the underscore above; "USER" and "ID" stay intact
+            //   "HTTPServer"  → ["HTTP", "Server"]
+            // Two rules trigger a boundary BEFORE appending the current char:
+            //   1. upper after lower:   lower→Upper  (e.g. "y" → "A")
+            //   2. upper before lower:  run of uppers ending with one upper followed by a lower
+            if (currentWord.Length > 0 && char.IsUpper(c))
+            {
+                var prev = currentWord[^1];
+                var nextIsLower = i + 1 < input.Length && char.IsLower(input[i + 1]);
+                var prevIsLowerOrDigit = char.IsLower(prev) || char.IsDigit(prev);
+                var prevIsUpperAndNextIsLower = char.IsUpper(prev) && nextIsLower;
+
+                if (prevIsLowerOrDigit || prevIsUpperAndNextIsLower)
+                {
+                    words.Add(currentWord.ToString());
+                    currentWord.Clear();
+                }
+            }
+            else if (currentWord.Length > 0 && char.IsDigit(c) && !char.IsDigit(currentWord[^1]))
+            {
+                // letter→digit also a boundary (e.g. "Version2" → ["Version", "2"])
+                words.Add(currentWord.ToString());
+                currentWord.Clear();
+            }
+
+            currentWord.Append(c);
         }
 
         if (currentWord.Length > 0)

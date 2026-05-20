@@ -1,0 +1,8 @@
+package com.example.generated.models;
+
+public record User(
+    int id,
+    String name,
+    String email,
+    UserRole role
+) {}

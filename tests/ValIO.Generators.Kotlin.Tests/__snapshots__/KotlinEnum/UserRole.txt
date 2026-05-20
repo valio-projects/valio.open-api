@@ -1,0 +1,11 @@
+package com.example.generated.models
+
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+
+@Serializable
+enum class UserRole {
+    @SerialName("admin") ADMIN,
+    @SerialName("user") USER,
+    @SerialName("guest") GUEST,
+}

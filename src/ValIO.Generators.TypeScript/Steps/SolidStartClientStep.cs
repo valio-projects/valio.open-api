@@ -1,5 +1,7 @@
 using ValIO.Core.Interfaces;
-using ValIO.Core.Plugins;
+using ValIO.Core.IR;
+using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Renderers;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Solid.Ast.Builders;
@@ -16,53 +18,21 @@ namespace ValIO.Generators.TypeScript.Steps;
 /// fetch-based async function — Solid's bundler turns it into an RPC handler on the
 /// server and a typed RPC client on the browser at build time.
 /// </summary>
-public sealed class SolidStartClientStep : ICodeGenerationStep
+public sealed class SolidStartClientStep : TypeScriptClientStepBase
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly TypeScriptAstRenderer _renderer;
+    public override string Name => "typescript-solidstart-client";
+    public override int Order => 48;
+    protected override string TransportId => TypeScriptOptionIds.Transport.Solid;
+    protected override string FileSuffix => ".solid.ts";
 
-    public string Name => "typescript-solidstart-client";
-    public int Order => 48;
-
-    public SolidStartClientStep(INamingConverter namingConverter)
-        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
-    {
-    }
-
+    public SolidStartClientStep(INamingConverter namingConverter) : base(namingConverter) { }
     public SolidStartClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
+        : base(namingConverter, nodeRenderers) { }
+
+    protected override SourceFileNode BuildOperationSourceFile(
+        IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
-        _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _renderer = new TypeScriptAstRenderer(nodeRenderers);
-    }
-
-    public bool ShouldExecute(GenerationContext context)
-    {
-        if (!context.Configuration.GenerateClients) return false;
-        var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        return opts?.Transports?.Contains(TypeScriptOptionIds.Transport.Solid, StringComparer.OrdinalIgnoreCase) == true;
-    }
-
-    public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
-    {
-        var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        var builder = new SolidStartClientAstBuilder(_namingConverter, opts);
-        var fileOrg = context.Configuration.FileOrganization;
-        var clientsPath = fileOrg.ClientsPath ?? "api";
-
-        foreach (var client in context.IrDocument.Clients)
-        {
-            foreach (var operation in client.Operations)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var sourceFile = builder.BuildOperationClientSourceFile(operation, fileOrg);
-                var content = _renderer.Render(sourceFile);
-                var fileName = _namingConverter.ToCamelCase(operation.MethodName);
-                var relativePath = $"{clientsPath}/{fileName}/{fileName}.solid.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
-            }
-        }
-
-        return Task.CompletedTask;
+        var builder = new SolidStartClientAstBuilder(NamingConverter, options);
+        return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

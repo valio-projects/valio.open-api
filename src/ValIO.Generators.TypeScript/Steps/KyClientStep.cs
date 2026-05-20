@@ -1,5 +1,7 @@
 using ValIO.Core.Interfaces;
-using ValIO.Core.Plugins;
+using ValIO.Core.IR;
+using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Renderers;
 using ValIO.Generators.TypeScript.Ky.Ast.Builders;
 using ValIO.Generators.TypeScript.Options;
@@ -7,56 +9,24 @@ using ValIO.Generators.TypeScript.Options;
 namespace ValIO.Generators.TypeScript.Steps;
 
 /// <summary>
-/// Step: генерирует ky-клиент для каждой операции через AST.
-/// Активируется если в options.Transports содержится "ky".
+/// Step: emits a <c>ky</c> client (<c>{op}.ky.ts</c>) per IR operation via AST.
+/// Activated when <c>options.Transports</c> contains "ky".
 /// </summary>
-public sealed class KyClientStep : ICodeGenerationStep
+public sealed class KyClientStep : TypeScriptClientStepBase
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly TypeScriptAstRenderer _renderer;
+    public override string Name => "typescript-ky-client";
+    public override int Order => 42;
+    protected override string TransportId => TypeScriptOptionIds.Transport.Ky;
+    protected override string FileSuffix => ".ky.ts";
 
-    public string Name => "typescript-ky-client";
-    public int Order => 42;
-
-    public KyClientStep(INamingConverter namingConverter)
-        : this(namingConverter, Array.Empty<ITypeScriptNodeRenderer>())
-    {
-    }
-
+    public KyClientStep(INamingConverter namingConverter) : base(namingConverter) { }
     public KyClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
+        : base(namingConverter, nodeRenderers) { }
+
+    protected override SourceFileNode BuildOperationSourceFile(
+        IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
-        _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _renderer = new TypeScriptAstRenderer(nodeRenderers);
-    }
-
-    public bool ShouldExecute(GenerationContext context)
-    {
-        if (!context.Configuration.GenerateClients) return false;
-        var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        return opts?.Transports?.Contains(TypeScriptOptionIds.Transport.Ky, StringComparer.OrdinalIgnoreCase) == true;
-    }
-
-    public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
-    {
-        var opts = context.PluginOptions as TypeScriptGenerationOptions;
-        var builder = new KyClientAstBuilder(_namingConverter, opts);
-        var fileOrg = context.Configuration.FileOrganization;
-        var clientsPath = fileOrg.ClientsPath ?? "api";
-
-        foreach (var client in context.IrDocument.Clients)
-        {
-            foreach (var operation in client.Operations)
-            {
-                ct.ThrowIfCancellationRequested();
-
-                var sourceFile = builder.BuildOperationClientSourceFile(operation, fileOrg);
-                var content = _renderer.Render(sourceFile);
-                var fileName = _namingConverter.ToCamelCase(operation.MethodName);
-                var relativePath = $"{clientsPath}/{fileName}/{fileName}.ky.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
-            }
-        }
-
-        return Task.CompletedTask;
+        var builder = new KyClientAstBuilder(NamingConverter, options);
+        return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

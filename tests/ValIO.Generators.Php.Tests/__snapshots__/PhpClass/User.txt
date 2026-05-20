@@ -1,0 +1,19 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Generated\Models;
+
+/**
+ * @phpstan-type UserData array{id: int, name: string, email: string, role?: UserRole}
+ */
+final class User
+{
+    public function __construct(
+        public readonly int $id,
+        public readonly string $name,
+        public readonly string $email,
+        public readonly ?UserRole $role = null,
+    ) {
+    }
+}

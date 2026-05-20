@@ -1,0 +1,12 @@
+package com.example.generated.models
+
+import com.example.generated.models.UserRole
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class User(
+    val id: Int,
+    val name: String,
+    val email: String,
+    val role: UserRole? = null,
+)

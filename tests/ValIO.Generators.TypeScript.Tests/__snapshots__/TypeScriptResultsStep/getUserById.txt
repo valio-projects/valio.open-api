@@ -1,0 +1,44 @@
+import type { User } from "../../models/user/user";
+
+// Response variant for status 200
+export interface GetUserByIdResult200 {
+    /**
+     * HTTP 200
+     */
+    status: 200;
+    /**
+     * A user
+     */
+    body: User;
+    /**
+     * True — response is 2xx
+     */
+    isSuccessful: true;
+    /**
+     * False — response is 2xx
+     */
+    isFailed: false;
+}
+
+// Response for status codes not explicitly defined in OpenAPI schema
+export interface GetUserByIdResultOther {
+    /**
+     * HTTP status code not in schema (e.g. 204, 301, 503)
+     */
+    status: number;
+    /**
+     * Response body for unhandled status
+     */
+    body: unknown;
+    /**
+     * Computed from status — true if 2xx
+     */
+    isSuccessful: boolean;
+    /**
+     * Computed from status — true if not 2xx
+     */
+    isFailed: boolean;
+}
+
+// Discriminated union result for getUserById. Check status to narrow type.
+export type GetUserByIdResult = GetUserByIdResult200 | GetUserByIdResultOther;
