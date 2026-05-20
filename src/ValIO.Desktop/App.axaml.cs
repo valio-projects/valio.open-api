@@ -1,8 +1,10 @@
+using System.Globalization;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using ValIO.Application.DependencyInjection;
+using ValIO.Desktop.Localization;
 using ValIO.Desktop.Services;
 using ValIO.Desktop.ViewModels;
 using ValIO.Desktop.Views;
@@ -23,6 +25,18 @@ public sealed class App : global::Avalonia.Application
         var services = new ServiceCollection();
         ConfigureServices(services);
         Services = services.BuildServiceProvider();
+
+        // Wire the XAML {loc:Tr} markup to the runtime LocalizationService.
+        // Must happen BEFORE MainWindow is constructed so first render uses the right culture.
+        var locService = Services.GetRequiredService<LocalizationService>();
+        var settingsStore = Services.GetRequiredService<ISettingsStore>();
+        var savedCulture = settingsStore.Load().CultureName;
+        if (!string.IsNullOrWhiteSpace(savedCulture))
+        {
+            try { locService.Culture = CultureInfo.GetCultureInfo(savedCulture); }
+            catch (CultureNotFoundException) { /* ignore unknown culture, keep default */ }
+        }
+        Localizer.Instance.Attach(locService);
 
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {

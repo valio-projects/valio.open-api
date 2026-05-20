@@ -1,3 +1,4 @@
+using System.Text.Json;
 using ValIO.Application.Services;
 using ValIO.Core.Models;
 using ValIO.Core.Plugins;
@@ -22,8 +23,23 @@ public static class GenerateEndpoint
         if (string.IsNullOrWhiteSpace(req.LanguageId))
             return Results.BadRequest("languageId is required");
 
-        if (registry.FindPlugin(req.LanguageId) is null)
+        var plugin = registry.FindPlugin(req.LanguageId);
+        if (plugin is null)
             return Results.BadRequest($"Unknown language: {req.LanguageId}");
+
+        // Plugin options — pass through OptionsDescriptor.ParseOptions to get a typed
+        // POCO. Skipping this step is what caused multi-transport/validation choices
+        // submitted by the form to be silently ignored.
+        object? pluginOptions = null;
+        if (req.PluginOptions is { ValueKind: JsonValueKind.Object } el)
+        {
+            var raw = new Dictionary<string, JsonElement>(StringComparer.Ordinal);
+            foreach (var prop in el.EnumerateObject())
+                raw[prop.Name] = prop.Value;
+            pluginOptions = plugin.OptionsDescriptor.ParseOptions(raw, out var optErrors);
+            if (optErrors.Count > 0)
+                return Results.BadRequest("Invalid options: " + string.Join("; ", optErrors));
+        }
 
         string schemaPath;
         try
@@ -55,6 +71,7 @@ public static class GenerateEndpoint
             GenerateModels = req.GenerateModels,
             GenerateClients = req.GenerateClients,
             GenerateEnums = req.GenerateEnums,
+            PluginOptions = pluginOptions,
         };
 
         var result = await orchestrator.GenerateAsync(config, schemaPath, ct);

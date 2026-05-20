@@ -37,6 +37,8 @@ public sealed partial class GenerationViewModel : ObservableObject
     [ObservableProperty] private DesktopOutputFormat _format = DesktopOutputFormat.Folder;
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private string? _statusMessage;
+    [ObservableProperty] private bool _hasError;
+    [ObservableProperty] private int _hiddenOptionsCount;
 
     public GenerationViewModel(
         IGenerationOrchestrator orchestrator,
@@ -62,15 +64,52 @@ public sealed partial class GenerationViewModel : ObservableObject
 
     partial void OnSelectedPluginChanged(IGeneratorPlugin? value)
     {
+        // Unhook old subscribers
+        foreach (var f in OptionFields)
+            f.ValueChanged -= OnAnyOptionChanged;
         OptionFields.Clear();
-        if (value is null) return;
-        foreach (var desc in value.OptionsDescriptor.GetOptionDescriptions())
-            OptionFields.Add(new OptionFieldViewModel(desc));
+
+        if (value is not null)
+        {
+            foreach (var desc in value.OptionsDescriptor.GetOptionDescriptions())
+            {
+                var vm = new OptionFieldViewModel(desc);
+                vm.ValueChanged += OnAnyOptionChanged;
+                OptionFields.Add(vm);
+            }
+            RecomputeDependsOn();
+        }
+
         GenerateCommand.NotifyCanExecuteChanged();
+    }
+
+    private void OnAnyOptionChanged(object? sender, EventArgs e) => RecomputeDependsOn();
+
+    /// <summary>
+    /// For every option with a non-empty <see cref="OptionDescription.DependsOn"/>:
+    /// only show it when the named option exists and has a value.
+    /// </summary>
+    private void RecomputeDependsOn()
+    {
+        var hidden = 0;
+        foreach (var field in OptionFields)
+        {
+            if (string.IsNullOrEmpty(field.Description.DependsOn))
+            {
+                field.IsVisible = true;
+                continue;
+            }
+            var dep = OptionFields.FirstOrDefault(
+                f => string.Equals(f.Description.Name, field.Description.DependsOn, StringComparison.OrdinalIgnoreCase));
+            field.IsVisible = dep is not null && dep.HasValue;
+            if (!field.IsVisible) hidden++;
+        }
+        HiddenOptionsCount = hidden;
     }
 
     partial void OnSchemaPathChanged(string? value) => GenerateCommand.NotifyCanExecuteChanged();
     partial void OnOutputPathChanged(string? value) => GenerateCommand.NotifyCanExecuteChanged();
+    partial void OnIsBusyChanged(bool value) => GenerateCommand.NotifyCanExecuteChanged();
 
     public bool CanGenerate =>
         !IsBusy && SelectedPlugin is not null &&
@@ -124,9 +163,31 @@ public sealed partial class GenerationViewModel : ObservableObject
     private async Task GenerateAsync(CancellationToken ct)
     {
         IsBusy = true;
+        HasError = false;
         StatusMessage = "Generating...";
         try
         {
+            // Collect plugin options from visible fields only.
+            var pluginOptionsJson = new Dictionary<string, System.Text.Json.JsonElement>();
+            foreach (var field in OptionFields)
+            {
+                if (!field.IsVisible) continue;
+                if (!field.HasValue) continue;
+                pluginOptionsJson[field.Description.Name] = ToJsonElement(field.CurrentValue);
+            }
+
+            object? pluginOptions = null;
+            if (SelectedPlugin is not null && pluginOptionsJson.Count > 0)
+            {
+                pluginOptions = SelectedPlugin.OptionsDescriptor.ParseOptions(pluginOptionsJson, out var optErrors);
+                if (optErrors.Count > 0)
+                {
+                    HasError = true;
+                    StatusMessage = "Invalid options: " + string.Join("; ", optErrors);
+                    return;
+                }
+            }
+
             var config = new GenerationConfiguration
             {
                 LanguageId = SelectedPlugin!.LanguageId,
@@ -135,11 +196,13 @@ public sealed partial class GenerationViewModel : ObservableObject
                 GenerateModels = GenerateModels,
                 GenerateClients = GenerateClients,
                 GenerateEnums = GenerateEnums,
+                PluginOptions = pluginOptions,
             };
 
             var result = await _orchestrator.GenerateAsync(config, SchemaPath!, ct);
             if (!result.Success)
             {
+                HasError = true;
                 StatusMessage = $"Failed: {result.ErrorMessage}";
                 _logger.LogError("Generation failed: {Error}", result.ErrorMessage);
                 return;
@@ -164,6 +227,7 @@ public sealed partial class GenerationViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            HasError = true;
             StatusMessage = $"Error: {ex.Message}";
             _logger.LogError(ex, "Desktop generation threw");
         }
@@ -171,6 +235,12 @@ public sealed partial class GenerationViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    private static System.Text.Json.JsonElement ToJsonElement(object? value)
+    {
+        var json = System.Text.Json.JsonSerializer.SerializeToElement(value);
+        return json;
     }
 
     private static TopLevel? GetTopLevel()

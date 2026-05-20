@@ -3,18 +3,44 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="using:ValIO.Desktop.ViewModels"
+             xmlns:loc="using:ValIO.Desktop.Localization"
              mc:Ignorable="d"
-             d:DesignWidth="800" d:DesignHeight="450"
+             d:DesignWidth="800" d:DesignHeight="600"
              x:Class="ValIO.Desktop.Views.SettingsView"
              x:DataType="vm:SettingsViewModel">
 
-  <StackPanel Margin="16" Spacing="10">
-    <TextBlock Text="Settings" FontSize="20" FontWeight="SemiBold" />
-    <TextBlock Text="Language" FontWeight="SemiBold" />
-    <ComboBox ItemsSource="{Binding SupportedCultures}"
-              SelectedItem="{Binding SelectedCulture}"
-              DisplayMemberBinding="{Binding NativeName}"
-              Width="240" HorizontalAlignment="Left" />
-    <TextBlock Text="Change takes effect on next bound refresh." Foreground="{DynamicResource SystemBaseMediumColor}" />
-  </StackPanel>
+  <ScrollViewer>
+    <StackPanel Spacing="20" MaxWidth="720" HorizontalAlignment="Stretch">
+      <TextBlock Text="{loc:Tr settings.title}" FontSize="26" FontWeight="SemiBold" />
+
+      <Border BorderBrush="{DynamicResource SystemBaseLowColor}"
+              BorderThickness="1"
+              CornerRadius="8"
+              Padding="20">
+        <StackPanel Spacing="12">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="🌐" FontSize="20" VerticalAlignment="Center" />
+            <TextBlock Text="{loc:Tr settings.language}"
+                       FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+          <ComboBox ItemsSource="{Binding SupportedCultures}"
+                    SelectedItem="{Binding SelectedCulture}"
+                    Width="320" HorizontalAlignment="Left">
+            <ComboBox.ItemTemplate>
+              <DataTemplate>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                  <TextBlock Text="{Binding NativeName}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Name}"
+                             Foreground="{DynamicResource SystemBaseMediumColor}" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Text="{loc:Tr settings.languageHint}"
+                     FontSize="12"
+                     Foreground="{DynamicResource SystemBaseMediumColor}" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
 </UserControl>

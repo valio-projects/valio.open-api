@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType><xsd:choice maxOccurs="unbounded">
+        <xsd:element name="data">
+          <xsd:complexType>
+            <xsd:sequence>
+              <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+            </xsd:sequence>
+            <xsd:attribute name="name" type="xsd:string" use="required" msdata:Ordinal="1" />
+            <xsd:attribute ref="xml:space" />
+          </xsd:complexType>
+        </xsd:element>
+        <xsd:element name="resheader">
+          <xsd:complexType><xsd:sequence>
+            <xsd:element name="value" type="xsd:string" minOccurs="0" msdata:Ordinal="1" />
+          </xsd:sequence><xsd:attribute name="name" type="xsd:string" use="required" /></xsd:complexType>
+        </xsd:element>
+      </xsd:choice></xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms, Version=4.0.0.0, Culture=neutral, PublicKeyToken=b77a5c561934e089</value></resheader>
+
+  <data name="window.title" xml:space="preserve"><value>ValIO — OpenAPI Code Generator</value></data>
+  <data name="nav.generate" xml:space="preserve"><value>Generate</value></data>
+  <data name="nav.settings" xml:space="preserve"><value>Settings</value></data>
+  <data name="generate.title" xml:space="preserve"><value>Generate code</value></data>
+  <data name="generate.subtitle" xml:space="preserve"><value>OpenAPI schema in, type-safe clients out. Pick a target language and tweak the options.</value></data>
+
+  <data name="schema.title" xml:space="preserve"><value>Schema</value></data>
+  <data name="schema.placeholder" xml:space="preserve"><value>Path to OpenAPI schema (.json / .yaml)</value></data>
+  <data name="schema.browse" xml:space="preserve"><value>Browse...</value></data>
+
+  <data name="language.title" xml:space="preserve"><value>Target language</value></data>
+  <data name="language.placeholder" xml:space="preserve"><value>Pick a generator plugin</value></data>
+
+  <data name="pluginOptions.title" xml:space="preserve"><value>Plugin options</value></data>
+  <data name="pluginOptions.empty" xml:space="preserve"><value>Pick a target language first.</value></data>
+  <data name="pluginOptions.none" xml:space="preserve"><value>(no configurable options)</value></data>
+  <data name="pluginOptions.hidden" xml:space="preserve"><value>{0} option(s) hidden until prerequisites are set.</value></data>
+
+  <data name="output.title" xml:space="preserve"><value>Output structure</value></data>
+  <data name="output.generateModels" xml:space="preserve"><value>Generate models</value></data>
+  <data name="output.generateClients" xml:space="preserve"><value>Generate clients</value></data>
+  <data name="output.generateEnums" xml:space="preserve"><value>Generate enums</value></data>
+  <data name="output.namespace" xml:space="preserve"><value>Namespace / package (optional)</value></data>
+
+  <data name="destination.title" xml:space="preserve"><value>Output destination</value></data>
+  <data name="destination.folder" xml:space="preserve"><value>Folder</value></data>
+  <data name="destination.zip" xml:space="preserve"><value>Zip archive</value></data>
+  <data name="destination.placeholder" xml:space="preserve"><value>Output folder or .zip path</value></data>
+
+  <data name="action.generate" xml:space="preserve"><value>Generate</value></data>
+  <data name="action.generating" xml:space="preserve"><value>Generating...</value></data>
+  <data name="action.cancel" xml:space="preserve"><value>Cancel</value></data>
+
+  <data name="settings.title" xml:space="preserve"><value>Settings</value></data>
+  <data name="settings.language" xml:space="preserve"><value>Interface language</value></data>
+  <data name="settings.languageHint" xml:space="preserve"><value>Changes apply immediately.</value></data>
+</root>

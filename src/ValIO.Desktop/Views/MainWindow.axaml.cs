@@ -9,8 +9,20 @@ public partial class MainWindow : Window
     public MainWindow() => InitializeComponent();
 
     private void OnShowGenerate(object? sender, RoutedEventArgs e)
-        => (DataContext as MainWindowViewModel)?.ShowGenerate();
+    {
+        if (DataContext is MainWindowViewModel vm) vm.ShowGenerate();
+        SetActive(GenerateNavButton, SettingsNavButton);
+    }
 
     private void OnShowSettings(object? sender, RoutedEventArgs e)
-        => (DataContext as MainWindowViewModel)?.ShowSettings();
+    {
+        if (DataContext is MainWindowViewModel vm) vm.ShowSettings();
+        SetActive(SettingsNavButton, GenerateNavButton);
+    }
+
+    private static void SetActive(Button active, Button inactive)
+    {
+        if (!active.Classes.Contains("active")) active.Classes.Add("active");
+        inactive.Classes.Remove("active");
+    }
 }
