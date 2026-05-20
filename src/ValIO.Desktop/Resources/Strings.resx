@@ -61,4 +61,15 @@
   <data name="settings.title" xml:space="preserve"><value>Settings</value></data>
   <data name="settings.language" xml:space="preserve"><value>Interface language</value></data>
   <data name="settings.languageHint" xml:space="preserve"><value>Changes apply immediately.</value></data>
+  <data name="settings.appearance" xml:space="preserve"><value>Appearance</value></data>
+  <data name="settings.darkOn" xml:space="preserve"><value>Dark mode is on</value></data>
+  <data name="settings.darkOff" xml:space="preserve"><value>Dark mode is off</value></data>
+
+  <data name="preview.title" xml:space="preserve"><value>Schema preview</value></data>
+  <data name="preview.paths" xml:space="preserve"><value>paths</value></data>
+  <data name="preview.operations" xml:space="preserve"><value>operations</value></data>
+  <data name="preview.models" xml:space="preserve"><value>models</value></data>
+  <data name="preview.error" xml:space="preserve"><value>Could not parse schema</value></data>
+  <data name="schema.recent" xml:space="preserve"><value>Recent</value></data>
+  <data name="schema.dropHere" xml:space="preserve"><value>Drop OpenAPI file anywhere on the window</value></data>
 </root>

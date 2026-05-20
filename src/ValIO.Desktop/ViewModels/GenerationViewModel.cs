@@ -21,11 +21,15 @@ public sealed partial class GenerationViewModel : ObservableObject
     private readonly IGenerationOrchestrator _orchestrator;
     private readonly IOutputSinkFactory _sinkFactory;
     private readonly IGeneratorRegistry _registry;
+    private readonly ISchemaPreviewer _previewer;
     private readonly ISettingsStore _settingsStore;
     private readonly ILogger<GenerationViewModel> _logger;
 
+    private const int RecentLimit = 8;
+
     public ObservableCollection<IGeneratorPlugin> AvailablePlugins { get; }
     public ObservableCollection<OptionFieldViewModel> OptionFields { get; } = new();
+    public ObservableCollection<string> RecentSchemas { get; } = new();
 
     [ObservableProperty] private IGeneratorPlugin? _selectedPlugin;
     [ObservableProperty] private string? _schemaPath;
@@ -40,16 +44,29 @@ public sealed partial class GenerationViewModel : ObservableObject
     [ObservableProperty] private bool _hasError;
     [ObservableProperty] private int _hiddenOptionsCount;
 
+    // Schema preview properties
+    [ObservableProperty] private bool _hasSchemaPreview;
+    [ObservableProperty] private string? _schemaTitle;
+    [ObservableProperty] private string? _schemaVersion;
+    [ObservableProperty] private int _schemaPathCount;
+    [ObservableProperty] private int _schemaOperationCount;
+    [ObservableProperty] private int _schemaModelCount;
+    [ObservableProperty] private string? _schemaError;
+
+    private CancellationTokenSource? _previewCts;
+
     public GenerationViewModel(
         IGenerationOrchestrator orchestrator,
         IOutputSinkFactory sinkFactory,
         IGeneratorRegistry registry,
+        ISchemaPreviewer previewer,
         ISettingsStore settingsStore,
         ILogger<GenerationViewModel> logger)
     {
         _orchestrator = orchestrator;
         _sinkFactory = sinkFactory;
         _registry = registry;
+        _previewer = previewer;
         _settingsStore = settingsStore;
         _logger = logger;
 
@@ -58,13 +75,13 @@ public sealed partial class GenerationViewModel : ObservableObject
         var settings = settingsStore.Load();
         SchemaPath = settings.LastSchemaFile;
         OutputPath = settings.LastOutputFolder;
+        foreach (var recent in settings.RecentSchemas) RecentSchemas.Add(recent);
         if (!string.IsNullOrEmpty(settings.LastLanguageId))
             SelectedPlugin = _registry.FindPlugin(settings.LastLanguageId);
     }
 
     partial void OnSelectedPluginChanged(IGeneratorPlugin? value)
     {
-        // Unhook old subscribers
         foreach (var f in OptionFields)
             f.ValueChanged -= OnAnyOptionChanged;
         OptionFields.Clear();
@@ -85,10 +102,6 @@ public sealed partial class GenerationViewModel : ObservableObject
 
     private void OnAnyOptionChanged(object? sender, EventArgs e) => RecomputeDependsOn();
 
-    /// <summary>
-    /// For every option with a non-empty <see cref="OptionDescription.DependsOn"/>:
-    /// only show it when the named option exists and has a value.
-    /// </summary>
     private void RecomputeDependsOn()
     {
         var hidden = 0;
@@ -107,9 +120,57 @@ public sealed partial class GenerationViewModel : ObservableObject
         HiddenOptionsCount = hidden;
     }
 
-    partial void OnSchemaPathChanged(string? value) => GenerateCommand.NotifyCanExecuteChanged();
+    partial void OnSchemaPathChanged(string? value)
+    {
+        GenerateCommand.NotifyCanExecuteChanged();
+        _ = RefreshSchemaPreviewAsync(value);
+    }
+
     partial void OnOutputPathChanged(string? value) => GenerateCommand.NotifyCanExecuteChanged();
     partial void OnIsBusyChanged(bool value) => GenerateCommand.NotifyCanExecuteChanged();
+
+    /// <summary>
+    /// Parse the schema in the background and expose a quick summary so users see
+    /// "this is the Petstore API, v1.0.21, 14 paths, 8 models" before hitting Generate.
+    /// </summary>
+    private async Task RefreshSchemaPreviewAsync(string? path)
+    {
+        _previewCts?.Cancel();
+        _previewCts = new CancellationTokenSource();
+        var ct = _previewCts.Token;
+
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+        {
+            HasSchemaPreview = false;
+            SchemaError = null;
+            return;
+        }
+        try
+        {
+            await Task.Delay(150, ct); // debounce schema swaps during typing
+            var preview = await _previewer.PreviewAsync(path, ct);
+            if (ct.IsCancellationRequested) return;
+            if (preview is null)
+            {
+                HasSchemaPreview = false;
+                SchemaError = "Could not parse schema";
+                return;
+            }
+            SchemaTitle = preview.Title;
+            SchemaVersion = preview.Version;
+            SchemaPathCount = preview.Paths;
+            SchemaOperationCount = preview.Operations;
+            SchemaModelCount = preview.Components;
+            SchemaError = null;
+            HasSchemaPreview = true;
+        }
+        catch (TaskCanceledException) { /* superseded by newer change */ }
+        catch (Exception ex)
+        {
+            HasSchemaPreview = false;
+            SchemaError = ex.Message;
+        }
+    }
 
     public bool CanGenerate =>
         !IsBusy && SelectedPlugin is not null &&
@@ -130,7 +191,24 @@ public sealed partial class GenerationViewModel : ObservableObject
                 new FilePickerFileType("OpenAPI schema") { Patterns = ["*.json", "*.yaml", "*.yml"] }
             ]
         });
-        if (files.Count > 0) SchemaPath = files[0].TryGetLocalPath();
+        if (files.Count > 0) SetSchemaPath(files[0].TryGetLocalPath());
+    }
+
+    /// <summary>
+    /// Called from drag&drop and the file picker. Updates <see cref="SchemaPath"/>
+    /// and bubbles it into <see cref="RecentSchemas"/> (LRU, capped to 8).
+    /// </summary>
+    public void SetSchemaPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return;
+        SchemaPath = path;
+        RecentSchemas.Remove(path);
+        RecentSchemas.Insert(0, path);
+        while (RecentSchemas.Count > RecentLimit) RecentSchemas.RemoveAt(RecentSchemas.Count - 1);
+
+        var settings = _settingsStore.Load();
+        settings.RecentSchemas = RecentSchemas.ToList();
+        _settingsStore.Save(settings);
     }
 
     [RelayCommand]
@@ -167,7 +245,6 @@ public sealed partial class GenerationViewModel : ObservableObject
         StatusMessage = "Generating...";
         try
         {
-            // Collect plugin options from visible fields only.
             var pluginOptionsJson = new Dictionary<string, System.Text.Json.JsonElement>();
             foreach (var field in OptionFields)
             {
@@ -238,10 +315,7 @@ public sealed partial class GenerationViewModel : ObservableObject
     }
 
     private static System.Text.Json.JsonElement ToJsonElement(object? value)
-    {
-        var json = System.Text.Json.JsonSerializer.SerializeToElement(value);
-        return json;
-    }
+        => System.Text.Json.JsonSerializer.SerializeToElement(value);
 
     private static TopLevel? GetTopLevel()
     {

@@ -13,10 +13,9 @@
     <StackPanel Spacing="20" MaxWidth="720" HorizontalAlignment="Stretch">
       <TextBlock Text="{loc:Tr settings.title}" FontSize="26" FontWeight="SemiBold" />
 
+      <!-- Language -->
       <Border BorderBrush="{DynamicResource SystemBaseLowColor}"
-              BorderThickness="1"
-              CornerRadius="8"
-              Padding="20">
+              BorderThickness="1" CornerRadius="8" Padding="20">
         <StackPanel Spacing="12">
           <StackPanel Orientation="Horizontal" Spacing="10">
             <TextBlock Text="🌐" FontSize="20" VerticalAlignment="Center" />
@@ -39,6 +38,21 @@
           <TextBlock Text="{loc:Tr settings.languageHint}"
                      FontSize="12"
                      Foreground="{DynamicResource SystemBaseMediumColor}" />
+        </StackPanel>
+      </Border>
+
+      <!-- Appearance -->
+      <Border BorderBrush="{DynamicResource SystemBaseLowColor}"
+              BorderThickness="1" CornerRadius="8" Padding="20">
+        <StackPanel Spacing="12">
+          <StackPanel Orientation="Horizontal" Spacing="10">
+            <TextBlock Text="🎨" FontSize="20" VerticalAlignment="Center" />
+            <TextBlock Text="{loc:Tr settings.appearance}"
+                       FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" />
+          </StackPanel>
+          <ToggleSwitch IsChecked="{Binding IsDarkMode}"
+                        OnContent="{loc:Tr settings.darkOn}"
+                        OffContent="{loc:Tr settings.darkOff}" />
         </StackPanel>
       </Border>
     </StackPanel>

@@ -60,4 +60,15 @@
   <data name="settings.title" xml:space="preserve"><value>Einstellungen</value></data>
   <data name="settings.language" xml:space="preserve"><value>Anwendungssprache</value></data>
   <data name="settings.languageHint" xml:space="preserve"><value>Änderungen werden sofort übernommen.</value></data>
+  <data name="settings.appearance" xml:space="preserve"><value>Darstellung</value></data>
+  <data name="settings.darkOn" xml:space="preserve"><value>Dunkler Modus aktiv</value></data>
+  <data name="settings.darkOff" xml:space="preserve"><value>Heller Modus aktiv</value></data>
+
+  <data name="preview.title" xml:space="preserve"><value>Schema-Vorschau</value></data>
+  <data name="preview.paths" xml:space="preserve"><value>Pfade</value></data>
+  <data name="preview.operations" xml:space="preserve"><value>Operationen</value></data>
+  <data name="preview.models" xml:space="preserve"><value>Modelle</value></data>
+  <data name="preview.error" xml:space="preserve"><value>Schema konnte nicht geparst werden</value></data>
+  <data name="schema.recent" xml:space="preserve"><value>Zuletzt</value></data>
+  <data name="schema.dropHere" xml:space="preserve"><value>OpenAPI-Datei irgendwo ins Fenster ziehen</value></data>
 </root>

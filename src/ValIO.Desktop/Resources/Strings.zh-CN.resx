@@ -60,4 +60,15 @@
   <data name="settings.title" xml:space="preserve"><value>设置</value></data>
   <data name="settings.language" xml:space="preserve"><value>界面语言</value></data>
   <data name="settings.languageHint" xml:space="preserve"><value>更改即时生效。</value></data>
+  <data name="settings.appearance" xml:space="preserve"><value>外观</value></data>
+  <data name="settings.darkOn" xml:space="preserve"><value>深色模式已开启</value></data>
+  <data name="settings.darkOff" xml:space="preserve"><value>深色模式已关闭</value></data>
+
+  <data name="preview.title" xml:space="preserve"><value>架构预览</value></data>
+  <data name="preview.paths" xml:space="preserve"><value>路径</value></data>
+  <data name="preview.operations" xml:space="preserve"><value>操作</value></data>
+  <data name="preview.models" xml:space="preserve"><value>模型</value></data>
+  <data name="preview.error" xml:space="preserve"><value>无法解析架构</value></data>
+  <data name="schema.recent" xml:space="preserve"><value>最近</value></data>
+  <data name="schema.dropHere" xml:space="preserve"><value>将 OpenAPI 文件拖到窗口任意位置</value></data>
 </root>
