@@ -23,21 +23,30 @@ public class NamingConverterTests
         _converter.ToPascalCase(input).Should().Be(expected);
     }
 
-    // KNOWN LIMITATIONS — these tests document current behavior, not the
-    // ideal contract. Fix would normalize SCREAMING_SNAKE → PascalCase and
-    // split run-on acronyms (HTTPRequest → HttpRequest).
+    // Fixed: SCREAMING_SNAKE normalizes to PascalCase / snake_case correctly.
     [Test]
-    public void ToPascalCase_KnownLimitation_ScreamingSnakeStaysUppercase()
+    public void ToPascalCase_ScreamingSnake_NormalisesToPascal()
     {
-        // Today: "USER_ID" → "USERID" (drops underscore but keeps casing).
-        _converter.ToPascalCase("USER_ID").Should().NotBe("UserId");
+        _converter.ToPascalCase("USER_ID").Should().Be("UserId");
     }
 
     [Test]
-    public void ToPascalCase_KnownLimitation_RunOnAcronymKeepsUppercase()
+    public void ToPascalCase_RunOnAcronym_SplitsAndTitleCases()
     {
-        // Today: "HTTPRequest" is already PascalCase-ish, kept verbatim.
-        _converter.ToPascalCase("HTTPRequest").Should().Be("HTTPRequest");
+        // "HTTPRequest" → ["HTTP", "Request"] → "HttpRequest"
+        _converter.ToPascalCase("HTTPRequest").Should().Be("HttpRequest");
+    }
+
+    [Test]
+    public void ToPascalCase_MixedAcronymThenWord_SplitsCorrectly()
+    {
+        _converter.ToPascalCase("XMLHttpRequest").Should().Be("XmlHttpRequest");
+    }
+
+    [Test]
+    public void ToPascalCase_TrailingNumber_KeepsNumberAsSeparateWord()
+    {
+        _converter.ToPascalCase("api_v2").Should().Be("ApiV2");
     }
 
     [TestCase("User", "user")]
@@ -59,11 +68,15 @@ public class NamingConverterTests
     }
 
     [Test]
-    public void ToSnakeCase_KnownLimitation_ScreamingSnakeNotCollapsed()
+    public void ToSnakeCase_ScreamingSnake_NormalisesToLowerSnake()
     {
-        // Today: "USER_ID" → "u_s_e_r_i_d" (treats each letter as a boundary).
-        // Filed for later cleanup.
-        _converter.ToSnakeCase("USER_ID").Should().NotBe("user_id");
+        _converter.ToSnakeCase("USER_ID").Should().Be("user_id");
+    }
+
+    [Test]
+    public void ToSnakeCase_AllCapsAcronymInsideIdentifier_SplitsCorrectly()
+    {
+        _converter.ToSnakeCase("getHTTPClient").Should().Be("get_http_client");
     }
 
     [TestCase("UserId", "user-id")]
