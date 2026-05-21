@@ -58,17 +58,21 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Cpp.Tests"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.CSharp.Tests", "tests\ValIO.Generators.CSharp.Tests\ValIO.Generators.CSharp.Tests.csproj", "{3FEF92DC-BC8B-48AF-BB0A-970C6EB0F54E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Dart", "ValIO.Generators.Dart\ValIO.Generators.Dart.csproj", "{4D0DC5DC-BF4A-4E06-9003-4C978D9596BC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Dart", "src\ValIO.Generators.Dart\ValIO.Generators.Dart.csproj", "{4D0DC5DC-BF4A-4E06-9003-4C978D9596BC}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Rust", "ValIO.Generators.Rust\ValIO.Generators.Rust.csproj", "{9C1E3EF6-D1AD-461F-80C6-58676247A023}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Rust", "src\ValIO.Generators.Rust\ValIO.Generators.Rust.csproj", "{9C1E3EF6-D1AD-461F-80C6-58676247A023}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.FSharp", "ValIO.Generators.FSharp\ValIO.Generators.FSharp.csproj", "{F1B7D1A0-3F50-4D2E-9C5C-1A001A0001A1}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.FSharp", "src\ValIO.Generators.FSharp\ValIO.Generators.FSharp.csproj", "{F1B7D1A0-3F50-4D2E-9C5C-1A001A0001A1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.FSharp.Tests", "ValIO.Generators.FSharp.Tests\ValIO.Generators.FSharp.Tests.csproj", "{F1B7D1A0-3F50-4D2E-9C5C-1A001A0001A2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.FSharp.Tests", "tests\ValIO.Generators.FSharp.Tests\ValIO.Generators.FSharp.Tests.csproj", "{F1B7D1A0-3F50-4D2E-9C5C-1A001A0001A2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Rust.Tests", "ValIO.Generators.Rust.Tests\ValIO.Generators.Rust.Tests.csproj", "{1FA18F43-FFA9-48EF-AC75-8532B8DE8D77}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Rust.Tests", "tests\ValIO.Generators.Rust.Tests\ValIO.Generators.Rust.Tests.csproj", "{1FA18F43-FFA9-48EF-AC75-8532B8DE8D77}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Dart.Tests", "ValIO.Generators.Dart.Tests\ValIO.Generators.Dart.Tests.csproj", "{D9EAEAC3-E46E-4833-9436-874AF8A0B2AC}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Dart.Tests", "tests\ValIO.Generators.Dart.Tests\ValIO.Generators.Dart.Tests.csproj", "{D9EAEAC3-E46E-4833-9436-874AF8A0B2AC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Ruby", "src\ValIO.Generators.Ruby\ValIO.Generators.Ruby.csproj", "{06825461-1553-465F-8BC5-DA53F0C160F1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ValIO.Generators.Ruby.Tests", "tests\ValIO.Generators.Ruby.Tests\ValIO.Generators.Ruby.Tests.csproj", "{82CDDBC1-1914-454C-882A-57B86633EAE9}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -452,6 +456,30 @@ Global
 		{D9EAEAC3-E46E-4833-9436-874AF8A0B2AC}.Release|x64.Build.0 = Release|Any CPU
 		{D9EAEAC3-E46E-4833-9436-874AF8A0B2AC}.Release|x86.ActiveCfg = Release|Any CPU
 		{D9EAEAC3-E46E-4833-9436-874AF8A0B2AC}.Release|x86.Build.0 = Release|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Debug|x64.Build.0 = Debug|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Debug|x86.Build.0 = Debug|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Release|x64.ActiveCfg = Release|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Release|x64.Build.0 = Release|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Release|x86.ActiveCfg = Release|Any CPU
+		{06825461-1553-465F-8BC5-DA53F0C160F1}.Release|x86.Build.0 = Release|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Debug|x64.Build.0 = Debug|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Debug|x86.Build.0 = Debug|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Release|x64.ActiveCfg = Release|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Release|x64.Build.0 = Release|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Release|x86.ActiveCfg = Release|Any CPU
+		{82CDDBC1-1914-454C-882A-57B86633EAE9}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -482,5 +510,7 @@ Global
 		{6285738B-C9E7-4FC0-88FE-AB2B5F1DE568} = {B0000000-0000-0000-0000-000000000001}
 		{A162C477-DEDA-4B03-89AA-779387AC2612} = {B0000000-0000-0000-0000-000000000001}
 		{737E9D6E-F34B-4C5B-B092-62EEBE5ECB24} = {B0000000-0000-0000-0000-000000000001}
+		{06825461-1553-465F-8BC5-DA53F0C160F1} = {B0000000-0000-0000-0000-000000000001}
+		{82CDDBC1-1914-454C-882A-57B86633EAE9} = {B0000000-0000-0000-0000-000000000002}
 	EndGlobalSection
 EndGlobal
