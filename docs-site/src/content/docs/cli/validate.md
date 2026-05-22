@@ -1,6 +1,7 @@
 ---
 title: valio validate
 description: Parse an OpenAPI schema and print metadata.
+translationKey: cli-validate
 ---
 
 ```

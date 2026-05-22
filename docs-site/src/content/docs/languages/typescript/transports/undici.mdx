@@ -1,0 +1,201 @@
+---
+title: undici transport
+description: Undici transport for the TypeScript generator (Node-only).
+sidebar:
+  order: 15
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+The `undici` transport uses [`undici`](https://github.com/nodejs/undici),
+Node.js's modern HTTP/1.1 client written by the Node core team. Undici is the
+implementation that powers Node's built-in `fetch`, but the direct
+`undici.request` API exposes lower-level primitives — connection pools,
+dispatchers, agents, streaming bodies — that `fetch` hides.
+
+For raw server-to-server throughput, undici is the fastest option on this
+list by a meaningful margin.
+
+## When to use
+
+- You're running a **Node 18+** server — Fastify, Hono, a BFF, a worker.
+- You want **explicit control over connection pools** for high-throughput
+  upstream calls.
+- You need a **`MockAgent`** for unit tests that intercepts at the dispatcher
+  layer, not the network.
+- You want first-class **streaming** body handling without extra deps.
+
+If your code also runs in the browser, use
+[`fetch`](/languages/typescript/transports/fetch/),
+[`ky`](/languages/typescript/transports/ky/), or
+[`ofetch`](/languages/typescript/transports/ofetch/).
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["undici"]
+  }
+}
+```
+
+`undici@^6` must be installed (Node 18+).
+
+## Generated transport
+
+```ts
+// api/getPet/getPet.undici.ts
+import { request, type Dispatcher } from "undici";
+import { ApiError } from "../../runtime/apiError";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../../models/Pet/Pet";
+import type { GetPetParams } from "./getPet.params";
+
+export async function getPet(
+  params: GetPetParams,
+  options?: Omit<Dispatcher.RequestOptions, "path" | "method">,
+): Promise<Pet> {
+  const { statusCode, body, headers } = await request(
+    `/pets/${encodeURIComponent(params.id)}`,
+    { method: "GET", headers: { accept: "application/json" }, ...options },
+  );
+  if (statusCode >= 400) {
+    throw await ApiError.fromUndici(statusCode, body, headers);
+  }
+  const parsed = await body.json();
+  return PetSchema.parse(parsed); // Zod 4 runtime validation
+}
+```
+
+Notice that `body` is a stream — `body.json()` reads it and parses in one
+step. ValIO emits an `ApiError.fromUndici` helper that drains the stream so
+you don't leak file descriptors on error paths.
+
+## Connection pooling
+
+`setGlobalDispatcher` configures a global pool. The generated client picks
+it up automatically:
+
+```ts
+// src/runtime/dispatcher.ts
+import { setGlobalDispatcher, Pool } from "undici";
+
+setGlobalDispatcher(new Pool("https://api.example.com", {
+  connections: 64,
+  pipelining: 1,
+  keepAliveTimeout: 30_000,
+  keepAliveMaxTimeout: 600_000,
+  bodyTimeout: 30_000,
+  headersTimeout: 30_000,
+}));
+```
+
+For multiple upstreams, use an `Agent` plus an interception layer:
+
+```ts
+import { Agent, setGlobalDispatcher } from "undici";
+
+setGlobalDispatcher(
+  new Agent({
+    keepAliveTimeout: 10_000,
+    connections: 128,
+    factory: (origin, opts) => new Pool(origin, { ...opts, connections: 32 }),
+  }),
+);
+```
+
+## Per-call dispatcher
+
+For one-off overrides, pass `dispatcher` in options:
+
+```ts
+import { Pool } from "undici";
+
+const billingPool = new Pool("https://billing.internal", { connections: 8 });
+await getInvoice({ id: "inv-7" }, { dispatcher: billingPool });
+```
+
+## MockAgent for tests
+
+`MockAgent` intercepts at the dispatcher level — no network involved, no
+HTTP-server side-effects:
+
+```ts
+import { MockAgent, setGlobalDispatcher } from "undici";
+import { getPet } from "../api/getPet/getPet.undici";
+
+const mock = new MockAgent();
+mock.disableNetConnect();
+setGlobalDispatcher(mock);
+
+const pool = mock.get("https://api.example.com");
+pool
+  .intercept({ path: "/pets/42", method: "GET" })
+  .reply(200, { id: 42, name: "Rex" });
+
+test("getPet returns parsed pet", async () => {
+  await expect(getPet({ id: "42" })).resolves.toEqual({ id: 42, name: "Rex" });
+});
+```
+
+## Streaming responses
+
+For large or chunked payloads, treat the body as a `Readable`:
+
+```ts
+import { request } from "undici";
+import { pipeline } from "node:stream/promises";
+import { createWriteStream } from "node:fs";
+
+const { body } = await request("https://api.example.com/exports/snapshot");
+await pipeline(body, createWriteStream("./snapshot.bin"));
+```
+
+For newline-delimited JSON:
+
+```ts
+import { request } from "undici";
+import readline from "node:readline";
+
+const { body } = await request("https://api.example.com/stream/events");
+const rl = readline.createInterface({ input: body });
+for await (const line of rl) {
+  const event = EventSchema.parse(JSON.parse(line));
+  await handle(event);
+}
+```
+
+## Error handling
+
+Undici does **not** throw on non-2xx — the generated client does that for
+you via `ApiError`. Network failures still throw `UndiciError` subclasses:
+
+```ts
+import { errors } from "undici";
+
+try {
+  const pet = await getPet({ id: "42" });
+} catch (err) {
+  if (err instanceof ApiError) {
+    console.error(`HTTP ${err.status}`, err.body);
+  } else if (err instanceof errors.BodyTimeoutError) {
+    console.error("Slow upstream");
+  } else if (err instanceof errors.SocketError) {
+    console.error("Connection dropped", err.code);
+  }
+}
+```
+
+## See also
+
+<CardGrid>
+  <LinkCard title="got transport" href="/languages/typescript/transports/got/" description="Higher-level Node client with streams and cookie jars." />
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="Cross-runtime alternative if you also target browser/edge." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="The .parse() step shown in generated code." />
+  <LinkCard title="Node + Undici + Zod 4 stack" href="/stacks/typescript/node-undici-zod4/" description="End-to-end recipe." />
+</CardGrid>

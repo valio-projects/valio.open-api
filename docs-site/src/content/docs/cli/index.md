@@ -1,6 +1,7 @@
 ---
 title: CLI overview
 description: The valio command-line interface.
+translationKey: cli-overview
 ---
 
 `valio` is a single self-contained executable built from `ValIO.Cli`. The

@@ -1,0 +1,39 @@
+---
+title: C# stacks
+description: Ready-to-copy ValIO configurations for common C# / .NET stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The C# generator emits DTOs and an `HttpClient`-friendly API client per
+OpenAPI tag. It's deliberately small on options (just `namespace` and
+`nullableReferenceTypes`), but pairs with several host shapes depending on
+whether you live inside ASP.NET Core, a console app, or want a non-default
+HTTP client.
+
+The pages below pin a few of those host shapes down to **concrete, tested
+recipes**: each one gives you the exact `valio.config.json`, the file tree
+to expect, and a few lines of consumer code so you can sanity-check the
+output before wiring it into your service.
+
+## .NET stacks
+
+<CardGrid>
+  <LinkCard
+    title="ASP.NET Core + HttpClient"
+    href="/stacks/csharp/aspnetcore-httpclient/"
+    description="ASP.NET Core 8 host with IHttpClientFactory + System.Text.Json + DI."
+  />
+  <LinkCard
+    title=".NET 8 + RestSharp"
+    href="/stacks/csharp/dotnet-restsharp/"
+    description="Plain console / library project using RestSharp as the HTTP client."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [C# language overview](/languages/csharp/)

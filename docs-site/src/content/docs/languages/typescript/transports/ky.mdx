@@ -1,0 +1,185 @@
+---
+title: ky transport
+description: Ky transport for the TypeScript generator.
+sidebar:
+  order: 12
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## Overview
+
+The `ky` transport uses [`ky`](https://github.com/sindresorhus/ky), a tiny
+(~5 KB gzipped) wrapper around Fetch by Sindre Sorhus. It keeps the Fetch
+shape but adds:
+
+- **Retries with backoff** — out of the box, configurable per call.
+- **Hooks** — `beforeRequest`, `afterResponse`, `beforeRetry`, `beforeError`.
+- **Typed JSON** — `.json<T>()` returns `Promise<T>` without a manual cast.
+- **Instance extension** — `ky.extend({ ... })` to compose per-API clients.
+
+If you want Fetch ergonomics with retries and small bundle cost, ky is the
+sweet spot.
+
+## When to use
+
+- You're targeting modern browsers, Bun, Deno, or Node 18+.
+- You want retries and hooks without pulling in axios.
+- You want a tree-shakeable client (~5 kB minified-gzipped).
+- You like composing instances per API (`apiV1`, `apiV2`, `authedApi`, ...).
+
+If you need Node-only features (streams, cookie jar) jump to
+[`got`](/languages/typescript/transports/got/) or
+[`undici`](/languages/typescript/transports/undici/).
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["ky"]
+  }
+}
+```
+
+`ky@^1` must be installed in the consumer project. ky is ESM-only.
+
+## Generated transport
+
+```ts
+// api/getPet/getPet.ky.ts
+import ky, { type KyInstance, type Options } from "ky";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../../models/Pet/Pet";
+import type { GetPetParams } from "./getPet.params";
+
+export async function getPet(
+  params: GetPetParams,
+  options?: Options,
+  client: KyInstance = ky,
+): Promise<Pet> {
+  const body = await client
+    .get(`pets/${encodeURIComponent(params.id)}`, options)
+    .json<unknown>();
+  return PetSchema.parse(body); // Zod 4 runtime validation
+}
+```
+
+ky raises an `HTTPError` automatically on non-2xx responses, so the generated
+code does not need a manual `response.ok` check.
+
+## Custom instance with hooks
+
+The recommended pattern is to compose a configured `ky.extend` instance in a
+central module and inject it at call sites:
+
+```ts
+// src/runtime/api.ts
+import ky from "ky";
+import { getAccessToken, refreshAccessToken } from "./auth";
+
+export const api = ky.create({
+  prefixUrl: import.meta.env.VITE_API_URL ?? "/api",
+  timeout: 10_000,
+  retry: {
+    limit: 3,
+    methods: ["get", "head", "options"],
+    statusCodes: [408, 429, 500, 502, 503, 504],
+    backoffLimit: 3000,
+  },
+  hooks: {
+    beforeRequest: [
+      async (request) => {
+        request.headers.set("Authorization", `Bearer ${await getAccessToken()}`);
+        request.headers.set("X-Trace-Id", crypto.randomUUID());
+      },
+    ],
+    afterResponse: [
+      async (request, _options, response) => {
+        if (response.status === 401) {
+          await refreshAccessToken();
+          request.headers.set("Authorization", `Bearer ${await getAccessToken()}`);
+          return ky(request);
+        }
+      },
+    ],
+    beforeRetry: [
+      ({ request, retryCount }) => console.warn(`[api] retry #${retryCount} ${request.url}`),
+    ],
+  },
+});
+```
+
+Then pass it explicitly:
+
+```ts
+import { api } from "@/runtime/api";
+import { getPet } from "@/api/getPet/getPet.ky";
+
+const pet = await getPet({ id: "42" }, undefined, api);
+```
+
+## Retry and timeout configuration
+
+ky's `retry` option accepts numbers, arrays of methods, or a full object:
+
+```ts
+const fast = api.extend({ retry: 0, timeout: 2_000 });
+const slow = api.extend({ retry: { limit: 5, statusCodes: [503] }, timeout: 60_000 });
+```
+
+`backoffLimit` caps the delay; without it ky uses exponential backoff between
+attempts.
+
+## Per-API extension
+
+You can layer extensions for different upstream APIs:
+
+```ts
+const usersApi = api.extend({ prefixUrl: "/api/users" });
+const billingApi = api.extend({ prefixUrl: "/api/billing", timeout: 30_000 });
+
+await getUser({ id: "u1" }, undefined, usersApi);
+await getInvoice({ id: "inv-7" }, undefined, billingApi);
+```
+
+## Cookies and credentials
+
+For first-party cookie auth, include `credentials`:
+
+```ts
+export const api = ky.create({
+  prefixUrl: "/api",
+  credentials: "include",
+});
+```
+
+## Error handling
+
+```ts
+import { HTTPError } from "ky";
+
+try {
+  const pet = await getPet({ id: "42" });
+} catch (err) {
+  if (err instanceof HTTPError) {
+    const status = err.response.status;
+    const body = await err.response.json().catch(() => null);
+    if (status === 404) showNotFound();
+    else reportError({ status, body });
+  } else {
+    reportNetworkError(err);
+  }
+}
+```
+
+## See also
+
+<CardGrid>
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="Zero-dep alternative when you don't need retries." />
+  <LinkCard title="ofetch transport" href="/languages/typescript/transports/ofetch/" description="Similar small-fetch wrapper used by Nuxt." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="The .parse() step in generated code." />
+  <LinkCard title="TanStack Query wrapper" href="/languages/typescript/query/tanstack/" description="React hooks around ky transports." />
+</CardGrid>

@@ -1,0 +1,35 @@
+---
+title: Python stacks
+description: Ready-to-copy ValIO configurations for the most common Python stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Python generator has two main axes — `httpxMode` (`async` vs `sync`)
+and `validator` (Pydantic v2 today; `msgspec` reserved) — which together
+cover most real-world usage. The pages below pin those down to **concrete,
+tested recipes**: each one gives you the exact `valio.config.json`, the
+file tree you should expect, and a few lines of consumer code so you can
+sanity-check the output before wiring it into your app.
+
+## Python stacks
+
+<CardGrid>
+  <LinkCard
+    title="httpx async + Pydantic v2"
+    href="/stacks/python/httpx-async-pydantic/"
+    description="Async httpx client + Pydantic v2 models. Plays nicely with FastAPI."
+  />
+  <LinkCard
+    title="httpx sync + Pydantic v2"
+    href="/stacks/python/httpx-sync-pydantic/"
+    description="Plain synchronous httpx client. Ideal for scripts, CLIs, and Django views."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Python language overview](/languages/python/)

@@ -1,6 +1,7 @@
 ---
 title: Desktop app
 description: Running ValIO.Desktop on Windows, macOS, or Linux.
+translationKey: desktop
 ---
 
 `ValIO.Desktop` is an Avalonia 11 application. It bundles the same

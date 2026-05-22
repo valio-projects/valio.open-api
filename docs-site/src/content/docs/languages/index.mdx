@@ -1,0 +1,87 @@
+---
+title: Supported languages
+description: Per-language plugin references for all 12 ValIO generators.
+translationKey: languages-overview
+sidebar:
+  order: 1
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+ValIO is plugin-based: each generator lives in its own assembly and is
+registered through `AddAllGeneratorPlugins()`. Twelve plugins ship today,
+covering web, mobile, backend, and game engine targets.
+
+<CardGrid>
+  <LinkCard
+    title="TypeScript"
+    href="/languages/typescript/"
+    description="9 HTTP transports, Zod 3/4, Valibot, TypeBox, TanStack Query, SWR, and MSW handlers."
+  />
+  <LinkCard
+    title="C#"
+    href="/languages/csharp/"
+    description="POCO + HttpClient, JsonSerializerContext, IServiceCollection extension."
+  />
+  <LinkCard
+    title="Java"
+    href="/languages/java/"
+    description="Jackson DTOs + OkHttp 3.x synchronous client, optional Gradle build files."
+  />
+  <LinkCard
+    title="Kotlin"
+    href="/languages/kotlin/"
+    description="Coroutine-based OkHttp client with kotlinx.serialization data classes."
+  />
+  <LinkCard
+    title="Python"
+    href="/languages/python/"
+    description="Pydantic v2 models with sync or async httpx clients (Python 3.10+)."
+  />
+  <LinkCard
+    title="PHP"
+    href="/languages/php/"
+    description="PHP 8.1 typed classes with promoted constructors and Guzzle 7 client."
+  />
+  <LinkCard
+    title="Swift"
+    href="/languages/swift/"
+    description="Codable structs, async/await URLSession client, optional Package.swift."
+  />
+  <LinkCard
+    title="Rust"
+    href="/languages/rust/"
+    description="Serde models with Reqwest async client on Tokio."
+  />
+  <LinkCard
+    title="Ruby"
+    href="/languages/ruby/"
+    description="Plain Ruby classes with a Faraday-backed HTTP client."
+  />
+  <LinkCard
+    title="F#"
+    href="/languages/fsharp/"
+    description="Records and DUs with a RestSharp client; response variants as discriminated unions."
+  />
+  <LinkCard
+    title="Dart"
+    href="/languages/dart/"
+    description="Null-safe Dart 3 models and a Dio-based HTTP client for Flutter or pure Dart."
+  />
+  <LinkCard
+    title="C++ (Unreal)"
+    href="/languages/cpp/"
+    description="USTRUCT models and Blueprint-callable async actions for Unreal Engine 5."
+  />
+</CardGrid>
+
+## Per-plugin options
+
+Each plugin exposes an `OptionsDescriptor.GetOptionDescriptions()` list. The
+Web UI uses it to render a dynamic form; from CLI and config files the same
+options are passed under `"options"` in `valio.config.json`. Open each
+language card above for the full per-plugin option reference.
+
+The values are also surfaced in Web UI tooltips via
+`OptionDescription.DescriptionKey` resource lookups, so every option has both
+inline help and a stable documentation anchor.

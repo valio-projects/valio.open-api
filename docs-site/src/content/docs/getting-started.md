@@ -1,6 +1,7 @@
 ---
 title: Getting started
 description: Install ValIO, point it at an OpenAPI schema, get clients.
+translationKey: getting-started
 ---
 
 ValIO ships as three front-ends backed by the same generator engine:

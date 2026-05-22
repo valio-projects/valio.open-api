@@ -8,8 +8,23 @@ riderModule.iml
 .vs
 .idea
 .claude/worktrees/
+.claude/changes/
 .claude/settings.local.json
 docs/query-5.90.3
+
+# IDE user state
+*.sln.DotSettings.user
+.idea/workspace.xml
+
+# Runtime crash logs
+replay_pid*.log
+hs_err_pid*.log
+
+# Pack outputs
+/nupkgs/
+/publish/
+/artifacts/
+*.snupkg
 
 # Web frontend test artefacts
 *.User
@@ -25,3 +40,9 @@ docs-site/.astro/
 docs-site/.cache/
 docs-site/pnpm-lock.yaml
 docs-site/yarn.lock
+
+# npm wrapper builds
+packaging/npm/valio/dist/
+packaging/npm/valio/node_modules/
+packaging/npm/platforms/*/valio
+packaging/npm/platforms/*/valio.exe

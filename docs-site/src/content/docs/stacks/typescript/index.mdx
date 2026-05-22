@@ -1,0 +1,90 @@
+---
+title: TypeScript stacks
+description: Ready-to-copy ValIO configurations for the most common TypeScript stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The TypeScript generator has five orthogonal axes — transport, validation,
+query wrapper, mock library, enum format — which multiply out to more than a
+hundred valid combinations. The pages below pin a handful of those down to
+**concrete, tested stack recipes**: each one gives you the exact
+`valio.config.json`, the file tree you should expect, and a few lines of
+consumer code so you can sanity-check the output before you wire it into
+your app.
+
+If your stack is not listed, mix the [TypeScript reference](/languages/typescript/)
+options to taste — these pages are starting points, not the only valid combos.
+
+## Frontend stacks
+
+<CardGrid>
+  <LinkCard
+    title="React + TanStack + Axios + Zod 4"
+    href="/stacks/typescript/react-tanstack-axios-zod4/"
+    description="The 'safe default' SPA stack — hooks, interceptors, modern Zod."
+  />
+  <LinkCard
+    title="React + TanStack + Fetch + Zod 3"
+    href="/stacks/typescript/react-tanstack-fetch-zod3/"
+    description="Zero-dependency transport, classic Zod 3 schemas."
+  />
+  <LinkCard
+    title="Vue 3 + TanStack + Ky + Valibot"
+    href="/stacks/typescript/vue-tanstack-ky-valibot/"
+    description="Composition-API hooks with a tiny tree-shakeable schema lib."
+  />
+  <LinkCard
+    title="Angular 17 + HttpClient + RxJS"
+    href="/stacks/typescript/angular-httpclient-rxjs/"
+    description="Native Angular DI, observable-based clients, no Zod."
+  />
+  <LinkCard
+    title="SolidStart + Fetch + TypeBox"
+    href="/stacks/typescript/solid-fetch-typebox/"
+    description="JSON-Schema-compatible runtime types for Solid signals."
+  />
+  <LinkCard
+    title="SvelteKit + TanStack + Fetch + Zod 4"
+    href="/stacks/typescript/svelte-tanstack-fetch/"
+    description="Universal fetch with TanStack Query stores."
+  />
+  <LinkCard
+    title="Next.js 15 App Router + ofetch + Zod 4"
+    href="/stacks/typescript/nextjs-ofetch-zod4/"
+    description="Server-component-friendly fetch that works in both runtimes."
+  />
+  <LinkCard
+    title="React Native + Fetch + Zod 3"
+    href="/stacks/typescript/react-native-fetch-zod3/"
+    description="Mobile-friendly fetch + AbortController, classic Zod 3."
+  />
+</CardGrid>
+
+## Server & tooling stacks
+
+<CardGrid>
+  <LinkCard
+    title="Node + Undici + Zod 4"
+    href="/stacks/typescript/node-undici-zod4/"
+    description="Server-to-server HTTP using Node's modern client."
+  />
+  <LinkCard
+    title="Node + Axios + TypeBox (Fastify)"
+    href="/stacks/typescript/node-axios-typebox/"
+    description="Plays nicely with Fastify's TypeBox-based validation."
+  />
+  <LinkCard
+    title="Storybook + MSW + React"
+    href="/stacks/typescript/storybook-msw-react/"
+    description="Mock-first dev loop: no real HTTP, just generated handlers."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [TypeScript overview](/languages/typescript/)
+- [TypeScript transports](/languages/typescript/transports/)

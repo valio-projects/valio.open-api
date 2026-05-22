@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Output</PackageId>
+    <Description>ValIO output sinks (Disk/Zip/Stream/InMemory).</Description>
+    <PackageTags>valio;codegen;output</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

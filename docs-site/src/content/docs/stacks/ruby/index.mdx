@@ -1,0 +1,33 @@
+---
+title: Ruby stacks
+description: Ready-to-copy ValIO configurations for the most common Ruby stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Ruby generator emits plain Ruby classes plus a Faraday-based HTTP
+client. Ruby is dynamically typed, so the surface area is small — the
+recipe below also shows how to sprinkle ActiveSupport for nicer
+inflections and time handling when you're inside a Rails app.
+
+The page below pins this down to a **concrete, tested recipe**: an exact
+`valio.config.json`, the file tree you should expect, and a few lines of
+consumer code so you can sanity-check the output before wiring it into
+your Rails or pure-Ruby project.
+
+## Ruby stacks
+
+<CardGrid>
+  <LinkCard
+    title="Faraday (+ ActiveSupport)"
+    href="/stacks/ruby/faraday-active-support/"
+    description="Faraday HTTP client with optional ActiveSupport helpers for Rails apps."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Ruby language overview](/languages/ruby/)

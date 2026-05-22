@@ -5,6 +5,13 @@
     <PreserveCompilationContext>true</PreserveCompilationContext>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Generators.Python</PackageId>
+    <Description>ValIO code generator plugin for Python.</Description>
+    <PackageTags>valio;openapi;codegen;python</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

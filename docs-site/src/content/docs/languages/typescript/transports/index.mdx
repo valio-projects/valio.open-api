@@ -1,0 +1,167 @@
+---
+title: TypeScript transports
+description: HTTP transport libraries supported by the TypeScript generator.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+The TypeScript plugin can emit clients for **nine** different HTTP transports.
+Each is implemented as an independent generation step that runs only when its
+id appears in the `transports` option. You can pick exactly one (e.g.
+`["fetch"]`) or fan out to several (e.g. `["fetch", "axios", "ky"]`) in a
+single generation pass — useful for monorepos that ship code to multiple
+runtimes from one OpenAPI spec.
+
+## Comparison
+
+| Transport id        | Library         | Runtime              | Bundle (gzip) | Interceptors | Retry built-in | Streaming | SSR |
+|---------------------|-----------------|----------------------|--------------:|:------------:|:--------------:|:---------:|:---:|
+| `fetch`             | Web Fetch       | All                  | 0 kB          | No           | No             | Manual    | Yes |
+| `axios`             | Axios 1.x       | Browser + Node       | ~13 kB        | Yes          | Plugin         | No        | Yes |
+| `ky`                | Ky              | Browser + Bun + Deno + Node 18+ | ~5 kB | Hooks      | Yes            | Manual    | Yes |
+| `ofetch`            | unjs/ofetch     | All                  | ~3 kB         | Hooks        | Yes            | Manual    | Yes |
+| `got`               | Got             | Node only            | ~50 kB        | Hooks        | Yes            | Yes       | N/A |
+| `undici`            | Undici          | Node 18+             | ~80 kB        | No           | No             | Yes       | N/A |
+| `angular-rxjs`      | HttpClient      | Angular              | (peer)        | Yes          | RxJS           | No        | Yes |
+| `angular-promise`   | HttpClient      | Angular              | (peer)        | Yes          | RxJS           | No        | Yes |
+| `solid`             | Web Fetch       | SolidStart           | 0 kB          | No           | No             | Manual    | Yes |
+
+Bundle figures are upstream library sizes — the generated ValIO wrapper code
+is the same for every transport (and trivially small).
+
+## Picking by use case
+
+**Browser SPA / PWA / mobile web.** `fetch` if you don't need retries or
+interceptors and care about bundle size above all. `ky` if you want retries
+and hooks for ~5 kB. `axios` if you already have an axios interceptor stack
+(auth refresh, error mapping) you want generated clients to inherit.
+
+**Node server / BFF / background worker.** `undici` for raw throughput and
+explicit connection pools. `got` for streams, cookie jars, and rich retry
+policies. `ofetch` or `fetch` if you want the same code to run on the edge
+too.
+
+**Edge runtime (Cloudflare Workers, Vercel Edge, Deno Deploy).** Only
+`fetch`, `ky`, `ofetch`, or `solid` work — the others pull in Node-only
+modules.
+
+**Angular 17+ application.** Use `angular-rxjs` (Observable) or
+`angular-promise` (async/await) — they emit `@Injectable` services that slot
+into Angular DI.
+
+**SolidStart.** Use `solid` so generated code lives behind the right
+`"use server"` directives.
+
+## How to enable
+
+Pass an array under the `transports` option:
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["fetch", "axios"]
+  }
+}
+```
+
+Or from the CLI for a single transport:
+
+```bash
+valio generate -s ./openapi.yaml -o ./out -l typescript --opt transports=fetch
+```
+
+## Selecting multiple transports
+
+When you pass several transports each operation produces one file per
+transport. For an operation `getPet` with `transports: ["fetch", "axios"]`:
+
+```
+api/getPet/getPet.fetch.ts
+api/getPet/getPet.axios.ts
+```
+
+Both files import the **same** params / result types and validation schemas,
+so the model layer never diverges. Useful when a monorepo's web app uses
+`fetch`, a Node worker in the same repo uses `undici`, and you want to share
+types between them.
+
+## What gets generated
+
+```
+api/
+  getPet/
+    getPet.params.ts      # request param types
+    getPet.fetch.ts       # the transport-specific function
+    getPet.fetch.test.ts  # MSW handlers (optional, see Mocks page)
+models/
+  Pet/
+    Pet.ts                # the interface
+    schemas/
+      Pet.schema.ts       # the validation schema (Zod/Valibot/TypeBox)
+runtime/
+  apiError.ts             # shared error class
+```
+
+The transport function is a thin async wrapper. It builds the URL, invokes
+the underlying library, and pipes the response through the runtime schema
+when validation is enabled.
+
+## Validation + transport chaining
+
+When you set `validation` in addition to `transports`, every transport
+function pipes the parsed body through the runtime schema before returning.
+A failing schema throws at the API boundary — never silently downstream:
+
+```ts
+// generated fetch + Zod 4 transport
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import { ApiError } from "../../runtime/apiError";
+
+export async function getPet(params: GetPetParams, init?: RequestInit) {
+  const response = await fetch(`/pets/${params.id}`, init);
+  if (!response.ok) throw await ApiError.fromResponse(response);
+  return PetSchema.parse(await response.json());
+}
+```
+
+See the [validation page](/languages/typescript/validation/) for the full
+picker (Zod 3 / Zod 4 / Valibot / TypeBox).
+
+## Customising the transport
+
+Each transport supports an instance/fetcher override:
+
+- `fetch` and `solid` — `options.typescript.fetch.customFetcherPath` /
+  `customFetcherName`.
+- `axios` — `options.typescript.axios.customInstancePath` /
+  `customInstanceName`.
+- `ky`, `ofetch`, `got`, `undici` — passed as the last positional
+  argument to the generated function (or wired through a global dispatcher
+  in undici's case).
+
+See the per-transport deep dive for setup code.
+
+## Deep dives
+
+<CardGrid>
+  <LinkCard title="fetch" href="/languages/typescript/transports/fetch/" description="Default. Zero deps. Browser + Edge + Node." />
+  <LinkCard title="axios" href="/languages/typescript/transports/axios/" description="Interceptors, request transforms, browser + Node." />
+  <LinkCard title="ky" href="/languages/typescript/transports/ky/" description="Fetch + retries + hooks in 5 kB." />
+  <LinkCard title="ofetch" href="/languages/typescript/transports/ofetch/" description="Universal fetch used by Nuxt 3 / H3 / Nitro." />
+  <LinkCard title="got" href="/languages/typescript/transports/got/" description="Node-only with streams, retries, cookie jar." />
+  <LinkCard title="undici" href="/languages/typescript/transports/undici/" description="Node-only with connection pools, MockAgent." />
+  <LinkCard title="Angular HttpClient" href="/languages/typescript/transports/angular/" description="RxJS and Promise variants for Angular 17+." />
+  <LinkCard title="SolidStart" href="/languages/typescript/transports/solid/" description="Server functions and SSR-friendly fetch." />
+</CardGrid>
+
+## See also
+
+<CardGrid>
+  <LinkCard title="Validation schemas" href="/languages/typescript/validation/" description="Runtime schemas (Zod, Valibot, TypeBox) inside generated transports." />
+  <LinkCard title="Query wrappers" href="/languages/typescript/query/" description="TanStack Query and SWR hooks on top of transports." />
+  <LinkCard title="MSW mocks" href="/languages/typescript/mocks/msw/" description="Network-level mocks for testing every transport." />
+</CardGrid>

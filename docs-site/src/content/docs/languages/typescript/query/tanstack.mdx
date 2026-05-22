@@ -1,0 +1,765 @@
+---
+title: TanStack Query
+description: React/Vue/Angular/Solid/Svelte wrappers for TanStack Query 5, with end-to-end example.
+sidebar:
+  order: 10
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## At a glance
+
+[TanStack Query](https://tanstack.com/query) (v5) is the de-facto server-state
+library for the React ecosystem and ships official adapters for Vue, Angular,
+Solid and Svelte. ValIO emits one hook factory per OpenAPI operation, on top of
+your chosen [transport](/languages/typescript/transports/) and
+[validation library](/languages/typescript/validation/), so the cache-aware
+hook you import in components is end-to-end typed all the way back to the
+OpenAPI spec.
+
+What you get when `queryWrapper` is set to a `tanstack-*` value:
+
+- Typed `useQuery` / `useMutation` (or `injectQuery` / `createQuery`) hooks per
+  operation.
+- A predictable query-keys factory so cache invalidation is hierarchical and
+  refactor-safe.
+- Mutations with cache-update hooks pre-wired to invalidate related queries.
+- Prefetch helpers for both client-side and server-side hydration flows.
+- Optional MSW handlers from the same OpenAPI input for tests and Storybook.
+
+## Supported adapters
+
+| `queryWrapper` id   | Framework | Imports from                                   | Min. version |
+|---------------------|-----------|------------------------------------------------|--------------|
+| `tanstack-react`    | React     | `@tanstack/react-query`                        | `5.0.0`      |
+| `tanstack-vue`      | Vue 3     | `@tanstack/vue-query`                          | `5.0.0`      |
+| `tanstack-angular`  | Angular   | `@tanstack/angular-query-experimental`         | `5.59.0`     |
+| `tanstack-solid`    | Solid     | `@tanstack/solid-query`                        | `5.0.0`      |
+| `tanstack-svelte`   | Svelte    | `@tanstack/svelte-query`                       | `5.0.0`      |
+
+Aliases: `tanstack` and `react-query` both normalise to `tanstack-react` — the
+descriptor in `TypeScriptOptionsDescriptor` rejects any other value with a
+clear error.
+
+## Configuration
+
+Combine `transports`, `validation`, and `queryWrapper`. Most React projects in
+2026 land on Axios + Zod 4 + TanStack React:
+
+```json
+// valio.config.json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports":   ["axios"],
+        "validation":   "zod4",
+        "queryWrapper": "tanstack-react",
+        "enumFormat":   "union",
+        "mocks":        "msw"
+      },
+      "fileOrganization": {
+        "separateModels":  true,
+        "separateClients": true,
+        "modelsPath":  "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+`transports` must be set before `queryWrapper` — the wrapper imports the
+transport function, so it can't exist without one.
+
+## Generated file layout
+
+For the [petstore-minimal](/_snippets/openapi/petstore-minimal/) OpenAPI input
+with the configuration above, ValIO emits the following tree:
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet.ts                     # Zod 4 schema + inferred type
+│   └── Pets.ts                    # array wrapper
+├── api/
+│   ├── pets/
+│   │   ├── getPet.axios.ts        # Axios transport (read)
+│   │   ├── getPet.query.ts        # useGetPet (useQuery)
+│   │   ├── listPets.axios.ts      # Axios transport (list)
+│   │   ├── listPets.query.ts      # useListPets (useQuery)
+│   │   ├── createPet.axios.ts     # Axios transport (write)
+│   │   └── createPet.mutation.ts  # useCreatePet (useMutation)
+│   ├── queryKeys.ts               # central key factory
+│   └── index.ts                   # barrel re-export
+└── mocks/
+    └── handlers.ts                # MSW handlers (because mocks: msw)
+```
+
+## End-to-end example
+
+The following walks a single resource — `Pet` — from OpenAPI input through
+every generated file, down to a component that consumes the hooks.
+
+### 6.1 Input OpenAPI
+
+A trimmed slice of the [petstore-minimal](/_snippets/openapi/petstore-minimal/)
+spec — two operations and one model. Everything below is generated from this:
+
+```yaml
+paths:
+  /pets/{id}:
+    get:
+      operationId: getPet
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer, format: int64 }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pet" }
+  /pets:
+    post:
+      operationId: createPet
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Pet" }
+      responses:
+        "201":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Pet" }
+components:
+  schemas:
+    Pet:
+      type: object
+      required: [id, name]
+      properties:
+        id:   { type: integer, format: int64 }
+        name: { type: string, minLength: 1 }
+        tags:
+          type: array
+          items: { $ref: "#/components/schemas/Tag" }
+    Tag:
+      type: object
+      required: [name]
+      properties:
+        name:  { type: string }
+        color: { type: string }
+```
+
+### 6.2 `models/Pet.ts` — Zod 4 schema
+
+ValIO emits one schema per OpenAPI component. Zod 4 uses the `zod/v4` entry
+point and the new primitive helpers (`z.int()`, `z.literal([...])`):
+
+```ts
+// models/Pet.ts
+import * as z from "zod/v4";
+
+export const TagSchema = z.object({
+  name:  z.string().min(1),
+  color: z.string().optional(),
+});
+
+export type Tag = z.infer<typeof TagSchema>;
+
+export const PetSchema = z.object({
+  id:   z.int(),
+  name: z.string().min(1),
+  tags: z.array(TagSchema).optional(),
+});
+
+export type Pet = z.infer<typeof PetSchema>;
+
+export const PetsSchema = z.array(PetSchema);
+export type Pets = z.infer<typeof PetsSchema>;
+```
+
+### 6.3 `api/pets/getPet.axios.ts` — Axios transport (GET)
+
+The transport is generated from `transports: ["axios"]` and is independent of
+the query wrapper — you could use it directly without TanStack Query at all.
+It accepts an injectable `AxiosInstance` so you can share interceptors:
+
+```ts
+// api/pets/getPet.axios.ts
+import axios, { type AxiosInstance, type AxiosRequestConfig } from "axios";
+import { PetSchema, type Pet } from "../../models/Pet";
+
+export interface GetPetParams {
+  id: number;
+}
+
+export async function getPet(
+  params: GetPetParams,
+  config?: AxiosRequestConfig,
+  client: AxiosInstance = axios,
+): Promise<Pet> {
+  const { data } = await client.get<unknown>(
+    `/pets/${encodeURIComponent(params.id)}`,
+    config,
+  );
+  // Runtime validation because validation: "zod4" is enabled.
+  return PetSchema.parse(data);
+}
+```
+
+### 6.4 `api/pets/createPet.axios.ts` — Axios transport (POST)
+
+Mutating operations get a similar transport, but the request body is validated
+on the way out (against the request schema) and the response on the way in:
+
+```ts
+// api/pets/createPet.axios.ts
+import axios, { type AxiosInstance, type AxiosRequestConfig } from "axios";
+import { PetSchema, type Pet } from "../../models/Pet";
+
+export interface CreatePetBody {
+  id: number;
+  name: string;
+  tags?: { name: string; color?: string }[];
+}
+
+export async function createPet(
+  body: CreatePetBody,
+  config?: AxiosRequestConfig,
+  client: AxiosInstance = axios,
+): Promise<Pet> {
+  const { data } = await client.post<unknown>(
+    `/pets`,
+    PetSchema.parse(body),
+    config,
+  );
+  return PetSchema.parse(data);
+}
+```
+
+### 6.5 `api/pets/getPet.query.ts` — `useGetPet` hook
+
+The query hook composes the transport and the key factory. It re-exports the
+key builder so consumers can compose `invalidateQueries` calls without
+re-implementing the convention:
+
+```ts
+// api/pets/getPet.query.ts
+import {
+  useQuery,
+  type UseQueryOptions,
+  type UseQueryResult,
+} from "@tanstack/react-query";
+import { getPet, type GetPetParams } from "./getPet.axios";
+import type { Pet } from "../../models/Pet";
+import { petsKeys } from "../queryKeys";
+
+export const getPetQueryKey = (params: GetPetParams) =>
+  petsKeys.detail(params.id);
+
+export function useGetPet(
+  params: GetPetParams,
+  options?: Omit<UseQueryOptions<Pet>, "queryKey" | "queryFn">,
+): UseQueryResult<Pet> {
+  return useQuery<Pet>({
+    queryKey: getPetQueryKey(params),
+    queryFn: () => getPet(params),
+    ...options,
+  });
+}
+```
+
+### 6.6 `api/pets/createPet.mutation.ts` — `useCreatePet` hook
+
+Mutations use `useMutation` and wire `onSuccess` to invalidate every list-shaped
+query under the `pets` root so any rendered list re-fetches automatically:
+
+```ts
+// api/pets/createPet.mutation.ts
+import {
+  useMutation,
+  useQueryClient,
+  type UseMutationOptions,
+  type UseMutationResult,
+} from "@tanstack/react-query";
+import { createPet, type CreatePetBody } from "./createPet.axios";
+import type { Pet } from "../../models/Pet";
+import { petsKeys } from "../queryKeys";
+
+export function useCreatePet(
+  options?: Omit<
+    UseMutationOptions<Pet, Error, CreatePetBody>,
+    "mutationFn"
+  >,
+): UseMutationResult<Pet, Error, CreatePetBody> {
+  const queryClient = useQueryClient();
+
+  return useMutation<Pet, Error, CreatePetBody>({
+    mutationFn: createPet,
+    ...options,
+    onSuccess: async (created, variables, context) => {
+      await queryClient.invalidateQueries({ queryKey: petsKeys.lists() });
+      await options?.onSuccess?.(created, variables, context);
+    },
+  });
+}
+```
+
+### 6.7 `api/queryKeys.ts` — Query keys factory
+
+ValIO emits one factory per resource using the canonical TanStack pattern
+("hierarchical keys"). The `as const` tuples preserve literal types so
+`invalidateQueries` is fully typed:
+
+```ts
+// api/queryKeys.ts
+export const petsKeys = {
+  all:     ["pets"] as const,
+  lists:   () => [...petsKeys.all, "list"] as const,
+  list:    (filters: Record<string, unknown> = {}) =>
+    [...petsKeys.lists(), filters] as const,
+  details: () => [...petsKeys.all, "detail"] as const,
+  detail:  (id: number) => [...petsKeys.details(), id] as const,
+};
+
+export type PetsKey = ReturnType<
+  | typeof petsKeys.lists
+  | typeof petsKeys.list
+  | typeof petsKeys.details
+  | typeof petsKeys.detail
+>;
+```
+
+### 6.8 `api/index.ts` — barrel re-export
+
+```ts
+// api/index.ts
+export * from "./pets/getPet.axios";
+export * from "./pets/getPet.query";
+export * from "./pets/listPets.axios";
+export * from "./pets/listPets.query";
+export * from "./pets/createPet.axios";
+export * from "./pets/createPet.mutation";
+export * from "./queryKeys";
+```
+
+### 6.9 Consumer component
+
+The application code never imports `axios` or `zod` directly — only the hooks:
+
+```tsx
+// app/pets/[id]/page.tsx
+import { useGetPet } from "@/api/generated/api/pets/getPet.query";
+
+export function PetDetail({ id }: { id: number }) {
+  const { data: pet, isLoading, isError, error } = useGetPet({ id });
+
+  if (isLoading) return <p>Loading…</p>;
+  if (isError)   return <p role="alert">Failed: {error.message}</p>;
+  if (!pet)      return null;
+
+  return (
+    <article>
+      <h1>{pet.name}</h1>
+      <ul>
+        {pet.tags?.map((t) => (
+          <li key={t.name} style={{ color: t.color }}>{t.name}</li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+```
+
+## Query keys deep dive
+
+The factory pattern above is more than cosmetic — TanStack treats the array
+prefix as a tree, so `invalidateQueries` cascades down. That means
+`petsKeys.all` invalidates everything pet-related; `petsKeys.lists()`
+invalidates every list while leaving individual details alone:
+
+```ts
+import { useQueryClient } from "@tanstack/react-query";
+import { petsKeys } from "@/api/generated/api/queryKeys";
+
+function useRefresh() {
+  const qc = useQueryClient();
+
+  // Refetch every pet-related query (lists AND details).
+  const refreshAll = () => qc.invalidateQueries({ queryKey: petsKeys.all });
+
+  // Refetch only list-shaped queries (e.g. after creating a pet).
+  const refreshLists = () => qc.invalidateQueries({ queryKey: petsKeys.lists() });
+
+  // Refetch a single detail by id.
+  const refreshOne = (id: number) =>
+    qc.invalidateQueries({ queryKey: petsKeys.detail(id) });
+
+  return { refreshAll, refreshLists, refreshOne };
+}
+```
+
+Because every key starts with the resource name, you can also read or write
+the cache directly without firing a request:
+
+```ts
+// Optimistically seed the detail cache from a list response.
+const list = qc.getQueryData<Pet[]>(petsKeys.list());
+list?.forEach((pet) => qc.setQueryData(petsKeys.detail(pet.id), pet));
+```
+
+If you need a key for an entity ValIO didn't generate (e.g. a derived
+selector), follow the same shape — `[resource, "kind", ...args]` — so the
+prefix-based invalidation keeps working.
+
+## Mutations
+
+### Basic invocation
+
+`mutate()` is fire-and-forget; `mutateAsync()` returns a promise so you can
+`await` in event handlers:
+
+```tsx
+import { useCreatePet } from "@/api/generated/api/pets/createPet.mutation";
+
+function NewPetForm() {
+  const create = useCreatePet();
+
+  return (
+    <button
+      onClick={() => create.mutate({ id: Date.now(), name: "Buddy" })}
+      disabled={create.isPending}
+    >
+      {create.isPending ? "Saving…" : "Add pet"}
+    </button>
+  );
+}
+```
+
+### Optimistic updates
+
+ValIO doesn't generate optimistic logic for you (it's per-product), but the
+generated hooks accept the standard `onMutate` / `onError` / `onSettled`
+overrides so you can layer it on:
+
+```tsx
+import { useQueryClient } from "@tanstack/react-query";
+import { useCreatePet } from "@/api/generated/api/pets/createPet.mutation";
+import { petsKeys } from "@/api/generated/api/queryKeys";
+import type { Pet } from "@/api/generated/models/Pet";
+
+function useOptimisticCreate() {
+  const qc = useQueryClient();
+
+  return useCreatePet({
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: petsKeys.lists() });
+      const previous = qc.getQueryData<Pet[]>(petsKeys.list());
+      qc.setQueryData<Pet[]>(petsKeys.list(), (old = []) => [...old, input as Pet]);
+      return { previous };
+    },
+    onError: (_err, _input, ctx) => {
+      if (ctx?.previous) qc.setQueryData(petsKeys.list(), ctx.previous);
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: petsKeys.lists() }),
+  });
+}
+```
+
+### Cache writes after success
+
+The default `onSuccess` already invalidates list queries. If you also want to
+seed the detail cache with the freshly created entity (saving a round-trip),
+chain your own `onSuccess`:
+
+```tsx
+const create = useCreatePet({
+  onSuccess: (pet, _vars, _ctx) => {
+    qc.setQueryData(petsKeys.detail(pet.id), pet);
+  },
+});
+```
+
+The generated `onSuccess` in `createPet.mutation.ts` calls `options?.onSuccess`
+**after** its own invalidation, so both run.
+
+## Prefetching
+
+### Client-side prefetch
+
+Warm the cache before navigation — for example, on hover of a `Link`:
+
+```tsx
+import { useQueryClient } from "@tanstack/react-query";
+import { getPet } from "@/api/generated/api/pets/getPet.axios";
+import { petsKeys } from "@/api/generated/api/queryKeys";
+
+export function PetRow({ id, name }: { id: number; name: string }) {
+  const qc = useQueryClient();
+
+  const prefetch = () =>
+    qc.prefetchQuery({
+      queryKey: petsKeys.detail(id),
+      queryFn:  () => getPet({ id }),
+      staleTime: 30_000,
+    });
+
+  return <a href={`/pets/${id}`} onMouseEnter={prefetch}>{name}</a>;
+}
+```
+
+### Route loader (TanStack Router / Remix)
+
+The generated transport is a plain async function, so it composes with any
+loader API:
+
+```ts
+// TanStack Router
+import { createRoute } from "@tanstack/react-router";
+import { getPet } from "@/api/generated/api/pets/getPet.axios";
+
+export const petRoute = createRoute({
+  path: "/pets/$id",
+  loader: ({ params }) => getPet({ id: Number(params.id) }),
+});
+```
+
+### Server-side prefetch with `dehydrate`
+
+For Next.js App Router (or any SSR framework), prefetch on the server and
+hydrate on the client:
+
+```tsx
+// app/pets/[id]/page.tsx — server component
+import {
+  HydrationBoundary,
+  QueryClient,
+  dehydrate,
+} from "@tanstack/react-query";
+import { getPet } from "@/api/generated/api/pets/getPet.axios";
+import { petsKeys } from "@/api/generated/api/queryKeys";
+import { PetDetail } from "./PetDetail.client";
+
+export default async function Page({ params }: { params: { id: string } }) {
+  const id = Number(params.id);
+  const qc = new QueryClient();
+
+  await qc.prefetchQuery({
+    queryKey: petsKeys.detail(id),
+    queryFn:  () => getPet({ id }),
+  });
+
+  return (
+    <HydrationBoundary state={dehydrate(qc)}>
+      <PetDetail id={id} />
+    </HydrationBoundary>
+  );
+}
+```
+
+## Infinite queries
+
+If the OpenAPI spec declares a `cursor` or `page` query parameter, ValIO emits
+an additional `useInfinite<Op>` factory that wraps `useInfiniteQuery`:
+
+```ts
+// api/pets/listPets.infinite.query.ts
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { listPets } from "./listPets.axios";
+import { petsKeys } from "../queryKeys";
+
+export function useInfiniteListPets() {
+  return useInfiniteQuery({
+    queryKey: petsKeys.list({ kind: "infinite" }),
+    queryFn:  ({ pageParam }) => listPets({ cursor: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
+}
+```
+
+Consumer:
+
+```tsx
+const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+  useInfiniteListPets();
+
+return (
+  <>
+    {data?.pages.flatMap((p) => p.items).map((pet) => (
+      <li key={pet.id}>{pet.name}</li>
+    ))}
+    <button
+      onClick={() => fetchNextPage()}
+      disabled={!hasNextPage || isFetchingNextPage}
+    >
+      Load more
+    </button>
+  </>
+);
+```
+
+## Server-side rendering
+
+The full Next.js App Router pattern combines a server component (which
+prefetches and dehydrates) with a client component (which hydrates and uses
+the hook). The hook reads from the cache instead of firing a new request:
+
+```tsx
+// app/providers.tsx — client provider
+"use client";
+import {
+  QueryClient,
+  QueryClientProvider,
+} from "@tanstack/react-query";
+import { useState } from "react";
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const [client] = useState(() => new QueryClient());
+  return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+}
+```
+
+```tsx
+// app/pets/[id]/PetDetail.client.tsx
+"use client";
+import { useGetPet } from "@/api/generated/api/pets/getPet.query";
+
+export function PetDetail({ id }: { id: number }) {
+  const { data: pet } = useGetPet({ id });
+  return <h1>{pet?.name}</h1>;
+}
+```
+
+The same `dehydrate(qc)` payload works with TanStack Start, Remix, and any
+other framework that supports streaming serialized state.
+
+## Testing with MSW
+
+Enable the MSW handler generator (`mocks: "msw"`) so the same OpenAPI input
+that produced the hooks also produces deterministic mocks. Tests then wrap
+the component under test in a `QueryClientProvider`:
+
+```ts
+// vitest.setup.ts
+import { afterAll, afterEach, beforeAll } from "vitest";
+import { setupServer } from "msw/node";
+import { handlers } from "@/api/generated/mocks/handlers";
+
+export const server = setupServer(...handlers);
+
+beforeAll(() => server.listen({ onUnhandledRequest: "error" }));
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
+```
+
+```tsx
+// PetDetail.test.tsx
+import { render, screen } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { PetDetail } from "./PetDetail";
+
+it("renders the pet name", async () => {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={qc}>
+      <PetDetail id={1} />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByRole("heading")).toHaveTextContent("Sam");
+});
+```
+
+## Framework-specific notes
+
+### Vue 3 (`tanstack-vue`)
+
+`useQuery` accepts reactive refs — ValIO unwraps them on the way in so you can
+pass either a plain value or a `Ref<T>`:
+
+```ts
+// api/pets/getPet.query.ts (Vue flavour)
+import { useQuery } from "@tanstack/vue-query";
+import { getPet } from "./getPet.axios";
+import { petsKeys } from "../queryKeys";
+
+export const useGetPet = (id: MaybeRefOrGetter<number>) =>
+  useQuery({
+    queryKey: computed(() => petsKeys.detail(toValue(id))),
+    queryFn:  () => getPet({ id: toValue(id) }),
+  });
+```
+
+### Angular (`tanstack-angular`)
+
+Uses signal-based `injectQuery` / `injectMutation` (TanStack Angular ≥ 5.59):
+
+```ts
+import { injectQuery } from "@tanstack/angular-query-experimental";
+import { getPet } from "./getPet.axios";
+import { petsKeys } from "../queryKeys";
+
+export const injectGetPet = (id: () => number) =>
+  injectQuery(() => ({
+    queryKey: petsKeys.detail(id()),
+    queryFn:  () => getPet({ id: id() }),
+  }));
+```
+
+### Solid (`tanstack-solid`)
+
+```ts
+import { createQuery } from "@tanstack/solid-query";
+import { getPet } from "./getPet.axios";
+import { petsKeys } from "../queryKeys";
+
+export const createGetPet = (id: () => number) =>
+  createQuery(() => ({
+    queryKey: petsKeys.detail(id()),
+    queryFn:  () => getPet({ id: id() }),
+  }));
+```
+
+### Svelte (`tanstack-svelte`)
+
+```ts
+import { createQuery } from "@tanstack/svelte-query";
+import { getPet } from "./getPet.axios";
+import { petsKeys } from "../queryKeys";
+
+export const createGetPet = (id: number) =>
+  createQuery({
+    queryKey: petsKeys.detail(id),
+    queryFn:  () => getPet({ id }),
+  });
+```
+
+The transport, validation schema, and key factory are identical across all
+five framework flavours — only the hook factory file changes.
+
+## Migration from manual fetch
+
+| Concern             | Hand-rolled `useEffect` + `fetch`               | ValIO + TanStack hook                       |
+|---------------------|--------------------------------------------------|---------------------------------------------|
+| Cache               | None — every mount refetches                     | Shared `QueryClient` cache                  |
+| Loading state       | `useState` + manual setters                      | `isLoading`, `isPending`, `isFetching`      |
+| Errors              | Try/catch inside the effect                      | `isError` + `error: Error`                  |
+| Cancellation        | `AbortController` plumbing                       | Built-in (TanStack passes a signal)         |
+| Refetch on focus    | Manual `visibilitychange` listeners              | On by default                               |
+| Type safety         | `Pet as unknown as Pet` casts                    | `z.infer<typeof PetSchema>` end-to-end      |
+
+## See also
+
+- [Axios transport](/languages/typescript/transports/axios/) — full transport reference.
+- [Zod schemas](/languages/typescript/validation/zod/) — Zod 3 vs Zod 4 differences.
+- [MSW handlers](/languages/typescript/mocks/msw/) — generated mock setup.
+- [Configuration reference](/configuration/) — every option, defaults, and validation rules.
+- [Stack: React + TanStack + Axios + Zod 4](/stacks/typescript/react-tanstack-axios-zod4/) — copy-pasteable starter.

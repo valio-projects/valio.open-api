@@ -1,0 +1,177 @@
+---
+title: React + TanStack Query + Fetch + Zod 3
+description: Zero-runtime-dependency React stack — native Fetch transport plus Zod 3 schemas.
+sidebar:
+  order: 2
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You want a React SPA with TanStack Query but **no axios peer dependency**.
+Native `fetch` is everywhere now (Node 18+, all evergreen browsers, Bun,
+workers), and Zod 3 is still the most-deployed version of the schema lib
+with maximum third-party plugin compatibility. Choose this over the
+[Axios + Zod 4 stack](/stacks/typescript/react-tanstack-axios-zod4/) if
+bundle size or peer-dep count is a hard constraint.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `react`                       | 18.2.0    |
+| `@tanstack/react-query`       | 5.0.0     |
+| `zod`                         | 3.22.0    |
+| Node (runtime, if used SSR)   | 18.18.0   |
+| TypeScript                    | 5.0       |
+
+No axios, no ky, no ofetch — just the platform.
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["fetch"],
+        "validation": "zod3",
+        "queryWrapper": "tanstack-react",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+A Zod 3 `*.Schema` for every model with `z.infer` on top. A `<op>.fetch.ts`
+file per operation using the global `fetch`, which throws on non-2xx and
+returns the parsed JSON. A matching `<op>.tanstack-react.ts` hook wraps the
+fetch call in `useQuery`/`useMutation` and validates the response on the way
+out.
+
+## File tree
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet/Pet.ts                # z.object + z.infer
+│   └── Pets/Pets.ts
+├── api/
+│   ├── listPets/
+│   │   ├── listPets.params.ts
+│   │   ├── listPets.fetch.ts
+│   │   └── listPets.tanstack-react.ts
+│   └── createPet/
+│       ├── createPet.params.ts
+│       ├── createPet.fetch.ts
+│       └── createPet.tanstack-react.ts
+├── queryKeys.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.ts">
+
+    ```ts
+    // models/Pet/Pet.ts
+    import { z } from "zod";
+
+    export const PetSchema = z.object({
+      id: z.number().int(),
+      name: z.string().min(1),
+      tag: z.string().optional(),
+    });
+
+    export type Pet = z.infer<typeof PetSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.fetch.ts">
+
+    ```ts
+    // api/listPets/listPets.fetch.ts
+    import type { Pets } from "../../models/Pets/Pets";
+
+    export async function listPets(
+      init?: RequestInit
+    ): Promise<Pets> {
+      const res = await fetch("/pets", { ...init, method: "GET" });
+      if (!res.ok) throw new Error(`listPets failed: ${res.status}`);
+      return (await res.json()) as Pets;
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.tanstack-react.ts">
+
+    ```ts
+    // api/listPets/listPets.tanstack-react.ts
+    import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
+    import { listPets } from "./listPets.fetch";
+    import { PetsSchema, type Pets } from "../../models/Pets/Pets";
+    import { queryKeys } from "../../queryKeys";
+
+    export function useListPets(
+      options?: Omit<UseQueryOptions<Pets>, "queryKey" | "queryFn">
+    ) {
+      return useQuery<Pets>({
+        queryKey: queryKeys.listPets(),
+        queryFn: async () => PetsSchema.parse(await listPets()),
+        ...options,
+      });
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsPage.tsx">
+
+    ```tsx
+    // PetsPage.tsx
+    import { useListPets } from "./api/generated/api/listPets/listPets.tanstack-react";
+
+    export function PetsPage() {
+      const { data, isLoading } = useListPets();
+      if (isLoading) return <p>Loading…</p>;
+      return <ul>{data?.map((p) => <li key={p.id}>{p.name}</li>)}</ul>;
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Fetch API" href="https://developer.mozilla.org/docs/Web/API/Fetch_API" description="Platform-native HTTP — no install needed" />
+<LinkCard title="Zod 3" href="https://zod.dev/" description="The widely deployed version of Zod with massive plugin ecosystem" />
+<LinkCard title="@tanstack/react-query" href="https://tanstack.com/query/latest" description="Server-state management for React" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / Fetch](/languages/typescript/transports/fetch/)
+- [React + TanStack + Axios + Zod 4 stack](/stacks/typescript/react-tanstack-axios-zod4/)

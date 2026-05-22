@@ -1,0 +1,66 @@
+---
+title: Frontends
+description: CLI, Web, and Desktop — three faces, one engine.
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+ValIO is one engine — the same `IGenerationOrchestrator`,
+`IGeneratorPlugin` set, and `IGenerationOutputSink` implementations —
+exposed through three front-ends. They share the
+`ValIO.Plugins.Bootstrap`, `ValIO.Application`, `ValIO.Output`, and
+`ValIO.Localization` projects byte-for-byte; only the input form and
+output channel differ.
+
+<CardGrid>
+  <Card title="CLI" icon="terminal">
+    A single self-contained executable. Best for CI pipelines,
+    scripted regeneration, and dev-loop watch tasks. Outputs to a
+    folder or a `.zip`.
+  </Card>
+  <Card title="Web" icon="rocket">
+    Blazor Server + MudBlazor in your browser. Best for one-off
+    generation when you don't want to install anything — paste a
+    schema URL, fill the form, download a zip.
+  </Card>
+  <Card title="Desktop" icon="laptop">
+    Avalonia 11, native on Windows, macOS, and Linux. Best for
+    offline use and when a native file picker beats typing paths.
+  </Card>
+</CardGrid>
+
+## Side-by-side
+
+| Aspect          | CLI                       | Web                                | Desktop                       |
+|-----------------|---------------------------|------------------------------------|-------------------------------|
+| Installation    | `dotnet tool install`     | None (browser)                     | Download executable / `dotnet run` |
+| Best for        | CI, scripts, monorepos    | First-time users, sharing          | Daily use offline             |
+| Input           | Path/URL arg, config file | URL paste / file upload (≤10 MB)   | Native file picker            |
+| Output          | Folder / zip on disk      | Zip streamed to browser            | Folder / zip on disk          |
+| Sink used       | `DiskOutputSink` / `ZipFileOutputSink` | `ZipStreamOutputSink`  | `DiskOutputSink` / `ZipFileOutputSink` |
+| Config support  | Full (`-c valio.config.json`) | Single project per request     | Single project per panel       |
+| Localization    | `--lang` or `VALIO_LANG`  | Top-right language menu (cookie)   | Settings page (persisted)     |
+| Headless        | Yes                       | Server-rendered, but interactive   | No (GUI)                      |
+| Offline         | Yes                       | Yes if schema is uploaded          | Yes                           |
+
+## When to use which
+
+- **CLI** when you want generation to be a step in `pnpm`, `make`,
+  `dotnet build`, GitHub Actions, or any other automation. The CLI is
+  the only front-end that accepts a `valio.config.json` and runs many
+  projects in one shot.
+- **Web** when a teammate wants to grab a one-off zip and doesn't have
+  the toolchain installed, or when you host an internal ValIO instance
+  for the whole org.
+- **Desktop** when you'd rather click than type — typically when
+  iterating on plugin options to see how output changes. The Desktop
+  app shows the full options form for the picked language and remembers
+  your last choices.
+
+## Detailed reference
+
+<CardGrid>
+  <LinkCard title="CLI reference"     href="/cli/" />
+  <LinkCard title="Web UI guide"      href="/web/" />
+  <LinkCard title="Desktop app guide" href="/desktop/" />
+</CardGrid>

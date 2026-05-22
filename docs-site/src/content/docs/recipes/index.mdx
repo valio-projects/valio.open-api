@@ -1,0 +1,35 @@
+---
+title: Recipes
+description: Opinionated, end-to-end setups for common ValIO use cases.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The pages below walk through fully-worked setups. Each recipe lists
+exactly the CLI invocation, config file, and target structure that
+gets you to a clean build.
+
+<CardGrid>
+  <LinkCard
+    title="Angular monorepo"
+    description="HttpClient + Zod + TanStack Query in an Nx workspace."
+    href="/recipes/angular-monorepo/" />
+
+  <LinkCard
+    title="MSW mocks in Storybook"
+    description="Wire OpenAPI-derived MSW handlers into Storybook stories."
+    href="/recipes/mock-api-storybook/" />
+
+  <LinkCard
+    title="Migrating from NSwag"
+    description="Config and CLI flag equivalents — one row at a time."
+    href="/recipes/migrate-from-nswag/" />
+
+  <LinkCard
+    title="CI integration"
+    description="Run valio in GitHub Actions / GitLab CI as a gen step."
+    href="/recipes/ci-integration/" />
+</CardGrid>
+
+If you have a setup that other teams might reuse, open a PR adding it
+here — the recipes folder is open content.

@@ -1,6 +1,7 @@
 ---
 title: Contributing
 description: Coding rules and plugin authoring guide.
+translationKey: contributing
 ---
 
 ValIO welcomes contributions — new generator plugins, new transports for

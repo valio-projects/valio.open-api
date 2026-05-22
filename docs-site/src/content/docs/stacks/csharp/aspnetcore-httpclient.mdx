@@ -1,0 +1,169 @@
+---
+title: ASP.NET Core + HttpClient
+description: Exact stack to generate a typed API client for ASP.NET Core 8 with IHttpClientFactory and System.Text.Json.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You are building an ASP.NET Core 8+ web app, minimal API, or worker that
+needs to call a downstream HTTP API described by an OpenAPI 3 document.
+You want the generated client to plug straight into
+`IHttpClientFactory` with `AddHttpClient<TClient>()` and use the
+framework-default `System.Text.Json` serializer.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| .NET SDK | 8.0+ |
+| `Microsoft.Extensions.Http` | 8.0+ |
+| `System.Text.Json` | 8.0+ (transitive) |
+| `Microsoft.Extensions.DependencyInjection` | 8.0+ |
+
+No third-party HTTP libraries — everything ships in the ASP.NET Core
+shared framework.
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p api-client
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "api-client": {
+      "language": "csharp",
+      "schema": "./openapi.yaml",
+      "outputPath": "./src/MyOrg.Api.Client/Generated",
+      "namespace": "MyOrg.Api.Client",
+      "options": {
+        "namespace": "MyOrg.Api.Client",
+        "nullableReferenceTypes": true
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "Models",
+        "clientsPath": "Clients"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+One DTO `class` per OpenAPI schema with `[JsonPropertyName]` attributes,
+one strongly-typed `*Client` per tag with constructor-injected
+`HttpClient`, and an `IServiceCollection` extension that registers each
+client via `AddHttpClient`.
+
+## File tree
+
+```
+src/MyOrg.Api.Client/Generated/
+├── Models/
+│   ├── Pet.cs
+│   └── Pets.cs
+├── Clients/
+│   └── PetsClient.cs
+└── ServiceCollectionExtensions.cs
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.cs">
+
+    ```csharp
+    using System.Text.Json.Serialization;
+
+    namespace MyOrg.Api.Client.Models;
+
+    public sealed class Pet
+    {
+        [JsonPropertyName("id")]
+        public long Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = default!;
+
+        [JsonPropertyName("tag")]
+        public string? Tag { get; set; }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsClient.cs">
+
+    ```csharp
+    using System.Net.Http.Json;
+    using MyOrg.Api.Client.Models;
+
+    namespace MyOrg.Api.Client.Clients;
+
+    public sealed class PetsClient
+    {
+        private readonly HttpClient _http;
+
+        public PetsClient(HttpClient http) => _http = http;
+
+        public async Task<IReadOnlyList<Pet>> ListPetsAsync(CancellationToken ct = default)
+        {
+            var response = await _http.GetAsync("/pets", ct);
+            response.EnsureSuccessStatusCode();
+            return await response.Content.ReadFromJsonAsync<IReadOnlyList<Pet>>(cancellationToken: ct)
+                ?? Array.Empty<Pet>();
+        }
+
+        public async Task<Pet> CreatePetAsync(Pet body, CancellationToken ct = default)
+        {
+            var response = await _http.PostAsJsonAsync("/pets", body, ct);
+            response.EnsureSuccessStatusCode();
+            return (await response.Content.ReadFromJsonAsync<Pet>(cancellationToken: ct))!;
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="Program.cs">
+
+    ```csharp
+    // Program.cs
+    using MyOrg.Api.Client.Clients;
+
+    var builder = WebApplication.CreateBuilder(args);
+
+    builder.Services.AddHttpClient<PetsClient>(c =>
+    {
+        c.BaseAddress = new Uri("https://petstore.example.com/v1/");
+    });
+
+    var app = builder.Build();
+
+    app.MapGet("/pets", async (PetsClient pets, CancellationToken ct)
+        => await pets.ListPetsAsync(ct));
+
+    app.Run();
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Microsoft.Extensions.Http" href="https://learn.microsoft.com/dotnet/core/extensions/httpclient-factory" description="IHttpClientFactory and typed-client registration." />
+<LinkCard title="System.Text.Json" href="https://learn.microsoft.com/dotnet/standard/serialization/system-text-json-overview" description="The default JSON serializer in modern .NET." />
+<LinkCard title="ASP.NET Core" href="https://learn.microsoft.com/aspnet/core/" description="The web framework this stack is designed around." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [C# overview](/languages/csharp/)

@@ -1,0 +1,168 @@
+---
+title: Node + Axios + TypeBox (Fastify)
+description: Server-to-server clients with Axios interceptors and TypeBox schemas — drops into a Fastify codebase.
+sidebar:
+  order: 9
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You have a Fastify backend that already uses `@sinclair/typebox` for route
+schemas and you want your **outbound** HTTP clients to use the same schema
+flavour. TypeBox schemas are plain JSON Schema, so they double as types,
+runtime validators, and OpenAPI fragments — perfect for shipping a single
+contract across services. Axios brings interceptors, easy mocking, and
+request cancellation; if you have an existing axios instance for auth, the
+generated clients share it.
+
+For server-to-server work where you don't care about Fastify compatibility,
+[Node + Undici + Zod 4](/stacks/typescript/node-undici-zod4/) is strictly
+faster.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| Node                          | 18.18.0   |
+| `axios`                       | 1.6.0     |
+| `@sinclair/typebox`           | 0.32.0    |
+| `fastify` *(optional)*        | 4.26.0    |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p UsersApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "UsersApi": {
+      "language": "typescript",
+      "schema": "./openapi/users.yaml",
+      "outputPath": "src/clients/users",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["axios"],
+        "validation": "typebox",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+A TypeBox schema (`Type.Object(...)`) and `Static<typeof ...>` type per
+model. A `<op>.axios.ts` transport per operation that takes an optional
+`AxiosInstance`, defaulting to the global one. Responses are checked with
+`Value.Check(Schema, raw)` — same validator surface as Fastify's
+`compileSerialization`, so you can lift the schemas straight into route
+options.
+
+## File tree
+
+```
+src/clients/users/
+├── models/
+│   ├── User/User.ts              # Type.Object + Static<...>
+│   └── Users/Users.ts
+├── api/
+│   ├── getUser/
+│   │   ├── getUser.params.ts
+│   │   └── getUser.axios.ts
+│   └── listUsers/
+│       ├── listUsers.params.ts
+│       └── listUsers.axios.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="User.ts">
+
+    ```ts
+    // models/User/User.ts
+    import { Type, type Static } from "@sinclair/typebox";
+
+    export const UserSchema = Type.Object({
+      id: Type.String({ format: "uuid" }),
+      email: Type.String({ format: "email" }),
+      displayName: Type.String({ minLength: 1 }),
+    });
+
+    export type User = Static<typeof UserSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="getUser.axios.ts">
+
+    ```ts
+    // api/getUser/getUser.axios.ts
+    import axios, { type AxiosInstance } from "axios";
+    import { Value } from "@sinclair/typebox/value";
+    import { UserSchema, type User } from "../../models/User/User";
+    import type { GetUserParams } from "./getUser.params";
+
+    export async function getUser(
+      params: GetUserParams,
+      client: AxiosInstance = axios
+    ): Promise<User> {
+      const { data } = await client.get<unknown>(
+        `/users/${encodeURIComponent(params.id)}`
+      );
+      if (!Value.Check(UserSchema, data)) {
+        throw new Error("getUser: response failed TypeBox validation");
+      }
+      return data;
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="routes/profile.ts">
+
+    ```ts
+    // routes/profile.ts — Fastify route reusing the same TypeBox schema
+    import type { FastifyInstance } from "fastify";
+    import { UserSchema } from "../clients/users/models/User/User";
+    import { getUser } from "../clients/users/api/getUser/getUser.axios";
+
+    export async function profileRoutes(app: FastifyInstance) {
+      app.get("/me", {
+        schema: { response: { 200: UserSchema } },
+      }, async (req) => {
+        return getUser({ id: req.user.id });
+      });
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="axios" href="https://axios-http.com/" description="Promise-based HTTP client for Node" />
+<LinkCard title="TypeBox" href="https://github.com/sinclairzx81/typebox" description="JSON-Schema type builder" />
+<LinkCard title="Fastify" href="https://fastify.dev/" description="Fast and low-overhead web framework for Node" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / Axios](/languages/typescript/transports/axios/)
+- [Node + Undici + Zod 4 (pure server)](/stacks/typescript/node-undici-zod4/)

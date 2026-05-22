@@ -1,0 +1,167 @@
+---
+title: Angular 17+ + HttpClient + RxJS
+description: Idiomatic Angular clients with HttpClient, RxJS Observables, and no extra validation lib.
+sidebar:
+  order: 4
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're building an Angular app (standalone components, Angular 17+) and want
+generated clients to fit Angular DI conventions: each operation as a method
+on an `@Injectable()` service that returns `Observable<T>`. Angular's
+HttpClient already handles JSON parsing, headers, and interceptors, so this
+stack deliberately skips a runtime validator — the TS types do the heavy
+lifting at compile time, and your existing HTTP interceptors enforce
+contracts at runtime. Swap to the [Promise transport](/languages/typescript/transports/angular/)
+if your codebase uses `async/await` everywhere instead of pipes.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `@angular/core`               | 17.0.0    |
+| `@angular/common`             | 17.0.0    |
+| `rxjs`                        | 7.8.0     |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/app/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["angular-rxjs"],
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+No `validation` or `queryWrapper` options — Angular's DI gives you the
+client wiring already, and `HttpClient` is the de-facto query layer.
+
+## What gets generated
+
+Plain `interface` types for every model (no runtime schemas — pure type
+information). One `@Injectable({ providedIn: 'root' })` service per API
+group, with one method per operation returning `Observable<T>`. The service
+takes `HttpClient` via constructor injection.
+
+## File tree
+
+```
+src/app/api/generated/
+├── models/
+│   ├── Pet/Pet.ts                # plain interface Pet
+│   └── Pets/Pets.ts
+├── api/
+│   ├── PetApi.service.ts         # @Injectable, listPets() + createPet()
+│   └── index.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.ts">
+
+    ```ts
+    // models/Pet/Pet.ts
+    export interface Pet {
+      id: number;
+      name: string;
+      tag?: string;
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetApi.service.ts">
+
+    ```ts
+    // api/PetApi.service.ts
+    import { Injectable, inject } from "@angular/core";
+    import { HttpClient } from "@angular/common/http";
+    import { Observable } from "rxjs";
+    import type { Pet } from "../models/Pet/Pet";
+    import type { Pets } from "../models/Pets/Pets";
+
+    @Injectable({ providedIn: "root" })
+    export class PetApiService {
+      private readonly http = inject(HttpClient);
+      private readonly baseUrl = "/api";
+
+      listPets(): Observable<Pets> {
+        return this.http.get<Pets>(`${this.baseUrl}/pets`);
+      }
+
+      createPet(body: Pet): Observable<Pet> {
+        return this.http.post<Pet>(`${this.baseUrl}/pets`, body);
+      }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="pets.component.ts">
+
+    ```ts
+    // pets.component.ts
+    import { Component, inject } from "@angular/core";
+    import { AsyncPipe } from "@angular/common";
+    import { PetApiService } from "./api/generated/api/PetApi.service";
+
+    @Component({
+      standalone: true,
+      selector: "app-pets",
+      imports: [AsyncPipe],
+      template: `
+        <ul>
+          @for (pet of pets$ | async; track pet.id) {
+            <li>{{ pet.name }}</li>
+          }
+        </ul>
+      `,
+    })
+    export class PetsComponent {
+      private readonly api = inject(PetApiService);
+      pets$ = this.api.listPets();
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Angular" href="https://angular.dev/" description="The web development platform" />
+<LinkCard title="RxJS" href="https://rxjs.dev/" description="Reactive extensions for JavaScript" />
+<LinkCard title="@angular/common/http" href="https://angular.dev/guide/http" description="Angular's built-in HTTP client" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / Angular](/languages/typescript/transports/angular/)
+- [TypeScript overview](/languages/typescript/)

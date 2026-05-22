@@ -1,0 +1,281 @@
+---
+title: Zod schemas
+description: Zod 3 and Zod 4 schema generation for the TypeScript generator.
+sidebar:
+  order: 10
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+[Zod](https://zod.dev) is the most widely used TypeScript validation library.
+ValIO supports **both Zod 3 and Zod 4** through two distinct option values,
+because Zod 4 introduced breaking changes to the schema-building API.
+
+Both versions emit one schema file per model under
+`models/<Name>/schemas/<Name>.schema.ts`. The generated transports then call
+`Schema.parse(...)` on the response body before returning to the caller — so
+schema drift surfaces at the boundary, not three components deep.
+
+## When to use
+
+- You're already on Zod elsewhere in your project (form resolvers, tRPC,
+  Astro content, etc.).
+- You need transformations / refinements that Valibot or TypeBox don't cover.
+- You want the broadest ecosystem of integrations
+  (`@hookform/resolvers/zod`, `astro:content`, `drizzle-zod`, ...).
+- Pick **Zod 4** for new projects (smaller bundle, better errors). Pick
+  **Zod 3** if you depend on libraries that haven't migrated.
+
+## Enabling
+
+<Tabs>
+<TabItem label="Zod 4 (recommended)">
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["fetch"],
+    "validation": "zod4"
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Zod 3">
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["fetch"],
+    "validation": "zod3"
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+The descriptor (`TypeScriptOptionsDescriptor`) accepts `zod`, `zod3`, `zod4`
+as values. `zod` is normalised to `zod3` for backwards compatibility.
+
+## Zod 3 vs Zod 4 differences
+
+| Concern              | Zod 3                                | Zod 4                                  |
+|----------------------|--------------------------------------|----------------------------------------|
+| Import               | `import { z } from "zod"`            | `import * as z from "zod/v4"`          |
+| Integers             | `z.number().int()`                   | `z.int()` or `z.int32()`               |
+| ISO datetime         | `z.string().datetime()`              | `z.iso.datetime()`                     |
+| UUID                 | `z.string().uuid()`                  | `z.uuid()` / `z.uuidv7()`              |
+| Min-length string    | `z.string().min(1)`                  | `z.string().min(1)` (unchanged)        |
+| Default error map    | Per-issue functions                  | Centralised `errorMap` option          |
+| Bundle size          | ~25 kB                               | ~12 kB, tree-shakeable                 |
+| Recursive types      | `z.lazy(() => ...)`                  | `z.lazy()` with improved inference     |
+| `safeParse`          | `{ success, data, error }`           | Same                                   |
+
+`z.string().min()`, `.max()`, `.length()`, `.refine()`, `.transform()`, and
+the parse APIs (`parse`, `safeParse`, `parseAsync`) work in both versions.
+
+## Generated schema
+
+<Tabs>
+<TabItem label="Zod 4">
+
+```ts
+// models/Pet/schemas/Pet.schema.ts (Zod 4)
+import * as z from "zod/v4";
+
+export const PetStatusSchema = z.enum(["available", "pending", "sold"]);
+
+export const PetSchema = z.object({
+  id: z.int(),
+  name: z.string().min(1).max(80),
+  status: PetStatusSchema,
+  tags: z.array(z.string()).optional(),
+  birthday: z.iso.datetime().optional(),
+  owner: z.uuid().nullable(),
+});
+
+export type Pet = z.infer<typeof PetSchema>;
+export type PetStatus = z.infer<typeof PetStatusSchema>;
+```
+
+</TabItem>
+<TabItem label="Zod 3">
+
+```ts
+// models/Pet/schemas/Pet.schema.ts (Zod 3)
+import { z } from "zod";
+
+export const PetStatusSchema = z.enum(["available", "pending", "sold"]);
+
+export const PetSchema = z.object({
+  id: z.number().int(),
+  name: z.string().min(1).max(80),
+  status: PetStatusSchema,
+  tags: z.array(z.string()).optional(),
+  birthday: z.string().datetime().optional(),
+  owner: z.string().uuid().nullable(),
+});
+
+export type Pet = z.infer<typeof PetSchema>;
+export type PetStatus = z.infer<typeof PetStatusSchema>;
+```
+
+</TabItem>
+</Tabs>
+
+### Cross-model `$ref`s and nested schemas
+
+References to other schemas are imported and composed directly:
+
+```ts
+// models/Order/schemas/Order.schema.ts
+import * as z from "zod/v4";
+import { PetSchema } from "../../Pet/schemas/Pet.schema";
+
+export const OrderSchema = z.object({
+  id: z.uuid(),
+  pet: PetSchema,
+  quantity: z.int().positive(),
+});
+```
+
+### Discriminated unions
+
+OpenAPI `discriminator` blocks become `z.discriminatedUnion`:
+
+```ts
+const CatSchema = z.object({ kind: z.literal("cat"), hairLength: z.string() });
+const DogSchema = z.object({ kind: z.literal("dog"), barkVolume: z.number() });
+
+export const AnimalSchema = z.discriminatedUnion("kind", [CatSchema, DogSchema]);
+```
+
+For `oneOf` without a discriminator the generator falls back to
+`z.union([...])`.
+
+## Runtime parsing inside transports
+
+When `validation` is set, every generated transport pipes the parsed body
+through the schema:
+
+<Tabs>
+<TabItem label="fetch transport">
+
+```ts
+// api/getPet/getPet.fetch.ts
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+
+export async function getPet(params: GetPetParams, init?: RequestInit) {
+  const response = await fetch(`/pets/${params.id}`, init);
+  if (!response.ok) throw await ApiError.fromResponse(response);
+  const body = await response.json();
+  return PetSchema.parse(body); // throws ZodError on mismatch
+}
+```
+
+</TabItem>
+<TabItem label="axios transport">
+
+```ts
+// api/getPet/getPet.axios.ts
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+
+export async function getPet(params: GetPetParams, config?: AxiosRequestConfig) {
+  const { data } = await axiosInstance.get<unknown>(`/pets/${params.id}`, config);
+  return PetSchema.parse(data); // throws ZodError on mismatch
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Graceful errors with `safeParse`
+
+When you'd rather inspect the failure than throw, swap `parse` for
+`safeParse`:
+
+```ts
+import { PetSchema } from "../models/Pet/schemas/Pet.schema";
+
+export async function getPetSafe(params: GetPetParams) {
+  const response = await fetch(`/pets/${params.id}`);
+  const body = await response.json();
+  const result = PetSchema.safeParse(body);
+  if (!result.success) {
+    console.error("Server returned unexpected shape", result.error.issues);
+    return null;
+  }
+  return result.data;
+}
+```
+
+## Date/time handling
+
+OpenAPI `format: date-time` maps to:
+
+- **Zod 4:** `z.iso.datetime()` — strict RFC 3339 string.
+- **Zod 3:** `z.string().datetime()`.
+
+If you'd rather work with `Date` objects, layer a transform:
+
+```ts
+const PetWithDate = PetSchema.extend({
+  birthday: z.iso.datetime().optional().transform((s) => s ? new Date(s) : undefined),
+});
+```
+
+For client-side input, `z.coerce.date()` accepts strings, numbers, and
+`Date` instances.
+
+## Custom refinements without losing on regeneration
+
+The generated `PetSchema` is regenerated on every run. To add custom checks
+without editing generated files, extend in user-land:
+
+```ts
+// src/schemas/petExtensions.ts
+import { PetSchema } from "@/generated/models/Pet/schemas/Pet.schema";
+
+export const PetWithBusinessRules = PetSchema.refine(
+  (p) => !(p.status === "sold" && p.owner == null),
+  { message: "A sold pet must have an owner", path: ["owner"] },
+);
+```
+
+For request payloads in PATCH operations, `.partial()` produces an "all
+fields optional" version:
+
+```ts
+export const PetPatchSchema = PetSchema.partial();
+```
+
+## Performance considerations
+
+- `z.object({...})` is **strict** by default (Zod 4) — extra keys are stripped.
+  Call `.passthrough()` to keep them, `.strict()` to throw on them.
+- `.parse` allocates a new object; if you only need validation, use
+  `.safeParse` and check `result.success`.
+- For very hot paths consider `z.lazy` only where recursion exists, and avoid
+  layering `.transform()` chains.
+
+## Bundle size note
+
+Zod 4 reduces the runtime bundle to roughly half of Zod 3's. If the
+generated schemas are tree-shakeable in your bundler, only the schema
+fragments actually imported end up in the output.
+
+## See also
+
+<CardGrid>
+  <LinkCard title="Valibot schemas" href="/languages/typescript/validation/valibot/" description="Smaller, modular alternative." />
+  <LinkCard title="TypeBox schemas" href="/languages/typescript/validation/typebox/" description="JSON Schema-shaped runtime for Fastify." />
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="See how transports invoke .parse()." />
+  <LinkCard title="Validation index" href="/languages/typescript/validation/" description="Comparison and picker." />
+</CardGrid>

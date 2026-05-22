@@ -1,6 +1,7 @@
 ---
 title: Начало работы
 description: Установите ValIO, укажите OpenAPI-схему, получите клиентов.
+translationKey: getting-started
 ---
 
 ValIO поставляется в виде трёх фронтендов поверх одного движка генерации:

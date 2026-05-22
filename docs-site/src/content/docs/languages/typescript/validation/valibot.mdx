@@ -1,0 +1,207 @@
+---
+title: Valibot schemas
+description: Valibot schema generation for the TypeScript generator.
+sidebar:
+  order: 11
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+[Valibot](https://valibot.dev) is a modular validator focused on bundle size.
+Every schema is composed from individually-imported functions — only the
+functions you import end up in the final bundle, so the runtime cost scales
+with the schemas you actually use, not the library's total surface.
+
+Compared to Zod, equivalent validation logic is roughly **10× smaller** at
+runtime. The trade-off is a more functional API: instead of method chains
+like `z.string().min(1).max(80)`, Valibot uses `v.pipe(v.string(), v.minLength(1), v.maxLength(80))`.
+
+## When to use
+
+- You ship to **constrained environments** — edge functions, mobile bundles,
+  embedded WebViews, React Native — where every kilobyte matters.
+- You're starting a new TypeScript project and don't have Zod-shaped
+  dependencies pinning you to Zod.
+- You like the functional, pipe-style API.
+- You don't need the broader Zod ecosystem (`@hookform/resolvers/zod`, ...).
+
+For most existing TypeScript projects, [Zod 4](/languages/typescript/validation/zod/)
+remains the safer pick — its ecosystem is larger.
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["fetch"],
+    "validation": "valibot"
+  }
+}
+```
+
+`valibot@^0.42` or newer must be installed in the consumer project.
+
+## Generated schema
+
+```ts
+// models/Pet/schemas/Pet.schema.ts
+import * as v from "valibot";
+
+export const PetStatusSchema = v.picklist(["available", "pending", "sold"]);
+
+export const PetSchema = v.object({
+  id: v.pipe(v.number(), v.integer()),
+  name: v.pipe(v.string(), v.minLength(1), v.maxLength(80)),
+  status: PetStatusSchema,
+  tags: v.optional(v.array(v.string())),
+  birthday: v.optional(v.pipe(v.string(), v.isoDateTime())),
+  owner: v.nullable(v.pipe(v.string(), v.uuid())),
+});
+
+export type Pet = v.InferOutput<typeof PetSchema>;
+export type PetStatus = v.InferOutput<typeof PetStatusSchema>;
+```
+
+Notes on the emitted shape:
+
+- **Primitives** — `v.string()`, `v.number()`, `v.boolean()`.
+- **Enums** — `v.picklist([...])` for string enums.
+- **Optional fields** — `v.optional(schema)` wraps the field.
+- **Nullable fields** — `v.nullable(schema)`. For OpenAPI `nullable: true`
+  on an optional field the generator emits `v.optional(v.nullable(...))`.
+- **Arrays** — `v.array(itemSchema)`.
+- **Constraints** — composed inside `v.pipe(...)`.
+
+### Cross-model `$ref`s
+
+References import the target schema directly:
+
+```ts
+import { PetSchema } from "../../Pet/schemas/Pet.schema";
+
+export const OrderSchema = v.object({
+  id: v.pipe(v.string(), v.uuid()),
+  pet: PetSchema,
+  quantity: v.pipe(v.number(), v.integer(), v.minValue(1)),
+});
+```
+
+## `parse` vs `safeParse`
+
+Valibot's parse functions take the schema as a **first argument**, not a
+method on the schema. The generated transport uses `v.parse`:
+
+```ts
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+
+const pet = v.parse(PetSchema, body); // throws ValiError on mismatch
+```
+
+For graceful handling, switch to `v.safeParse`:
+
+```ts
+const result = v.safeParse(PetSchema, body);
+if (!result.success) {
+  console.error("Schema mismatch", result.issues);
+  return null;
+}
+const pet = result.output;
+```
+
+## Discriminated unions
+
+OpenAPI discriminators emit `v.variant`:
+
+```ts
+const CatSchema = v.object({ kind: v.literal("cat"), hairLength: v.string() });
+const DogSchema = v.object({ kind: v.literal("dog"), barkVolume: v.number() });
+
+export const AnimalSchema = v.variant("kind", [CatSchema, DogSchema]);
+```
+
+For `oneOf` without a discriminator the generator emits `v.union([...])`.
+
+## Pipe / refinement
+
+Custom checks chain inside `v.pipe`:
+
+```ts
+const HexColor = v.pipe(
+  v.string(),
+  v.regex(/^#[0-9a-fA-F]{6}$/),
+  v.transform((s) => s.toLowerCase()),
+);
+```
+
+Custom predicates use `v.check`:
+
+```ts
+const Even = v.pipe(
+  v.number(),
+  v.check((n) => n % 2 === 0, "Must be even"),
+);
+```
+
+## Runtime parsing inside transports
+
+A generated `fetch` transport with Valibot validation:
+
+```ts
+// api/getPet/getPet.fetch.ts
+import * as v from "valibot";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+
+export async function getPet(params: GetPetParams, init?: RequestInit) {
+  const response = await fetch(`/pets/${params.id}`, init);
+  if (!response.ok) throw await ApiError.fromResponse(response);
+  const body = await response.json();
+  return v.parse(PetSchema, body); // throws ValiError on mismatch
+}
+```
+
+## Custom refinements without losing on regeneration
+
+The generated file is overwritten on every run. Extend schemas in user-land:
+
+```ts
+// src/schemas/petExtensions.ts
+import * as v from "valibot";
+import { PetSchema } from "@/generated/models/Pet/schemas/Pet.schema";
+
+export const PetWithBusinessRules = v.pipe(
+  PetSchema,
+  v.check(
+    (p) => !(p.status === "sold" && p.owner == null),
+    "A sold pet must have an owner",
+  ),
+);
+```
+
+For PATCH payloads, `v.partial(schema)` gives you the all-optional variant.
+
+## Bundle size comparison
+
+A real-world numbers comparison on a schema with ~30 fields and 5 constraint
+types:
+
+| Library | Schema bundle (gzip) | Notes                           |
+|---------|---------------------:|---------------------------------|
+| Zod 3   | ~7.5 kB              | Method chains are not tree-shakeable. |
+| Zod 4   | ~3.8 kB              | Smaller but still ships the whole runtime. |
+| Valibot | ~1.2 kB              | Only imported functions are bundled. |
+
+Numbers are illustrative — your mileage depends on the schema and the
+bundler. The order is consistent.
+
+## See also
+
+<CardGrid>
+  <LinkCard title="Zod schemas" href="/languages/typescript/validation/zod/" description="Larger ecosystem, similar features." />
+  <LinkCard title="TypeBox schemas" href="/languages/typescript/validation/typebox/" description="JSON Schema runtime, Fastify-friendly." />
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="See how transports invoke v.parse." />
+  <LinkCard title="Validation index" href="/languages/typescript/validation/" description="Comparison and picker." />
+</CardGrid>

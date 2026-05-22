@@ -1,0 +1,179 @@
+---
+title: Storybook + MSW + React (mocks-only)
+description: Mock-first dev loop — generated MSW handlers feed Storybook stories with no real HTTP traffic.
+sidebar:
+  order: 11
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You want a Storybook setup where every component story renders against
+deterministic, schema-shaped fake data — no flaky test backend, no shared
+staging environment. ValIO emits Mock Service Worker handlers alongside
+the regular fetch clients, so the components import exactly the same hooks
+they do in production while Storybook intercepts the network at the
+service-worker boundary. This stack pairs well with any of the
+[component-framework stacks](/stacks/typescript/) above; the differentiator
+is the `"mocks": "msw"` flag.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `react`                       | 18.2.0    |
+| `storybook`                   | 8.0.0     |
+| `msw`                         | 2.0.0     |
+| `msw-storybook-addon`         | 2.0.0     |
+| `@tanstack/react-query`       | 5.0.0     |
+| `zod`                         | 4.0.0     |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["fetch"],
+        "validation": "zod4",
+        "queryWrapper": "tanstack-react",
+        "mocks": "msw",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+Everything from the React + Fetch + Zod 4 stack, **plus** an `mocks/`
+directory: one MSW `http.<verb>(...)` handler per operation that returns a
+schema-valid fake payload, and a `mocks/handlers.ts` barrel exporting all
+of them. The fake payloads are deterministic — derived from the Zod
+schema's structure — so snapshots stay stable.
+
+## File tree
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet/Pet.ts
+│   └── Pets/Pets.ts
+├── api/
+│   ├── listPets/
+│   │   ├── listPets.params.ts
+│   │   ├── listPets.fetch.ts
+│   │   └── listPets.tanstack-react.ts
+│   └── createPet/
+│       └── …
+├── mocks/
+│   ├── listPets.handler.ts       # http.get(...) for /pets
+│   ├── createPet.handler.ts
+│   └── handlers.ts               # re-exports an array of all handlers
+├── queryKeys.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="listPets.handler.ts">
+
+    ```ts
+    // mocks/listPets.handler.ts
+    import { http, HttpResponse } from "msw";
+    import { PetsSchema } from "../models/Pets/Pets";
+
+    export const listPetsHandler = http.get("/pets", () => {
+      const body = [
+        { id: 1, name: "Buddy", tag: "dog" },
+        { id: 2, name: "Whiskers", tag: "cat" },
+      ];
+      // Self-check at generation time: the literal above already conforms
+      // to the schema, so this never throws in practice.
+      return HttpResponse.json(PetsSchema.parse(body));
+    });
+    ```
+
+  </TabItem>
+  <TabItem label="handlers.ts">
+
+    ```ts
+    // mocks/handlers.ts
+    import { listPetsHandler } from "./listPets.handler";
+    import { createPetHandler } from "./createPet.handler";
+
+    export const handlers = [listPetsHandler, createPetHandler];
+    ```
+
+  </TabItem>
+  <TabItem label=".storybook/preview.ts">
+
+    ```ts
+    // .storybook/preview.ts
+    import type { Preview } from "@storybook/react";
+    import { initialize, mswLoader } from "msw-storybook-addon";
+    import { handlers } from "../src/api/generated/mocks/handlers";
+
+    initialize();
+
+    const preview: Preview = {
+      loaders: [mswLoader],
+      parameters: { msw: { handlers } },
+    };
+
+    export default preview;
+    ```
+
+  </TabItem>
+  <TabItem label="PetsList.stories.tsx">
+
+    ```tsx
+    // PetsList.stories.tsx
+    import type { Meta, StoryObj } from "@storybook/react";
+    import { PetsList } from "./PetsList";
+
+    const meta: Meta<typeof PetsList> = { component: PetsList };
+    export default meta;
+
+    export const Default: StoryObj<typeof PetsList> = {};
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Mock Service Worker" href="https://mswjs.io/" description="Network-level API mocking via service workers" />
+<LinkCard title="Storybook" href="https://storybook.js.org/" description="Frontend workshop for building UI components in isolation" />
+<LinkCard title="msw-storybook-addon" href="https://github.com/mswjs/msw-storybook-addon" description="Storybook integration for MSW" />
+<LinkCard title="@tanstack/react-query" href="https://tanstack.com/query/latest" description="Server-state management for React" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [React + TanStack + Fetch + Zod 3 stack](/stacks/typescript/react-tanstack-fetch-zod3/)
+- [TypeScript overview](/languages/typescript/)

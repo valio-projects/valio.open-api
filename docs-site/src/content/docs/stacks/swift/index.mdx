@@ -1,0 +1,34 @@
+---
+title: Swift stacks
+description: Ready-to-copy ValIO configurations for the most common Swift stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Swift generator emits `Codable` structs plus a `URLSession`-based
+async/await client. There are no third-party dependencies — everything
+compiles against the standard library and Foundation, which means the
+generated package works in iOS apps, macOS tools, Swift on Linux, and
+server frameworks like Vapor.
+
+The page below pins this down to a **concrete, tested recipe**: an exact
+`valio.config.json`, the file tree you should expect, and a few lines of
+consumer code so you can sanity-check the output before wiring it into
+your app.
+
+## Swift stacks
+
+<CardGrid>
+  <LinkCard
+    title="URLSession + Codable"
+    href="/stacks/swift/urlsession-codable/"
+    description="Zero-dependency Swift 5.7+ client using URLSession and Codable."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Swift language overview](/languages/swift/)

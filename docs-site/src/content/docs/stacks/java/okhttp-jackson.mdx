@@ -1,0 +1,189 @@
+---
+title: OkHttp + Jackson
+description: Exact stack to generate a Java client backed by OkHttp 3 and Jackson 2.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're shipping a Java library, a Spring Boot service, or an Android
+app and want the default ValIO Java stack: OkHttp for HTTP, Jackson for
+JSON. OkHttp's connection pooling and Jackson's mature databinding are
+hard to beat on the JVM, and both are battle-tested in production.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Java | 17+ |
+| `com.squareup.okhttp3:okhttp` | 4.12+ |
+| `com.fasterxml.jackson.core:jackson-databind` | 2.16+ |
+| `com.fasterxml.jackson.core:jackson-annotations` | 2.16+ |
+| Gradle | 8.5+ (or Maven 3.9+) |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "java",
+      "schema": "./openapi.yaml",
+      "outputPath": "./src/main/java",
+      "namespace": "com.acme.petstore",
+      "options": {
+        "package": "com.acme.petstore",
+        "useHttpClient": "okhttp",
+        "generateBuildFiles": true
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "clients"
+      }
+    }
+  }
+}
+```
+
+`generateBuildFiles: true` also emits a `build.gradle.kts` and
+`gradle.properties` with the OkHttp + Jackson coordinates.
+
+## What gets generated
+
+One `public final class` per OpenAPI schema with constructor, getters,
+and Jackson `@JsonProperty` annotations. One `*Client` per OpenAPI tag
+wrapping `okhttp3.OkHttpClient`. Each operation is synchronous and
+returns the typed response.
+
+## File tree
+
+```
+src/main/java/com/acme/petstore/
+├── models/
+│   └── Pet.java
+└── clients/
+    └── PetsClient.java
+build.gradle.kts
+gradle.properties
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.java">
+
+    ```java
+    package com.acme.petstore.models;
+
+    import com.fasterxml.jackson.annotation.JsonCreator;
+    import com.fasterxml.jackson.annotation.JsonProperty;
+
+    public final class Pet {
+        private final long id;
+        private final String name;
+        private final String tag;
+
+        @JsonCreator
+        public Pet(
+            @JsonProperty("id") long id,
+            @JsonProperty("name") String name,
+            @JsonProperty("tag") String tag
+        ) {
+            this.id = id;
+            this.name = name;
+            this.tag = tag;
+        }
+
+        public long getId() { return id; }
+        public String getName() { return name; }
+        public String getTag() { return tag; }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsClient.java">
+
+    ```java
+    package com.acme.petstore.clients;
+
+    import com.acme.petstore.models.Pet;
+    import com.fasterxml.jackson.core.type.TypeReference;
+    import com.fasterxml.jackson.databind.ObjectMapper;
+    import okhttp3.*;
+
+    import java.io.IOException;
+    import java.util.List;
+
+    public final class PetsClient {
+        private static final MediaType JSON = MediaType.get("application/json");
+        private final String baseUrl;
+        private final OkHttpClient http;
+        private final ObjectMapper mapper;
+
+        public PetsClient(String baseUrl) {
+            this.baseUrl = baseUrl;
+            this.http = new OkHttpClient();
+            this.mapper = new ObjectMapper();
+        }
+
+        public List<Pet> listPets() throws IOException {
+            Request request = new Request.Builder().url(baseUrl + "/pets").build();
+            try (Response response = http.newCall(request).execute()) {
+                if (!response.isSuccessful()) throw new IOException("HTTP " + response.code());
+                return mapper.readValue(response.body().byteStream(), new TypeReference<>() {});
+            }
+        }
+
+        public Pet createPet(Pet body) throws IOException {
+            RequestBody payload = RequestBody.create(mapper.writeValueAsBytes(body), JSON);
+            Request request = new Request.Builder().url(baseUrl + "/pets").post(payload).build();
+            try (Response response = http.newCall(request).execute()) {
+                if (!response.isSuccessful()) throw new IOException("HTTP " + response.code());
+                return mapper.readValue(response.body().byteStream(), Pet.class);
+            }
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="Main.java">
+
+    ```java
+    import com.acme.petstore.clients.PetsClient;
+    import com.acme.petstore.models.Pet;
+
+    public final class Main {
+        public static void main(String[] args) throws Exception {
+            PetsClient client = new PetsClient("https://petstore.example.com/v1");
+            for (Pet pet : client.listPets()) {
+                System.out.println(pet.getId() + ": " + pet.getName());
+            }
+        }
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="OkHttp" href="https://square.github.io/okhttp/" description="The mature HTTP client of the JVM, by Square." />
+<LinkCard title="Jackson Databind" href="https://github.com/FasterXML/jackson-databind" description="JVM-standard JSON databinding library." />
+<LinkCard title="Spring HTTP Interface clients" href="https://docs.spring.io/spring-framework/reference/integration/rest-clients.html" description="Spring's declarative HTTP clients also work with the generated DTOs." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Java overview](/languages/java/)
+- [java.net.http.HttpClient + Jackson](/stacks/java/java-http-client-jackson/)

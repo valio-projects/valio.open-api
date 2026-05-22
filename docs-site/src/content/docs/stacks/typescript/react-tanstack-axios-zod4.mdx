@@ -1,0 +1,173 @@
+---
+title: React + TanStack Query + Axios + Zod 4
+description: Exact stack to generate React hooks that fetch via Axios and validate responses with Zod 4.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're building a React SPA, you want server-state caching out of the box,
+and you already have (or are happy to add) an Axios instance for shared
+interceptors. Zod 4 gives you `.parse()` / `.safeParse()` against runtime
+responses with zero extra plumbing. This is the "default" recommendation
+for new React apps in 2026 — pick the simpler [Fetch + Zod 3 stack](/stacks/typescript/react-tanstack-fetch-zod3/)
+if you don't want the axios peer dep.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `react`                       | 18.2.0    |
+| `@tanstack/react-query`       | 5.0.0     |
+| `axios`                       | 1.6.0     |
+| `zod`                         | 4.0.0     |
+| Node (build-time)             | 18.18.0   |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["axios"],
+        "validation": "zod4",
+        "queryWrapper": "tanstack-react",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+For every schema, a `models/<Name>/<Name>.ts` file with a Zod 4 schema and an
+inferred TypeScript type. For every operation, an `api/<op>/<op>.axios.ts`
+transport function plus an `api/<op>/<op>.tanstack-react.ts` hook that wraps
+that function with `useQuery` / `useMutation`. A central `queryKeys.ts`
+collects all query keys so you can invalidate them by tag.
+
+## File tree
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet/
+│   │   └── Pet.ts                # z.object + z.infer<typeof PetSchema>
+│   └── Pets/
+│       └── Pets.ts
+├── api/
+│   ├── listPets/
+│   │   ├── listPets.params.ts
+│   │   ├── listPets.axios.ts
+│   │   └── listPets.tanstack-react.ts   # useListPets hook
+│   └── createPet/
+│       ├── createPet.params.ts
+│       ├── createPet.axios.ts
+│       └── createPet.tanstack-react.ts  # useCreatePet mutation
+├── queryKeys.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.ts">
+
+    ```ts
+    // models/Pet/Pet.ts
+    import { z } from "zod";
+
+    export const PetSchema = z.object({
+      id: z.int64(),
+      name: z.string().min(1),
+      tag: z.string().optional(),
+    });
+
+    export type Pet = z.infer<typeof PetSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.tanstack-react.ts">
+
+    ```ts
+    // api/listPets/listPets.tanstack-react.ts
+    import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
+    import { listPets } from "./listPets.axios";
+    import { PetsSchema, type Pets } from "../../models/Pets/Pets";
+    import { queryKeys } from "../../queryKeys";
+
+    export function useListPets(
+      options?: Omit<UseQueryOptions<Pets>, "queryKey" | "queryFn">
+    ) {
+      return useQuery<Pets>({
+        queryKey: queryKeys.listPets(),
+        queryFn: async () => {
+          const raw = await listPets();
+          return PetsSchema.parse(raw);
+        },
+        ...options,
+      });
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsPage.tsx">
+
+    ```tsx
+    // PetsPage.tsx
+    import { useListPets } from "./api/generated/api/listPets/listPets.tanstack-react";
+
+    export function PetsPage() {
+      const { data, isLoading, error } = useListPets();
+
+      if (isLoading) return <p>Loading…</p>;
+      if (error) return <p>Failed: {String(error)}</p>;
+
+      return (
+        <ul>
+          {data?.map((pet) => <li key={pet.id}>{pet.name}</li>)}
+        </ul>
+      );
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="axios" href="https://axios-http.com/" description="Promise-based HTTP client for Node and browser" />
+<LinkCard title="Zod 4" href="https://zod.dev/" description="TypeScript-first schema validation, now with branded primitives" />
+<LinkCard title="@tanstack/react-query" href="https://tanstack.com/query/latest" description="Asynchronous state management for React" />
+<LinkCard title="React" href="https://react.dev/" description="The library for web and native UIs" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [TypeScript overview](/languages/typescript/)
+- [Transports / Axios](/languages/typescript/transports/axios/)

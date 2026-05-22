@@ -1,6 +1,7 @@
 ---
 title: 快速上手
 description: 安装 ValIO，提供 OpenAPI 架构，生成客户端代码。
+translationKey: getting-started
 ---
 
 ValIO 提供三种共享同一生成器内核的前端：

@@ -1,0 +1,166 @@
+---
+title: SvelteKit + TanStack Query + Fetch + Zod 4
+description: SvelteKit stores hooked into TanStack Query Svelte with native fetch + Zod 4.
+sidebar:
+  order: 6
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're on SvelteKit and want server-state caching with the same ergonomics
+React/Vue get from TanStack Query. SvelteKit's universal `fetch` already
+deduplicates requests across server-load and client-load, so the
+generated transport stays small — no axios, no ky. Zod 4 gives you proper
+runtime validation that throws inside the query function, surfacing as
+`error` in the Svelte component.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `svelte`                      | 5.0.0     |
+| `@sveltejs/kit`               | 2.5.0     |
+| `@tanstack/svelte-query`      | 5.0.0     |
+| `zod`                         | 4.0.0     |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/lib/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["fetch"],
+        "validation": "zod4",
+        "queryWrapper": "tanstack-svelte",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+Zod 4 schemas + inferred types in `models/`. A `<op>.fetch.ts` transport
+per operation. A `<op>.tanstack-svelte.ts` factory that returns a
+`createQuery` store you can subscribe to with `$query`. SvelteKit's
+load functions can re-use the bare `<op>.fetch.ts` directly when SSR.
+
+## File tree
+
+```
+src/lib/api/generated/
+├── models/
+│   ├── Pet/Pet.ts
+│   └── Pets/Pets.ts
+├── api/
+│   ├── listPets/
+│   │   ├── listPets.params.ts
+│   │   ├── listPets.fetch.ts
+│   │   └── listPets.tanstack-svelte.ts
+│   └── createPet/
+│       ├── createPet.params.ts
+│       ├── createPet.fetch.ts
+│       └── createPet.tanstack-svelte.ts
+├── queryKeys.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.ts">
+
+    ```ts
+    // models/Pet/Pet.ts
+    import { z } from "zod";
+
+    export const PetSchema = z.object({
+      id: z.int64(),
+      name: z.string().min(1),
+      tag: z.string().optional(),
+    });
+
+    export type Pet = z.infer<typeof PetSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.tanstack-svelte.ts">
+
+    ```ts
+    // api/listPets/listPets.tanstack-svelte.ts
+    import { createQuery } from "@tanstack/svelte-query";
+    import { listPets } from "./listPets.fetch";
+    import { PetsSchema, type Pets } from "../../models/Pets/Pets";
+    import { queryKeys } from "../../queryKeys";
+
+    export function createListPetsQuery() {
+      return createQuery<Pets>({
+        queryKey: queryKeys.listPets(),
+        queryFn: async () => PetsSchema.parse(await listPets()),
+      });
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="+page.svelte">
+
+    ```svelte
+    <!-- src/routes/pets/+page.svelte -->
+    <script lang="ts">
+      import { createListPetsQuery } from "$lib/api/generated/api/listPets/listPets.tanstack-svelte";
+
+      const query = createListPetsQuery();
+    </script>
+
+    {#if $query.isLoading}
+      <p>Loading…</p>
+    {:else if $query.error}
+      <p>Failed: {$query.error.message}</p>
+    {:else}
+      <ul>
+        {#each $query.data ?? [] as pet (pet.id)}
+          <li>{pet.name}</li>
+        {/each}
+      </ul>
+    {/if}
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="SvelteKit" href="https://kit.svelte.dev/" description="The fastest way to build Svelte apps" />
+<LinkCard title="@tanstack/svelte-query" href="https://tanstack.com/query/latest" description="Server-state management for Svelte stores" />
+<LinkCard title="Zod 4" href="https://zod.dev/" description="TypeScript-first schema validation" />
+<LinkCard title="Svelte" href="https://svelte.dev/" description="Cybernetically enhanced web apps" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / Fetch](/languages/typescript/transports/fetch/)
+- [TypeScript overview](/languages/typescript/)

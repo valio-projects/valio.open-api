@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Generators.Rust</PackageId>
+    <Description>ValIO code generator plugin for Rust.</Description>
+    <PackageTags>valio;openapi;codegen;rust</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

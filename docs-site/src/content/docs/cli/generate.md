@@ -1,6 +1,7 @@
 ---
 title: valio generate
 description: Generate code from an OpenAPI schema.
+translationKey: cli-generate
 ---
 
 ```

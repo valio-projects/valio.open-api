@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Generators.Ruby</PackageId>
+    <Description>ValIO code generator plugin for Ruby.</Description>
+    <PackageTags>valio;openapi;codegen;ruby</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

@@ -1,0 +1,89 @@
+---
+title: Поддерживаемые языки
+description: Справочник по плагинам для всех 12 генераторов ValIO.
+translationKey: languages-overview
+sidebar:
+  order: 1
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+ValIO построен на плагинах: каждый генератор живёт в собственной
+сборке и регистрируется через `AddAllGeneratorPlugins()`. Сегодня в
+комплект входит двенадцать плагинов, покрывающих веб, мобильные
+платформы, бэкенд и игровые движки.
+
+<CardGrid>
+  <LinkCard
+    title="TypeScript"
+    href="/ru/languages/typescript/"
+    description="9 HTTP-транспортов, Zod 3/4, Valibot, TypeBox, TanStack Query, SWR и обработчики MSW."
+  />
+  <LinkCard
+    title="C#"
+    href="/ru/languages/csharp/"
+    description="POCO + HttpClient, JsonSerializerContext, расширение для IServiceCollection."
+  />
+  <LinkCard
+    title="Java"
+    href="/ru/languages/java/"
+    description="Jackson DTO + синхронный клиент OkHttp 3.x, опциональные Gradle-файлы."
+  />
+  <LinkCard
+    title="Kotlin"
+    href="/ru/languages/kotlin/"
+    description="Клиент OkHttp на корутинах с data-классами kotlinx.serialization."
+  />
+  <LinkCard
+    title="Python"
+    href="/ru/languages/python/"
+    description="Модели Pydantic v2 с синхронными и асинхронными клиентами httpx (Python 3.10+)."
+  />
+  <LinkCard
+    title="PHP"
+    href="/ru/languages/php/"
+    description="Типизированные классы PHP 8.1 с promoted-конструкторами и клиент Guzzle 7."
+  />
+  <LinkCard
+    title="Swift"
+    href="/ru/languages/swift/"
+    description="Codable-структуры, клиент URLSession на async/await, опциональный Package.swift."
+  />
+  <LinkCard
+    title="Rust"
+    href="/ru/languages/rust/"
+    description="Модели Serde и асинхронный клиент Reqwest поверх Tokio."
+  />
+  <LinkCard
+    title="Ruby"
+    href="/ru/languages/ruby/"
+    description="Обычные Ruby-классы с HTTP-клиентом на Faraday."
+  />
+  <LinkCard
+    title="F#"
+    href="/ru/languages/fsharp/"
+    description="Записи и DU с клиентом RestSharp; варианты ответов представлены как discriminated unions."
+  />
+  <LinkCard
+    title="Dart"
+    href="/ru/languages/dart/"
+    description="Null-safe модели Dart 3 и HTTP-клиент на Dio для Flutter или чистого Dart."
+  />
+  <LinkCard
+    title="C++ (Unreal)"
+    href="/ru/languages/cpp/"
+    description="USTRUCT-модели и async-экшены, вызываемые из Blueprint, для Unreal Engine 5."
+  />
+</CardGrid>
+
+## Опции для каждого плагина
+
+Каждый плагин предоставляет список `OptionsDescriptor.GetOptionDescriptions()`.
+Веб-приложение использует его для построения динамической формы; в CLI
+и файлах конфигурации те же опции передаются в поле `"options"` файла
+`valio.config.json`. Полный справочник опций по каждому плагину
+открывается из карточек выше.
+
+Эти же значения отображаются во всплывающих подсказках Web UI через
+ресурсные ключи `OptionDescription.DescriptionKey`, так что у каждой
+опции есть и встроенная справка, и устойчивая ссылка в документации.

@@ -1,0 +1,33 @@
+---
+title: Dart stacks
+description: Ready-to-copy ValIO configurations for the most common Dart and Flutter stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Dart generator emits null-safe Dart 3 classes plus a thin HTTP
+client. The default ships with `package:dio`; the recipe below shows
+how to retarget it to the standard `package:http` for the smallest
+possible Flutter binary.
+
+The page below pins this down to a **concrete, tested recipe**: an exact
+`valio.config.json`, the file tree you should expect, and a few lines of
+consumer code so you can sanity-check the output before wiring it into
+your Flutter or pure-Dart project.
+
+## Dart stacks
+
+<CardGrid>
+  <LinkCard
+    title="package:http (null-safe)"
+    href="/stacks/dart/http-null-safe/"
+    description="Lightweight package:http client with null-safe Dart 3 models."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Dart language overview](/languages/dart/)

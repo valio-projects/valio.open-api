@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Generators.Swift</PackageId>
+    <Description>ValIO code generator plugin for Swift.</Description>
+    <PackageTags>valio;openapi;codegen;swift</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <Compile Remove="UePlugin/**/*.cs" />
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />

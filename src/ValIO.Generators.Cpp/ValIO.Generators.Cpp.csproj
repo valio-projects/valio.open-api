@@ -5,6 +5,13 @@
     <PreserveCompilationContext>true</PreserveCompilationContext>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Generators.Cpp</PackageId>
+    <Description>ValIO code generator plugin for C++.</Description>
+    <PackageTags>valio;openapi;codegen;cpp</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

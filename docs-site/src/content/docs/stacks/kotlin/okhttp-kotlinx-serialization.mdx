@@ -1,0 +1,168 @@
+---
+title: OkHttp + kotlinx.serialization
+description: Exact stack to generate a Kotlin coroutine client backed by OkHttp and kotlinx.serialization.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're shipping a JVM library, a Spring Boot service, or an Android app
+and you want first-class Kotlin idioms: `data class` models,
+`@Serializable` annotations, and `suspend fun` operations. OkHttp is
+battle-tested on Android and the JVM, and `kotlinx.serialization` is the
+JetBrains-supported way to serialize Kotlin classes without reflection.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Kotlin | 1.9.20+ |
+| `org.jetbrains.kotlinx:kotlinx-serialization-json` | 1.6+ |
+| `com.squareup.okhttp3:okhttp` | 4.12+ |
+| `org.jetbrains.kotlinx:kotlinx-coroutines-core` | 1.8+ |
+| JDK | 17+ |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "kotlin",
+      "schema": "./openapi.yaml",
+      "outputPath": "./src/main/kotlin/com/acme/petstore",
+      "namespace": "com.acme.petstore",
+      "options": {
+        "package": "com.acme.petstore",
+        "serialization": "kotlinx",
+        "generateBuildFiles": true
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "client"
+      }
+    }
+  }
+}
+```
+
+Setting `generateBuildFiles: true` also emits a `build.gradle.kts` with
+the required `okhttp` and `kotlinx-serialization-json` coordinates.
+
+## What gets generated
+
+One `@Serializable data class` per OpenAPI schema (with `@SerialName`
+preserving JSON casing), and one `*Client` object per OpenAPI tag
+wrapping `OkHttpClient`. Every operation is a `suspend fun` returning
+the typed result.
+
+## File tree
+
+```
+src/main/kotlin/com/acme/petstore/
+├── models/
+│   └── Pet.kt
+├── client/
+│   └── PetsClient.kt
+└── ...
+build.gradle.kts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.kt">
+
+    ```kotlin
+    package com.acme.petstore.models
+
+    import kotlinx.serialization.SerialName
+    import kotlinx.serialization.Serializable
+
+    @Serializable
+    data class Pet(
+        @SerialName("id") val id: Long,
+        @SerialName("name") val name: String,
+        @SerialName("tag") val tag: String? = null,
+    )
+    ```
+
+  </TabItem>
+  <TabItem label="PetsClient.kt">
+
+    ```kotlin
+    package com.acme.petstore.client
+
+    import com.acme.petstore.models.Pet
+    import kotlinx.coroutines.Dispatchers
+    import kotlinx.coroutines.withContext
+    import kotlinx.serialization.json.Json
+    import okhttp3.MediaType.Companion.toMediaType
+    import okhttp3.OkHttpClient
+    import okhttp3.Request
+    import okhttp3.RequestBody.Companion.toRequestBody
+
+    class PetsClient(
+        private val baseUrl: String,
+        private val http: OkHttpClient = OkHttpClient(),
+        private val json: Json = Json { ignoreUnknownKeys = true },
+    ) {
+        suspend fun listPets(): List<Pet> = withContext(Dispatchers.IO) {
+            val req = Request.Builder().url("$baseUrl/pets").build()
+            http.newCall(req).execute().use { res ->
+                check(res.isSuccessful) { "HTTP ${res.code}" }
+                json.decodeFromString(res.body!!.string())
+            }
+        }
+
+        suspend fun createPet(body: Pet): Pet = withContext(Dispatchers.IO) {
+            val payload = json.encodeToString(Pet.serializer(), body)
+                .toRequestBody("application/json".toMediaType())
+            val req = Request.Builder().url("$baseUrl/pets").post(payload).build()
+            http.newCall(req).execute().use { res ->
+                check(res.isSuccessful) { "HTTP ${res.code}" }
+                json.decodeFromString(res.body!!.string())
+            }
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="Main.kt">
+
+    ```kotlin
+    import com.acme.petstore.client.PetsClient
+    import kotlinx.coroutines.runBlocking
+
+    fun main() = runBlocking {
+        val client = PetsClient(baseUrl = "https://petstore.example.com/v1")
+        val pets = client.listPets()
+        pets.forEach { println("${it.id}: ${it.name}") }
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="OkHttp" href="https://square.github.io/okhttp/" description="A battle-tested HTTP client for the JVM and Android." />
+<LinkCard title="kotlinx.serialization" href="https://github.com/Kotlin/kotlinx.serialization" description="Reflection-free Kotlin serialization powered by a compiler plugin." />
+<LinkCard title="Kotlin coroutines" href="https://kotlinlang.org/docs/coroutines-overview.html" description="The async model that suspend funs target." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Kotlin overview](/languages/kotlin/)
+- [Ktor Client](/stacks/kotlin/ktor-client/)

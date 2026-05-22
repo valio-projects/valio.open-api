@@ -1,0 +1,619 @@
+---
+title: "Next.js 15 hybrid: ofetch (RSC) + Axios + TanStack Query (client) + Zod 4"
+description: One stack, two transports — server components fetch with ofetch, client components hydrate into TanStack Query backed by Axios. Same Zod 4 schemas everywhere.
+sidebar:
+  order: 7
+  label: Next.js hybrid (RSC + Client)
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're on **Next.js 15 with the App Router** and want a single ValIO output
+that drives both halves of the app:
+
+- **Server components / route handlers / server actions** call generated
+  `*.ofetch.ts` functions. `ofetch` plays nicely with Next.js's `fetch`
+  cache, runs on both Node and Edge runtimes, and is tiny.
+- **Client components** (`'use client'`) use generated `useGetPet`-style
+  hooks backed by **Axios + TanStack Query 5** — interceptors for auth, an
+  observable cache for optimistic updates, and per-component subscriptions.
+- **Zod 4** parses the response in *both* paths, so the boundary between
+  server and client is type-safe and runtime-validated.
+
+The server prefetches and **dehydrates** the query cache; the client picks
+it up via `<HydrationBoundary>` and never re-fetches the same data until
+the cache goes stale.
+
+## Required versions
+
+| Package                          | Minimum   |
+|----------------------------------|-----------|
+| `next`                           | 15.0.0    |
+| `react`                          | 19.0.0    |
+| `ofetch`                         | 1.4.0     |
+| `axios`                          | 1.7.0     |
+| `@tanstack/react-query`          | 5.51.0    |
+| `zod`                            | 4.0.0     |
+| Node                             | 20.0.0    |
+| TypeScript                       | 5.4       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+Two transports, one validator, one query wrapper. ValIO emits a `.ofetch.ts`
+**and** a `.axios.ts` file per operation, plus a `.query.ts` hook factory
+that wraps Axios.
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports":   ["ofetch", "axios"],
+        "validation":   "zod4",
+        "queryWrapper": "tanstack-react",
+        "enumFormat":   "union",
+        "typescript": {
+          "fetch": {
+            "customFetcherPath": "../../lib/ofetchInstance",
+            "customFetcherName": "apiOfetch"
+          },
+          "axios": {
+            "customInstancePath": "../../lib/axiosInstance",
+            "customInstanceName": "apiAxios"
+          }
+        }
+      },
+      "fileOrganization": {
+        "separateModels":  true,
+        "separateClients": true,
+        "modelsPath":      "models",
+        "clientsPath":     "api"
+      }
+    }
+  }
+}
+```
+
+The two `custom*` keys point ValIO at your hand-written instances so server
+and client get their own `baseURL`, auth headers, retry policy, and timeouts
+without touching generated code.
+
+## What gets generated
+
+| File                                  | Lives in           | Used by              |
+|---------------------------------------|--------------------|----------------------|
+| `models/<Model>.ts`                   | shared             | both halves          |
+| `api/<op>/<op>.params.ts`             | shared             | both halves          |
+| `api/<op>/<op>.ofetch.ts`             | RSC / route handler| server only          |
+| `api/<op>/<op>.axios.ts`              | browser bundle     | client only          |
+| `api/<op>/<op>.query.ts`              | browser bundle     | client only (hooks)  |
+| `api/queryKeys.ts`                    | browser bundle     | client + server prefetch |
+| `index.ts`                            | barrel             | both halves          |
+
+The `*.ofetch.ts` transports are tree-shaken out of the client bundle by
+Next.js (they only import from `ofetch`, which is server-friendly). The
+`*.axios.ts` + `*.query.ts` pair is tree-shaken out of the server bundle
+when no server file imports them.
+
+## File tree
+
+```
+src/
+├── api/generated/
+│   ├── models/
+│   │   ├── Pet/Pet.ts
+│   │   └── Pets/Pets.ts
+│   ├── api/
+│   │   ├── listPets/
+│   │   │   ├── listPets.params.ts
+│   │   │   ├── listPets.ofetch.ts        # server
+│   │   │   ├── listPets.axios.ts         # client
+│   │   │   └── listPets.query.ts         # client hook
+│   │   ├── getPet/
+│   │   │   ├── getPet.params.ts
+│   │   │   ├── getPet.ofetch.ts
+│   │   │   ├── getPet.axios.ts
+│   │   │   └── getPet.query.ts
+│   │   └── createPet/
+│   │       ├── createPet.params.ts
+│   │       ├── createPet.ofetch.ts
+│   │       ├── createPet.axios.ts
+│   │       └── createPet.mutation.ts     # useMutation hook
+│   ├── queryKeys.ts
+│   └── index.ts
+├── lib/
+│   ├── ofetchInstance.ts                 # custom $fetch for RSC
+│   ├── axiosInstance.ts                  # custom axios for browser
+│   └── queryClient.ts                    # makeQueryClient()
+└── app/
+    ├── providers.tsx                     # <QueryClientProvider> for client
+    ├── layout.tsx
+    └── pets/
+        ├── page.tsx                      # server — prefetches, dehydrates
+        ├── PetsList.tsx                  # 'use client' — useListPets
+        └── [id]/
+            ├── page.tsx                  # server — prefetches getPet
+            └── PetDetail.tsx             # 'use client' — useGetPet + useCreatePet
+```
+
+## Example
+
+<Tabs syncKey="nextjs-hybrid">
+  <TabItem label="models/Pet.ts">
+
+    ```ts
+    // src/api/generated/models/Pet/Pet.ts
+    import { z } from "zod/v4";
+
+    export const PetSchema = z.object({
+      id:   z.int64(),
+      name: z.string().min(1),
+      tag:  z.string().optional(),
+    });
+
+    export type Pet = z.infer<typeof PetSchema>;
+
+    export const PetsSchema = z.array(PetSchema);
+    export type Pets = z.infer<typeof PetsSchema>;
+    ```
+
+  </TabItem>
+
+  <TabItem label="lib/ofetchInstance.ts">
+
+    ```ts
+    // src/lib/ofetchInstance.ts — runs on Node / Edge (RSC, route handlers, server actions)
+    import { ofetch } from "ofetch";
+
+    export const apiOfetch = ofetch.create({
+      baseURL: process.env.API_BASE_URL,
+      retry: 0,
+      // Next.js extends fetch — pass cache directives through.
+      // Per-call: apiOfetch('/pets', { next: { revalidate: 60, tags: ['pets'] } })
+      onRequest({ options }) {
+        options.headers = {
+          ...options.headers,
+          authorization: `Bearer ${process.env.API_TOKEN}`,
+        };
+      },
+      onResponseError({ response }) {
+        console.error("[api/ofetch]", response.status, response._data);
+      },
+    });
+    ```
+
+  </TabItem>
+
+  <TabItem label="lib/axiosInstance.ts">
+
+    ```ts
+    // src/lib/axiosInstance.ts — runs in the browser
+    import axios from "axios";
+
+    export const apiAxios = axios.create({
+      baseURL: process.env.NEXT_PUBLIC_API_BASE_URL,
+      timeout: 10_000,
+    });
+
+    // Auth header from a client-side cookie / store of your choice.
+    apiAxios.interceptors.request.use((config) => {
+      const token =
+        typeof document !== "undefined"
+          ? document.cookie.split("; ").find((c) => c.startsWith("token="))?.split("=")[1]
+          : undefined;
+      if (token) config.headers.Authorization = `Bearer ${token}`;
+      return config;
+    });
+
+    // 401 → redirect to login.
+    apiAxios.interceptors.response.use(
+      (r) => r,
+      (err) => {
+        if (err.response?.status === 401 && typeof window !== "undefined") {
+          window.location.href = "/login";
+        }
+        return Promise.reject(err);
+      },
+    );
+    ```
+
+  </TabItem>
+
+  <TabItem label="getPet.ofetch.ts (server)">
+
+    ```ts
+    // src/api/generated/api/getPet/getPet.ofetch.ts
+    import { apiOfetch } from "../../../../lib/ofetchInstance";
+    import { PetSchema, type Pet } from "../../models/Pet/Pet";
+    import type { GetPetParams } from "./getPet.params";
+
+    export interface GetPetOfetchOptions {
+      /** Forwarded to Next.js fetch extensions: cache, revalidate, tags. */
+      next?: { revalidate?: number | false; tags?: string[] };
+      signal?: AbortSignal;
+    }
+
+    export async function getPet(
+      params: GetPetParams,
+      init: GetPetOfetchOptions = {},
+    ): Promise<Pet> {
+      const raw = await apiOfetch<unknown>(`/pets/${params.id}`, {
+        method: "GET",
+        signal: init.signal,
+        // @ts-expect-error — next-only field, supported by ofetch in Next runtime
+        next: init.next,
+      });
+      return PetSchema.parse(raw);
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="getPet.axios.ts (client)">
+
+    ```ts
+    // src/api/generated/api/getPet/getPet.axios.ts
+    import { apiAxios } from "../../../../lib/axiosInstance";
+    import { PetSchema, type Pet } from "../../models/Pet/Pet";
+    import type { GetPetParams } from "./getPet.params";
+
+    export async function getPet(
+      params: GetPetParams,
+      init: { signal?: AbortSignal } = {},
+    ): Promise<Pet> {
+      const res = await apiAxios.get<unknown>(`/pets/${params.id}`, {
+        signal: init.signal,
+      });
+      return PetSchema.parse(res.data);
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="getPet.query.ts (hook)">
+
+    ```ts
+    // src/api/generated/api/getPet/getPet.query.ts
+    import { useQuery, type UseQueryOptions } from "@tanstack/react-query";
+    import { getPet } from "./getPet.axios";
+    import type { Pet } from "../../models/Pet/Pet";
+    import type { GetPetParams } from "./getPet.params";
+    import { petKeys } from "../../queryKeys";
+
+    export type UseGetPetOptions = Omit<
+      UseQueryOptions<Pet, Error, Pet, ReturnType<typeof petKeys.detail>>,
+      "queryKey" | "queryFn"
+    >;
+
+    export function useGetPet(params: GetPetParams, options?: UseGetPetOptions) {
+      return useQuery({
+        queryKey: petKeys.detail(params.id),
+        queryFn: ({ signal }) => getPet(params, { signal }),
+        ...options,
+      });
+    }
+
+    /**
+     * For use inside server components — same params, calls the server
+     * transport so the result is identical to what the client hook would
+     * resolve to after hydration.
+     */
+    export { getPet as fetchGetPet } from "./getPet.ofetch";
+    ```
+
+  </TabItem>
+
+  <TabItem label="createPet.mutation.ts">
+
+    ```ts
+    // src/api/generated/api/createPet/createPet.mutation.ts
+    import {
+      useMutation,
+      useQueryClient,
+      type UseMutationOptions,
+    } from "@tanstack/react-query";
+    import { createPet } from "./createPet.axios";
+    import type { Pet } from "../../models/Pet/Pet";
+    import type { CreatePetBody } from "./createPet.params";
+    import { petKeys } from "../../queryKeys";
+
+    export function useCreatePet(
+      options?: UseMutationOptions<Pet, Error, CreatePetBody>,
+    ) {
+      const queryClient = useQueryClient();
+      return useMutation({
+        mutationFn: (body) => createPet(body),
+        onSuccess: (created, variables, ctx) => {
+          // Add to cache so the next render sees it without re-fetching.
+          queryClient.setQueryData(petKeys.detail(created.id), created);
+          queryClient.invalidateQueries({ queryKey: petKeys.lists() });
+          options?.onSuccess?.(created, variables, ctx);
+        },
+        ...options,
+      });
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="lib/queryClient.ts">
+
+    ```ts
+    // src/lib/queryClient.ts — shared factory; server and client get their own instance.
+    import {
+      QueryClient,
+      defaultShouldDehydrateQuery,
+      isServer,
+    } from "@tanstack/react-query";
+
+    function make() {
+      return new QueryClient({
+        defaultOptions: {
+          queries: { staleTime: 60_000 },
+          dehydrate: {
+            // Persist pending queries too so the client picks up where the
+            // server left off (streaming RSC).
+            shouldDehydrateQuery: (q) =>
+              defaultShouldDehydrateQuery(q) || q.state.status === "pending",
+          },
+        },
+      });
+    }
+
+    let clientSide: QueryClient | undefined;
+
+    export function makeQueryClient() {
+      if (isServer) return make();
+      return (clientSide ??= make());
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="app/providers.tsx">
+
+    ```tsx
+    // src/app/providers.tsx — client-only QueryClientProvider
+    "use client";
+
+    import { QueryClientProvider } from "@tanstack/react-query";
+    import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+    import { makeQueryClient } from "@/lib/queryClient";
+
+    export function Providers({ children }: { children: React.ReactNode }) {
+      const queryClient = makeQueryClient();
+      return (
+        <QueryClientProvider client={queryClient}>
+          {children}
+          {process.env.NODE_ENV === "development" && <ReactQueryDevtools />}
+        </QueryClientProvider>
+      );
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="app/layout.tsx">
+
+    ```tsx
+    // src/app/layout.tsx
+    import { Providers } from "./providers";
+
+    export default function RootLayout({ children }: { children: React.ReactNode }) {
+      return (
+        <html lang="en">
+          <body>
+            <Providers>{children}</Providers>
+          </body>
+        </html>
+      );
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="app/pets/[id]/page.tsx (server)">
+
+    ```tsx
+    // src/app/pets/[id]/page.tsx — server component
+    import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
+    import { makeQueryClient } from "@/lib/queryClient";
+    import { getPet as fetchGetPet } from "@/api/generated/api/getPet/getPet.ofetch";
+    import { petKeys } from "@/api/generated/queryKeys";
+    import { PetDetail } from "./PetDetail";
+
+    export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+      const { id } = await params;
+      const numericId = Number(id);
+
+      const queryClient = makeQueryClient();
+
+      // Server-side prefetch with ofetch — feeds Next.js fetch cache + tags.
+      await queryClient.prefetchQuery({
+        queryKey: petKeys.detail(numericId),
+        queryFn: ({ signal }) =>
+          fetchGetPet({ id: numericId }, { next: { revalidate: 60, tags: ["pets"] }, signal }),
+      });
+
+      return (
+        <HydrationBoundary state={dehydrate(queryClient)}>
+          <PetDetail id={numericId} />
+        </HydrationBoundary>
+      );
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="app/pets/[id]/PetDetail.tsx (client)">
+
+    ```tsx
+    // src/app/pets/[id]/PetDetail.tsx
+    "use client";
+
+    import { useGetPet } from "@/api/generated/api/getPet/getPet.query";
+    import { useCreatePet } from "@/api/generated/api/createPet/createPet.mutation";
+
+    export function PetDetail({ id }: { id: number }) {
+      // Hydrates instantly from the server-prefetched cache, then revalidates
+      // on focus / interval per TanStack defaults.
+      const { data: pet, isLoading, error } = useGetPet({ id });
+      const create = useCreatePet();
+
+      if (isLoading) return <p>Loading…</p>;
+      if (error)     return <p role="alert">{error.message}</p>;
+      if (!pet)      return null;
+
+      return (
+        <article>
+          <h1>{pet.name}</h1>
+          {pet.tag && <p>Tag: {pet.tag}</p>}
+
+          <button
+            disabled={create.isPending}
+            onClick={() => create.mutate({ name: "Spot", tag: "dog" })}
+          >
+            {create.isPending ? "Adding…" : "Add Spot"}
+          </button>
+        </article>
+      );
+    }
+    ```
+
+  </TabItem>
+
+  <TabItem label="app/pets/page.tsx (list)">
+
+    ```tsx
+    // src/app/pets/page.tsx — server component
+    import { HydrationBoundary, dehydrate } from "@tanstack/react-query";
+    import { makeQueryClient } from "@/lib/queryClient";
+    import { listPets as fetchListPets } from "@/api/generated/api/listPets/listPets.ofetch";
+    import { petKeys } from "@/api/generated/queryKeys";
+    import { PetsList } from "./PetsList";
+
+    export default async function Page() {
+      const queryClient = makeQueryClient();
+
+      await queryClient.prefetchQuery({
+        queryKey: petKeys.lists(),
+        queryFn:  ({ signal }) =>
+          fetchListPets({ next: { revalidate: 60, tags: ["pets"] }, signal }),
+      });
+
+      return (
+        <HydrationBoundary state={dehydrate(queryClient)}>
+          <PetsList />
+        </HydrationBoundary>
+      );
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## How the two halves cooperate
+
+1. **Request arrives** → Next.js routes it to the server component.
+2. **Server prefetches** via `*.ofetch.ts`. The response feeds Next.js's
+   built-in `fetch` cache (with `revalidateTag('pets')` available for
+   targeted invalidation from server actions).
+3. **Server dehydrates** the `QueryClient` and ships the JSON snapshot
+   inside `<HydrationBoundary>`.
+4. **Client renders** — `Providers` mounts a single `QueryClient`,
+   `HydrationBoundary` seeds it with the server snapshot, the
+   `'use client'` component calls `useGetPet`/`useListPets`. **No
+   refetch on initial mount** — TanStack sees fresh data already.
+5. **Stale time elapses or focus event** → TanStack refetches *through
+   Axios* (browser), keeping the auth interceptor, retry, and timeout
+   policy you configured for the client side.
+6. **Mutations** on the client (`useCreatePet`) hit Axios, update the
+   cache optimistically, then call `revalidateTag('pets')` on the next
+   navigation so the server's fetch cache stays in sync.
+
+## Caching cheat sheet
+
+| Layer                          | Server (RSC)                           | Client (browser)               |
+|--------------------------------|----------------------------------------|--------------------------------|
+| Transport                      | `ofetch` (powered by Node fetch)       | `axios`                        |
+| Cache primitive                | Next.js `fetch` cache + `tags`         | TanStack `QueryClient`         |
+| Invalidation API               | `revalidateTag('pets')` (server action)| `queryClient.invalidateQueries`|
+| Background refresh             | Time-based `revalidate` directive      | `refetchOnWindowFocus`, intervals |
+| Auth                           | `apiOfetch` interceptors (env tokens)  | `apiAxios` interceptors (cookies) |
+| Validation                     | `PetSchema.parse(raw)`                 | `PetSchema.parse(res.data)`    |
+| Runtime                        | Node / Edge                            | Browser                        |
+
+## Server actions
+
+Server actions (mutations from forms) call the same `*.ofetch.ts`
+transport directly — no TanStack involvement on the server. Then
+`revalidateTag('pets')` invalidates Next's cache; the client's next
+mount picks up the new server snapshot.
+
+```ts
+// src/app/pets/actions.ts
+"use server";
+
+import { revalidateTag } from "next/cache";
+import { createPet } from "@/api/generated/api/createPet/createPet.ofetch";
+
+export async function addPetAction(formData: FormData) {
+  const name = formData.get("name") as string;
+  await createPet({ name });
+  revalidateTag("pets");
+}
+```
+
+## Streaming + Suspense (optional)
+
+Drop the `await` on the prefetch and pass the in-flight `QueryClient`
+straight into `<HydrationBoundary>`. TanStack 5 streams pending queries
+to the client, so `<Suspense>` boundaries render their fallback until
+the server pushes the resolved data over the same HTTP response.
+
+## Tradeoffs
+
+- **Bundle**: `ofetch` and `axios` ship in different graphs, so the
+  client only loads `axios + @tanstack/react-query + zod` (~14 KB
+  gzipped). Server doesn't bundle anything to the client from
+  `*.ofetch.ts`.
+- **Two-instance config**: you maintain two transport configs. The
+  upside is per-runtime tuning (Node baseURL ≠ public baseURL, server
+  uses bearer tokens, client uses cookies).
+- **Same schemas**: Zod 4 schemas are shared, so a backwards-incompatible
+  API change breaks the build in both places at once.
+
+## Related packages
+
+<CardGrid>
+  <LinkCard title="Next.js" href="https://nextjs.org/" description="React framework with App Router, RSC, server actions" />
+  <LinkCard title="ofetch" href="https://github.com/unjs/ofetch" description="Isomorphic fetch wrapper (powers Nuxt + Nitro)" />
+  <LinkCard title="Axios" href="https://axios-http.com/" description="Promise-based HTTP client with interceptors" />
+  <LinkCard title="@tanstack/react-query" href="https://tanstack.com/query/latest" description="Server-state caching for React" />
+  <LinkCard title="Zod" href="https://zod.dev/" description="TypeScript-first schema validation" />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Options reference (TypeScript)](/configuration/options-reference/#typescript)
+- [Transports / ofetch](/languages/typescript/transports/ofetch/)
+- [Transports / Axios](/languages/typescript/transports/axios/)
+- [Validation / Zod](/languages/typescript/validation/zod/)
+- [Query / TanStack Query](/languages/typescript/query/tanstack/)
+- [Recipes / Mock API in Storybook](/recipes/mock-api-storybook/)

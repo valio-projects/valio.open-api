@@ -21,5 +21,6 @@ public sealed class RootCommand : System.CommandLine.RootCommand
 
         Add(new GenerateCommand(serviceProvider));
         Add(new ValidateCommand(serviceProvider));
+        Add(new InitCommand(serviceProvider));
     }
 }

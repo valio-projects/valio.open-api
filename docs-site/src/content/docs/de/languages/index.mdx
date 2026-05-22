@@ -1,0 +1,90 @@
+---
+title: Unterstützte Sprachen
+description: Plugin-Referenzen für alle 12 ValIO-Generatoren.
+translationKey: languages-overview
+sidebar:
+  order: 1
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+ValIO ist Plugin-basiert: Jeder Generator lebt in einer eigenen
+Assembly und wird über `AddAllGeneratorPlugins()` registriert. Heute
+liegen zwölf Plugins bei, die Web-, Mobil-, Backend- und
+Game-Engine-Ziele abdecken.
+
+<CardGrid>
+  <LinkCard
+    title="TypeScript"
+    href="/de/languages/typescript/"
+    description="9 HTTP-Transports, Zod 3/4, Valibot, TypeBox, TanStack Query, SWR und MSW-Handler."
+  />
+  <LinkCard
+    title="C#"
+    href="/de/languages/csharp/"
+    description="POCOs + HttpClient, JsonSerializerContext, IServiceCollection-Erweiterung."
+  />
+  <LinkCard
+    title="Java"
+    href="/de/languages/java/"
+    description="Jackson-DTOs + synchroner OkHttp-3.x-Client, optionale Gradle-Build-Dateien."
+  />
+  <LinkCard
+    title="Kotlin"
+    href="/de/languages/kotlin/"
+    description="Coroutine-basierter OkHttp-Client mit kotlinx.serialization-Data-Classes."
+  />
+  <LinkCard
+    title="Python"
+    href="/de/languages/python/"
+    description="Pydantic-v2-Modelle mit synchronen oder asynchronen httpx-Clients (Python 3.10+)."
+  />
+  <LinkCard
+    title="PHP"
+    href="/de/languages/php/"
+    description="Typisierte PHP-8.1-Klassen mit Promoted Constructors und Guzzle-7-Client."
+  />
+  <LinkCard
+    title="Swift"
+    href="/de/languages/swift/"
+    description="Codable-Structs, async/await-URLSession-Client, optionale Package.swift."
+  />
+  <LinkCard
+    title="Rust"
+    href="/de/languages/rust/"
+    description="Serde-Modelle mit asynchronem Reqwest-Client auf Tokio."
+  />
+  <LinkCard
+    title="Ruby"
+    href="/de/languages/ruby/"
+    description="Reine Ruby-Klassen mit einem Faraday-basierten HTTP-Client."
+  />
+  <LinkCard
+    title="F#"
+    href="/de/languages/fsharp/"
+    description="Records und DUs mit RestSharp-Client; Antwortvarianten als Discriminated Unions."
+  />
+  <LinkCard
+    title="Dart"
+    href="/de/languages/dart/"
+    description="Null-safe Dart-3-Modelle und Dio-basierter HTTP-Client für Flutter oder reines Dart."
+  />
+  <LinkCard
+    title="C++ (Unreal)"
+    href="/de/languages/cpp/"
+    description="USTRUCT-Modelle und Blueprint-aufrufbare async Actions für Unreal Engine 5."
+  />
+</CardGrid>
+
+## Optionen pro Plugin
+
+Jedes Plugin stellt eine Liste `OptionsDescriptor.GetOptionDescriptions()`
+bereit. Die Web-UI rendert daraus ein dynamisches Formular; in CLI und
+Konfigurationsdateien werden dieselben Optionen unter `"options"` in
+`valio.config.json` übergeben. Die vollständige Optionsreferenz pro
+Plugin öffnen Sie über die obigen Sprachkarten.
+
+Die Werte erscheinen außerdem in den Tooltips der Web-UI via
+Ressourcen-Lookups über `OptionDescription.DescriptionKey`, sodass jede
+Option sowohl Inline-Hilfe als auch einen stabilen Dokumentationsanker
+besitzt.

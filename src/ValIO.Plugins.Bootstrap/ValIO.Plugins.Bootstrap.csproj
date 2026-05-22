@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Plugins.Bootstrap</PackageId>
+    <Description>ValIO DI helper: AddAllGeneratorPlugins() registers all 12 language plugins.</Description>
+    <PackageTags>valio;codegen;plugins;di</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Application\ValIO.Application.csproj" />
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />

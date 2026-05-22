@@ -1,0 +1,187 @@
+---
+title: Java HttpClient + Jackson
+description: Exact stack to generate a Java client using the JDK 11+ built-in HttpClient and Jackson.
+sidebar:
+  order: 2
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're shipping a service that already brings in Jackson (most Spring
+Boot apps do) and you'd rather not add OkHttp on top of the JDK's
+perfectly good `java.net.http.HttpClient`. ValIO emits Jackson-friendly
+DTOs that you can drop into a thin hand-written adapter targeting the
+built-in client. End result: a generated client with zero third-party
+HTTP dependencies.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Java | 17+ (HttpClient is 11+, async API improved in 17) |
+| `com.fasterxml.jackson.core:jackson-databind` | 2.16+ |
+| `com.fasterxml.jackson.core:jackson-annotations` | 2.16+ |
+| Gradle | 8.5+ (or Maven 3.9+) |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore-jdk
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore-jdk": {
+      "language": "java",
+      "schema": "./openapi.yaml",
+      "outputPath": "./src/main/java",
+      "namespace": "com.acme.petstore",
+      "options": {
+        "package": "com.acme.petstore",
+        "useHttpClient": "okhttp",
+        "generateBuildFiles": false
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": false,
+        "modelsPath": "models"
+      }
+    }
+  }
+}
+```
+
+Notes on the config:
+
+- ValIO's `useHttpClient` only supports `okhttp` today; we still emit
+  Jackson DTOs we can use with the JDK client. The default client file
+  is kept but you'll likely replace it with the adapter below.
+- `generateBuildFiles: false` because most enterprise projects already
+  have a hand-curated `build.gradle.kts` / `pom.xml`.
+
+## What gets generated
+
+One `public final class` per OpenAPI schema with constructor, getters,
+and Jackson `@JsonProperty` annotations. (The generated `*Client.java`
+still targets OkHttp; the adapter below shows how to wire the same
+DTOs to `java.net.http.HttpClient`.)
+
+## File tree
+
+```
+src/main/java/com/acme/petstore/
+├── models/
+│   └── Pet.java
+└── PetsClient.java
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.java">
+
+    ```java
+    package com.acme.petstore.models;
+
+    import com.fasterxml.jackson.annotation.JsonCreator;
+    import com.fasterxml.jackson.annotation.JsonProperty;
+
+    public final class Pet {
+        private final long id;
+        private final String name;
+        private final String tag;
+
+        @JsonCreator
+        public Pet(
+            @JsonProperty("id") long id,
+            @JsonProperty("name") String name,
+            @JsonProperty("tag") String tag
+        ) {
+            this.id = id;
+            this.name = name;
+            this.tag = tag;
+        }
+
+        public long getId() { return id; }
+        public String getName() { return name; }
+        public String getTag() { return tag; }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="JdkPetsClient.java">
+
+    ```java
+    // Hand-written adapter for java.net.http.HttpClient
+    package com.acme.petstore;
+
+    import com.acme.petstore.models.Pet;
+    import com.fasterxml.jackson.core.type.TypeReference;
+    import com.fasterxml.jackson.databind.ObjectMapper;
+
+    import java.net.URI;
+    import java.net.http.HttpClient;
+    import java.net.http.HttpRequest;
+    import java.net.http.HttpResponse;
+    import java.util.List;
+
+    public final class JdkPetsClient {
+        private final URI baseUrl;
+        private final HttpClient http = HttpClient.newHttpClient();
+        private final ObjectMapper mapper = new ObjectMapper();
+
+        public JdkPetsClient(String baseUrl) { this.baseUrl = URI.create(baseUrl); }
+
+        public List<Pet> listPets() throws Exception {
+            HttpRequest req = HttpRequest.newBuilder(baseUrl.resolve("/pets")).GET().build();
+            HttpResponse<byte[]> res = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            return mapper.readValue(res.body(), new TypeReference<>() {});
+        }
+
+        public Pet createPet(Pet body) throws Exception {
+            byte[] payload = mapper.writeValueAsBytes(body);
+            HttpRequest req = HttpRequest.newBuilder(baseUrl.resolve("/pets"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofByteArray(payload))
+                .build();
+            HttpResponse<byte[]> res = http.send(req, HttpResponse.BodyHandlers.ofByteArray());
+            return mapper.readValue(res.body(), Pet.class);
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="Main.java">
+
+    ```java
+    import com.acme.petstore.JdkPetsClient;
+    import com.acme.petstore.models.Pet;
+
+    public final class Main {
+        public static void main(String[] args) throws Exception {
+            JdkPetsClient client = new JdkPetsClient("https://petstore.example.com/v1");
+            for (Pet pet : client.listPets()) {
+                System.out.println(pet.getId() + ": " + pet.getName());
+            }
+        }
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="java.net.http.HttpClient" href="https://docs.oracle.com/en/java/javase/17/docs/api/java.net.http/java/net/http/HttpClient.html" description="The JDK 11+ built-in HTTP/2 client. No third-party deps." />
+<LinkCard title="Jackson Databind" href="https://github.com/FasterXML/jackson-databind" description="JVM-standard JSON databinding; pairs cleanly with HttpClient body handlers." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Java overview](/languages/java/)
+- [OkHttp + Jackson](/stacks/java/okhttp-jackson/)

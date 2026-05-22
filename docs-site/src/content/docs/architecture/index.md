@@ -1,6 +1,7 @@
 ---
 title: Architecture
 description: How the codebase is laid out.
+translationKey: architecture
 ---
 
 ValIO is a .NET 10 monorepo. Each front-end (CLI / Web / Desktop) is a

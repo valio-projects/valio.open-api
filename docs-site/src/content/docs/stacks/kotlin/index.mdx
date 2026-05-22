@@ -1,0 +1,38 @@
+---
+title: Kotlin stacks
+description: Ready-to-copy ValIO configurations for the most common Kotlin stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Kotlin generator emits `@Serializable` data classes plus a
+coroutine-based client. ValIO's default HTTP/serialization combo is
+OkHttp + `kotlinx.serialization`, but the data classes are
+serializer-agnostic enough that you can pair them with Ktor Client when
+you need a multiplatform target.
+
+The pages below pin those choices to **concrete, tested recipes**: each
+one gives you the exact `valio.config.json`, the file tree to expect,
+and a few lines of consumer code so you can sanity-check the output.
+
+## Kotlin stacks
+
+<CardGrid>
+  <LinkCard
+    title="OkHttp + kotlinx.serialization"
+    href="/stacks/kotlin/okhttp-kotlinx-serialization/"
+    description="The default JVM stack — OkHttp + kotlinx.serialization + coroutines."
+  />
+  <LinkCard
+    title="Ktor Client"
+    href="/stacks/kotlin/ktor-client/"
+    description="Multiplatform-friendly Ktor Client wrapping the same serialization."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Kotlin language overview](/languages/kotlin/)

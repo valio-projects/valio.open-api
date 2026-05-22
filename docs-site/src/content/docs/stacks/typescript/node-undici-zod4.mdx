@@ -1,0 +1,163 @@
+---
+title: Node + Undici + Zod 4
+description: Server-to-server HTTP clients using Node's modern Undici transport.
+sidebar:
+  order: 8
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're writing a Node service (backend-for-frontend, scheduled job, CLI,
+worker) that calls one or more upstream HTTP APIs. Undici is Node's
+hand-rolled HTTP client — it powers the built-in `fetch` and is dramatically
+faster than `axios` for high-throughput server workloads. Combined with
+Zod 4 you get a hard runtime contract on every upstream response: any
+schema drift gets caught at the boundary, not three hops downstream.
+
+This is the pure server-to-server stack. If you're doing server work inside
+a Next.js app, use the [ofetch stack](/stacks/typescript/nextjs-ofetch-zod4/)
+instead — it integrates with Next's request memoization.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| Node                          | 20.0.0    |
+| `undici`                      | 6.0.0     |
+| `zod`                         | 4.0.0     |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p OrdersService
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "OrdersService": {
+      "language": "typescript",
+      "schema": "./openapi/orders.yaml",
+      "outputPath": "src/clients/orders",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["undici"],
+        "validation": "zod4",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+Zod 4 schemas per model. A `<op>.undici.ts` transport per operation using
+`undici.request` (lower-level, more performant than `fetch`). Each transport
+parses JSON manually and runs the response through the Zod schema before
+returning. No query wrapper — this is for plain `await` server code.
+
+## File tree
+
+```
+src/clients/orders/
+├── models/
+│   ├── Order/Order.ts
+│   ├── OrderLine/OrderLine.ts
+│   └── Orders/Orders.ts
+├── api/
+│   ├── listOrders/
+│   │   ├── listOrders.params.ts
+│   │   └── listOrders.undici.ts
+│   └── getOrder/
+│       ├── getOrder.params.ts
+│       └── getOrder.undici.ts
+├── undiciInstance.ts             # configured Pool with keep-alive
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Order.ts">
+
+    ```ts
+    // models/Order/Order.ts
+    import { z } from "zod";
+
+    export const OrderSchema = z.object({
+      id: z.string().uuid(),
+      customerId: z.string().uuid(),
+      total: z.number().nonnegative(),
+      placedAt: z.iso.datetime(),
+    });
+
+    export type Order = z.infer<typeof OrderSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="getOrder.undici.ts">
+
+    ```ts
+    // api/getOrder/getOrder.undici.ts
+    import { request } from "undici";
+    import { orderServicePool } from "../../undiciInstance";
+    import { OrderSchema, type Order } from "../../models/Order/Order";
+    import type { GetOrderParams } from "./getOrder.params";
+
+    export async function getOrder(params: GetOrderParams): Promise<Order> {
+      const { statusCode, body } = await request(
+        `https://orders.example.com/orders/${encodeURIComponent(params.id)}`,
+        { method: "GET", dispatcher: orderServicePool }
+      );
+      if (statusCode >= 400) {
+        throw new Error(`getOrder failed: ${statusCode}`);
+      }
+      return OrderSchema.parse(await body.json());
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="jobs/reconcile.ts">
+
+    ```ts
+    // jobs/reconcile.ts
+    import { getOrder } from "./clients/orders/api/getOrder/getOrder.undici";
+
+    export async function reconcile(orderId: string) {
+      const order = await getOrder({ id: orderId });
+      if (order.total <= 0) {
+        throw new Error(`Invalid order total for ${order.id}`);
+      }
+      // ... write to ledger
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Undici" href="https://github.com/nodejs/undici" description="Node.js HTTP/1.1 client, the engine behind global fetch" />
+<LinkCard title="Zod 4" href="https://zod.dev/" description="TypeScript-first schema validation" />
+<LinkCard title="Node.js" href="https://nodejs.org/" description="JavaScript runtime built on V8" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / Undici](/languages/typescript/transports/undici/)
+- [Node + Axios + TypeBox (Fastify)](/stacks/typescript/node-axios-typebox/)

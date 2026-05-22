@@ -1,124 +1,92 @@
-# ValIO — OpenAPI Code Generator
+# ValIO
 
-Type-safe HTTP clients, models, and validation schemas for 8 target languages,
-generated from any OpenAPI 3.x schema — available as a CLI, a Web app, or a
-desktop app.
+> ValIO — type-safe HTTP clients, models, and validation schemas for 12 languages, generated from any OpenAPI 3.x schema.
 
-## Highlights
-
-- **8 target languages** out of the box: TypeScript, C#, Java, Kotlin, Python,
-  PHP, C++ (Unreal), Swift.
-- **Three frontends, one engine** — `ValIO.Cli`, `ValIO.Web` (Blazor Server +
-  MudBlazor), `ValIO.Desktop` (Avalonia 11), all consuming the same
-  `ValIO.Application` orchestrator.
-- **Output to folder or .zip** — pick a directory, save a zip, or stream the
-  zip straight to an HTTP response. Driven by the `IGenerationOutputSink`
-  abstraction.
-- **Localized UI** — English / Русский / Deutsch / 简体中文, both in the web
-  shell and the desktop client.
-- **REST API** — `/api/languages`, `/api/options/{language}`, `/api/validate`,
-  `/api/generate`, plus a hand-crafted OpenAPI spec at `/api/spec`.
-- **TypeScript power tools**: Zod 3/4, Valibot, TypeBox; Fetch, Axios, Ky,
-  Undici, ofetch, Got, Angular HttpClient, SolidStart; TanStack Query
-  (React/Vue/Angular/Solid/Svelte); SWR; MSW handlers.
-
-## Repository layout
-
-```
-ValIO.sln
-├── src/
-│   ├── ValIO.Core/                 — IR, AST, plugin contracts
-│   ├── ValIO.Parsers/              — OpenAPI document parsing
-│   ├── ValIO.Configuration/        — valio.config.{json,yaml} loader/validator
-│   ├── ValIO.Application/          — IGenerationOrchestrator (the shared engine)
-│   ├── ValIO.Output/               — IGenerationOutputSink (Disk / Zip / Stream / InMemory)
-│   ├── ValIO.Localization/         — .resx + IConsoleReporter for en/ru/de/zh-CN
-│   ├── ValIO.Plugins.Bootstrap/    — AddAllGeneratorPlugins() helper
-│   ├── ValIO.Generators.{TypeScript,CSharp,Java,Kotlin,Python,Php,Cpp,Swift}/
-│   ├── ValIO.Cli/                  — System.CommandLine wrapper (valio.exe)
-│   ├── ValIO.Web/                  — Blazor Server + minimal-API surface
-│   └── ValIO.Desktop/              — Avalonia 11 + CommunityToolkit.Mvvm
-├── tests/
-│   ├── ValIO.Application.Tests/    — orchestrator + output sinks
-│   └── ValIO.Generators.*.Tests/   — generator unit & integration tests
-└── docs-site/                      — Starlight (Astro) documentation, multilingual
-```
-
-## Requirements
-
-- .NET 10 SDK (`10.0.100` or newer)
-- Node.js 22+ if you want to run the docs site (`docs-site/`)
+[![CI](https://gitlab.com/valio/valio/badges/master/pipeline.svg)](https://gitlab.com/valio/valio/-/pipelines)
+[![NuGet](https://img.shields.io/nuget/v/ValIO.Cli.svg)](https://www.nuget.org/packages/ValIO.Cli)
+[![npm](https://img.shields.io/npm/v/valio.svg)](https://www.npmjs.com/package/valio)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Docs](https://img.shields.io/badge/docs-valio.dev-blue)](https://valio.dev)
 
 ## Quick start
 
-### CLI
+Install as a .NET global tool:
 
-```powershell
+```bash
+dotnet tool install --global ValIO.Cli
+valio generate -s ./openapi.yaml -o ./out -l typescript
+```
+
+Install via npm:
+
+```bash
+npm install -g valio
+valio generate -s ./openapi.yaml -o ./out -l typescript
+```
+
+Build from source:
+
+```bash
 dotnet build
-.\run.bat generate -s https://petstore3.swagger.io/api/v3/openapi.json `
-                   -o ./out -l typescript
-.\run.bat generate -s ./openapi.yaml -o ./out.zip -l csharp --lang ru
-.\run.bat --list-languages
+dotnet run --project src/ValIO.Cli -- generate -s ./openapi.yaml -o ./out -l typescript
 ```
 
-`-o` accepts either a directory or a `.zip` file (the latter triggers
-`ZipFileOutputSink`).  Use `--lang` (or `VALIO_LANG=`) to switch the CLI's
-UI culture.
+## Why ValIO
 
-### Web (Blazor Server + REST API)
+- **12 target languages** — TypeScript, C#, Java, Kotlin, Python, PHP, C++, Swift, Rust, Ruby, F#, Dart.
+- **Three frontends, one engine** — `ValIO.Cli` (System.CommandLine), `ValIO.Web` (Blazor Server + MudBlazor), `ValIO.Desktop` (Avalonia 11).
+- **Plugin architecture** — every language ships as an `IGeneratorPlugin`; drop in your own without touching the core.
+- **Pluggable outputs** — `IGenerationOutputSink` writes to disk, packs a zip file, streams a zip over HTTP, or stays in memory.
+- **Localized UI** — English, Русский, Deutsch, 简体中文 across the CLI, web shell, and desktop app.
 
-```powershell
-dotnet run --project src/ValIO.Web --launch-profile http
-# http://localhost:5080
-#   /                  — landing page
-#   /generate          — interactive form
-#   /validate          — schema validator
-#   /api/spec          — OpenAPI document
-#   /healthz           — health check
+## Supported languages
+
+| Language   | Default HTTP client                                                       | Validation library            | Notes                                |
+|------------|---------------------------------------------------------------------------|-------------------------------|--------------------------------------|
+| TypeScript | Fetch / Axios / Ky / Got / OFetch / Undici / Angular / Solid              | Zod 3/4, Valibot, TypeBox     | + TanStack Query, SWR, MSW           |
+| C#         | HttpClient                                                                | None (POCOs)                  | System.Text.Json                     |
+| Java       | OkHttp                                                                    | Bean Validation               | Jackson                              |
+| Kotlin     | OkHttp                                                                    | None                          | Kotlinx.Serialization                |
+| Python     | httpx                                                                     | Pydantic                      | async/sync                           |
+| PHP        | Guzzle                                                                    | None                          | PSR-7                                |
+| C++        | Unreal HTTP                                                               | None                          | UE plugin shape                      |
+| Swift      | URLSession                                                                | Codable                       | iOS/macOS                            |
+| Rust       | Reqwest                                                                   | Serde                         | tokio                                |
+| Ruby       | Faraday                                                                   | None                          | Ruby 3+                              |
+| F#         | RestSharp                                                                 | None                          | discriminated unions                 |
+| Dart       | http                                                                      | None                          | null-safe                            |
+
+## Examples
+
+### TypeScript (Fetch + Zod 4)
+
+```bash
+valio generate -s ./petstore.yaml -o ./out/ts -l typescript \
+  --opt transports=fetch --opt validation=zod4
 ```
 
-POSTing to `/api/generate` returns a `.zip` of generated files (streamed via
-`ZipStreamOutputSink`).  POST `/api/validate` returns a summary of the
-schema without running any plugin.
-
-### Desktop (Avalonia 11)
-
-```powershell
-dotnet run --project src/ValIO.Desktop
+```ts
+import { z } from "zod";
+export const Pet = z.object({ id: z.number(), name: z.string() });
+export type Pet = z.infer<typeof Pet>;
+export async function getPetById(id: number): Promise<Pet> { /* ... */ }
 ```
 
-Features: schema preview after pick/drop, recent-files menu, dark-mode toggle,
-folder/zip output picker, per-plugin dynamic option form with dependency
-filtering, native file pickers via `IStorageProvider`.
+### C# (HttpClient + System.Text.Json)
 
-## Configuration file
+```bash
+valio generate -s ./petstore.yaml -o ./out/cs -l csharp \
+  --opt namespace=PetStore.Generated
+```
 
-```json
+```csharp
+public sealed record Pet(long Id, string Name);
+public sealed class PetStoreClient(HttpClient http)
 {
-  "projects": {
-    "client-ts": {
-      "schema": "./openapi.yaml",
-      "language": "typescript",
-      "outputPath": "./generated/ts",
-      "options": {
-        "transports": ["fetch", "axios"],
-        "validation": "zod4",
-        "queryWrapper": "tanstack-react",
-        "mocks": "msw"
-      }
-    },
-    "client-cs": {
-      "schema": "https://petstore.swagger.io/v2/swagger.json",
-      "language": "csharp",
-      "outputPath": "./generated/cs.zip",
-      "options": { "namespace": "PetStore.Generated" }
-    }
-  }
+    public Task<Pet?> GetPetById(long id, CancellationToken ct = default) =>
+        http.GetFromJsonAsync<Pet>($"/pet/{id}", ct);
 }
 ```
-
-Then `valio generate --config valio.config.json --projects client-ts` (or
-omit `--projects` to build all of them).
 
 ## Architecture
 
@@ -145,45 +113,45 @@ omit `--projects` to build all of them).
         DiskOutputSink  ZipFileSink  ZipStreamSink / InMemorySink
 ```
 
-The frontends never touch the file system or HTTP transport — they hand the
-`GeneratedFile[]` to an `IOutputSinkFactory` and let it write wherever the
-user asked (a folder for the CLI, an HTTP response stream for the web, a
-`.zip` for "save as" in the desktop).
+## Project layout
 
-## Tests
-
-```powershell
-dotnet test ValIO.sln
+```
+ValIO.sln
+├── src/
+│   ├── ValIO.Core/                — IR, AST, plugin contracts
+│   ├── ValIO.Parsers/             — OpenAPI document parsing
+│   ├── ValIO.Configuration/       — valio.config.{json,yaml}
+│   ├── ValIO.Application/         — orchestration engine
+│   ├── ValIO.Output/              — Disk / Zip / Stream / InMemory sinks
+│   ├── ValIO.Localization/        — en/ru/de/zh-CN resources
+│   ├── ValIO.Plugins.Bootstrap/   — AddAllGeneratorPlugins() DI helper
+│   ├── ValIO.Generators.*/        — 12 language plugins
+│   ├── ValIO.Cli/                 — `valio` global tool
+│   ├── ValIO.Web/                 — Blazor Server + REST API
+│   └── ValIO.Desktop/             — Avalonia 11 app
+├── tests/                         — NUnit 4 + FluentAssertions
+├── docs/                          — design notes, ADRs
+├── docs-site/                     — Starlight (Astro) documentation
+├── packaging/npm/                 — npm wrapper + platform packages
+└── Examples/                      — sample OpenAPI schemas + outputs
 ```
 
-12 tests cover `ValIO.Application` (orchestrator + the four output sinks);
-each generator has its own integration suite under `tests/ValIO.Generators.*.Tests/`.
-Total: 281 passing, 1 skipped (TS strict-mode smoke that needs `tsc` on PATH).
+## Documentation
 
-## Documentation site
+Full documentation lives at <https://valio.dev>.
 
-```powershell
+To run the docs locally:
+
+```bash
 cd docs-site
 npm install
 npm run dev   # http://localhost:4321
 ```
 
-Built with [Starlight](https://starlight.astro.build) (Astro). Multilingual
-out of the box — `src/content/docs/{en,ru,de,zh-cn}/`.
+## Contributing
 
-## Technology stack
-
-| Layer        | Pick                                                   |
-|--------------|--------------------------------------------------------|
-| Runtime      | .NET 10.0                                              |
-| OpenAPI      | Microsoft.OpenApi 3.x                                  |
-| CLI          | System.CommandLine 2.x                                 |
-| Web          | ASP.NET Core 10 + Blazor Server + MudBlazor 8.x        |
-| Desktop      | Avalonia 11 + CommunityToolkit.Mvvm                    |
-| Localization | Microsoft.Extensions.Localization + .resx              |
-| Docs         | Astro + Starlight (Node 22+)                           |
-| Tests        | NUnit 4 + FluentAssertions                             |
+Pull requests are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines, the development loop, and the code-of-conduct.
 
 ## License
 
-TBD.
+ValIO is released under the [MIT License](./LICENSE).

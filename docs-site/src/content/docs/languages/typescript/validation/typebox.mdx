@@ -1,0 +1,221 @@
+---
+title: TypeBox schemas
+description: TypeBox schema generation for the TypeScript generator.
+sidebar:
+  order: 12
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+[TypeBox](https://github.com/sinclairzx81/typebox) produces schemas that **are
+JSON Schema** at runtime, with a thin TypeScript wrapper for inference. Each
+generated `Schema` constant is a plain object compatible with any JSON Schema
+validator — Ajv, Fastify's built-in, custom Draft 2020-12 tooling, even
+re-emission to OpenAPI clients downstream.
+
+TypeBox is the only library among the three options whose output you can
+hand to another tool unmodified.
+
+## When to use
+
+- You're on **Fastify** — `fastify.get('/...', { schema: PetParamsSchema, ... })`
+  consumes TypeBox schemas directly for request validation **and** response
+  serialisation.
+- You want runtime schemas that double as **OpenAPI-compatible JSON Schema**
+  for downstream consumers (e.g. re-serving to clients).
+- You prefer using the
+  [TypeCompiler](https://github.com/sinclairzx81/typebox#typecompiler) for
+  maximum runtime performance — pre-compiled validators are faster than
+  Zod/Valibot in microbenchmarks.
+- You already standardise on JSON Schema across the org and want zero
+  translation layers.
+
+For day-to-day app code without Fastify, Zod or Valibot are usually friendlier
+to consume.
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["fetch"],
+    "validation": "typebox"
+  }
+}
+```
+
+Aliases accepted: `typebox`, `@sinclair/typebox`.
+
+`@sinclair/typebox@^0.32` or newer must be installed in the consumer project.
+
+## Generated schema
+
+```ts
+// models/Pet/schemas/Pet.schema.ts
+import { Type, type Static } from "@sinclair/typebox";
+
+export const PetStatusSchema = Type.Union([
+  Type.Literal("available"),
+  Type.Literal("pending"),
+  Type.Literal("sold"),
+]);
+
+export const PetSchema = Type.Object({
+  id: Type.Integer(),
+  name: Type.String({ minLength: 1, maxLength: 80 }),
+  status: PetStatusSchema,
+  tags: Type.Optional(Type.Array(Type.String())),
+  birthday: Type.Optional(Type.String({ format: "date-time" })),
+  owner: Type.Union([Type.String({ format: "uuid" }), Type.Null()]),
+});
+
+export type Pet = Static<typeof PetSchema>;
+export type PetStatus = Static<typeof PetStatusSchema>;
+```
+
+Notes on the emitted shape:
+
+- **Primitives** — `Type.String`, `Type.Number`, `Type.Integer`, `Type.Boolean`.
+- **Enums** — `Type.Union([Type.Literal(...)])` for string enums.
+- **Optional fields** — `Type.Optional(schema)`.
+- **Nullable fields** — `Type.Union([schema, Type.Null()])`.
+- **Arrays** — `Type.Array(itemSchema)`.
+- **Constraints** — passed as the second argument
+  (`Type.String({ minLength: 1, format: "email" })`).
+
+### Cross-model `$ref`s
+
+The generator emits direct composition by default:
+
+```ts
+import { PetSchema } from "../../Pet/schemas/Pet.schema";
+
+export const OrderSchema = Type.Object({
+  id: Type.String({ format: "uuid" }),
+  pet: PetSchema,
+  quantity: Type.Integer({ minimum: 1 }),
+});
+```
+
+For shared definitions, wrap with `Type.Ref(...)` plus
+[TypeBox's `$id` system](https://github.com/sinclairzx81/typebox#typeref) —
+useful when feeding the schemas into Ajv with a registry.
+
+## Validating with `Value` helpers
+
+For one-off validation use the `Value` namespace:
+
+```ts
+import { Value } from "@sinclair/typebox/value";
+import { PetSchema, type Pet } from "../models/Pet/schemas/Pet.schema";
+
+if (!Value.Check(PetSchema, body)) {
+  const errors = [...Value.Errors(PetSchema, body)];
+  throw new Error(`Invalid pet: ${errors[0]?.message}`);
+}
+const pet = body as Pet;
+```
+
+## Maximum perf with `TypeCompiler`
+
+For hot paths, pre-compile the schema once at module load:
+
+```ts
+import { TypeCompiler } from "@sinclair/typebox/compiler";
+import { PetSchema, type Pet } from "../models/Pet/schemas/Pet.schema";
+
+const PetChecker = TypeCompiler.Compile(PetSchema);
+
+export function parsePet(body: unknown): Pet {
+  if (!PetChecker.Check(body)) {
+    const first = [...PetChecker.Errors(body)][0];
+    throw new Error(`Invalid pet at ${first.path}: ${first.message}`);
+  }
+  return body as Pet;
+}
+```
+
+`TypeCompiler.Compile` is fast enough that ValIO generated transports use it
+on demand inside hot endpoints. Microbenchmarks place the compiled checker
+ahead of both Zod and Valibot.
+
+## JSON Schema export
+
+A TypeBox schema is JSON Schema verbatim. For roundtripping back into
+OpenAPI or Ajv:
+
+```ts
+import { Type } from "@sinclair/typebox";
+import { PetSchema } from "../models/Pet/schemas/Pet.schema";
+
+const jsonSchema = Type.Strict(PetSchema);
+// jsonSchema is plain JSON, suitable for openapi3-ts / Ajv / swagger-ui
+```
+
+`Type.Strict` strips TypeBox's internal symbols (`Kind`, `Modifier`) so what
+you get is exactly Draft 2020-12 JSON Schema.
+
+## Fastify integration
+
+Fastify accepts TypeBox schemas in route declarations and uses them for both
+request validation and response serialisation:
+
+```ts
+import Fastify from "fastify";
+import { Type } from "@sinclair/typebox";
+import { TypeBoxTypeProvider } from "@fastify/type-provider-typebox";
+import { PetSchema } from "./generated/models/Pet/schemas/Pet.schema";
+
+const PetParamsSchema = Type.Object({ id: Type.Integer() });
+
+const app = Fastify().withTypeProvider<TypeBoxTypeProvider>();
+
+app.get("/pets/:id", {
+  schema: {
+    params: PetParamsSchema,
+    response: { 200: PetSchema, 404: Type.Object({ message: Type.String() }) },
+  },
+}, async (request, reply) => {
+  // request.params.id is typed as number thanks to TypeBoxTypeProvider
+  const pet = await db.pets.find(request.params.id);
+  if (!pet) return reply.code(404).send({ message: "Not found" });
+  return pet; // Fastify serialises through PetSchema (fast-json-stringify)
+});
+```
+
+This pattern is why TypeBox is the recommended validator for Fastify-backed
+APIs: the same generated schema validates incoming requests, serialises
+outgoing responses, and powers your client-side type checking.
+
+## Runtime parsing inside transports
+
+A generated `fetch` transport with TypeBox:
+
+```ts
+// api/getPet/getPet.fetch.ts
+import { Value } from "@sinclair/typebox/value";
+import { PetSchema, type Pet } from "../../models/Pet/schemas/Pet.schema";
+
+export async function getPet(params: GetPetParams, init?: RequestInit): Promise<Pet> {
+  const response = await fetch(`/pets/${params.id}`, init);
+  if (!response.ok) throw await ApiError.fromResponse(response);
+  const body = await response.json();
+  if (!Value.Check(PetSchema, body)) {
+    throw new Error(`Schema mismatch: ${[...Value.Errors(PetSchema, body)][0]?.message}`);
+  }
+  return body;
+}
+```
+
+## See also
+
+<CardGrid>
+  <LinkCard title="Zod schemas" href="/languages/typescript/validation/zod/" description="Largest ecosystem if you don't need JSON Schema." />
+  <LinkCard title="Valibot schemas" href="/languages/typescript/validation/valibot/" description="Smaller bundle when you don't need JSON Schema." />
+  <LinkCard title="undici transport" href="/languages/typescript/transports/undici/" description="Common server-side pairing with TypeBox + Fastify." />
+  <LinkCard title="Validation index" href="/languages/typescript/validation/" description="Comparison and picker." />
+</CardGrid>

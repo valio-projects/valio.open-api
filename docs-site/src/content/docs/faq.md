@@ -1,6 +1,7 @@
 ---
 title: FAQ
 description: Frequently asked questions.
+translationKey: faq
 ---
 
 ## Why one CLI binary, not a NuGet generator?

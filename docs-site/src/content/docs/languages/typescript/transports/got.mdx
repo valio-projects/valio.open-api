@@ -1,0 +1,183 @@
+---
+title: got transport
+description: Got transport for the TypeScript generator (Node-only).
+sidebar:
+  order: 13
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+The `got` transport uses [`got`](https://github.com/sindresorhus/got), a
+mature Node-only HTTP client by Sindre Sorhus. It is the long-standing
+"batteries included" option for server-side TypeScript:
+
+- **HTTP/2 support** via [`http2-wrapper`](https://github.com/szmarczak/http2-wrapper).
+- **Streams** — pipe responses straight to disk or another request.
+- **Rich retries** with backoff, jitter, and per-error policies.
+- **Cookie jars** through `tough-cookie`.
+- **Hooks** — `beforeRequest`, `afterResponse`, `beforeRetry`, `beforeError`.
+
+## When to use
+
+- You're writing **Node-only** code — a CLI, background worker, BFF, scraper.
+- You need **streaming** uploads/downloads beyond simple `Response.body`.
+- You want **richer retry semantics** than ky/fetch.
+- You need **cookie jars** for session-based upstreams.
+
+If you target browsers or Edge runtimes, choose
+[`fetch`](/languages/typescript/transports/fetch/),
+[`ky`](/languages/typescript/transports/ky/), or
+[`ofetch`](/languages/typescript/transports/ofetch/).
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["got"]
+  }
+}
+```
+
+`got@^14` must be installed. Got is ESM-only since v12 — make sure your
+project's `package.json` has `"type": "module"` or your bundler emits ESM.
+
+## Generated transport
+
+```ts
+// api/getPet/getPet.got.ts
+import got, { type Got, type OptionsOfJSONResponseBody } from "got";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../../models/Pet/Pet";
+import type { GetPetParams } from "./getPet.params";
+
+export async function getPet(
+  params: GetPetParams,
+  options?: OptionsOfJSONResponseBody,
+  client: Got = got,
+): Promise<Pet> {
+  const body = await client
+    .get(`pets/${encodeURIComponent(params.id)}`, { ...options, responseType: "json" })
+    .json<unknown>();
+  return PetSchema.parse(body); // Zod 4 runtime validation
+}
+```
+
+## Custom instance with hooks
+
+```ts
+// src/runtime/api.ts
+import got from "got";
+
+export const api = got.extend({
+  prefixUrl: process.env.API_URL ?? "http://localhost:8080",
+  timeout: { request: 10_000 },
+  retry: {
+    limit: 3,
+    methods: ["GET", "PUT", "HEAD", "DELETE", "OPTIONS", "TRACE"],
+    statusCodes: [408, 413, 429, 500, 502, 503, 504, 521, 522, 524],
+    errorCodes: ["ETIMEDOUT", "ECONNRESET", "ECONNREFUSED", "EAI_AGAIN"],
+    backoffLimit: 5_000,
+  },
+  hooks: {
+    beforeRequest: [
+      (options) => {
+        options.headers.authorization = `Bearer ${process.env.API_TOKEN}`;
+        options.headers["x-trace-id"] = crypto.randomUUID();
+      },
+    ],
+    beforeError: [
+      (error) => {
+        console.error(`[api] ${error.request?.options.method} ${error.request?.requestUrl} -> ${error.code}`);
+        return error;
+      },
+    ],
+  },
+});
+```
+
+Pass the extended instance into the generated client:
+
+```ts
+import { api } from "./runtime/api";
+import { getPet } from "./api/getPet/getPet.got";
+
+const pet = await getPet({ id: "42" }, undefined, api);
+```
+
+## Streams for large downloads
+
+Got's stream API is unique among the supported transports — pipe a response
+straight to disk without buffering:
+
+```ts
+import { createWriteStream } from "node:fs";
+import { pipeline } from "node:stream/promises";
+import { api } from "./runtime/api";
+
+await pipeline(
+  api.stream("/exports/snapshot.ndjson.gz"),
+  createWriteStream("./snapshot.ndjson.gz"),
+);
+```
+
+For uploads, pipe a `Readable` into a Got stream:
+
+```ts
+import { createReadStream } from "node:fs";
+import FormData from "form-data";
+import { api } from "./runtime/api";
+
+const form = new FormData();
+form.append("file", createReadStream("./report.pdf"));
+const response = await api.post("/uploads", { body: form }).json();
+```
+
+## Cookie jar
+
+Use a persistent cookie jar for session-based upstreams:
+
+```ts
+import { CookieJar } from "tough-cookie";
+import got from "got";
+
+const cookieJar = new CookieJar();
+export const api = got.extend({ prefixUrl: "https://example.com", cookieJar });
+
+await api.post("auth/login", { json: { user, pass } });
+// subsequent calls automatically include the session cookie
+const me = await api.get("auth/me").json();
+```
+
+## Error handling
+
+```ts
+import { HTTPError, RequestError, TimeoutError } from "got";
+
+try {
+  const pet = await getPet({ id: "42" });
+} catch (err) {
+  if (err instanceof HTTPError) {
+    console.error(`HTTP ${err.response.statusCode}`, err.response.body);
+  } else if (err instanceof TimeoutError) {
+    console.error("Timed out waiting for", err.request?.requestUrl);
+  } else if (err instanceof RequestError) {
+    console.error("Network failure", err.code);
+  } else {
+    throw err;
+  }
+}
+```
+
+## See also
+
+<CardGrid>
+  <LinkCard title="undici transport" href="/languages/typescript/transports/undici/" description="Lower-level Node client with connection pools." />
+  <LinkCard title="ofetch transport" href="/languages/typescript/transports/ofetch/" description="Isomorphic alternative if you need browser support too." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="The .parse() step shown in generated code." />
+  <LinkCard title="TanStack Query (Node)" href="/languages/typescript/query/tanstack/" description="Pair Got with TanStack on the server." />
+</CardGrid>

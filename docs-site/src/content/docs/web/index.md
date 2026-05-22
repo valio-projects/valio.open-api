@@ -1,6 +1,7 @@
 ---
 title: Web UI
 description: Running ValIO.Web in a browser.
+translationKey: web
 ---
 
 `ValIO.Web` is an ASP.NET Core 10 + Blazor Server app. It exposes the same

@@ -1,0 +1,172 @@
+---
+title: Reqwest + serde + Tokio
+description: Exact stack to generate an async Rust API client using Reqwest, serde, and the Tokio runtime.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're building an async Rust service or CLI and want strongly-typed
+DTOs deserialized via `serde_json`, with `reqwest` doing the HTTP heavy
+lifting on top of Tokio. This is the default Rust async stack — most
+crates you'll integrate with already depend on it.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Rust edition | 2021 |
+| Rust toolchain | 1.75+ |
+| `tokio` | 1.36+ |
+| `reqwest` | 0.12+ (with `json` feature) |
+| `serde` / `serde_json` | 1.0+ |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "rust",
+      "schema": "./openapi.yaml",
+      "outputPath": "./crates",
+      "options": {
+        "crateName": "petstore_client",
+        "anyMapping": "json-value"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "client"
+      }
+    }
+  }
+}
+```
+
+`anyMapping: "json-value"` keeps IR `Any` fields as
+`serde_json::Value`, which is the right call when you'd rather not lose
+fidelity. Use `"string"` if the source API guarantees `Any` is always a
+string.
+
+## What gets generated
+
+One `#[derive(Serialize, Deserialize)] struct` per OpenAPI schema with
+`#[serde(rename = "...")]` preserving JSON casing, plus one `*Client`
+per OpenAPI tag wrapping `reqwest::Client`. Every operation is
+`async fn` returning `Result<T, Error>`. A `Cargo.toml` is emitted at
+the crate root.
+
+## File tree
+
+```
+crates/petstore_client/
+├── Cargo.toml
+└── src/
+    ├── lib.rs
+    ├── models/
+    │   ├── mod.rs
+    │   └── pet.rs
+    └── client/
+        ├── mod.rs
+        └── pets_client.rs
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="pet.rs">
+
+    ```rust
+    use serde::{Deserialize, Serialize};
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub struct Pet {
+        #[serde(rename = "id")]
+        pub id: i64,
+
+        #[serde(rename = "name")]
+        pub name: String,
+
+        #[serde(rename = "tag", skip_serializing_if = "Option::is_none")]
+        pub tag: Option<String>,
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="pets_client.rs">
+
+    ```rust
+    use reqwest::Client;
+    use crate::models::pet::Pet;
+
+    #[derive(Clone)]
+    pub struct PetsClient {
+        base_url: String,
+        http: Client,
+    }
+
+    impl PetsClient {
+        pub fn new(base_url: impl Into<String>) -> Self {
+            Self { base_url: base_url.into(), http: Client::new() }
+        }
+
+        pub async fn list_pets(&self) -> Result<Vec<Pet>, reqwest::Error> {
+            let url = format!("{}/pets", self.base_url);
+            self.http.get(url).send().await?.error_for_status()?.json().await
+        }
+
+        pub async fn create_pet(&self, body: &Pet) -> Result<Pet, reqwest::Error> {
+            let url = format!("{}/pets", self.base_url);
+            self.http
+                .post(url)
+                .json(body)
+                .send()
+                .await?
+                .error_for_status()?
+                .json()
+                .await
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="main.rs">
+
+    ```rust
+    use petstore_client::client::pets_client::PetsClient;
+
+    #[tokio::main]
+    async fn main() -> anyhow::Result<()> {
+        let client = PetsClient::new("https://petstore.example.com/v1");
+        let pets = client.list_pets().await?;
+        for pet in pets {
+            println!("{}: {}", pet.id, pet.name);
+        }
+        Ok(())
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="reqwest" href="https://docs.rs/reqwest/" description="Ergonomic async HTTP client built on top of hyper." />
+<LinkCard title="serde" href="https://serde.rs/" description="The de-facto serialization framework for Rust." />
+<LinkCard title="Tokio" href="https://tokio.rs/" description="The async runtime reqwest is designed for." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Rust overview](/languages/rust/)

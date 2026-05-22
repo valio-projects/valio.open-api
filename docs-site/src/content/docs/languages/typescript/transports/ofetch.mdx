@@ -1,0 +1,187 @@
+---
+title: ofetch transport
+description: unjs/ofetch transport for the TypeScript generator.
+sidebar:
+  order: 14
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+The `ofetch` transport uses [`ofetch`](https://github.com/unjs/ofetch), the
+universal fetch library by [UnJS](https://unjs.io) that powers Nuxt 3, Nitro,
+and H3. It is Fetch-shaped but adds:
+
+- **Auto JSON body parsing and serialization** — no manual `.json()`.
+- **Query helper** — pass a `query` object and ofetch builds the search string.
+- **Built-in retry** with status-code filtering.
+- **Universal runtime** — same code in browser, Node, Bun, Deno, Workers.
+- **`$fetch.create` instances** — like `axios.create`, but Fetch-based.
+
+If your stack is Nuxt or you're trying to use one fetch primitive everywhere,
+ofetch is the easiest pick.
+
+## When to use
+
+- You're building a **Nuxt 3 / H3 / Nitro** application — ofetch is `$fetch`.
+- You want a **universal isomorphic** fetch with retries and auto-JSON.
+- You want runtime portability — SSR on the server, hydration on the client,
+  one client module.
+- You're moving from axios and want a Fetch-shaped equivalent.
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["ofetch"]
+  }
+}
+```
+
+`ofetch@^1` must be installed in the consumer project.
+
+## Generated transport
+
+```ts
+// api/getPet/getPet.ofetch.ts
+import { ofetch, type $Fetch, type FetchOptions } from "ofetch";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../../models/Pet/Pet";
+import type { GetPetParams } from "./getPet.params";
+
+export async function getPet(
+  params: GetPetParams,
+  options?: FetchOptions,
+  client: $Fetch = ofetch,
+): Promise<Pet> {
+  const body = await client<unknown>(`/pets/${encodeURIComponent(params.id)}`, {
+    method: "GET",
+    ...options,
+  });
+  return PetSchema.parse(body); // Zod 4 runtime validation
+}
+```
+
+ofetch automatically parses JSON responses based on `Content-Type`, so the
+generated function works with the raw return value.
+
+## Native body parsing and query handling
+
+ofetch encodes request bodies and parses responses automatically. The
+generator emits a `query` argument for operations with query parameters:
+
+```ts
+// generated
+export async function listPets(
+  params: ListPetsParams,
+  options?: FetchOptions,
+  client: $Fetch = ofetch,
+) {
+  const body = await client<unknown>("/pets", {
+    method: "GET",
+    query: { tag: params.tag, limit: params.limit },
+    ...options,
+  });
+  return PetsArraySchema.parse(body);
+}
+```
+
+## $fetch.create instance with baseURL
+
+For shared config, build an instance once at app start:
+
+```ts
+// src/runtime/api.ts
+import { ofetch } from "ofetch";
+import { useAuthStore } from "@/stores/auth";
+
+export const api = ofetch.create({
+  baseURL: useRuntimeConfig().public.apiUrl, // Nuxt
+  retry: 2,
+  retryStatusCodes: [408, 429, 500, 502, 503, 504],
+  onRequest({ options }) {
+    const auth = useAuthStore();
+    options.headers = new Headers(options.headers);
+    if (auth.token) options.headers.set("Authorization", `Bearer ${auth.token}`);
+    options.headers.set("X-Trace-Id", crypto.randomUUID());
+  },
+  onResponseError({ response }) {
+    if (response.status === 401) navigateTo("/login");
+  },
+});
+```
+
+Then inject the instance:
+
+```ts
+import { api } from "@/runtime/api";
+import { getPet } from "@/api/getPet/getPet.ofetch";
+
+const pet = await getPet({ id: "42" }, undefined, api);
+```
+
+## Retry behaviour
+
+Retries are configured per-call or per-instance. The defaults are
+`retry: 1` for `GET`/`HEAD` and `0` for write methods:
+
+```ts
+const expensiveCall = api.create({ retry: 5, retryDelay: 500 });
+```
+
+## Server vs client behaviour
+
+Inside Nuxt 3, ofetch (or `$fetch`) automatically uses
+[request memoization](https://nuxt.com/docs/api/utils/dollarfetch) on the
+server during SSR, so duplicate inflight requests share a single response.
+
+On the client, ofetch is a normal Fetch wrapper. You can detect mode if
+needed:
+
+```ts
+import { ofetch } from "ofetch";
+
+export const api = ofetch.create({
+  baseURL: import.meta.server ? "http://localhost:3000" : "/",
+  // server: talk directly; client: same-origin path
+});
+```
+
+## Error handling
+
+ofetch throws `FetchError` with `status`, `statusText`, and a parsed `data`
+body:
+
+```ts
+import { FetchError } from "ofetch";
+
+try {
+  const pet = await getPet({ id: "42" });
+} catch (err) {
+  if (err instanceof FetchError) {
+    if (err.status === 404) showNotFound();
+    else reportError({ status: err.status, body: err.data });
+  } else {
+    throw err;
+  }
+}
+```
+
+## Edge / serverless notes
+
+ofetch works in Cloudflare Workers, Vercel Edge, Deno Deploy, and Bun without
+configuration. Avoid Node-only retry plugins; the built-in retry covers most
+cases.
+
+## See also
+
+<CardGrid>
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="Zero-dep alternative if you don't need retries." />
+  <LinkCard title="ky transport" href="/languages/typescript/transports/ky/" description="Comparable Fetch wrapper with hooks." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="Runtime parsing inside generated clients." />
+  <LinkCard title="Next + ofetch stack" href="/stacks/typescript/nextjs-ofetch-zod4/" description="End-to-end Next.js example." />
+</CardGrid>

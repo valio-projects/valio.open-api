@@ -1,6 +1,7 @@
 ---
 title: TypeScript
 description: TypeScript generator options and outputs.
+translationKey: lang-typescript
 ---
 
 The TypeScript plugin (`languageId: "typescript"`) is the largest and most

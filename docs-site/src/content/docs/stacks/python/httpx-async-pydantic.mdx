@@ -1,0 +1,158 @@
+---
+title: httpx async + Pydantic v2
+description: Exact stack to generate an async httpx-based API client with Pydantic v2 models.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're building an async Python service (FastAPI, Starlette, AnyIO,
+asyncio worker) and want generated clients that drop straight into
+`async def` handlers without blocking the event loop. Pydantic v2 gives
+you fast validation, OpenAPI-compatible schemas, and the ability to feed
+the same models back into FastAPI response definitions.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Python | 3.11 (also 3.10 / 3.12 / 3.13) |
+| `httpx` | 0.27+ |
+| `pydantic` | 2.6+ |
+| `anyio` | 4.0+ (transitive via httpx) |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "python",
+      "schema": "./openapi.yaml",
+      "outputPath": "./src/petstore_client",
+      "options": {
+        "pythonVersion": "3.11",
+        "httpxMode": "async",
+        "validator": "pydantic",
+        "rootModule": "petstore_client"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "client"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+One Pydantic v2 `BaseModel` per OpenAPI schema (with `Field(alias=...)`
+preserving JSON casing), and one `*Client` per OpenAPI tag built on
+`httpx.AsyncClient`. Every operation is an `async def` returning the
+typed Pydantic model.
+
+## File tree
+
+```
+src/petstore_client/
+├── __init__.py
+├── models/
+│   ├── __init__.py
+│   └── pet.py
+└── client/
+    ├── __init__.py
+    └── pets_client.py
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="pet.py">
+
+    ```python
+    from pydantic import BaseModel, ConfigDict, Field
+
+
+    class Pet(BaseModel):
+        model_config = ConfigDict(populate_by_name=True)
+
+        id: int = Field(alias="id")
+        name: str = Field(alias="name", min_length=1)
+        tag: str | None = Field(default=None, alias="tag")
+    ```
+
+  </TabItem>
+  <TabItem label="pets_client.py">
+
+    ```python
+    from __future__ import annotations
+
+    import httpx
+
+    from ..models.pet import Pet
+
+
+    class PetsClient:
+        def __init__(self, client: httpx.AsyncClient) -> None:
+            self._client = client
+
+        async def list_pets(self) -> list[Pet]:
+            response = await self._client.get("/pets")
+            response.raise_for_status()
+            return [Pet.model_validate(item) for item in response.json()]
+
+        async def create_pet(self, body: Pet) -> Pet:
+            response = await self._client.post(
+                "/pets",
+                json=body.model_dump(by_alias=True, exclude_none=True),
+            )
+            response.raise_for_status()
+            return Pet.model_validate(response.json())
+    ```
+
+  </TabItem>
+  <TabItem label="main.py">
+
+    ```python
+    # main.py — FastAPI consumer
+    from fastapi import FastAPI
+    import httpx
+
+    from petstore_client.client.pets_client import PetsClient
+
+    app = FastAPI()
+
+    @app.get("/pets")
+    async def proxy_list_pets() -> list[dict]:
+        async with httpx.AsyncClient(base_url="https://petstore.example.com/v1") as http:
+            client = PetsClient(http)
+            pets = await client.list_pets()
+            return [p.model_dump() for p in pets]
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="httpx" href="https://www.python-httpx.org/" description="A next-generation HTTP client for Python with sync and async APIs." />
+<LinkCard title="Pydantic v2" href="https://docs.pydantic.dev/latest/" description="Data validation backed by a Rust core, used by FastAPI." />
+<LinkCard title="FastAPI" href="https://fastapi.tiangolo.com/" description="Async Python web framework with first-class Pydantic integration." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Python overview](/languages/python/)
+- [httpx sync + Pydantic v2](/stacks/python/httpx-sync-pydantic/)

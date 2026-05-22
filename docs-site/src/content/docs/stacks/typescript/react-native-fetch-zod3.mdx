@@ -1,0 +1,171 @@
+---
+title: React Native + Fetch + Zod 3 + TanStack Query
+description: Mobile React Native stack with native fetch, AbortController-based cancellation, and Zod 3.
+sidebar:
+  order: 10
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're building a React Native app (Expo or bare workflow) and want
+generated clients that behave well on mobile networks: every request gets
+an `AbortSignal`, retries are driven by TanStack Query rather than the
+transport, and there's no axios peer dep to bloat your bundle. Zod 3 is
+preferred over Zod 4 here because it has the widest compatibility with
+existing React Native libraries (notably some form libs and async-storage
+adapters that haven't yet caught up to Zod 4).
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `react-native`                | 0.74.0    |
+| `react`                       | 18.2.0    |
+| `@tanstack/react-query`       | 5.0.0     |
+| `zod`                         | 3.22.0    |
+| Expo *(optional)*             | SDK 51    |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["fetch"],
+        "validation": "zod3",
+        "queryWrapper": "tanstack-react",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+Zod 3 schemas per model. A `<op>.fetch.ts` transport using the React
+Native `fetch` global, accepting an `AbortSignal` for cancellation when
+the user navigates away. A `<op>.tanstack-react.ts` hook wires the
+transport into `useQuery` so you get retries-on-reconnect and refetch-on-
+app-focus out of the box.
+
+## File tree
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet/Pet.ts
+│   └── Pets/Pets.ts
+├── api/
+│   ├── listPets/
+│   │   ├── listPets.params.ts
+│   │   ├── listPets.fetch.ts
+│   │   └── listPets.tanstack-react.ts
+│   └── createPet/
+│       ├── createPet.params.ts
+│       ├── createPet.fetch.ts
+│       └── createPet.tanstack-react.ts
+├── queryKeys.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.ts">
+
+    ```ts
+    // models/Pet/Pet.ts
+    import { z } from "zod";
+
+    export const PetSchema = z.object({
+      id: z.number().int(),
+      name: z.string().min(1),
+      tag: z.string().optional(),
+    });
+
+    export type Pet = z.infer<typeof PetSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.fetch.ts">
+
+    ```ts
+    // api/listPets/listPets.fetch.ts
+    import type { Pets } from "../../models/Pets/Pets";
+
+    export async function listPets(
+      init?: { signal?: AbortSignal }
+    ): Promise<Pets> {
+      const res = await fetch("https://api.petstore.example/pets", {
+        method: "GET",
+        signal: init?.signal,
+      });
+      if (!res.ok) throw new Error(`listPets failed: ${res.status}`);
+      return (await res.json()) as Pets;
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsScreen.tsx">
+
+    ```tsx
+    // screens/PetsScreen.tsx
+    import { ActivityIndicator, FlatList, Text } from "react-native";
+    import { useListPets } from "../api/generated/api/listPets/listPets.tanstack-react";
+
+    export function PetsScreen() {
+      const { data, isLoading, refetch, isRefetching } = useListPets();
+
+      if (isLoading) return <ActivityIndicator />;
+
+      return (
+        <FlatList
+          data={data}
+          keyExtractor={(item) => String(item.id)}
+          renderItem={({ item }) => <Text>{item.name}</Text>}
+          refreshing={isRefetching}
+          onRefresh={refetch}
+        />
+      );
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="React Native" href="https://reactnative.dev/" description="Build native apps for iOS and Android with React" />
+<LinkCard title="Expo" href="https://expo.dev/" description="Open-source platform for universal React Native apps" />
+<LinkCard title="@tanstack/react-query" href="https://tanstack.com/query/latest" description="Server-state management with offline support" />
+<LinkCard title="Zod 3" href="https://zod.dev/" description="TypeScript-first schema validation" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / Fetch](/languages/typescript/transports/fetch/)
+- [React + TanStack + Fetch + Zod 3 (web)](/stacks/typescript/react-tanstack-fetch-zod3/)

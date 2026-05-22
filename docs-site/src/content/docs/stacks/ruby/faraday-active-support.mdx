@@ -1,0 +1,168 @@
+---
+title: Faraday + ActiveSupport
+description: Exact stack to generate a Ruby client using Faraday for HTTP, with optional ActiveSupport sugar.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're shipping a Ruby gem, a Rails service, or a standalone Sinatra
+app and want a typed-ish wrapper around a JSON HTTP API. Faraday is the
+de-facto Ruby HTTP gem — it's swappable middleware (retries, logging,
+auth) on top of an adapter (Net::HTTP, Typhoeus, Excon, ...). The
+ActiveSupport bits are entirely optional but very nice when you're
+already inside Rails.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Ruby | 3.1+ |
+| `faraday` | 2.9+ |
+| `faraday-net_http` | 3.1+ (adapter, transitive in Faraday 2) |
+| `activesupport` (optional) | 7.1+ |
+| `json` | stdlib |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "ruby",
+      "schema": "./openapi.yaml",
+      "outputPath": "./lib",
+      "options": {
+        "moduleName": "PetStore"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "client"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+One Ruby class per OpenAPI schema with attribute readers/writers and a
+`from_hash` / `to_hash` pair, plus one `*Client` per OpenAPI tag
+wrapping a `Faraday::Connection`. Each operation returns a parsed
+model instance.
+
+## File tree
+
+```
+lib/pet_store/
+├── models/
+│   └── pet.rb
+└── client/
+    └── pets_client.rb
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="pet.rb">
+
+    ```ruby
+    module PetStore
+      module Models
+        class Pet
+          attr_accessor :id, :name, :tag
+
+          def initialize(id:, name:, tag: nil)
+            @id = id
+            @name = name
+            @tag = tag
+          end
+
+          def self.from_hash(hash)
+            new(id: hash["id"], name: hash["name"], tag: hash["tag"])
+          end
+
+          def to_hash
+            h = { "id" => id, "name" => name }
+            h["tag"] = tag unless tag.nil?
+            h
+          end
+        end
+      end
+    end
+    ```
+
+  </TabItem>
+  <TabItem label="pets_client.rb">
+
+    ```ruby
+    require "faraday"
+    require "json"
+    require_relative "../models/pet"
+
+    module PetStore
+      module Client
+        class PetsClient
+          def initialize(base_url:, conn: nil)
+            @conn = conn || Faraday.new(url: base_url) do |f|
+              f.request :json
+              f.response :raise_error
+            end
+          end
+
+          def list_pets
+            response = @conn.get("/pets")
+            JSON.parse(response.body).map { |item| Models::Pet.from_hash(item) }
+          end
+
+          def create_pet(pet)
+            response = @conn.post("/pets", JSON.dump(pet.to_hash),
+                                  "Content-Type" => "application/json")
+            Models::Pet.from_hash(JSON.parse(response.body))
+          end
+        end
+      end
+    end
+    ```
+
+  </TabItem>
+  <TabItem label="bin/list-pets">
+
+    ```ruby
+    # bin/list-pets
+    require "pet_store/client/pets_client"
+
+    client = PetStore::Client::PetsClient.new(base_url: "https://petstore.example.com/v1")
+    client.list_pets.each do |pet|
+      puts "#{pet.id}: #{pet.name}"
+    end
+    ```
+
+  </TabItem>
+</Tabs>
+
+If you're inside Rails, `require "active_support/core_ext/hash"` to use
+`HashWithIndifferentAccess` on the parsed bodies, and lean on
+`ActiveSupport::Notifications` to instrument the Faraday calls.
+
+## Related packages
+
+<LinkCard title="Faraday" href="https://lostisland.github.io/faraday/" description="Composable HTTP client wrapping any adapter, with middleware." />
+<LinkCard title="ActiveSupport" href="https://guides.rubyonrails.org/active_support_core_extensions.html" description="Ruby standard library extensions that ship with Rails." />
+<LinkCard title="faraday-net_http" href="https://github.com/lostisland/faraday-net_http" description="The default Net::HTTP adapter for Faraday 2." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Ruby overview](/languages/ruby/)

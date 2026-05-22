@@ -1,0 +1,189 @@
+---
+title: package:http (null-safe)
+description: Exact stack to generate a Dart 3 null-safe client using package:http, suitable for Flutter.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're building a Flutter app or a pure-Dart CLI and want the smallest
+possible HTTP dependency. `package:http` is the Dart team's own
+client — it's tiny, plays well with `flutter_test`'s
+`MockClient`, and integrates trivially with Riverpod/Bloc/Provider.
+ValIO emits plain Dart classes that don't lock you into a specific
+client library.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Dart SDK | 3.0+ |
+| Flutter (optional) | 3.13+ |
+| `http` | 1.2+ |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "dart",
+      "schema": "./openapi.yaml",
+      "outputPath": "./lib/api",
+      "options": {
+        "packageName": "petstore_client",
+        "anyMapping": "object"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "client"
+      }
+    }
+  }
+}
+```
+
+`anyMapping: "object"` is the strict-null-safety choice: IR `Any`
+fields become `Object?` rather than `dynamic`, which keeps the analyzer
+honest. Switch to `dynamic` if you want flexibility, or `string` if the
+upstream API only ever returns strings for those fields.
+
+## What gets generated
+
+One Dart `class` per OpenAPI schema with `final` fields, a const
+constructor, and `fromJson` / `toJson` methods. One `*Client` per tag
+with `Future<T>` operations. The default emit assumes `package:dio`;
+this recipe wires the generated DTOs into a hand-written
+`package:http` adapter.
+
+## File tree
+
+```
+lib/api/
+├── models/
+│   └── pet.dart
+└── client/
+    └── pets_client.dart
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="pet.dart">
+
+    ```dart
+    class Pet {
+      const Pet({required this.id, required this.name, this.tag});
+
+      final int id;
+      final String name;
+      final String? tag;
+
+      factory Pet.fromJson(Map<String, Object?> json) => Pet(
+            id: json['id'] as int,
+            name: json['name'] as String,
+            tag: json['tag'] as String?,
+          );
+
+      Map<String, Object?> toJson() => {
+            'id': id,
+            'name': name,
+            if (tag != null) 'tag': tag,
+          };
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="pets_client.dart">
+
+    ```dart
+    // Hand-written client for package:http
+    import 'dart:convert';
+    import 'package:http/http.dart' as http;
+
+    import '../models/pet.dart';
+
+    class PetsClient {
+      PetsClient({required this.baseUrl, http.Client? client})
+          : _client = client ?? http.Client();
+
+      final String baseUrl;
+      final http.Client _client;
+
+      Future<List<Pet>> listPets() async {
+        final response = await _client.get(Uri.parse('$baseUrl/pets'));
+        if (response.statusCode != 200) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+        final List<dynamic> body = jsonDecode(response.body) as List<dynamic>;
+        return body.map((j) => Pet.fromJson(j as Map<String, Object?>)).toList();
+      }
+
+      Future<Pet> createPet(Pet body) async {
+        final response = await _client.post(
+          Uri.parse('$baseUrl/pets'),
+          headers: const {'Content-Type': 'application/json'},
+          body: jsonEncode(body.toJson()),
+        );
+        if (response.statusCode != 201) {
+          throw Exception('HTTP ${response.statusCode}');
+        }
+        return Pet.fromJson(jsonDecode(response.body) as Map<String, Object?>);
+      }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="pet_list_page.dart">
+
+    ```dart
+    // Flutter consumer
+    import 'package:flutter/material.dart';
+
+    import 'package:petstore_client/api/client/pets_client.dart';
+    import 'package:petstore_client/api/models/pet.dart';
+
+    class PetListPage extends StatelessWidget {
+      PetListPage({super.key});
+
+      final _client = PetsClient(baseUrl: 'https://petstore.example.com/v1');
+
+      @override
+      Widget build(BuildContext context) {
+        return FutureBuilder<List<Pet>>(
+          future: _client.listPets(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return const CircularProgressIndicator();
+            return ListView(
+              children: [for (final pet in snapshot.data!) Text('${pet.id}: ${pet.name}')],
+            );
+          },
+        );
+      }
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="package:http" href="https://pub.dev/packages/http" description="Dart team's lightweight composable HTTP client." />
+<LinkCard title="Flutter" href="https://flutter.dev/" description="The UI toolkit this stack is most often used inside." />
+<LinkCard title="Riverpod" href="https://riverpod.dev/" description="Recommended state-management library for sharing clients across widgets." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Dart overview](/languages/dart/)

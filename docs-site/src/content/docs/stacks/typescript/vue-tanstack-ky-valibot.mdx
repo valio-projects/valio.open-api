@@ -1,0 +1,174 @@
+---
+title: Vue 3 + TanStack Query + Ky + Valibot
+description: Composition-API composables backed by Ky + Valibot for minimal bundle size.
+sidebar:
+  order: 3
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're on Vue 3 with `<script setup>`, you want server-state caching but a
+much smaller schema lib than Zod, and Ky's retry/hooks ergonomics appeal to
+you. Valibot is tree-shakeable per-validator, so a handful of small schemas
+add only a few hundred bytes of code each — perfect for marketing or
+e-commerce sites where bundle weight matters.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `vue`                         | 3.4.0     |
+| `@tanstack/vue-query`         | 5.0.0     |
+| `ky`                          | 1.0.0     |
+| `valibot`                     | 0.30.0    |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["ky"],
+        "validation": "valibot",
+        "queryWrapper": "tanstack-vue",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+A Valibot schema (`v.object({...})`) per model, with `v.InferOutput<typeof ...>`
+for the inferred type. A `<op>.ky.ts` file using a Ky instance you control,
+and a `<op>.tanstack-vue.ts` composable using `useQuery` from
+`@tanstack/vue-query` that returns `Ref`s for `data`, `isLoading`, etc.
+
+## File tree
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet/Pet.ts                # v.object + v.InferOutput
+│   └── Pets/Pets.ts
+├── api/
+│   ├── listPets/
+│   │   ├── listPets.params.ts
+│   │   ├── listPets.ky.ts
+│   │   └── listPets.tanstack-vue.ts
+│   └── createPet/
+│       ├── createPet.params.ts
+│       ├── createPet.ky.ts
+│       └── createPet.tanstack-vue.ts
+├── kyInstance.ts                 # default Ky instance with prefixUrl
+├── queryKeys.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.ts">
+
+    ```ts
+    // models/Pet/Pet.ts
+    import * as v from "valibot";
+
+    export const PetSchema = v.object({
+      id: v.pipe(v.number(), v.integer()),
+      name: v.pipe(v.string(), v.minLength(1)),
+      tag: v.optional(v.string()),
+    });
+
+    export type Pet = v.InferOutput<typeof PetSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.ky.ts">
+
+    ```ts
+    // api/listPets/listPets.ky.ts
+    import { kyClient } from "../../kyInstance";
+    import type { Pets } from "../../models/Pets/Pets";
+
+    export async function listPets(): Promise<Pets> {
+      return kyClient.get("pets").json<Pets>();
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.tanstack-vue.ts">
+
+    ```ts
+    // api/listPets/listPets.tanstack-vue.ts
+    import { useQuery } from "@tanstack/vue-query";
+    import * as v from "valibot";
+    import { listPets } from "./listPets.ky";
+    import { PetsSchema, type Pets } from "../../models/Pets/Pets";
+    import { queryKeys } from "../../queryKeys";
+
+    export function useListPets() {
+      return useQuery<Pets>({
+        queryKey: queryKeys.listPets(),
+        queryFn: async () => v.parse(PetsSchema, await listPets()),
+      });
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsPage.vue">
+
+    ```vue
+    <script setup lang="ts">
+    import { useListPets } from "@/api/generated/api/listPets/listPets.tanstack-vue";
+
+    const { data: pets, isLoading } = useListPets();
+    </script>
+
+    <template>
+      <p v-if="isLoading">Loading…</p>
+      <ul v-else>
+        <li v-for="pet in pets" :key="pet.id">{{ pet.name }}</li>
+      </ul>
+    </template>
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Vue 3" href="https://vuejs.org/" description="The progressive JavaScript framework" />
+<LinkCard title="Ky" href="https://github.com/sindresorhus/ky" description="Tiny fetch wrapper with retries and hooks" />
+<LinkCard title="Valibot" href="https://valibot.dev/" description="Modular, tree-shakeable schema validation" />
+<LinkCard title="@tanstack/vue-query" href="https://tanstack.com/query/latest" description="Server-state management adapted for Vue 3" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / Ky](/languages/typescript/transports/ky/)
+- [TypeScript overview](/languages/typescript/)

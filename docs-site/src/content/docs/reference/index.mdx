@@ -1,0 +1,26 @@
+---
+title: Reference
+description: Glossary, exit codes, tech stack, and plugin IDs.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+Quick lookups that don't fit neatly into the narrative pages.
+
+<CardGrid>
+  <LinkCard title="Glossary"
+            description="IR, AST, sink, transport, and other terms used across the docs."
+            href="/reference/glossary/" />
+
+  <LinkCard title="Exit codes"
+            description="Every value valio returns to the shell and what it means."
+            href="/reference/exit-codes/" />
+
+  <LinkCard title="Tech stack"
+            description=".NET, Avalonia, Blazor, MudBlazor, Astro Starlight — the full list."
+            href="/reference/stack/" />
+
+  <LinkCard title="Plugin IDs"
+            description="The 11 generator plugins shipped today and what each emits."
+            href="/reference/plugin-ids/" />
+</CardGrid>

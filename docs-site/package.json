@@ -3,16 +3,36 @@
   "type": "module",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=10.0.0"
+  },
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "clean": "rimraf dist .astro node_modules/.cache",
+    "lint:md": "markdownlint-cli2 \"src/content/**/*.{md,mdx}\"",
+    "lint:links": "astro build",
+    "format": "prettier --write \"src/**/*.{md,mdx,ts,astro}\" \"*.{mjs,json}\"",
+    "format:check": "prettier --check \"src/**/*.{md,mdx,ts,astro}\" \"*.{mjs,json}\"",
+    "i18n:report": "node scripts/check-translations.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.36.0",
     "astro": "^5.16.0",
-    "sharp": "^0.34.0"
+    "sharp": "^0.34.0",
+    "starlight-image-zoom": "^0.13.0",
+    "starlight-links-validator": "^0.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "markdownlint-cli2": "^0.14.0",
+    "prettier": "^3.3.0",
+    "prettier-plugin-astro": "^0.14.0",
+    "rimraf": "^6.0.0",
+    "typescript": "^5.6.0"
   }
 }

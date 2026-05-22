@@ -1,6 +1,7 @@
 ---
 title: C#
 description: C# generator options and outputs.
+translationKey: lang-csharp
 ---
 
 The C# plugin (`languageId: "csharp"`) emits DTOs and a strongly-typed

@@ -1,0 +1,159 @@
+---
+title: SolidStart + Fetch + TypeBox
+description: SolidStart-compatible fetch clients with JSON-Schema-aligned TypeBox runtime types.
+sidebar:
+  order: 5
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## When to use
+
+You're on SolidStart, want isomorphic fetch (server and client routes use
+the same code path), and TypeBox is appealing because it produces real
+JSON-Schema objects — perfect if you also want to feed them to OpenAPI
+diffing, JSON-Schema doc generators, or share schemas with a Fastify
+backend that already uses TypeBox. Pair this with TanStack Solid Query if
+you also need caching; this page shows the minimal version without it.
+
+## Required versions
+
+| Package                       | Minimum   |
+|-------------------------------|-----------|
+| `solid-js`                    | 1.8.0     |
+| `@solidjs/start`              | 1.0.0     |
+| `@sinclair/typebox`           | 0.32.0    |
+| TypeScript                    | 5.2       |
+
+## CLI invocation
+
+```sh
+valio generate \
+  --config ./valio.config.json \
+  -p PetstoreApi
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports": ["solid"],
+        "validation": "typebox",
+        "enumFormat": "union"
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+## What gets generated
+
+Each model becomes a `Type.Object({...})` schema and a `Static<typeof ...>`
+TypeScript type. Each operation gets a `<op>.solid.ts` file that uses the
+SolidStart-aware `fetch` global so the same client works in server functions
+and client components. Responses are validated through
+`Value.Check(Schema, raw)` (lazy import path) so payloads can fail fast in
+dev.
+
+## File tree
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet/Pet.ts                # Type.Object + Static<...>
+│   └── Pets/Pets.ts
+├── api/
+│   ├── listPets/
+│   │   ├── listPets.params.ts
+│   │   └── listPets.solid.ts
+│   └── createPet/
+│       ├── createPet.params.ts
+│       └── createPet.solid.ts
+└── index.ts
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.ts">
+
+    ```ts
+    // models/Pet/Pet.ts
+    import { Type, type Static } from "@sinclair/typebox";
+
+    export const PetSchema = Type.Object({
+      id: Type.Integer(),
+      name: Type.String({ minLength: 1 }),
+      tag: Type.Optional(Type.String()),
+    });
+
+    export type Pet = Static<typeof PetSchema>;
+    ```
+
+  </TabItem>
+  <TabItem label="listPets.solid.ts">
+
+    ```ts
+    // api/listPets/listPets.solid.ts
+    import { Value } from "@sinclair/typebox/value";
+    import { PetsSchema, type Pets } from "../../models/Pets/Pets";
+
+    export async function listPets(init?: RequestInit): Promise<Pets> {
+      const res = await fetch("/pets", { ...init, method: "GET" });
+      if (!res.ok) throw new Error(`listPets failed: ${res.status}`);
+      const raw = await res.json();
+      if (!Value.Check(PetsSchema, raw)) {
+        throw new Error("listPets: response failed TypeBox validation");
+      }
+      return raw;
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="routes/pets.tsx">
+
+    ```tsx
+    // routes/pets.tsx
+    import { createResource, For, Show } from "solid-js";
+    import { listPets } from "~/api/generated/api/listPets/listPets.solid";
+
+    export default function Pets() {
+      const [pets] = createResource(listPets);
+      return (
+        <Show when={!pets.loading} fallback={<p>Loading…</p>}>
+          <ul>
+            <For each={pets()}>{(pet) => <li>{pet.name}</li>}</For>
+          </ul>
+        </Show>
+      );
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="SolidStart" href="https://start.solidjs.com/" description="The Solid framework for fullstack apps" />
+<LinkCard title="TypeBox" href="https://github.com/sinclairzx81/typebox" description="JSON-Schema type builder for TypeScript" />
+<LinkCard title="Solid" href="https://www.solidjs.com/" description="Simple, performant reactivity primitives" />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Transports / SolidStart](/languages/typescript/transports/solid/)
+- [TypeScript overview](/languages/typescript/)

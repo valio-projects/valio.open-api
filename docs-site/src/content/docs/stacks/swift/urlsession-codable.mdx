@@ -1,0 +1,174 @@
+---
+title: URLSession + Codable
+description: Exact stack to generate a zero-dependency Swift client using URLSession and Codable.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're shipping an iOS, iPadOS, macOS, watchOS, tvOS, or visionOS app
+and want a dependency-free generated API client. URLSession is the
+Apple-blessed HTTP API, and Codable is the right serialization story
+for any Swift project. The generated client uses async/await, so you
+need iOS 13+ / macOS 12+ at runtime (and a more modern Xcode to build).
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Swift | 5.7+ |
+| Xcode | 14+ |
+| Deployment targets | iOS 16+, macOS 13+, watchOS 9+, tvOS 16+ |
+| Swift Package Manager | bundled with Swift |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "swift",
+      "schema": "./openapi.yaml",
+      "outputPath": "./Sources",
+      "options": {
+        "moduleName": "PetStoreAPI",
+        "anyMapping": "anycodable",
+        "generateBuildFiles": true
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "Models",
+        "clientsPath": "Client"
+      }
+    }
+  }
+}
+```
+
+`generateBuildFiles: true` writes a `Package.swift` so the generated
+folder is immediately importable as a Swift package.
+
+## What gets generated
+
+One `Codable struct` per OpenAPI schema (with `CodingKeys` preserving
+JSON casing), one `final class *Client` per OpenAPI tag wrapping a
+`URLSession`, and an `AnyCodable` wrapper for IR `Any` types when
+`anyMapping` is `anycodable`.
+
+## File tree
+
+```
+Sources/PetStoreAPI/
+├── Models/
+│   └── Pet.swift
+├── Client/
+│   └── PetsClient.swift
+└── Support/
+    └── AnyCodable.swift
+Package.swift
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.swift">
+
+    ```swift
+    import Foundation
+
+    public struct Pet: Codable, Equatable, Sendable {
+        public let id: Int64
+        public let name: String
+        public let tag: String?
+
+        public init(id: Int64, name: String, tag: String? = nil) {
+            self.id = id
+            self.name = name
+            self.tag = tag
+        }
+
+        private enum CodingKeys: String, CodingKey {
+            case id
+            case name
+            case tag
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsClient.swift">
+
+    ```swift
+    import Foundation
+
+    public final class PetsClient {
+        private let baseURL: URL
+        private let session: URLSession
+        private let decoder: JSONDecoder
+        private let encoder: JSONEncoder
+
+        public init(baseURL: URL, session: URLSession = .shared) {
+            self.baseURL = baseURL
+            self.session = session
+            self.decoder = JSONDecoder()
+            self.encoder = JSONEncoder()
+        }
+
+        public func listPets() async throws -> [Pet] {
+            let url = baseURL.appendingPathComponent("pets")
+            let (data, _) = try await session.data(from: url)
+            return try decoder.decode([Pet].self, from: data)
+        }
+
+        public func createPet(_ body: Pet) async throws -> Pet {
+            var request = URLRequest(url: baseURL.appendingPathComponent("pets"))
+            request.httpMethod = "POST"
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try encoder.encode(body)
+            let (data, _) = try await session.data(for: request)
+            return try decoder.decode(Pet.self, from: data)
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="App.swift">
+
+    ```swift
+    import PetStoreAPI
+
+    @main
+    struct App {
+        static func main() async throws {
+            let client = PetsClient(baseURL: URL(string: "https://petstore.example.com/v1")!)
+            let pets = try await client.listPets()
+            for pet in pets {
+                print("\(pet.id): \(pet.name)")
+            }
+        }
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="URLSession" href="https://developer.apple.com/documentation/foundation/urlsession" description="The HTTP client built into Foundation. Zero external dependencies." />
+<LinkCard title="Codable" href="https://developer.apple.com/documentation/swift/codable" description="Swift's standard library protocol for type-safe JSON encoding/decoding." />
+<LinkCard title="Swift Package Manager" href="https://www.swift.org/package-manager/" description="Apple's official package manager. ValIO emits a Package.swift for you." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Swift overview](/languages/swift/)

@@ -1,0 +1,178 @@
+---
+title: SolidStart transport
+description: SolidStart fetch transport for the TypeScript generator.
+sidebar:
+  order: 17
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+The `solid` transport emits a [SolidStart](https://start.solidjs.com)-friendly
+fetch wrapper. Functionally it is the standard Fetch API, but the generated
+files include the appropriate `"use server"` / `"use client"` directives so
+the client behaves correctly during SSR and hydration.
+
+In practice the generated transport is the same code as
+[`fetch`](/languages/typescript/transports/fetch/), with a few SolidStart
+specifics layered on:
+
+- Functions decorated with `"use server"` only execute on the server.
+- The generator emits a separate `*.client.solid.ts` for browser-safe variants
+  when an operation has no auth headers attached.
+- Resource helpers integrate cleanly with `createResource` and the TanStack
+  Solid Query wrapper.
+
+## When to use
+
+- You're building a **SolidStart** application and want isomorphic clients
+  that run on the server during SSR and the client during hydration.
+- You want to pair the generated client with
+  [`tanstack-solid`](/languages/typescript/query/tanstack/) for typed Solid
+  Query primitives.
+- You're using SolidStart server functions (`"use server"`) to encapsulate
+  upstream HTTP calls.
+
+If you don't use SolidStart, the plain
+[`fetch`](/languages/typescript/transports/fetch/) transport works the same
+in a Solid SPA — pick that instead.
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["solid"]
+  }
+}
+```
+
+Aliases accepted: `solid`, `solid-start`, `solidstart`.
+
+## Generated transport
+
+```ts
+// api/getPet/getPet.solid.ts
+"use server";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../../models/Pet/Pet";
+import type { GetPetParams } from "./getPet.params";
+
+export async function getPet(params: GetPetParams): Promise<Pet> {
+  const response = await fetch(`/pets/${encodeURIComponent(params.id)}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const body = await response.json();
+  return PetSchema.parse(body); // Zod 4 runtime validation
+}
+```
+
+The `"use server"` directive tells SolidStart to run the function only on the
+server side — avoiding cookie / token leakage to the client bundle. Remove
+it if you want isomorphic execution.
+
+## Server functions integration
+
+SolidStart's server functions are normal async functions marked with
+`"use server"`. The generated transport is already shaped that way, so you
+can call it directly from a component:
+
+```tsx
+// src/routes/pet.tsx
+import { createAsync, type RouteDefinition } from "@solidjs/router";
+import { getPet } from "~/api/getPet/getPet.solid";
+
+export const route = {
+  load: ({ params }) => getPet({ id: params.id }),
+} satisfies RouteDefinition;
+
+export default function PetRoute(props) {
+  const pet = createAsync(() => getPet({ id: props.params.id }));
+  return <Show when={pet()}>{(p) => <h1>{p().name}</h1>}</Show>;
+}
+```
+
+`createAsync` will run the server function on first navigation, send the
+result down with SSR, and reuse it on subsequent client navigations.
+
+## `createResource` pattern (without TanStack)
+
+For one-off fetches without TanStack:
+
+```tsx
+import { createResource, Show } from "solid-js";
+import { getPet } from "~/api/getPet/getPet.solid";
+
+export default function PetCard(props: { id: string }) {
+  const [pet] = createResource(() => props.id, (id) => getPet({ id }));
+  return (
+    <Show when={pet()} fallback={<Spinner />}>
+      <h1>{pet()!.name}</h1>
+    </Show>
+  );
+}
+```
+
+## With TanStack Solid Query
+
+For caching / refetching / mutations across components, pair with the
+[`tanstack-solid`](/languages/typescript/query/tanstack/) wrapper:
+
+```tsx
+import { createQuery } from "@tanstack/solid-query";
+import { getPet } from "~/api/getPet/getPet.solid";
+
+export default function PetCard(props: { id: string }) {
+  const query = createQuery(() => ({
+    queryKey: ["pet", props.id],
+    queryFn: () => getPet({ id: props.id }),
+    staleTime: 30_000,
+  }));
+  return <Show when={query.data}>{(p) => <h1>{p().name}</h1>}</Show>;
+}
+```
+
+## Custom fetcher
+
+Like the `fetch` transport, the `solid` transport accepts a custom fetcher
+through `options.typescript.fetch.customFetcherPath` / `customFetcherName`.
+See the [fetch page](/languages/typescript/transports/fetch/#custom-fetcher).
+
+This is especially useful for SSR: forward request cookies to upstream
+calls, attach a server-side tracing context, or pin a baseURL to an internal
+service endpoint when running on the server.
+
+## SSR hydration
+
+The generated `getPet` function runs on the server during SSR (because of
+`"use server"`), and the result is serialised into the HTML payload. On
+hydration the client receives the data without re-fetching.
+
+For non-route data, mark calls with `"use server"` explicitly where you call
+them — SolidStart bundlers prune server-only code from the client bundle so
+your auth tokens / DB credentials never ship.
+
+## Error handling
+
+SolidStart propagates thrown errors as route errors:
+
+```tsx
+import { ErrorBoundary } from "solid-js";
+
+<ErrorBoundary fallback={(err) => <pre>{err.message}</pre>}>
+  <PetRoute />
+</ErrorBoundary>
+```
+
+## See also
+
+<CardGrid>
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="Same primitive without SolidStart specifics." />
+  <LinkCard title="TanStack Solid wrapper" href="/languages/typescript/query/tanstack/" description="createQuery/createMutation hooks." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="The .parse() step in the generated code." />
+</CardGrid>

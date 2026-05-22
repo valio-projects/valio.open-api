@@ -1,0 +1,159 @@
+---
+title: .NET 8 + RestSharp
+description: Exact stack to generate a typed API client backed by RestSharp instead of HttpClient.
+sidebar:
+  order: 2
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You have an existing .NET console app, library, or worker that already
+uses [RestSharp](https://restsharp.dev/) as its HTTP client and you'd
+rather not introduce a parallel `HttpClient` pipeline just for the
+generated client. ValIO emits standard System.Text.Json DTOs; you wrap
+them by hand with a thin RestSharp adapter (sample below).
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| .NET SDK | 8.0+ |
+| `RestSharp` | 110+ |
+| `System.Text.Json` | 8.0+ |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore-restsharp
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore-restsharp": {
+      "language": "csharp",
+      "schema": "./openapi.yaml",
+      "outputPath": "./PetStore.Client/Generated",
+      "namespace": "PetStore.Client",
+      "options": {
+        "namespace": "PetStore.Client",
+        "nullableReferenceTypes": true
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": false,
+        "modelsPath": "Models"
+      }
+    }
+  }
+}
+```
+
+We disable `separateClients` so the generated `PetsClient.cs` lives next
+to the hand-written `RestSharpPetsClient.cs` wrapper — they're a unit.
+
+## What gets generated
+
+DTO classes only — one `class` per OpenAPI schema with
+`[JsonPropertyName]` attributes plus a generated `PetsClient` you can
+either use directly with `HttpClient` or treat as a reference for the
+RestSharp adapter.
+
+## File tree
+
+```
+PetStore.Client/Generated/
+├── Models/
+│   ├── Pet.cs
+│   └── Pets.cs
+└── PetsClient.cs
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.cs">
+
+    ```csharp
+    using System.Text.Json.Serialization;
+
+    namespace PetStore.Client.Models;
+
+    public sealed class Pet
+    {
+        [JsonPropertyName("id")]
+        public long Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = default!;
+
+        [JsonPropertyName("tag")]
+        public string? Tag { get; set; }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="RestSharpPetsClient.cs">
+
+    ```csharp
+    // RestSharp adapter (hand-written, references generated DTOs)
+    using PetStore.Client.Models;
+    using RestSharp;
+
+    namespace PetStore.Client;
+
+    public sealed class RestSharpPetsClient
+    {
+        private readonly RestClient _client;
+
+        public RestSharpPetsClient(string baseUrl)
+            => _client = new RestClient(baseUrl);
+
+        public async Task<List<Pet>> ListPetsAsync(CancellationToken ct = default)
+        {
+            var request = new RestRequest("/pets", Method.Get);
+            return await _client.GetAsync<List<Pet>>(request, ct) ?? new List<Pet>();
+        }
+
+        public async Task<Pet> CreatePetAsync(Pet body, CancellationToken ct = default)
+        {
+            var request = new RestRequest("/pets", Method.Post).AddJsonBody(body);
+            return (await _client.PostAsync<Pet>(request, ct))!;
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="Program.cs">
+
+    ```csharp
+    using PetStore.Client;
+    using PetStore.Client.Models;
+
+    var client = new RestSharpPetsClient("https://petstore.example.com/v1");
+
+    var pets = await client.ListPetsAsync();
+    foreach (var pet in pets)
+        Console.WriteLine($"{pet.Id}: {pet.Name}");
+
+    var created = await client.CreatePetAsync(new Pet { Id = 99, Name = "Otto" });
+    Console.WriteLine($"Created: {created.Id}");
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="RestSharp" href="https://restsharp.dev/" description="Mature .NET HTTP client with fluent request building." />
+<LinkCard title="System.Text.Json" href="https://learn.microsoft.com/dotnet/standard/serialization/system-text-json-overview" description="ValIO emits System.Text.Json-friendly attributes by default." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [C# overview](/languages/csharp/)
+- [ASP.NET Core + HttpClient](/stacks/csharp/aspnetcore-httpclient/)

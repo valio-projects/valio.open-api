@@ -1,0 +1,237 @@
+---
+title: axios transport
+description: Axios 1.x transport for the TypeScript generator.
+sidebar:
+  order: 11
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+The `axios` transport wraps each operation in an
+[`axios`](https://axios-http.com) 1.x request. Axios remains the most common
+HTTP client in TypeScript projects thanks to its interceptor model, automatic
+JSON handling, and identical API surface between browser and Node.
+
+Generated clients accept an injected `AxiosInstance`, so all of your existing
+interceptors (auth, retries, tracing) apply without modification.
+
+## When to use
+
+- You already have an axios instance configured for your app — authentication,
+  base URL, retry logic — and want generated clients to inherit it.
+- You need **interceptors** (request transform, response transform, error
+  recovery) that should run for every API call.
+- You want the same client code to run in **browser and Node** with identical
+  semantics (axios picks the right adapter automatically).
+- You need **request cancellation** via `AbortController` or the legacy
+  `CancelToken`.
+- You need **multipart/form-data uploads** with progress events.
+
+If you don't need interceptors, look at [`fetch`](/languages/typescript/transports/fetch/)
+(smaller) or [`ky`](/languages/typescript/transports/ky/) (Fetch + retries).
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["axios"]
+  }
+}
+```
+
+`axios@^1` must be installed in the consumer project as a peer dependency.
+
+## Generated transport
+
+```ts
+// api/getPet/getPet.axios.ts
+import axios, { type AxiosInstance, type AxiosRequestConfig } from "axios";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../../models/Pet/Pet";
+import type { GetPetParams } from "./getPet.params";
+
+export async function getPet(
+  params: GetPetParams,
+  config?: AxiosRequestConfig,
+  client: AxiosInstance = axios,
+): Promise<Pet> {
+  const { data } = await client.get<unknown>(
+    `/pets/${encodeURIComponent(params.id)}`,
+    config,
+  );
+  return PetSchema.parse(data); // Zod 4 runtime validation
+}
+```
+
+The third positional argument is the injected `client`. Default falls back to
+the global `axios` export — fine for prototypes, never recommended for prod.
+
+## Custom instance
+
+Provide a configured `AxiosInstance` through
+`options.typescript.axios.customInstancePath` and `customInstanceName` (see
+`ConfigAxiosOptions` in `ValIOConfig.cs`):
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "typescript": {
+      "axios": {
+        "customInstancePath": "../runtime/axiosInstance",
+        "customInstanceName": "axiosInstance"
+      }
+    },
+    "transports": ["axios"]
+  }
+}
+```
+
+The generated client imports your instance directly — no positional override
+required:
+
+```ts
+// generated
+import { axiosInstance } from "../../runtime/axiosInstance";
+
+export async function getPet(params: GetPetParams, config?: AxiosRequestConfig) {
+  const { data } = await axiosInstance.get<unknown>(`/pets/${params.id}`, config);
+  return PetSchema.parse(data);
+}
+```
+
+### Example — configured instance with retries
+
+```ts
+// src/runtime/axiosInstance.ts
+import axios from "axios";
+import axiosRetry from "axios-retry";
+
+export const axiosInstance = axios.create({
+  baseURL: import.meta.env.VITE_API_URL ?? "/api",
+  timeout: 10_000,
+  headers: { Accept: "application/json" },
+  withCredentials: true,
+});
+
+axiosRetry(axiosInstance, {
+  retries: 3,
+  retryDelay: axiosRetry.exponentialDelay,
+  retryCondition: (err) =>
+    axiosRetry.isNetworkError(err) ||
+    axiosRetry.isRetryableError(err) ||
+    err.response?.status === 429,
+});
+```
+
+## Interceptors
+
+Axios interceptors run before/after every request — ideal for auth refresh,
+logging, error normalisation:
+
+```ts
+// src/runtime/axiosInstance.ts (continued)
+import { getAccessToken, refreshAccessToken } from "./auth";
+
+axiosInstance.interceptors.request.use(async (config) => {
+  config.headers.Authorization = `Bearer ${await getAccessToken()}`;
+  config.headers["X-Trace-Id"] = crypto.randomUUID();
+  return config;
+});
+
+axiosInstance.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    if (error.response?.status === 401 && !error.config._retried) {
+      error.config._retried = true;
+      await refreshAccessToken();
+      return axiosInstance.request(error.config);
+    }
+    return Promise.reject(error);
+  },
+);
+```
+
+## Timeouts and cancellation
+
+Both global (`timeout` on the instance) and per-request (`config.timeout`) are
+supported. Cancellation uses `AbortController`:
+
+```ts
+const controller = new AbortController();
+const promise = getPet({ id: "42" }, { signal: controller.signal });
+controller.abort(); // promise rejects with CanceledError
+```
+
+The legacy `CancelToken.source()` still works but is deprecated upstream.
+
+## File upload (multipart/form-data)
+
+When an operation declares a `multipart/form-data` request body, the generator
+emits a helper that builds the `FormData`:
+
+```ts
+// generated for an upload op
+import axios, { type AxiosInstance, type AxiosProgressEvent } from "axios";
+import type { UploadAvatarParams } from "./uploadAvatar.params";
+
+export async function uploadAvatar(
+  params: UploadAvatarParams,
+  options?: { onUploadProgress?: (e: AxiosProgressEvent) => void; signal?: AbortSignal },
+  client: AxiosInstance = axios,
+) {
+  const form = new FormData();
+  form.append("file", params.file);
+  form.append("alt", params.alt ?? "");
+  return client.post("/avatar", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+    onUploadProgress: options?.onUploadProgress,
+    signal: options?.signal,
+  });
+}
+```
+
+## Mocking for tests
+
+Pair the transport with [`axios-mock-adapter`](https://github.com/ctimmerm/axios-mock-adapter):
+
+```ts
+import MockAdapter from "axios-mock-adapter";
+import { axiosInstance } from "../runtime/axiosInstance";
+import { getPet } from "../api/getPet/getPet.axios";
+
+const mock = new MockAdapter(axiosInstance);
+mock.onGet("/pets/42").reply(200, { id: 42, name: "Rex" });
+
+test("getPet returns parsed pet", async () => {
+  await expect(getPet({ id: "42" })).resolves.toEqual({ id: 42, name: "Rex" });
+});
+```
+
+Or use MSW — see the [mocks page](/languages/typescript/mocks/).
+
+## SSR notes
+
+In Node, axios uses the `http`/`https` adapter; in the browser it uses
+`XMLHttpRequest`. Cookies set via `withCredentials: true` flow on both, but in
+SSR you must forward them manually:
+
+```ts
+// during SSR — pass request cookies through
+const { data } = await getPet({ id }, { headers: { Cookie: req.headers.cookie ?? "" } });
+```
+
+## See also
+
+<CardGrid>
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="Zero-dep alternative when you don't need interceptors." />
+  <LinkCard title="undici transport" href="/languages/typescript/transports/undici/" description="Faster Node-only client for high-throughput services." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="Adds the .parse() step shown in generated code." />
+  <LinkCard title="MSW mocks" href="/languages/typescript/mocks/msw/" description="Network-level test doubles for axios." />
+</CardGrid>

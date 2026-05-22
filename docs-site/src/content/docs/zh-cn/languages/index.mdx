@@ -1,0 +1,87 @@
+---
+title: 支持的语言
+description: ValIO 全部 12 个生成器的插件参考。
+translationKey: languages-overview
+sidebar:
+  order: 1
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+ValIO 基于插件构建：每个生成器都位于独立的程序集中，并通过
+`AddAllGeneratorPlugins()` 注册。目前共附带十二个插件，覆盖 Web、
+移动端、后端以及游戏引擎等目标。
+
+<CardGrid>
+  <LinkCard
+    title="TypeScript"
+    href="/zh-cn/languages/typescript/"
+    description="9 种 HTTP 传输、Zod 3/4、Valibot、TypeBox、TanStack Query、SWR 以及 MSW handlers。"
+  />
+  <LinkCard
+    title="C#"
+    href="/zh-cn/languages/csharp/"
+    description="POCO + HttpClient、JsonSerializerContext，以及 IServiceCollection 扩展。"
+  />
+  <LinkCard
+    title="Java"
+    href="/zh-cn/languages/java/"
+    description="Jackson DTO + OkHttp 3.x 同步客户端，可选 Gradle 构建文件。"
+  />
+  <LinkCard
+    title="Kotlin"
+    href="/zh-cn/languages/kotlin/"
+    description="基于协程的 OkHttp 客户端，配合 kotlinx.serialization data class。"
+  />
+  <LinkCard
+    title="Python"
+    href="/zh-cn/languages/python/"
+    description="Pydantic v2 模型，搭配同步或异步 httpx 客户端（Python 3.10+）。"
+  />
+  <LinkCard
+    title="PHP"
+    href="/zh-cn/languages/php/"
+    description="带 Promoted Constructor 的 PHP 8.1 类型化类，以及 Guzzle 7 客户端。"
+  />
+  <LinkCard
+    title="Swift"
+    href="/zh-cn/languages/swift/"
+    description="Codable 结构体、async/await URLSession 客户端，可选 Package.swift。"
+  />
+  <LinkCard
+    title="Rust"
+    href="/zh-cn/languages/rust/"
+    description="Serde 模型，配合基于 Tokio 的异步 Reqwest 客户端。"
+  />
+  <LinkCard
+    title="Ruby"
+    href="/zh-cn/languages/ruby/"
+    description="纯 Ruby 类，搭配基于 Faraday 的 HTTP 客户端。"
+  />
+  <LinkCard
+    title="F#"
+    href="/zh-cn/languages/fsharp/"
+    description="Records 和 DU，搭配 RestSharp 客户端；响应变体以 discriminated union 表示。"
+  />
+  <LinkCard
+    title="Dart"
+    href="/zh-cn/languages/dart/"
+    description="Null-safe 的 Dart 3 模型，以及基于 Dio 的 HTTP 客户端，适用于 Flutter 或纯 Dart。"
+  />
+  <LinkCard
+    title="C++ (Unreal)"
+    href="/zh-cn/languages/cpp/"
+    description="面向 Unreal Engine 5 的 USTRUCT 模型与 Blueprint 可调用的异步 Action。"
+  />
+</CardGrid>
+
+## 各插件选项
+
+每个插件都对外提供一个 `OptionsDescriptor.GetOptionDescriptions()`
+列表。Web UI 据此渲染动态表单；CLI 与配置文件则在
+`valio.config.json` 的 `"options"` 字段中传入相同的选项。完整的逐插件
+选项参考可通过上方的语言卡片打开。
+
+这些数值同样会通过 `OptionDescription.DescriptionKey` 的资源查找出现
+在 Web UI 的工具提示中，因此每个选项既有内联帮助，也有稳定的文档
+锚点。

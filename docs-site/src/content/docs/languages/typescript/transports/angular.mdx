@@ -1,0 +1,236 @@
+---
+title: Angular HttpClient transport
+description: Angular HttpClient transport (RxJS or Promise) for the TypeScript generator.
+sidebar:
+  order: 16
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+The Angular transport wraps each operation in a call to
+`@angular/common/http`'s `HttpClient`. Generated clients are
+`@Injectable({ providedIn: "root" })` services grouped per OpenAPI tag, so
+they slot directly into Angular's DI graph.
+
+Two flavours are emitted depending on the `transports` value:
+
+| Transport id        | Return type        | Use when |
+|---------------------|--------------------|----------|
+| `angular-rxjs`      | `Observable<T>`    | You're using RxJS operators (`switchMap`, signals, `toSignal`). |
+| `angular-promise`   | `Promise<T>`       | You're using `async/await` in components. |
+
+Aliases accepted by the descriptor: `angular`, `angular-rxjs`,
+`angular-promise`, `angular-async`.
+
+## When to use
+
+- You're on **Angular 17+** and use `HttpClient` for HTTP.
+- You want the generated client wired into Angular's DI graph automatically.
+- You need interceptors (auth headers, error mapping, tracing) applied
+  uniformly via `provideHttpClient(withInterceptors([...]))`.
+- You want to pair the generated client with the
+  [`tanstack-angular`](/languages/typescript/query/tanstack/) wrapper.
+
+## Enabling
+
+<Tabs>
+<TabItem label="RxJS (Observable)">
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["angular-rxjs"]
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Promise (async/await)">
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["angular-promise"]
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Generated transport
+
+The Angular client is grouped **per OpenAPI tag**, not per operation. One file
+emits one injectable service.
+
+<Tabs>
+<TabItem label="RxJS">
+
+```ts
+// api/PetsClient.angular.ts
+import { Injectable, inject } from "@angular/core";
+import { HttpClient, HttpParams } from "@angular/common/http";
+import { type Observable, map } from "rxjs";
+import { PetSchema } from "../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../models/Pet/Pet";
+
+@Injectable({ providedIn: "root" })
+export class PetsClient {
+  private readonly http = inject(HttpClient);
+
+  getPet(id: string): Observable<Pet> {
+    return this.http
+      .get<unknown>(`/pets/${encodeURIComponent(id)}`)
+      .pipe(map((b) => PetSchema.parse(b))); // Zod 4 runtime validation
+  }
+
+  listPets(params: { tag?: string; limit?: number }): Observable<Pet[]> {
+    let httpParams = new HttpParams();
+    if (params.tag) httpParams = httpParams.set("tag", params.tag);
+    if (params.limit != null) httpParams = httpParams.set("limit", String(params.limit));
+    return this.http
+      .get<unknown[]>("/pets", { params: httpParams })
+      .pipe(map((arr) => arr.map((b) => PetSchema.parse(b))));
+  }
+}
+```
+
+</TabItem>
+<TabItem label="Promise">
+
+```ts
+// api/PetsClient.angular.ts
+import { Injectable, inject } from "@angular/core";
+import { HttpClient } from "@angular/common/http";
+import { firstValueFrom } from "rxjs";
+import { PetSchema } from "../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../models/Pet/Pet";
+
+@Injectable({ providedIn: "root" })
+export class PetsClient {
+  private readonly http = inject(HttpClient);
+
+  async getPet(id: string): Promise<Pet> {
+    const body = await firstValueFrom(this.http.get<unknown>(`/pets/${id}`));
+    return PetSchema.parse(body); // Zod 4 runtime validation
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Standalone bootstrap with interceptors
+
+In an Angular 17+ standalone application:
+
+```ts
+// src/main.ts
+import { bootstrapApplication } from "@angular/platform-browser";
+import { provideHttpClient, withInterceptors, withFetch } from "@angular/common/http";
+import { authInterceptor } from "./interceptors/auth.interceptor";
+import { tracingInterceptor } from "./interceptors/tracing.interceptor";
+import { AppComponent } from "./app/app.component";
+
+bootstrapApplication(AppComponent, {
+  providers: [
+    provideHttpClient(
+      withFetch(),
+      withInterceptors([authInterceptor, tracingInterceptor]),
+    ),
+  ],
+});
+```
+
+```ts
+// src/interceptors/auth.interceptor.ts
+import { HttpInterceptorFn } from "@angular/common/http";
+import { inject } from "@angular/core";
+import { AuthService } from "../services/auth.service";
+
+export const authInterceptor: HttpInterceptorFn = (req, next) => {
+  const auth = inject(AuthService);
+  const token = auth.token();
+  if (!token) return next(req);
+  return next(req.clone({
+    setHeaders: { Authorization: `Bearer ${token}` },
+  }));
+};
+```
+
+The generated `PetsClient` will inherit these interceptors automatically —
+nothing to register on the client itself.
+
+## Using the client in a component
+
+<Tabs>
+<TabItem label="RxJS">
+
+```ts
+import { Component, inject, computed, signal } from "@angular/core";
+import { toSignal } from "@angular/core/rxjs-interop";
+import { PetsClient } from "../api/PetsClient.angular";
+
+@Component({ selector: "app-pet" /* ... */ })
+export class PetComponent {
+  private readonly pets = inject(PetsClient);
+  id = signal("42");
+  pet = toSignal(this.pets.getPet(this.id()));
+}
+```
+
+</TabItem>
+<TabItem label="Promise">
+
+```ts
+import { Component, inject, signal } from "@angular/core";
+import { PetsClient } from "../api/PetsClient.angular";
+
+@Component({ selector: "app-pet" /* ... */ })
+export class PetComponent {
+  private readonly pets = inject(PetsClient);
+  readonly pet = signal<Pet | null>(null);
+
+  async load(id: string) {
+    this.pet.set(await this.pets.getPet(id));
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Combining with TanStack Angular adapter
+
+The [`tanstack-angular`](/languages/typescript/query/tanstack/) wrapper emits
+`injectQuery` / `injectMutation` hooks that call into the generated
+`PetsClient`:
+
+```ts
+import { injectQuery } from "@tanstack/angular-query-experimental";
+import { useGetPetQuery } from "../api/getPet/getPet.tanstack-angular";
+
+const query = injectQuery(useGetPetQuery({ id: "42" }));
+```
+
+## SSR (Angular Universal) notes
+
+- The transport uses `HttpClient` — no special SSR plumbing needed.
+- `provideHttpClient(withFetch())` in `app.config.server.ts` makes the SSR
+  pass use Node's Fetch implementation; without it Angular falls back to a
+  Node-only `HttpXhrBackend`.
+- Cookies must be forwarded manually inside an interceptor during SSR.
+
+## See also
+
+<CardGrid>
+  <LinkCard title="TanStack Angular wrapper" href="/languages/typescript/query/tanstack/" description="injectQuery/injectMutation for Angular." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="The .parse() step in generated methods." />
+  <LinkCard title="fetch transport" href="/languages/typescript/transports/fetch/" description="Use this in non-Angular packages of a monorepo." />
+</CardGrid>

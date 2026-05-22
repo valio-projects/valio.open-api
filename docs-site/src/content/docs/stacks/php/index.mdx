@@ -1,0 +1,34 @@
+---
+title: PHP stacks
+description: Ready-to-copy ValIO configurations for the most common PHP stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The PHP generator targets PHP 8.1+ and emits typed value objects plus a
+Guzzle 7-based client. Inside Symfony or any framework that ships
+`symfony/serializer`, you can swap the generated `toArray` / `fromArray`
+helpers for serializer-driven (de)serialization for a more idiomatic
+feel.
+
+The page below pins this down to a **concrete, tested recipe**: an exact
+`valio.config.json`, the file tree you should expect, and a few lines of
+consumer code so you can sanity-check the output before wiring it into
+your Symfony or pure-PHP project.
+
+## PHP stacks
+
+<CardGrid>
+  <LinkCard
+    title="Guzzle + Symfony Serializer"
+    href="/stacks/php/guzzle-symfony/"
+    description="Guzzle 7 HTTP client + Symfony Serializer for JSON (de)serialization."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [PHP language overview](/languages/php/)

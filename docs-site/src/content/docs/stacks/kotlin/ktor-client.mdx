@@ -1,0 +1,164 @@
+---
+title: Ktor Client
+description: Exact stack to generate a Kotlin coroutine client backed by Ktor Client, suitable for multiplatform targets.
+sidebar:
+  order: 2
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're targeting Kotlin Multiplatform (KMP) — sharing client code
+between JVM, Android, iOS, and the browser — or you simply prefer
+[Ktor Client](https://ktor.io/) over OkHttp. ValIO emits
+`@Serializable` data classes and then you wrap them with a thin
+hand-written client that uses Ktor's `HttpClient`. The models are
+shared verbatim across targets.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| Kotlin | 1.9.20+ |
+| `io.ktor:ktor-client-core` | 2.3+ |
+| `io.ktor:ktor-client-content-negotiation` | 2.3+ |
+| `io.ktor:ktor-serialization-kotlinx-json` | 2.3+ |
+| `org.jetbrains.kotlinx:kotlinx-serialization-json` | 1.6+ |
+
+Pick an engine for each target: `ktor-client-cio` (JVM/native),
+`ktor-client-okhttp` (JVM/Android), `ktor-client-darwin` (Apple),
+`ktor-client-js` (browser).
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore-kmp
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore-kmp": {
+      "language": "kotlin",
+      "schema": "./openapi.yaml",
+      "outputPath": "./shared/src/commonMain/kotlin/com/acme/petstore",
+      "namespace": "com.acme.petstore",
+      "options": {
+        "package": "com.acme.petstore",
+        "serialization": "kotlinx",
+        "generateBuildFiles": false
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": false,
+        "modelsPath": "models"
+      }
+    }
+  }
+}
+```
+
+We turn `generateBuildFiles` off because KMP projects already have a
+custom `build.gradle.kts` per source set — you don't want ValIO to
+overwrite it.
+
+## What gets generated
+
+Just the models — `@Serializable data class` per schema, ready to share
+across all source sets. You'll write the Ktor wrapper once in
+`commonMain` and it works everywhere.
+
+## File tree
+
+```
+shared/src/commonMain/kotlin/com/acme/petstore/
+├── models/
+│   └── Pet.kt
+└── PetsClient.kt
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.kt">
+
+    ```kotlin
+    package com.acme.petstore.models
+
+    import kotlinx.serialization.SerialName
+    import kotlinx.serialization.Serializable
+
+    @Serializable
+    data class Pet(
+        @SerialName("id") val id: Long,
+        @SerialName("name") val name: String,
+        @SerialName("tag") val tag: String? = null,
+    )
+    ```
+
+  </TabItem>
+  <TabItem label="PetsClient.kt">
+
+    ```kotlin
+    // Hand-written client for Ktor
+    package com.acme.petstore
+
+    import com.acme.petstore.models.Pet
+    import io.ktor.client.*
+    import io.ktor.client.call.*
+    import io.ktor.client.request.*
+    import io.ktor.http.*
+
+    class PetsClient(
+        private val baseUrl: String,
+        private val http: HttpClient,
+    ) {
+        suspend fun listPets(): List<Pet> =
+            http.get("$baseUrl/pets").body()
+
+        suspend fun createPet(body: Pet): Pet =
+            http.post("$baseUrl/pets") {
+                contentType(ContentType.Application.Json)
+                setBody(body)
+            }.body()
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="Main.kt">
+
+    ```kotlin
+    // commonMain
+    import io.ktor.client.HttpClient
+    import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+    import io.ktor.serialization.kotlinx.json.json
+    import kotlinx.coroutines.runBlocking
+
+    fun main() = runBlocking {
+        val http = HttpClient {
+            install(ContentNegotiation) { json() }
+        }
+        val client = PetsClient("https://petstore.example.com/v1", http)
+        val pets = client.listPets()
+        pets.forEach { println("${it.id}: ${it.name}") }
+        http.close()
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Ktor Client" href="https://ktor.io/docs/client.html" description="Coroutine-based, multiplatform HTTP client by JetBrains." />
+<LinkCard title="kotlinx.serialization" href="https://github.com/Kotlin/kotlinx.serialization" description="The serializer Ktor uses for content negotiation." />
+<LinkCard title="Kotlin Multiplatform" href="https://kotlinlang.org/docs/multiplatform.html" description="Share code between JVM, Android, iOS, and web targets." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Kotlin overview](/languages/kotlin/)
+- [OkHttp + kotlinx.serialization](/stacks/kotlin/okhttp-kotlinx-serialization/)

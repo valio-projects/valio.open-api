@@ -1,0 +1,250 @@
+---
+title: fetch transport
+description: Built-in Web Fetch API transport for the TypeScript generator.
+sidebar:
+  order: 10
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+## Overview
+
+The `fetch` transport is the **default** and uses the standard Web
+[`fetch`](https://developer.mozilla.org/docs/Web/API/Fetch_API) API with zero
+runtime dependencies. The generated client is a thin async function that
+delegates to `globalThis.fetch` (or a fetcher you inject) — nothing more.
+
+That means:
+
+- **Zero bundle cost** beyond the operation function itself.
+- **Universal runtime** — browsers, Bun, Deno, Cloudflare Workers, Vercel Edge,
+  Node 18+, React Native (with polyfills disabled).
+- **No wire-format surprises** — `fetch` is part of the platform, not a vendor
+  abstraction.
+
+## When to use
+
+Pick `fetch` when any of these apply:
+
+- You target an **Edge runtime** (Cloudflare Workers, Vercel Edge, Deno Deploy).
+  These environments do not allow Node-only modules like `undici` or `got`.
+- You're building a **PWA, mobile, or weight-sensitive client** and every kB
+  counts.
+- You want **first-class `AbortSignal` support** without a library wrapper.
+- You're happy mapping non-2xx responses to errors yourself (or you use a
+  generated `ApiError` helper — see below).
+
+If you need retries, automatic JSON parsing, or interceptors, look at
+[`ky`](/languages/typescript/transports/ky/) (Fetch + retries) or
+[`axios`](/languages/typescript/transports/axios/) (interceptors).
+
+## Enabling
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["fetch"]
+  }
+}
+```
+
+This is also what you get when you omit the `transports` option entirely —
+`fetch` is the default.
+
+## Generated transport
+
+```ts
+// api/getPet/getPet.fetch.ts
+import { ApiError } from "../../runtime/apiError";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+import type { Pet } from "../../models/Pet/Pet";
+import type { GetPetParams } from "./getPet.params";
+
+export async function getPet(
+  params: GetPetParams,
+  init?: RequestInit,
+): Promise<Pet> {
+  const response = await fetch(`/pets/${encodeURIComponent(params.id)}`, {
+    method: "GET",
+    headers: { Accept: "application/json" },
+    ...init,
+  });
+  if (!response.ok) {
+    throw await ApiError.fromResponse(response);
+  }
+  const body = await response.json();
+  return PetSchema.parse(body); // Zod 4 — see Validation section
+}
+```
+
+The optional `init` parameter lets callers pass headers, credentials, an
+`AbortSignal`, or anything else that `RequestInit` accepts. The Zod parse
+happens **after** transport — so a malformed payload throws a `ZodError`,
+never a silent type lie.
+
+## Custom fetcher
+
+For real apps you almost always want to swap `globalThis.fetch` for an
+instrumented version: auth headers, tracing, retry on 5xx, request logging.
+
+Configure this through `options.typescript.fetch.customFetcherPath` and
+`customFetcherName` (see `ConfigFetchOptions` in `ValIOConfig.cs`):
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "typescript": {
+      "fetch": {
+        "customFetcherPath": "../runtime/myFetcher",
+        "customFetcherName": "myFetcher"
+      }
+    },
+    "transports": ["fetch"]
+  }
+}
+```
+
+The generated client will now import and call your fetcher:
+
+```ts
+// generated — note the import line
+import { myFetcher } from "../../runtime/myFetcher";
+
+export async function getPet(params: GetPetParams, init?: RequestInit) {
+  const response = await myFetcher(`/pets/${params.id}`, { method: "GET", ...init });
+  // ...same parse / return as above
+}
+```
+
+### Example 1 — instrumented fetch with logging + auth
+
+```ts
+// src/runtime/myFetcher.ts
+import { getAuthToken } from "./auth";
+
+export async function myFetcher(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const start = performance.now();
+  const headers = new Headers(init.headers);
+  headers.set("Authorization", `Bearer ${await getAuthToken()}`);
+  headers.set("X-Trace-Id", crypto.randomUUID());
+
+  try {
+    const response = await fetch(input, { ...init, headers });
+    console.log(`[api] ${init.method ?? "GET"} ${input} -> ${response.status} (${(performance.now() - start).toFixed(0)}ms)`);
+    return response;
+  } catch (err) {
+    console.error(`[api] network error`, err);
+    throw err;
+  }
+}
+```
+
+### Example 2 — retry with AbortController and exponential backoff
+
+```ts
+// src/runtime/myFetcher.ts
+export async function myFetcher(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const maxAttempts = 3;
+  const externalSignal = init.signal;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const controller = new AbortController();
+    externalSignal?.addEventListener("abort", () => controller.abort(externalSignal.reason));
+
+    const timeout = setTimeout(() => controller.abort(new DOMException("Timeout", "TimeoutError")), 10_000);
+    try {
+      const response = await fetch(input, { ...init, signal: controller.signal });
+      if (response.status >= 500 && attempt < maxAttempts - 1) {
+        await new Promise((r) => setTimeout(r, 2 ** attempt * 250));
+        continue;
+      }
+      return response;
+    } catch (err) {
+      if (attempt === maxAttempts - 1 || externalSignal?.aborted) throw err;
+      await new Promise((r) => setTimeout(r, 2 ** attempt * 250));
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error("unreachable");
+}
+```
+
+## Error handling
+
+ValIO emits an `ApiError` runtime helper next to your clients. It captures
+the status code, a parsed body (if any), and the original `Response`:
+
+```ts
+try {
+  const pet = await getPet({ id: "42" });
+} catch (err) {
+  if (err instanceof ApiError) {
+    if (err.status === 404) showNotFound();
+    else if (err.status === 401) triggerLogin();
+    else reportError(err);
+  } else if (err instanceof ZodError) {
+    reportSchemaDrift(err);
+  } else {
+    reportNetworkError(err);
+  }
+}
+```
+
+## Aborting requests
+
+Pass an `AbortSignal` through `init` to cancel inflight requests — perfect
+for React effects, TanStack Query, or SolidStart resources:
+
+```ts
+const controller = new AbortController();
+const promise = getPet({ id: "42" }, { signal: controller.signal });
+controller.abort(); // promise rejects with AbortError
+```
+
+## Streaming responses
+
+For binary or large JSON responses the generator emits a separate `*.stream.ts`
+variant; otherwise you can stream manually from your custom fetcher:
+
+```ts
+const response = await myFetcher("/exports/large.ndjson");
+const reader = response.body!.getReader();
+const decoder = new TextDecoder();
+let buffer = "";
+while (true) {
+  const { done, value } = await reader.read();
+  if (done) break;
+  buffer += decoder.decode(value, { stream: true });
+  // ...process newline-delimited JSON here
+}
+```
+
+## Edge-runtime notes
+
+- Do **not** use `keepalive` larger than a few kB in Workers — many runtimes
+  reject it.
+- Avoid Node-only globals (`Buffer`, `process.env` outside `process.env.X`
+  accessors). Pass config in via your custom fetcher.
+- Cloudflare Workers forbid `setTimeout` outside a request scope; do your
+  retry/backoff inside the handler.
+
+## Migrating from axios
+
+Drop `import axios` everywhere — the generated function uses `fetch`. Move
+your axios interceptors into a custom fetcher (see above). The function
+signatures are similar enough that most call sites need only a return-type
+adjustment (`data` is already the unwrapped body, no `.data` accessor).
+
+## See also
+
+<CardGrid>
+  <LinkCard title="axios transport" href="/languages/typescript/transports/axios/" description="When you need interceptors and Node + browser compat." />
+  <LinkCard title="ky transport" href="/languages/typescript/transports/ky/" description="Fetch + retries + hooks in 5 kB." />
+  <LinkCard title="Zod 4 validation" href="/languages/typescript/validation/zod/" description="The runtime parse step shown above." />
+  <LinkCard title="TanStack Query wrapper" href="/languages/typescript/query/tanstack/" description="React/Vue/Solid hooks around fetch transports." />
+</CardGrid>

@@ -1,0 +1,168 @@
+---
+title: TypeScript validation
+description: Runtime validation libraries supported by the TypeScript generator.
+sidebar:
+  order: 1
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid, Aside } from '@astrojs/starlight/components';
+
+The TypeScript plugin can emit a runtime schema alongside every model so you
+can validate API responses (or your own user input) at runtime — not just at
+compile time. Static types catch your code's mistakes. Runtime schemas catch
+the server's.
+
+Four library targets are supported via the `validation` option:
+
+## Comparison
+
+| Library id | Library              | Bundle (gzip) | Static types        | Discriminated unions       | Strictness          | Ecosystem                                |
+|------------|----------------------|--------------:|---------------------|----------------------------|---------------------|------------------------------------------|
+| `zod3`     | Zod 3                | ~7 kB         | `z.infer<T>`        | `z.discriminatedUnion`     | Strip by default    | Huge — form resolvers, tRPC, drizzle-zod |
+| `zod4`     | Zod 4                | ~4 kB         | `z.infer<T>`        | `z.discriminatedUnion`     | Strip by default    | Same as Zod 3, mostly migrated           |
+| `valibot`  | Valibot              | ~1 kB scaled  | `v.InferOutput<T>`  | `v.variant`                | Strip by default    | Smaller, growing                         |
+| `typebox`  | TypeBox              | ~3 kB         | `Static<T>`         | `Type.Union` of literals   | Strict by default   | JSON Schema / Fastify                    |
+
+Bundle figures are illustrative — the actual cost depends on which APIs you
+use. Valibot's tree-shakeable design wins for small schema surfaces.
+
+## Picking by use case
+
+- **Default web app, broad ecosystem** — **Zod 4**. Better errors, smaller
+  than Zod 3, same ecosystem of integrations.
+- **Edge / mobile / extreme bundle constraints** — **Valibot**. The modular
+  design only ships what you import.
+- **Fastify backend, JSON Schema everywhere** — **TypeBox**. Same schema
+  validates requests, serialises responses, and feeds into OpenAPI tooling.
+- **Stuck on Zod 3 deps** — **Zod 3**. Migrate to Zod 4 when your form
+  resolver / tRPC version supports it.
+
+## How to enable
+
+```json
+// valio.config.json
+{
+  "language": "typescript",
+  "options": {
+    "transports": ["fetch"],
+    "validation": "zod4"
+  }
+}
+```
+
+Accepted values (`TypeScriptOptionsDescriptor`):
+
+| Value     | Effect                                                |
+|-----------|-------------------------------------------------------|
+| `zod`     | Alias of `zod3` for backwards compatibility.          |
+| `zod3`    | Emit Zod 3-compatible schemas.                        |
+| `zod4`    | Emit Zod 4-compatible schemas (different imports).    |
+| `valibot` | Emit Valibot pipe-style schemas.                      |
+| `typebox` | Emit TypeBox JSON Schema-shaped objects.              |
+
+Unknown values are rejected with a clear error from the descriptor.
+
+## Skip validation
+
+Leave `validation` unset (or set it to `null`) to skip schema generation
+entirely. The model interfaces will still be emitted; only the runtime
+schemas and the `.parse()` calls inside transports are dropped.
+
+```json
+{
+  "options": {
+    "transports": ["fetch"]
+    // no "validation" — models only
+  }
+}
+```
+
+## What gets generated
+
+One schema file per IR model, under
+`models/<Name>/schemas/<Name>.schema.ts`:
+
+```
+models/
+  Pet/
+    Pet.ts                  # the TypeScript interface (always emitted)
+    schemas/
+      Pet.schema.ts         # the runtime schema (only with `validation` set)
+```
+
+The schema mirrors the model's nested shape — arrays, unions, optional and
+nullable fields, discriminated unions, refs to other schemas.
+
+## How transports use the schema
+
+Every generated transport pipes the response body through the schema before
+returning. This means a server that drifts away from the contract throws
+**inside the client function**, not deep inside a component that reads a
+suddenly-`undefined` field.
+
+<Tabs>
+<TabItem label="Zod 4">
+
+```ts
+// generated fetch transport
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+
+export async function getPet(params: GetPetParams, init?: RequestInit) {
+  const response = await fetch(`/pets/${params.id}`, init);
+  if (!response.ok) throw await ApiError.fromResponse(response);
+  const body = await response.json();
+  return PetSchema.parse(body); // throws ZodError on mismatch
+}
+```
+
+</TabItem>
+<TabItem label="Valibot">
+
+```ts
+import * as v from "valibot";
+import { PetSchema } from "../../models/Pet/schemas/Pet.schema";
+
+export async function getPet(params: GetPetParams, init?: RequestInit) {
+  const response = await fetch(`/pets/${params.id}`, init);
+  if (!response.ok) throw await ApiError.fromResponse(response);
+  const body = await response.json();
+  return v.parse(PetSchema, body); // throws ValiError on mismatch
+}
+```
+
+</TabItem>
+<TabItem label="TypeBox">
+
+```ts
+import { Value } from "@sinclair/typebox/value";
+import { PetSchema, type Pet } from "../../models/Pet/schemas/Pet.schema";
+
+export async function getPet(params: GetPetParams, init?: RequestInit): Promise<Pet> {
+  const response = await fetch(`/pets/${params.id}`, init);
+  if (!response.ok) throw await ApiError.fromResponse(response);
+  const body = await response.json();
+  if (!Value.Check(PetSchema, body)) {
+    throw new Error(`Schema mismatch: ${[...Value.Errors(PetSchema, body)][0]?.message}`);
+  }
+  return body;
+}
+```
+
+</TabItem>
+</Tabs>
+
+## Deep dives
+
+<CardGrid>
+  <LinkCard title="Zod 3 / Zod 4" href="/languages/typescript/validation/zod/" description="Most popular pick. Two versions, distinct option values." />
+  <LinkCard title="Valibot" href="/languages/typescript/validation/valibot/" description="Smallest bundle, modular pipe-style API." />
+  <LinkCard title="TypeBox" href="/languages/typescript/validation/typebox/" description="JSON Schema runtime, Fastify integration." />
+</CardGrid>
+
+## See also
+
+<CardGrid>
+  <LinkCard title="Transports" href="/languages/typescript/transports/" description="How transports invoke the generated schemas." />
+  <LinkCard title="Query wrappers" href="/languages/typescript/query/" description="TanStack / SWR hooks layered on validated transports." />
+  <LinkCard title="MSW mocks" href="/languages/typescript/mocks/msw/" description="Validate mocks against the same schema." />
+</CardGrid>

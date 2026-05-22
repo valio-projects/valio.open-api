@@ -1,0 +1,38 @@
+---
+title: Java stacks
+description: Ready-to-copy ValIO configurations for the most common Java stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Java generator emits value classes plus a strongly-typed client per
+OpenAPI tag. ValIO's first-class HTTP client is OkHttp 3.x; the
+generated DTOs are Jackson-friendly, which means you can pair them
+with the JDK 11+ built-in `java.net.http.HttpClient` if you'd rather
+not bring in a third-party HTTP library.
+
+The pages below pin those choices to **concrete, tested recipes**: each
+one gives you the exact `valio.config.json`, the file tree to expect,
+and a few lines of consumer code so you can sanity-check the output.
+
+## Java stacks
+
+<CardGrid>
+  <LinkCard
+    title="OkHttp + Jackson"
+    href="/stacks/java/okhttp-jackson/"
+    description="The default Java stack — OkHttp 3.x + Jackson 2.16."
+  />
+  <LinkCard
+    title="java.net.http.HttpClient + Jackson"
+    href="/stacks/java/java-http-client-jackson/"
+    description="JDK 11+ built-in HttpClient with Jackson DTOs — zero third-party HTTP deps."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Java language overview](/languages/java/)

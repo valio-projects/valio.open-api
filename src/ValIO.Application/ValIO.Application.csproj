@@ -4,6 +4,13 @@
     <TargetFramework>net10.0</TargetFramework>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Application</PackageId>
+    <Description>ValIO orchestration engine. Use to embed code generation in your host application.</Description>
+    <PackageTags>valio;openapi;codegen;orchestration</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
     <ProjectReference Include="..\ValIO.Parsers\ValIO.Parsers.csproj" />

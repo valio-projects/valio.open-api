@@ -1,6 +1,7 @@
 ---
 title: Erste Schritte
 description: ValIO installieren, OpenAPI-Schema anbinden, Clients generieren.
+translationKey: getting-started
 ---
 
 ValIO besteht aus drei Frontends auf demselben Generator-Engine:

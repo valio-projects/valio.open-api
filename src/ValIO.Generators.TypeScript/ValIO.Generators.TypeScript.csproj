@@ -5,6 +5,13 @@
     <PreserveCompilationContext>true</PreserveCompilationContext>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>ValIO.Generators.TypeScript</PackageId>
+    <Description>ValIO code generator plugin for TypeScript.</Description>
+    <PackageTags>valio;openapi;codegen;typescript</PackageTags>
+  </PropertyGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ValIO.Core\ValIO.Core.csproj" />
   </ItemGroup>

@@ -1,0 +1,32 @@
+---
+title: Rust stacks
+description: Ready-to-copy ValIO configurations for the most common Rust stacks.
+sidebar:
+  order: 0
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+The Rust generator emits idiomatic 2021-edition crates using `serde`
+for serialization and `reqwest` for HTTP. The generated client is async
+and assumes a Tokio runtime.
+
+The page below pins this down to a **concrete, tested recipe**: an exact
+`valio.config.json`, the file tree you should expect, and a few lines of
+consumer code so you can sanity-check the output before wiring it into
+your binary or library.
+
+## Rust stacks
+
+<CardGrid>
+  <LinkCard
+    title="Reqwest + serde + Tokio"
+    href="/stacks/rust/reqwest-serde-tokio/"
+    description="Async Rust client using Reqwest, serde_json, and the Tokio runtime."
+  />
+</CardGrid>
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [Rust language overview](/languages/rust/)

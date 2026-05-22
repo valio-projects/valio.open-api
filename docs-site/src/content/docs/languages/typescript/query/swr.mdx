@@ -1,0 +1,378 @@
+---
+title: SWR
+description: SWR wrapper for React, with end-to-end example.
+sidebar:
+  order: 11
+---
+
+import { Tabs, TabItem, Code, LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+## At a glance
+
+[SWR](https://swr.vercel.app) is Vercel's lightweight data-fetching library
+for React: it ships in roughly 5 kB gzipped and leans hard into the
+stale-while-revalidate pattern. The `swr` wrapper emits one `useSWR`-shaped
+hook per read operation and one `useSWRMutation`-shaped hook per mutating
+operation, on top of your chosen transport and validation library.
+
+What you get when `queryWrapper` is `swr`:
+
+- Tuple-keyed `useSWR` hooks per operation, fully typed end-to-end.
+- `useSWRMutation` hooks for POST/PUT/PATCH/DELETE with `trigger(args)`.
+- A central key factory so manual `mutate(key)` calls stay typed.
+- Preload helpers for warming the cache before a route mounts.
+
+SWR is React-only. For Vue / Angular / Solid / Svelte, see
+[TanStack Query](/languages/typescript/query/tanstack/).
+
+## Configuration
+
+A typical SWR project pairs the wrapper with `fetch` + Zod 4, but every
+transport works:
+
+```json
+// valio.config.json
+{
+  "projects": {
+    "PetstoreApi": {
+      "language": "typescript",
+      "schema": "./openapi/petstore.yaml",
+      "outputPath": "src/api/generated",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "transports":   ["fetch"],
+        "validation":   "zod4",
+        "queryWrapper": "swr",
+        "enumFormat":   "union"
+      },
+      "fileOrganization": {
+        "separateModels":  true,
+        "separateClients": true,
+        "modelsPath":  "models",
+        "clientsPath": "api"
+      }
+    }
+  }
+}
+```
+
+Install peers in the consumer project:
+
+```sh
+npm install swr zod
+```
+
+## Generated file layout
+
+```
+src/api/generated/
+├── models/
+│   ├── Pet.ts                     # Zod 4 schema + inferred type
+│   └── Pets.ts
+├── api/
+│   ├── pets/
+│   │   ├── getPet.fetch.ts        # fetch transport (read)
+│   │   ├── getPet.swr.ts          # useGetPet (useSWR)
+│   │   ├── listPets.fetch.ts
+│   │   ├── listPets.swr.ts
+│   │   ├── createPet.fetch.ts     # fetch transport (write)
+│   │   └── createPet.swr.ts       # useCreatePet (useSWRMutation)
+│   ├── queryKeys.ts               # central key factory
+│   └── index.ts
+```
+
+## End-to-end example
+
+### 4.1 `models/Pet.ts` — Zod 4 schema
+
+The validation file is identical whether you pick TanStack or SWR — the same
+OpenAPI input produces the same schema:
+
+```ts
+// models/Pet.ts
+import * as z from "zod/v4";
+
+export const TagSchema = z.object({
+  name:  z.string().min(1),
+  color: z.string().optional(),
+});
+
+export type Tag = z.infer<typeof TagSchema>;
+
+export const PetSchema = z.object({
+  id:   z.int(),
+  name: z.string().min(1),
+  tags: z.array(TagSchema).optional(),
+});
+
+export type Pet = z.infer<typeof PetSchema>;
+```
+
+### 4.2 `api/pets/getPet.fetch.ts` — Fetch transport
+
+```ts
+// api/pets/getPet.fetch.ts
+import { PetSchema, type Pet } from "../../models/Pet";
+
+export interface GetPetParams {
+  id: number;
+}
+
+export async function getPet(
+  params: GetPetParams,
+  init?: RequestInit,
+): Promise<Pet> {
+  const response = await fetch(
+    `/pets/${encodeURIComponent(params.id)}`,
+    init,
+  );
+
+  if (!response.ok) {
+    throw new Error(`getPet failed: ${response.status}`);
+  }
+
+  const raw: unknown = await response.json();
+  return PetSchema.parse(raw);
+}
+```
+
+### 4.3 `api/pets/createPet.fetch.ts` — Fetch mutation transport
+
+```ts
+// api/pets/createPet.fetch.ts
+import { PetSchema, type Pet } from "../../models/Pet";
+
+export interface CreatePetBody {
+  id: number;
+  name: string;
+  tags?: { name: string; color?: string }[];
+}
+
+export async function createPet(body: CreatePetBody): Promise<Pet> {
+  const response = await fetch(`/pets`, {
+    method:  "POST",
+    headers: { "content-type": "application/json" },
+    body:    JSON.stringify(PetSchema.parse(body)),
+  });
+
+  if (!response.ok) {
+    throw new Error(`createPet failed: ${response.status}`);
+  }
+
+  return PetSchema.parse(await response.json());
+}
+```
+
+### 4.4 `api/pets/getPet.swr.ts` — `useGetPet`
+
+```ts
+// api/pets/getPet.swr.ts
+import useSWR, { type SWRConfiguration, type SWRResponse } from "swr";
+import { getPet, type GetPetParams } from "./getPet.fetch";
+import type { Pet } from "../../models/Pet";
+import { petsKeys } from "../queryKeys";
+
+export const getPetKey = (params: GetPetParams) =>
+  petsKeys.detail(params.id);
+
+export function useGetPet(
+  params: GetPetParams | null,
+  config?: SWRConfiguration<Pet>,
+): SWRResponse<Pet> {
+  return useSWR<Pet>(
+    params ? getPetKey(params) : null,
+    () => getPet(params!),
+    config,
+  );
+}
+```
+
+Passing `null` as `params` skips the request entirely — that's the standard
+SWR conditional-fetch convention, preserved verbatim by the generated hook.
+
+### 4.5 `api/pets/createPet.swr.ts` — `useCreatePet`
+
+For mutations, ValIO emits `useSWRMutation` and re-uses the key factory so
+manual revalidation across hooks stays consistent:
+
+```ts
+// api/pets/createPet.swr.ts
+import useSWRMutation, { type SWRMutationConfiguration } from "swr/mutation";
+import { mutate as globalMutate } from "swr";
+import { createPet, type CreatePetBody } from "./createPet.fetch";
+import type { Pet } from "../../models/Pet";
+import { petsKeys } from "../queryKeys";
+
+type Key = ReturnType<typeof petsKeys.lists>;
+
+export function useCreatePet(
+  config?: SWRMutationConfiguration<Pet, Error, Key, CreatePetBody>,
+) {
+  return useSWRMutation<Pet, Error, Key, CreatePetBody>(
+    petsKeys.lists(),
+    async (_key, { arg }) => createPet(arg),
+    {
+      ...config,
+      onSuccess: async (data, key, cfg) => {
+        // Invalidate every list under the pets root.
+        await globalMutate(
+          (k) => Array.isArray(k) && k[0] === "pets" && k[1] === "list",
+        );
+        await config?.onSuccess?.(data, key, cfg);
+      },
+    },
+  );
+}
+```
+
+### 4.6 `api/queryKeys.ts` — Key factory
+
+SWR accepts any serializable key, so the same hierarchical tuple shape that
+TanStack uses works here too:
+
+```ts
+// api/queryKeys.ts
+export const petsKeys = {
+  all:     ["pets"] as const,
+  lists:   () => [...petsKeys.all, "list"] as const,
+  list:    (filters: Record<string, unknown> = {}) =>
+    [...petsKeys.lists(), filters] as const,
+  details: () => [...petsKeys.all, "detail"] as const,
+  detail:  (id: number) => [...petsKeys.details(), id] as const,
+};
+```
+
+### 4.7 Consumer component
+
+```tsx
+// app/PetDetail.tsx
+import { useGetPet } from "@/api/generated/api/pets/getPet.swr";
+
+export function PetDetail({ id }: { id: number }) {
+  const { data: pet, error, isLoading } = useGetPet({ id });
+
+  if (isLoading) return <p>Loading…</p>;
+  if (error)     return <p role="alert">Failed: {error.message}</p>;
+  if (!pet)      return null;
+
+  return <h1>{pet.name}</h1>;
+}
+```
+
+## Cache key conventions
+
+SWR identifies a request by the key you pass to `useSWR`. Tuples (arrays) are
+serialized stably, so two components that call `useGetPet({ id: 1 })`
+deduplicate to a single in-flight request.
+
+```ts
+import { mutate } from "swr";
+import { petsKeys } from "@/api/generated/api/queryKeys";
+
+// Revalidate one detail.
+await mutate(petsKeys.detail(1));
+
+// Revalidate every list-shaped key.
+await mutate((k) => Array.isArray(k) && k[0] === "pets" && k[1] === "list");
+
+// Update the cache without firing a request.
+await mutate(petsKeys.detail(1), { id: 1, name: "Sam" }, { revalidate: false });
+```
+
+The third example sets the cache and skips revalidation — useful right after
+an optimistic write.
+
+## Mutations with `useSWRMutation`
+
+`useSWRMutation` returns `trigger`, `data`, `error`, `isMutating`. Unlike
+`useSWR`, it does not run on mount:
+
+```tsx
+import { useCreatePet } from "@/api/generated/api/pets/createPet.swr";
+
+export function NewPetButton() {
+  const { trigger, isMutating } = useCreatePet();
+
+  return (
+    <button
+      onClick={() => trigger({ id: Date.now(), name: "Buddy" })}
+      disabled={isMutating}
+    >
+      {isMutating ? "Saving…" : "Add pet"}
+    </button>
+  );
+}
+```
+
+`trigger()` returns a promise resolving to the parsed response, so you can
+chain UI work without subscribing to `data` directly:
+
+```ts
+const pet = await trigger({ id: Date.now(), name: "Buddy" });
+router.push(`/pets/${pet.id}`);
+```
+
+## Manual revalidation with `useSWRConfig`
+
+When you need cross-cutting cache writes (e.g. after a WebSocket event), reach
+for the global `mutate` from `useSWRConfig`:
+
+```ts
+import { useSWRConfig } from "swr";
+import { petsKeys } from "@/api/generated/api/queryKeys";
+
+function useOnPetChanged() {
+  const { mutate } = useSWRConfig();
+
+  return (id: number) => {
+    // Refetch the detail.
+    mutate(petsKeys.detail(id));
+    // And every list it might appear in.
+    mutate((k) => Array.isArray(k) && k[0] === "pets" && k[1] === "list");
+  };
+}
+```
+
+## Preloading
+
+Use `preload(key, fetcher)` to prime the cache before a route mounts. The
+fetcher is invoked once and the result is reused by the matching `useSWR`:
+
+```ts
+import { preload } from "swr";
+import { getPet } from "@/api/generated/api/pets/getPet.fetch";
+import { petsKeys } from "@/api/generated/api/queryKeys";
+
+export function preloadPet(id: number) {
+  preload(petsKeys.detail(id), () => getPet({ id }));
+}
+```
+
+```tsx
+// Trigger on hover for "instant" navigation:
+<a href={`/pets/${id}`} onMouseEnter={() => preloadPet(id)}>{name}</a>
+```
+
+## SWR vs TanStack Query
+
+| Concern                | SWR (`swr`)                                    | TanStack (`tanstack-react`)                    |
+|------------------------|------------------------------------------------|------------------------------------------------|
+| Bundle size (gzip)     | ~5 kB                                          | ~12 kB                                         |
+| Frameworks             | React only                                     | React, Vue, Angular, Solid, Svelte             |
+| Mutations              | `useSWRMutation` (`trigger`)                   | `useMutation` (`mutate`/`mutateAsync`)         |
+| Prefetch API           | `preload(key, fetcher)`                        | `queryClient.prefetchQuery({ ... })`           |
+| SSR story              | Initial data via `fallback` map                | `dehydrate` + `<HydrationBoundary>`            |
+| Infinite queries       | `useSWRInfinite`                               | `useInfiniteQuery`                             |
+| DevTools               | None official                                  | `@tanstack/react-query-devtools`               |
+
+If you need cross-framework parity or rich devtools, pick TanStack. If you
+want a small surface area on a React-only app — and you're happy with
+`stale-while-revalidate` semantics — pick SWR.
+
+## See also
+
+- [TanStack Query](/languages/typescript/query/tanstack/) — Vue/Angular/Solid/Svelte alternatives.
+- [Fetch transport](/languages/typescript/transports/fetch/) — built-in transport reference.
+- [Zod schemas](/languages/typescript/validation/zod/) — Zod 3 vs Zod 4 differences.
+- [Configuration reference](/configuration/) — every option, defaults, and validation rules.

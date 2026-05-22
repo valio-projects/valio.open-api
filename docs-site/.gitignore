@@ -6,3 +6,6 @@ dist/
 .env.production
 pnpm-debug.log*
 npm-debug.log*
+playwright-cache/
+.prettiercache
+*.tsbuildinfo

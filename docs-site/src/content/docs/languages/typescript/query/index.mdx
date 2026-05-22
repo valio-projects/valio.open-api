@@ -1,0 +1,129 @@
+---
+title: TypeScript query wrappers
+description: Query/cache wrappers supported by the TypeScript generator — TanStack Query and SWR side by side.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid } from '@astrojs/starlight/components';
+
+Query libraries on top of ValIO transports give you caching, deduplication,
+retry, and revalidation for free. The `queryWrapper` option takes a generated
+client function (e.g. `getPet`) and produces idiomatic hooks for your
+framework, while the transport and validation libraries you've already
+selected stay in charge of the network and runtime-validation layers.
+
+## Supported wrappers
+
+| `queryWrapper` id  | Framework | Hook factories                       |
+|--------------------|-----------|--------------------------------------|
+| `tanstack-react`   | React     | `useQuery`, `useMutation`            |
+| `tanstack-vue`     | Vue 3     | `useQuery`, `useMutation`            |
+| `tanstack-angular` | Angular   | `injectQuery`, `injectMutation`      |
+| `tanstack-solid`   | Solid     | `createQuery`, `createMutation`      |
+| `tanstack-svelte`  | Svelte    | `createQuery`, `createMutation`      |
+| `swr`              | React     | `useSWR`, `useSWRMutation`           |
+
+Aliases: `tanstack` and `react-query` both normalise to `tanstack-react`.
+
+## TanStack vs SWR
+
+| Concern              | TanStack (`tanstack-*`)                          | SWR (`swr`)                                     |
+|----------------------|--------------------------------------------------|-------------------------------------------------|
+| Bundle size (gzip)   | ~12 kB                                           | ~5 kB                                           |
+| Adapters             | React, Vue, Angular, Solid, Svelte               | React only                                      |
+| Mutations            | `useMutation` (`mutate`/`mutateAsync`)           | `useSWRMutation` (`trigger`)                    |
+| Prefetch API         | `queryClient.prefetchQuery({ ... })`             | `preload(key, fetcher)`                         |
+| SSR story            | `dehydrate(queryClient)` + `<HydrationBoundary>` | `fallback` map on `SWRConfig`                   |
+| Infinite queries     | `useInfiniteQuery`                               | `useSWRInfinite`                                |
+| DevTools             | `@tanstack/react-query-devtools`                 | None official                                   |
+
+## Pick by use case
+
+- **SPA in React, caching + DevTools matter:** `tanstack-react`.
+- **Small bundle on a Next.js App Router project:** `swr`.
+- **Multi-framework monorepo (React + Vue + Solid):** `tanstack-*` everywhere.
+- **Angular signal-first project:** `tanstack-angular`.
+- **Svelte 5 with runes:** `tanstack-svelte`.
+
+## How to enable
+
+`queryWrapper` depends on `transports`; pick a transport first and the
+matching wrapper second:
+
+```json
+{
+  "language": "typescript",
+  "options": {
+    "transports":   ["axios"],
+    "validation":   "zod4",
+    "queryWrapper": "tanstack-react"
+  }
+}
+```
+
+## Same call site, different wrapper
+
+The component consuming `useGetPet({ id: 1 })` looks almost identical across
+both wrappers — only the destructured return shape differs:
+
+```tsx
+// TanStack Query
+import { useGetPet } from "@/api/generated/api/pets/getPet.query";
+
+export function PetDetail({ id }: { id: number }) {
+  const { data: pet, isLoading, isError } = useGetPet({ id });
+  if (isLoading) return <p>Loading…</p>;
+  if (isError)   return <p>Failed</p>;
+  return <h1>{pet?.name}</h1>;
+}
+```
+
+```tsx
+// SWR
+import { useGetPet } from "@/api/generated/api/pets/getPet.swr";
+
+export function PetDetail({ id }: { id: number }) {
+  const { data: pet, isLoading, error } = useGetPet({ id });
+  if (isLoading) return <p>Loading…</p>;
+  if (error)     return <p>Failed</p>;
+  return <h1>{pet?.name}</h1>;
+}
+```
+
+## What gets generated
+
+For every operation, a hook file is added alongside the transport:
+
+```
+api/pets/getPet.axios.ts        # transport (from transports: ["axios"])
+api/pets/getPet.query.ts        # hook wrapper (TanStack)
+# or
+api/pets/getPet.swr.ts          # hook wrapper (SWR)
+```
+
+Read operations emit a query hook (`useQuery` / `createQuery` / `injectQuery`
+/ `useSWR`); mutating operations (POST/PUT/PATCH/DELETE) emit a mutation hook
+(`useMutation` / `useSWRMutation`).
+
+## Deep dives
+
+<CardGrid>
+  <LinkCard
+    title="TanStack Query"
+    href="/languages/typescript/query/tanstack/"
+    description="End-to-end example with Axios + Zod 4, query keys, mutations, prefetch, SSR, MSW tests."
+  />
+  <LinkCard
+    title="SWR"
+    href="/languages/typescript/query/swr/"
+    description="End-to-end example with Fetch + Zod 4, useSWRMutation, manual revalidation, preload."
+  />
+</CardGrid>
+
+## See also
+
+- [Transports](/languages/typescript/transports/) — fetch, axios, ky, undici, ofetch, got, Angular HttpClient, SolidStart.
+- [Validation](/languages/typescript/validation/) — Zod 3/4, Valibot, TypeBox.
+- [MSW handlers](/languages/typescript/mocks/msw/) — mocks generated from the same OpenAPI input.
+- [Configuration reference](/configuration/) — every option, defaults, and validation rules.

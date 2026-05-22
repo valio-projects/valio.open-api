@@ -1,0 +1,191 @@
+---
+title: Guzzle + Symfony Serializer
+description: Exact stack to generate a PHP 8.1+ client using Guzzle for HTTP and Symfony Serializer for JSON.
+sidebar:
+  order: 1
+---
+
+import { LinkCard, CardGrid, Tabs, TabItem } from '@astrojs/starlight/components';
+
+## When to use
+
+You're shipping a Symfony service or a Composer library and want a
+strongly-typed API client without writing one by hand. Guzzle is the
+de-facto PSR-7 HTTP client of PHP, and Symfony Serializer's property
+normalizer maps cleanly to typed PHP 8 value objects with promoted
+constructor parameters.
+
+## Required versions
+
+| Component | Version |
+|-----------|---------|
+| PHP | 8.1+ |
+| `guzzlehttp/guzzle` | 7.8+ |
+| `symfony/serializer` | 7.0+ |
+| `symfony/property-access` | 7.0+ |
+| `symfony/http-foundation` (optional) | 7.0+ |
+
+## CLI invocation
+
+```sh
+valio generate --config ./valio.config.json -p petstore
+```
+
+## valio.config.json
+
+```json
+{
+  "projects": {
+    "petstore": {
+      "language": "php",
+      "schema": "./openapi.yaml",
+      "outputPath": "./src",
+      "namespace": "Acme\\PetStore",
+      "options": {
+        "namespace": "Acme\\PetStore",
+        "useHttpClient": "guzzle",
+        "generateComposerJson": true
+      },
+      "fileOrganization": {
+        "separateModels": true,
+        "separateClients": true,
+        "modelsPath": "Models",
+        "clientsPath": "Client"
+      }
+    }
+  }
+}
+```
+
+`generateComposerJson: true` writes a `composer.json` with the Guzzle
+coordinate already in place.
+
+## What gets generated
+
+One `final class` per OpenAPI schema with promoted constructor
+parameters and typed properties (PHP 8 syntax), plus one `*Client` per
+OpenAPI tag wrapping `GuzzleHttp\Client`. Each operation returns the
+typed DTO.
+
+## File tree
+
+```
+src/Acme/PetStore/
+├── Models/
+│   └── Pet.php
+└── Client/
+    └── PetsClient.php
+composer.json
+```
+
+## Example
+
+<Tabs syncKey="stack-example">
+  <TabItem label="Pet.php">
+
+    ```php
+    <?php
+
+    declare(strict_types=1);
+
+    namespace Acme\PetStore\Models;
+
+    final class Pet
+    {
+        public function __construct(
+            public readonly int $id,
+            public readonly string $name,
+            public readonly ?string $tag = null,
+        ) {
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="PetsClient.php">
+
+    ```php
+    <?php
+    // PetsClient.php (with Symfony Serializer)
+
+    declare(strict_types=1);
+
+    namespace Acme\PetStore\Client;
+
+    use Acme\PetStore\Models\Pet;
+    use GuzzleHttp\Client;
+    use Symfony\Component\Serializer\Encoder\JsonEncoder;
+    use Symfony\Component\Serializer\Normalizer\ObjectNormalizer;
+    use Symfony\Component\Serializer\Serializer;
+
+    final class PetsClient
+    {
+        private Serializer $serializer;
+
+        public function __construct(
+            private readonly Client $http,
+        ) {
+            $this->serializer = new Serializer(
+                [new ObjectNormalizer()],
+                [new JsonEncoder()],
+            );
+        }
+
+        /** @return array<int, Pet> */
+        public function listPets(): array
+        {
+            $response = $this->http->get('/pets');
+            return $this->serializer->deserialize(
+                (string) $response->getBody(),
+                Pet::class . '[]',
+                'json',
+            );
+        }
+
+        public function createPet(Pet $body): Pet
+        {
+            $response = $this->http->post('/pets', [
+                'body' => $this->serializer->serialize($body, 'json'),
+                'headers' => ['Content-Type' => 'application/json'],
+            ]);
+            return $this->serializer->deserialize(
+                (string) $response->getBody(),
+                Pet::class,
+                'json',
+            );
+        }
+    }
+    ```
+
+  </TabItem>
+  <TabItem label="index.php">
+
+    ```php
+    <?php
+
+    declare(strict_types=1);
+
+    use Acme\PetStore\Client\PetsClient;
+    use GuzzleHttp\Client;
+
+    require __DIR__ . '/vendor/autoload.php';
+
+    $client = new PetsClient(new Client(['base_uri' => 'https://petstore.example.com/v1/']));
+    foreach ($client->listPets() as $pet) {
+        printf("%d: %s\n", $pet->id, $pet->name);
+    }
+    ```
+
+  </TabItem>
+</Tabs>
+
+## Related packages
+
+<LinkCard title="Guzzle" href="https://docs.guzzlephp.org/" description="PSR-7 HTTP client, the standard for modern PHP." />
+<LinkCard title="Symfony Serializer" href="https://symfony.com/doc/current/components/serializer.html" description="Object-to-JSON normalizer / denormalizer used inside Symfony." />
+<LinkCard title="Composer" href="https://getcomposer.org/" description="PHP dependency manager; ValIO can emit a composer.json for you." />
+
+## See also
+
+- [Configuration reference](/configuration/)
+- [PHP overview](/languages/php/)
