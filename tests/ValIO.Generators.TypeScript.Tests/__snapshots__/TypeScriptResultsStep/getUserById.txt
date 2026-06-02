@@ -1,3 +1,11 @@
+/**
+ * @file getUserById.results.ts
+ * @module endpoints/getUserById
+ * @description Discriminated-union result types for the getUserById operation.
+ * @generated
+ * Do not edit by hand — regenerate via ValIO.
+ */
+
 import type { User } from "../../models/user/user";
 
 // Response variant for status 200
@@ -41,4 +49,4 @@ export interface GetUserByIdResultOther {
 }
 
 // Discriminated union result for getUserById. Check status to narrow type.
-export type GetUserByIdResult = GetUserByIdResult200 | GetUserByIdResultOther;
+export type GetUserByIdResults = GetUserByIdResult200 | GetUserByIdResultOther;

@@ -37,4 +37,61 @@ public static class TypeScriptOptionIds
     {
         public const string Msw = "msw";
     }
+
+    /// <summary>
+    /// Suffix appended to the per-operation discriminated-union result type name
+    /// (e.g. <c>{Operation}Results</c>). Configurable to avoid clashes with generated
+    /// model names. Presets below are recommended; custom strings are also accepted.
+    /// </summary>
+    public static class ResultSuffix
+    {
+        public const string Result = "Result";
+        public const string Results = "Results";
+        public const string Response = "Response";
+        public const string Responses = "Responses";
+
+        /// <summary>Default suffix when none is configured.</summary>
+        public const string Default = Results;
+    }
+
+    /// <summary>
+    /// How fields typed as <c>Guid</c>/<c>Uuid</c> (IR <c>IrPrimitiveKind.Uuid</c>) are validated
+    /// in generated schemas.
+    /// </summary>
+    public static class UuidFormat
+    {
+        /// <summary>Built-in UUID validator: <c>z.string().uuid()</c> / <c>v.uuid()</c> / <c>{format:"uuid"}</c>.</summary>
+        public const string Guid = "guid";
+
+        /// <summary>Plain string, no UUID refinement.</summary>
+        public const string String = "string";
+
+        /// <summary>String validated against a shared UUID format regex constant.</summary>
+        public const string Regex = "regex";
+
+        /// <summary>Default when none is configured (backward-compatible).</summary>
+        public const string Default = Guid;
+
+        /// <summary>Format-only UUID regex source (no version/variant enforcement).</summary>
+        public const string Pattern = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+
+        /// <summary>Name of the generated constant file (under the schemas folder) and its exports.</summary>
+        public const string ConstFileName = "formats";
+        public const string RegexConstName = "UUID_REGEX";
+        public const string PatternConstName = "UUID_PATTERN";
+
+        /// <summary>Normalises a configured value to a canonical mode; null/unknown → <see cref="Default"/>.</summary>
+        public static string Resolve(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return Default;
+            return value.Trim().ToLowerInvariant() switch
+            {
+                "guid" or "uuid" => Guid,
+                "string" or "none" or "plain" => String,
+                "regex" or "pattern" => Regex,
+                _ => Default,
+            };
+        }
+    }
 }

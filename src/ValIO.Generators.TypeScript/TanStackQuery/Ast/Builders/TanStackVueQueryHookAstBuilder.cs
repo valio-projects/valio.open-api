@@ -7,6 +7,7 @@ using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 
@@ -23,11 +24,12 @@ public sealed class TanStackVueQueryHookAstBuilder
 
     public TanStackVueQueryHookAstBuilder(
         INamingConverter namingConverter,
-        Func<ValIO.Core.IR.Types.IrType, TypeNode> typeBuilder)
+        Func<ValIO.Core.IR.Types.IrType, TypeNode> typeBuilder,
+        string? resultSuffix = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix);
     }
 
     public SourceFileNode BuildHookSourceFile(
@@ -58,7 +60,11 @@ public sealed class TanStackVueQueryHookAstBuilder
                 .Add(BuildGetQueryKeyFn(operation, hookBaseName, paramsTypeName, hasParams))
                 .Add(BuildUseQueryFn(operation, hookBaseName, paramsTypeName, resultTypeName, hasParams));
 
-        return new SourceFileNode(imports: imports, declarations: declarations);
+        return new SourceFileNode(imports: imports, declarations: declarations,
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{operationFileName}.query.ts",
+                $"endpoints/{operationFileName}",
+                $"TanStack Query (Vue) hooks for the {operation.MethodName} operation."));
     }
 
     private static IReadOnlyList<ImportNode> BuildImports(

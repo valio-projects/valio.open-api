@@ -6,6 +6,7 @@ using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
+using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
@@ -28,10 +29,11 @@ public static class ZodExpressionBuilder
         IrPrimitiveKind primitiveKind,
         bool useBigInt,
         IrPropertyConstraints? constraints = null,
-        string? constraintsRef = null)
+        string? constraintsRef = null,
+        string? uuidFormat = null)
     {
         var expr = BuildBasePrimitive(primitiveKind, useBigInt);
-        expr = ApplyFormatRefinements(expr, primitiveKind);
+        expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
         expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
         return new ZodExpressionSchemaNode(expr);
     }
@@ -87,11 +89,17 @@ public static class ZodExpressionBuilder
     /// <summary>
     /// Применяет уточнения формата: uuid, datetime, date, time
     /// </summary>
-    private static ExpressionNode ApplyFormatRefinements(ExpressionNode expr, IrPrimitiveKind kind)
+    private static ExpressionNode ApplyFormatRefinements(ExpressionNode expr, IrPrimitiveKind kind, string uuidFormat)
     {
         return kind switch
         {
-            IrPrimitiveKind.Uuid => Chain(expr, "uuid", Array.Empty<ExpressionNode>()),
+            IrPrimitiveKind.Uuid => uuidFormat switch
+            {
+                TypeScriptOptionIds.UuidFormat.String => expr,
+                TypeScriptOptionIds.UuidFormat.Regex => Chain(expr, "regex",
+                    new[] { Identifier(TypeScriptOptionIds.UuidFormat.RegexConstName) }),
+                _ => Chain(expr, "uuid", Array.Empty<ExpressionNode>()),
+            },
             IrPrimitiveKind.DateTime => Chain(expr, "datetime", new[]
             {
                 new ObjectLiteralExpressionNode(new[]

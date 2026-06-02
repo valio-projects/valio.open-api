@@ -3,6 +3,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Options;
 
@@ -19,10 +20,12 @@ namespace ValIO.Generators.TypeScript.Solid.Ast.Builders;
 public sealed class SolidStartClientAstBuilder
 {
     private readonly TypeScriptAstBuilder _innerBuilder;
+    private readonly INamingConverter _namingConverter;
 
     public SolidStartClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
     {
         ArgumentNullException.ThrowIfNull(namingConverter);
+        _namingConverter = namingConverter;
         _innerBuilder = new TypeScriptAstBuilder(namingConverter, options);
     }
 
@@ -49,10 +52,15 @@ public sealed class SolidStartClientAstBuilder
             ["directive"] = "use server"
         };
 
+        var fileBase = _namingConverter.ToCamelCase(operation.MethodName);
         return new SourceFileNode(
             imports: fetchSource.Imports,
             exports: fetchSource.Exports,
             declarations: fetchSource.Declarations,
-            metadata: metadata);
+            metadata: metadata,
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{fileBase}.solid.ts",
+                $"endpoints/{fileBase}",
+                $"SolidStart server-function client for the {operation.MethodName} operation."));
     }
 }

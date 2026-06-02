@@ -33,6 +33,7 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new TypeScriptEnumsStep(namingConverter, nodeRenderers),
             new TypeScriptParamsStep(namingConverter, nodeRenderers),
             new TypeScriptResultsStep(namingConverter, nodeRenderers),
+            new TypeScriptUuidFormatsStep(),
             new ZodSchemasStep(namingConverter),
             new ZodParamsSchemasStep(namingConverter),
             new ValibotSchemasStep(namingConverter, nodeRenderers),

@@ -49,7 +49,8 @@ public sealed class TanStackQueryStep : ICodeGenerationStep
         var hookBuilder = new TanStackQueryHookAstBuilder(
             _namingConverter,
             astBuilder.BuildType,
-            clientSuffix);
+            clientSuffix,
+            opts?.ResultTypeSuffix);
 
         foreach (var client in context.IrDocument.Clients)
         {

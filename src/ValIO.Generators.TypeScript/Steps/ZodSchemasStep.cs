@@ -35,13 +35,14 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var fileOrg = context.Configuration.FileOrganization;
         var modelsPath = fileOrg.ModelsPath ?? "models";
-        var schemasPath = $"{modelsPath}/schemas";
+        var schemasPath = fileOrg.SchemasPath ?? "schemas";
 
         var zodVersion = opts?.ValidationLibrary ?? "zod3";
         var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
         TypeNode TypeBuilder(ValIO.Core.IR.Types.IrType t) => astBuilder.BuildType(t);
 
-        var renderer = new ZodSchemaRenderer(_namingConverter, TypeBuilder, zodVersion: zodVersion);
+        var renderer = new ZodSchemaRenderer(_namingConverter, TypeBuilder, zodVersion: zodVersion,
+            modelsPath: modelsPath, uuidFormat: opts?.UuidFormat);
 
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
         var byName = context.IrDocument.Models.ToDictionary(m => m.Name);

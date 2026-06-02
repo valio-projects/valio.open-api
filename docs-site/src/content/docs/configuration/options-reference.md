@@ -38,11 +38,36 @@ Source: `src/ValIO.Generators.TypeScript/Options/TypeScriptOptionsDescriptor.cs`
 | `validation`   | EnumSingle  | _none_  | `zod3`, `zod4`, `valibot`, `typebox`                                                                 | Validation library to emit runtime schemas for. Omit to skip schemas.      |
 | `queryWrapper` | EnumSingle  | _none_  | `tanstack-react`, `tanstack-vue`, `tanstack-angular`, `tanstack-solid`, `tanstack-svelte`, `swr`     | Client wrapper integration. Depends on `transports`.                       |
 | `mocks`        | EnumSingle  | _none_  | `msw`                                                                                                | Generate mock handlers alongside clients. Aliased as `mockLibrary`.        |
+| `resultTypeSuffix` | EnumSingle | `Results` | `Result`, `Results`, `Response`, `Responses`                                                      | Suffix for the per-operation result-union type name (`{Operation}Results`). Custom strings also accepted. Aliased as `resultSuffix`. |
+| `uuidFormat`   | EnumSingle  | `guid`  | `guid`, `string`, `regex`                                                                            | How `Guid`/`Uuid` fields are validated: `guid` = built-in uuid validator (`z.string().uuid()`); `string` = no refinement; `regex` = a shared format-regex constant emitted to `{schemasPath}/formats.ts`. |
 
 Aliases accepted on input: `zod` → `zod3`; `tanstack` or `react-query` →
 `tanstack-react`; `angular` → `angular-rxjs`; `angular-async` →
 `angular-promise`; `solidstart` / `solid-start` → `solid`;
 `@sinclair/typebox` → `typebox`.
+
+`resultTypeSuffix` controls only the **union alias** name —
+e.g. `LookupDictionaryItemsByIdResults`. The per-status variant interfaces it
+unions keep their fixed `Result` base (`...Result200`, `...ResultOther`). The
+four presets are matched case-insensitively and normalised to PascalCase; any
+other non-empty value is accepted verbatim (first letter capitalised) so you can
+resolve clashes with a generated model that already owns the `...Result` name.
+
+`uuidFormat` picks how `Guid`/`Uuid`-typed fields validate. With `regex`, a single
+constant file is emitted to `{schemasPath}/formats.ts` (`UUID_PATTERN` +
+`UUID_REGEX`) and imported wherever a uuid field appears — Zod/Valibot use
+`UUID_REGEX`, TypeBox uses `UUID_PATTERN` — so the pattern is defined once:
+
+```ts
+// schemas/formats.ts
+export const UUID_PATTERN = "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$";
+export const UUID_REGEX = new RegExp(UUID_PATTERN);
+// → z.string().regex(UUID_REGEX) / v.pipe(v.string(), v.regex(UUID_REGEX)) / Type.String({ pattern: UUID_PATTERN })
+```
+
+Validation schemas are written to a root **`schemas/`** folder (sibling of
+`models/`, `endpoints/`, `index.ts`). Override the location with
+`fileOrganization.schemasPath` (default `"schemas"`).
 
 ```json
 {
@@ -50,14 +75,48 @@ Aliases accepted on input: `zod` → `zod3`; `tanstack` or `react-query` →
   "schema":   "./openapi.json",
   "outputPath": "./src/api",
   "options": {
-    "transports":   ["axios", "fetch"],
-    "validation":   "zod4",
-    "queryWrapper": "tanstack-react",
-    "enumFormat":   "enum",
-    "mocks":        "msw"
+    "transports":      ["axios", "fetch"],
+    "validation":      "zod4",
+    "queryWrapper":    "tanstack-react",
+    "enumFormat":      "enum",
+    "mocks":           "msw",
+    "resultTypeSuffix": "Results",
+    "uuidFormat":      "regex"
   }
 }
 ```
+
+#### Custom axios instance
+
+When `axios` is among the `transports`, an optional `axios` object lets you swap
+the global `axios` import for your own pre-configured instance (interceptors,
+`baseURL`, auth, …):
+
+```json
+{
+  "options": {
+    "transports": ["axios"],
+    "axios": {
+      "customInstancePath": "@shared/api/api-mutator.ts",
+      "customInstanceName": "apiMutator"
+    }
+  }
+}
+```
+
+Each generated `*.axios.ts` then imports the instance as a **named** export and
+assigns it to the local `axiosInstance` variable used for every request:
+
+```ts
+import { apiMutator } from "@shared/api/api-mutator"; // .ts/.tsx extension is stripped
+import type { AxiosRequestConfig, AxiosInstance } from "axios";
+// ...
+const axiosInstance: AxiosInstance = apiMutator;
+```
+
+Both `customInstancePath` and `customInstanceName` are required together —
+supplying only one is a configuration error. When the `axios` object is omitted,
+clients fall back to `import axios from "axios"`.
 
 When using the **nested** form under `options.typescript` you also have
 access to a richer set of fields parsed by `ConfigTypeScriptOptions`:

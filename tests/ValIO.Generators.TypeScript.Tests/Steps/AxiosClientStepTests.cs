@@ -59,6 +59,44 @@ public class AxiosClientStepTests
     }
 
     [Test]
+    public async Task AxiosClient_CustomInstance_ImportsByNameAndAssignsToAxiosInstance()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["axios"],
+            Axios = new TypeScriptAxiosOptions
+            {
+                CustomInstancePath = "@shared/api/api-mutator.ts",
+                CustomInstanceName = "apiMutator",
+            },
+        });
+
+        var any = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith(".axios.ts", StringComparison.Ordinal));
+
+        // Named import of the custom instance; the .ts extension is stripped from the specifier.
+        any.Content.Should().Contain("import { apiMutator } from \"@shared/api/api-mutator\"");
+        // The instance is assigned into the local axiosInstance variable...
+        any.Content.Should().Contain("const axiosInstance: AxiosInstance = apiMutator");
+        // ...and the global axios default import is no longer emitted.
+        any.Content.Should().NotContain("import axios from");
+    }
+
+    [Test]
+    public async Task AxiosClient_NoCustomInstance_FallsBackToGlobalAxios()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
+
+        var any = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith(".axios.ts", StringComparison.Ordinal));
+
+        any.Content.Should().Contain("import axios from \"axios\"");
+        any.Content.Should().Contain("const axiosInstance: AxiosInstance = axios");
+    }
+
+    [Test]
     public async Task AxiosClient_NoZod_NoSchemaImports()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");

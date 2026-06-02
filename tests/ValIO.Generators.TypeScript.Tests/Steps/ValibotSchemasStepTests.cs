@@ -75,7 +75,9 @@ public class ValibotSchemasStepTests
         var userRoleSchema = ctx.GeneratedFiles.FirstOrDefault(f =>
             f.RelativePath.Replace('\\', '/').Contains("schemas/userRole/userRole.schema", StringComparison.OrdinalIgnoreCase));
         userRoleSchema.Should().NotBeNull();
-        userRoleSchema!.Content.Should().Contain("UserRoleValues");
-        userRoleSchema.Content.Should().Contain("picklist");
+        userRoleSchema!.Content.Should().Contain("v.picklist(UserRoleValues)");
+        // Values are imported from the enum model, not re-declared in the schema file.
+        userRoleSchema.Content.Should().Contain("import { UserRoleValues } from \"../../models/userRole/userRole\"");
+        userRoleSchema.Content.Should().NotContain("UserRoleValues = [");
     }
 }

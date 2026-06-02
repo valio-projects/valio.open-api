@@ -13,6 +13,7 @@ using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
@@ -314,13 +315,18 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             declarations.Add(constraintsDecl);
         
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
-        
+
+        var modelFileBase = _namingConverter.ToCamelCase(model.Name);
         return new SourceFileNode(
             imports: imports,
             exports: exports,
-            declarations: declarations.ToImmutableList());
+            declarations: declarations.ToImmutableList(),
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{modelFileBase}.ts",
+                $"models/{modelFileBase}",
+                string.IsNullOrWhiteSpace(model.Description) ? $"{model.Name} model." : model.Description));
     }
-    
+
     /// <summary>
     /// Строит VariableDeclarationNode с const объектом метаданных валидации для Zod схем.
     /// Возвращает null если нет свойств с constraints.
@@ -371,6 +377,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             new IdentifierNode($"{model.Name}Constraints"),
             VariableDeclarationKind.Const,
             initializer: initializer,
+            documentation: TypeScriptDoc.Block(
+                $"Validation constraints for {model.Name} properties (lengths, ranges, patterns).",
+                ("constant", "")),
             isExported: true,
             asConstAssertion: true);
     }
@@ -447,12 +456,17 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var declarations = BuildEnumDeclaration(enumModel);
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
         
+        var enumFileBase = _namingConverter.ToCamelCase(enumModel.Name);
         return new SourceFileNode(
             imports: imports,
             exports: exports,
-            declarations: declarations);
+            declarations: declarations,
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{enumFileBase}.ts",
+                $"models/{enumFileBase}",
+                string.IsNullOrWhiteSpace(enumModel.Description) ? $"{enumModel.Name} enum (string-literal union + values + type guard)." : enumModel.Description));
     }
-    
+
     /// <summary>
     /// Строит DeclarationNode из IrEnum (может быть TypeAlias для union или enum)
     /// Также генерирует массив значений enum'а
@@ -460,20 +474,19 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private IReadOnlyList<DeclarationNode> BuildEnumDeclaration(IrEnum enumModel)
     {
         var declarations = new List<DeclarationNode>();
-        
-        // Генерируем union type или enum
-        if (enumModel.BaseType == IrEnumBaseType.String)
-        {
-            var unionType = BuildEnumUnionType(enumModel);
-            declarations.Add(BuildTypeAlias(enumModel.Name, unionType));
-        }
-        else
-        {
-            // TODO: Реализовать построение TypeScript enum для числовых значений
-            // Пока возвращаем union type
-            var numericUnionType = BuildEnumUnionType(enumModel);
-            declarations.Add(BuildTypeAlias(enumModel.Name, numericUnionType));
-        }
+
+        var allowed = string.Join(" | ", enumModel.Values.Select(v => enumModel.BaseType == IrEnumBaseType.String ? $"\"{v.Value}\"" : v.Value?.ToString()));
+        var enumDoc = TypeScriptDoc.Block(
+            string.IsNullOrWhiteSpace(enumModel.Description) ? $"{enumModel.Name} enumeration." : enumModel.Description,
+            ("enum", enumModel.BaseType == IrEnumBaseType.String ? "{string}" : "{number}"),
+            ("remarks", string.IsNullOrEmpty(allowed) ? null : $"Allowed values: {allowed}."));
+
+        // Генерируем union type или enum (с JSDoc-документацией)
+        var unionType = BuildEnumUnionType(enumModel);
+        declarations.Add(new TypeAliasDeclarationNode(
+            name: new IdentifierNode(enumModel.Name),
+            type: unionType,
+            documentation: enumDoc));
         
         // Генерируем массив значений enum'а
         var valuesArray = BuildEnumValuesArray(enumModel);
@@ -516,26 +529,23 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         
         // Создаем ArrayLiteralExpressionNode
         var arrayLiteral = new ArrayLiteralExpressionNode(elements);
-        
-        // Создаем тип массива (readonly array)
-        var elementType = enumModel.BaseType == IrEnumBaseType.String
-            ? new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true)
-            : new SimpleTypeNode(new IdentifierNode("number"), isPrimitive: true);
-        var arrayType = new ArrayTypeNode(elementType, isReadOnly: true);
-        
+
         // Имя переменной: EnumName + "Values"
         var variableName = $"{enumModel.Name}Values";
-        
-        // Создаем VariableDeclarationNode с const, export и "as const satisfies" assertion
-        // Используем "as const satisfies readonly EnumType[]" для максимально строгой типизации
+
+        // Без явной аннотации типа: "as const satisfies readonly EnumType[]" сохраняет
+        // литеральный кортеж (readonly ["A", "B"]), а не расширяет до readonly string[].
+        // Это позволяет переиспользовать массив в z.enum(...) / v.picklist(...) /
+        // Type.Union(...) внутри схем валидации, не дублируя значения.
         var enumTypeNode = new SimpleTypeNode(new IdentifierNode(enumModel.Name), isPrimitive: false);
         var satisfiesType = new ArrayTypeNode(enumTypeNode, isReadOnly: true);
-        
+
         return new VariableDeclarationNode(
             name: new IdentifierNode(variableName),
             declarationKind: VariableDeclarationKind.Const,
-            type: arrayType,
+            type: null,
             initializer: arrayLiteral,
+            documentation: TypeScriptDoc.Block($"All valid {enumModel.Name} values, in declaration order."),
             isExported: true,
             asConstSatisfies: true,
             satisfiesType: satisfiesType);
@@ -793,7 +803,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var returnType = useResultType
             ? new GenericTypeNode(
                 new IdentifierNode("Promise"),
-                new[] { new SimpleTypeNode(new IdentifierNode($"{_namingConverter.ToPascalCase(operation.MethodName)}Result"), isPrimitive: false) }.ToImmutableList())
+                new[] { new SimpleTypeNode(new IdentifierNode($"{_namingConverter.ToPascalCase(operation.MethodName)}{TypeScriptResultsAstBuilder.ResolveResultSuffix(_options?.ResultTypeSuffix)}"), isPrimitive: false) }.ToImmutableList())
             : ExtractReturnType(operation.Responses);
         
         var comment = !string.IsNullOrEmpty(operation.Description)
@@ -893,10 +903,15 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             var declarations = client.Operations.Select(op => (DeclarationNode)BuildFunction(op)).ToList();
             var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
+            var clientFileBase = _namingConverter.ToCamelCase(client.Name);
             return new SourceFileNode(
                 imports: imports,
                 exports: exports,
-                declarations: declarations);
+                declarations: declarations,
+                fileDocumentation: TypeScriptDoc.FileHeader(
+                    $"{clientFileBase}.ts",
+                    $"endpoints/{clientFileBase}",
+                    $"HTTP client functions for the {client.Name} API."));
         }
         finally
         {
@@ -917,7 +932,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         _activeEndpointTransport = transport;
         try
         {
-            var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
+            var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
             var dependencies = UseParamsStyleEndpointTransport()
                 ? Array.Empty<string>()
                 : ExtractDependencies(client, excludeResponseModels: false);
@@ -933,10 +948,15 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             var declarations = new List<DeclarationNode> { BuildFunction(operation, isExported: true) };
             var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
+            var endpointFileBase = _namingConverter.ToCamelCase(operation.MethodName);
             return new SourceFileNode(
                 imports: imports,
                 exports: exports,
-                declarations: declarations);
+                declarations: declarations,
+                fileDocumentation: TypeScriptDoc.FileHeader(
+                    $"{endpointFileBase}.{transport}.ts",
+                    $"endpoints/{endpointFileBase}",
+                    $"{transport} client for the {operation.MethodName} operation."));
         }
         finally
         {
@@ -946,14 +966,40 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
     /// <summary>
     /// Возвращает имя axios instance и соответствующий ImportNode.
-    /// Если заданы customInstancePath и customInstanceName — использует кастомный instance, иначе global axios.
+    /// Если заданы customInstancePath и customInstanceName — импортирует кастомный instance
+    /// как named export из указанного пути; иначе global <c>axios</c> (default import).
     /// </summary>
     private (string InstanceName, ImportNode Import) GetAxiosInstanceImport()
     {
+        var path = _options?.Axios?.CustomInstancePath;
+        var name = _options?.Axios?.CustomInstanceName;
+
+        if (!string.IsNullOrWhiteSpace(path) && !string.IsNullOrWhiteSpace(name))
+        {
+            return (name, new ImportNode(
+                items: new[] { new IdentifierNode(name) }.ToImmutableList(),
+                from: NormalizeModuleSpecifier(path),
+                kind: ImportKind.Named));
+        }
+
         return ("axios", new ImportNode(
             items: new[] { new IdentifierNode("axios") }.ToImmutableList(),
             from: "axios",
             kind: ImportKind.Default));
+    }
+
+    /// <summary>
+    /// Превращает сконфигурированный путь в TS import specifier: нормализует разделители и
+    /// убирает завершающее расширение <c>.ts</c>/<c>.tsx</c> (specifier'ы в TS пишутся без него).
+    /// </summary>
+    private static string NormalizeModuleSpecifier(string path)
+    {
+        var specifier = path.Trim().Replace('\\', '/');
+        if (specifier.EndsWith(".tsx", StringComparison.OrdinalIgnoreCase))
+            return specifier[..^4];
+        if (specifier.EndsWith(".ts", StringComparison.OrdinalIgnoreCase))
+            return specifier[..^3];
+        return specifier;
     }
 
     /// <summary>
@@ -987,7 +1033,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
-        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
+        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
         if (resultsAstBuilder.HasResponsesWithBody(operation))
         {
             var resultTypeName = resultsAstBuilder.ResultTypeName(operation.MethodName);
@@ -1004,7 +1050,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             var operationFileName = GetModelFileName(operation.MethodName);
-            var modelsPath = fileOrganization?.ModelsPath ?? "models";
+            var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
 
             var paramsSchemaImports = new List<IdentifierNode>();
             if (operation.PathParameters.Count > 0)
@@ -1037,7 +1083,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 var modelFileName = GetModelFileName(modelName);
                 result.Add(new ImportNode(
                     items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
-                    from: $"../../{modelsPath}/schemas/{modelFileName}/{modelFileName}.schema",
+                    from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
                     kind: ImportKind.Named));
             }
         }
@@ -1068,7 +1114,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
-        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType);
+        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
         if (resultsAstBuilder.HasResponsesWithBody(operation))
         {
             var resultTypeName = resultsAstBuilder.ResultTypeName(operation.MethodName);
@@ -1084,7 +1130,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             var operationFileName = GetModelFileName(operation.MethodName);
-            var modelsPath = fileOrganization?.ModelsPath ?? "models";
+            var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
 
             var paramsSchemaImports = new List<IdentifierNode>();
             if (operation.PathParameters.Count > 0)
@@ -1117,7 +1163,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 var modelFileName = GetModelFileName(modelName);
                 result.Add(new ImportNode(
                     items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
-                    from: $"../../{modelsPath}/schemas/{modelFileName}/{modelFileName}.schema",
+                    from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
                     kind: ImportKind.Named));
             }
         }

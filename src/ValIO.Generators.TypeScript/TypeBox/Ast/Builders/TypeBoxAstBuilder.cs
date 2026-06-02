@@ -9,6 +9,7 @@ using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 
@@ -17,6 +18,13 @@ namespace ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 /// </summary>
 public sealed class TypeBoxAstBuilder
 {
+    private readonly string _uuidFormat;
+
+    public TypeBoxAstBuilder(string? uuidFormat = null)
+    {
+        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+    }
+
     public ExpressionNode BuildSchemaFromIrModel(IrModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -108,11 +116,17 @@ public sealed class TypeBoxAstBuilder
     {
         ArgumentNullException.ThrowIfNull(enumModel);
 
-        var literals = enumModel.Values
-            .Select(value => Call("Literal", BuildLiteral(value.Value)))
-            .ToImmutableList<ExpressionNode>();
+        // Переиспользуем {Name}Values из модели enum, не дублируя литералы:
+        // Type.Union({Name}Values.map((value) => Type.Literal(value))).
+        var arrow = new ArrowFunctionExpressionNode(
+            ImmutableList.Create(new ParameterDeclarationNode(new IdentifierNode("value"), type: null, isRequired: true)),
+            Call("Literal", Id("value")));
 
-        return BuildUnion(literals);
+        var mapCall = new CallExpressionNode(
+            new MemberAccessExpressionNode(Id($"{enumModel.Name}Values"), new IdentifierNode("map")),
+            ImmutableList.Create<ExpressionNode>(arrow));
+
+        return Call("Union", mapCall);
     }
 
     public ExpressionNode BuildSchemaFromIrType(
@@ -159,12 +173,12 @@ public sealed class TypeBoxAstBuilder
         return property.IsRequired ? expression : Call("Optional", expression);
     }
 
-    private static ExpressionNode BuildPrimitive(IrPrimitiveKind kind, IrPropertyConstraints? constraints)
+    private ExpressionNode BuildPrimitive(IrPrimitiveKind kind, IrPropertyConstraints? constraints)
     {
         return kind switch
         {
             IrPrimitiveKind.String => CallOptional("String", BuildStringOptions(null, constraints)),
-            IrPrimitiveKind.Uuid => CallOptional("String", BuildStringOptions("uuid", constraints)),
+            IrPrimitiveKind.Uuid => BuildUuidSchema(constraints),
             IrPrimitiveKind.Date => CallOptional("String", BuildStringOptions("date", constraints)),
             IrPrimitiveKind.DateTime => CallOptional("String", BuildStringOptions("date-time", constraints)),
             IrPrimitiveKind.Time => CallOptional("String", BuildStringOptions("time", constraints)),
@@ -202,6 +216,36 @@ public sealed class TypeBoxAstBuilder
             1 => schemas[0],
             _ => Call("Intersect", new ArrayLiteralExpressionNode(schemas))
         };
+    }
+
+    /// <summary>
+    /// UUID schema per configured mode: guid → Type.String({format:"uuid"}); string →
+    /// Type.String(); regex → Type.String({pattern: UUID_PATTERN}).
+    /// </summary>
+    private ExpressionNode BuildUuidSchema(IrPropertyConstraints? constraints)
+    {
+        return _uuidFormat switch
+        {
+            TypeScriptOptionIds.UuidFormat.String => CallOptional("String", BuildStringOptions(null, constraints)),
+            TypeScriptOptionIds.UuidFormat.Regex => Call("String",
+                BuildStringOptionsWithPattern(Id(TypeScriptOptionIds.UuidFormat.PatternConstName), constraints)),
+            _ => CallOptional("String", BuildStringOptions("uuid", constraints)),
+        };
+    }
+
+    /// <summary>
+    /// String options carrying an explicit <c>pattern</c> expression (e.g. the imported
+    /// <c>UUID_PATTERN</c> identifier) plus any length constraints.
+    /// </summary>
+    private static ObjectLiteralExpressionNode BuildStringOptionsWithPattern(ExpressionNode patternValue, IrPropertyConstraints? constraints)
+    {
+        var properties = ImmutableList.CreateBuilder<PropertyAssignmentNode>();
+        properties.Add(Property("pattern", patternValue));
+        if (constraints?.MinLength is { } minLength)
+            properties.Add(Property("minLength", Number(minLength)));
+        if (constraints?.MaxLength is { } maxLength)
+            properties.Add(Property("maxLength", Number(maxLength)));
+        return new ObjectLiteralExpressionNode(properties.ToImmutableList());
     }
 
     private static ObjectLiteralExpressionNode? BuildStringOptions(string? format, IrPropertyConstraints? constraints)
@@ -266,18 +310,6 @@ public sealed class TypeBoxAstBuilder
 
     private static IdentifierExpressionNode Id(string name)
         => new(new IdentifierNode(name));
-
-    private static LiteralExpressionNode BuildLiteral(object? value)
-    {
-        return value switch
-        {
-            null => new LiteralExpressionNode(null, LiteralKind.Null),
-            string text => String(text),
-            bool boolean => new LiteralExpressionNode(boolean, LiteralKind.Boolean),
-            int or long or short or byte or decimal or double or float => Number(value),
-            _ => String(value.ToString() ?? string.Empty)
-        };
-    }
 
     private static LiteralExpressionNode String(string value)
         => new(value, LiteralKind.String);

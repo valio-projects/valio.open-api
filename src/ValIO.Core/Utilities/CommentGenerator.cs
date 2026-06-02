@@ -78,9 +78,14 @@ public static class CommentGenerator
     {
         if (string.IsNullOrEmpty(description))
             return;
-        
+
         CodeFormatter.AppendLine(sb, indentLevel, "/**");
-        CodeFormatter.AppendLine(sb, indentLevel, $" * {CodeEscapeHelper.EscapeJSDocComment(description)}");
+        // Разбиваем многострочные комментарии (например, несколько @tag-строк) на отдельные ` * ` строки.
+        var lines = description.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+        foreach (var line in lines)
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, $" * {CodeEscapeHelper.EscapeJSDocComment(line)}");
+        }
         CodeFormatter.AppendLine(sb, indentLevel, " */");
     }
     

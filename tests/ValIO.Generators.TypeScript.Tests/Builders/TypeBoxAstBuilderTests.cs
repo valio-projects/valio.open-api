@@ -137,7 +137,7 @@ public class TypeBoxAstBuilderTests
     }
 
     [Test]
-    public void EnumSchema_RendersUnionOfLiterals()
+    public void EnumSchema_RendersUnionOverReusedValuesArray()
     {
         var e = new IrEnum
         {
@@ -150,9 +150,12 @@ public class TypeBoxAstBuilderTests
             ],
         };
         var rendered = _renderer.Visit(_sut.BuildEnumSchema(e));
+        // Reuses the model's StatusValues array instead of inlining literals:
+        // Type.Union(StatusValues.map((value) => Type.Literal(value))).
         rendered.Should().StartWith("Type.Union(");
-        rendered.Should().Contain("Type.Literal(\"on\")");
-        rendered.Should().Contain("Type.Literal(\"off\")");
+        rendered.Should().Contain("StatusValues.map(");
+        rendered.Should().Contain("Type.Literal(value)");
+        rendered.Should().NotContain("Type.Literal(\"on\")");
     }
 
     [Test]

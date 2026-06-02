@@ -67,6 +67,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             CodeFormatter.AppendEmptyLine(_sb);
         }
 
+        // File-level header comment (@file/@module/@generated), rendered above imports.
+        if (node.FileDocumentation != null)
+        {
+            RenderComment(_sb, node.FileDocumentation, 0);
+            CodeFormatter.AppendEmptyLine(_sb);
+        }
+
         // Рендерим imports
         if (node.Imports.Count > 0)
         {

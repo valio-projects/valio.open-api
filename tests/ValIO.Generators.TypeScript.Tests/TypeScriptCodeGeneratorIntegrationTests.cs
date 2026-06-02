@@ -363,6 +363,100 @@ public class TypeScriptCodeGeneratorIntegrationTests
     }
 
     [Test]
+    public void TypeScriptOptionsDescriptor_ResultTypeSuffix_DefaultsAliasAndCustom()
+    {
+        var descriptor = new TypeScriptOptionsDescriptor();
+
+        // Absent key → default "Results".
+        descriptor.ParseOptions(new Dictionary<string, JsonElement>(), out _)
+            .Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.ResultTypeSuffix.Should().Be("Results");
+
+        // Preset, case-insensitive → canonical PascalCase.
+        using var preset = JsonDocument.Parse("{\"resultTypeSuffix\":\"RESPONSE\"}");
+        descriptor.ParseOptions(
+                new Dictionary<string, JsonElement> { ["resultTypeSuffix"] = preset.RootElement.GetProperty("resultTypeSuffix") },
+                out var presetErrors)
+            .Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.ResultTypeSuffix.Should().Be("Response");
+        presetErrors.Should().BeEmpty();
+
+        // Alias key `resultSuffix` is honoured.
+        using var alias = JsonDocument.Parse("{\"resultSuffix\":\"result\"}");
+        descriptor.ParseOptions(
+                new Dictionary<string, JsonElement> { ["resultSuffix"] = alias.RootElement.GetProperty("resultSuffix") },
+                out _)
+            .Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.ResultTypeSuffix.Should().Be("Result");
+
+        // Custom value passes through (first char capitalised), no error.
+        using var custom = JsonDocument.Parse("{\"resultTypeSuffix\":\"outcome\"}");
+        descriptor.ParseOptions(
+                new Dictionary<string, JsonElement> { ["resultTypeSuffix"] = custom.RootElement.GetProperty("resultTypeSuffix") },
+                out var customErrors)
+            .Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.ResultTypeSuffix.Should().Be("Outcome");
+        customErrors.Should().BeEmpty();
+    }
+
+    [Test]
+    public void TypeScriptOptionsDescriptor_UuidFormat_DefaultsAndNormalizes()
+    {
+        var descriptor = new TypeScriptOptionsDescriptor();
+
+        // Absent → default "guid".
+        descriptor.ParseOptions(new Dictionary<string, JsonElement>(), out _)
+            .Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.UuidFormat.Should().Be("guid");
+
+        // Aliases / casing normalised to canonical modes; unknown → default.
+        foreach (var (input, expected) in new[]
+        {
+            ("string", "string"), ("None", "string"), ("REGEX", "regex"),
+            ("pattern", "regex"), ("uuid", "guid"), ("mystery", "guid"),
+        })
+        {
+            using var d = JsonDocument.Parse($"{{\"uuidFormat\":\"{input}\"}}");
+            descriptor.ParseOptions(
+                    new Dictionary<string, JsonElement> { ["uuidFormat"] = d.RootElement.GetProperty("uuidFormat") },
+                    out _)
+                .Should().BeOfType<TypeScriptGenerationOptions>()
+                .Which.UuidFormat.Should().Be(expected, $"'{input}' should normalise to '{expected}'");
+        }
+    }
+
+    [Test]
+    public void TypeScriptOptionsDescriptor_AxiosCustomInstance_ParsedAndValidated()
+    {
+        var descriptor = new TypeScriptOptionsDescriptor();
+
+        // Both path + name → parsed onto opts.Axios, no errors. The .ts extension is kept
+        // here (it is stripped later, when the import specifier is emitted).
+        using var full = JsonDocument.Parse(
+            "{\"axios\":{\"customInstancePath\":\"@shared/api/api-mutator.ts\",\"customInstanceName\":\"apiMutator\"}}");
+        var parsed = descriptor.ParseOptions(
+            new Dictionary<string, JsonElement> { ["axios"] = full.RootElement.GetProperty("axios") },
+            out var errors);
+        errors.Should().BeEmpty();
+        var axios = parsed.Should().BeOfType<TypeScriptGenerationOptions>().Subject.Axios;
+        axios.Should().NotBeNull();
+        axios!.CustomInstancePath.Should().Be("@shared/api/api-mutator.ts");
+        axios.CustomInstanceName.Should().Be("apiMutator");
+
+        // Absent `axios` → null.
+        descriptor.ParseOptions(new Dictionary<string, JsonElement>(), out _)
+            .Should().BeOfType<TypeScriptGenerationOptions>()
+            .Which.Axios.Should().BeNull();
+
+        // Partial config (path without name) → validation error.
+        using var partial = JsonDocument.Parse("{\"axios\":{\"customInstancePath\":\"@shared/api/api-mutator\"}}");
+        descriptor.ParseOptions(
+            new Dictionary<string, JsonElement> { ["axios"] = partial.RootElement.GetProperty("axios") },
+            out var partialErrors);
+        partialErrors.Should().ContainSingle(e => e.Contains("customInstanceName"));
+    }
+
+    [Test]
     public async Task GeneratorRegistry_FindsTypeScriptPlugin()
     {
         var registry = _services.GetRequiredService<IGeneratorRegistry>();

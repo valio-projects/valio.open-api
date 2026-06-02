@@ -1,5 +1,7 @@
 using System.Text;
 using ValIO.Core.Plugins;
+using ValIO.Core.Utilities;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 
 namespace ValIO.Generators.TypeScript.Steps;
 
@@ -36,7 +38,11 @@ public sealed class TypeScriptIndexStep : ICodeGenerationStep
 
         if (sb.Length > 0)
         {
-            context.GeneratedFiles.Add(new GeneratedFile("index.ts", sb.ToString()));
+            var header = new StringBuilder();
+            CommentGenerator.GenerateJSDocComment(header, 0,
+                TypeScriptDoc.FileHeader("index.ts", "index", "Barrel file re-exporting all generated TypeScript modules.").Text);
+            header.AppendLine();
+            context.GeneratedFiles.Add(new GeneratedFile("index.ts", header.ToString() + sb.ToString()));
         }
 
         return Task.CompletedTask;

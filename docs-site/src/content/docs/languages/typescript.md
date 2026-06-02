@@ -20,6 +20,12 @@ configurable of the bundled generators.
 - **Mocks** — Mock Service Worker handlers.
 - **Index files** — one re-export tree.
 
+Every generated file is **fully JSDoc-annotated**: a file header
+(`@file` / `@module` / `@description` / `@generated`) plus per-declaration tags —
+`@type` / `@nullish` / `@minLength` / `@pattern` … on model properties,
+`@param` / `@returns` on client functions, `@enum` + allowed values on enums,
+`@typedef` on schema output types, and so on.
+
 ## Options
 
 ```json
@@ -30,10 +36,16 @@ configurable of the bundled generators.
     "validationLibrary":  "zod",
     "queryWrapper":       "tanstack",
     "mockLibrary":        "msw",
-    "enumFormat":         "string-union"
+    "enumFormat":         "string-union",
+    "resultTypeSuffix":   "Results"
   }
 }
 ```
+
+`resultTypeSuffix` sets the suffix on the per-operation result-union type
+(`{Operation}Results` by default). Use `Result` / `Response` / `Responses` or a
+custom string when the default name clashes with a generated model. See the
+[options reference](../../configuration/options-reference/) for details.
 
 ## File layout
 

@@ -38,7 +38,7 @@ public sealed class TypeScriptResultsStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, astBuilder.BuildType);
+        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix);
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
 

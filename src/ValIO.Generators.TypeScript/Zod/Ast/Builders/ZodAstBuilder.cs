@@ -22,21 +22,25 @@ public class ZodAstBuilder
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
     private readonly bool _useBigInt;
-    
+    private readonly string? _uuidFormat;
+
     /// <summary>
     /// Конструктор
     /// </summary>
     /// <param name="namingConverter">Конвертер имен</param>
     /// <param name="typeBuilder">Функция для построения TypeNode из IrType</param>
     /// <param name="useBigInt">Использовать bigint для int64. По умолчанию false — number.</param>
+    /// <param name="uuidFormat">Режим обработки Guid/Uuid полей (guid/string/regex). null → guid.</param>
     public ZodAstBuilder(
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
-        bool useBigInt = false)
+        bool useBigInt = false,
+        string? uuidFormat = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
         _useBigInt = useBigInt;
+        _uuidFormat = uuidFormat;
     }
     
     /// <summary>
@@ -225,7 +229,7 @@ public class ZodAstBuilder
         if (kind is IrPrimitiveKind.File)
             return BuildZodInstanceOf("File");
 
-        return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef);
+        return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef, _uuidFormat);
     }
 
     private static ZodExpressionSchemaNode BuildZodInstanceOf(string typeName)

@@ -59,9 +59,9 @@ public class ZodSchemasStepTests
 
         var userSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.Replace('\\', '/').EndsWith("schemas/user/user.schema.ts", StringComparison.Ordinal));
-        // From models/schemas/user/user.schema.ts, the model lives at
-        // models/user/user.ts → relative ../../user/user.
-        userSchema.Content.Should().Contain("../../user/user");
+        // From schemas/user/user.schema.ts (root schemas), the model lives at
+        // models/user/user.ts → relative ../../models/user/user.
+        userSchema.Content.Should().Contain("../../models/user/user");
     }
 
     [Test]
@@ -79,5 +79,24 @@ public class ZodSchemasStepTests
             f.RelativePath.Replace('\\', '/').EndsWith("schemas/pet/pet.schema.ts", StringComparison.Ordinal));
         petSchema.Content.Should().Contain("'../category/category.schema'");
         petSchema.Content.Should().Contain("'../tag/tag.schema'");
+    }
+
+    [Test]
+    public async Task EnumSchema_ReusesModelValues_ViaZEnum()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "zod3",
+        });
+
+        var enumSchema = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.Replace('\\', '/').EndsWith("schemas/userRole/userRole.schema.ts", StringComparison.Ordinal));
+
+        // Reuses UserRoleValues from the enum model instead of re-declaring it.
+        enumSchema.Content.Should().Contain("import { UserRoleValues } from \"../../models/userRole/userRole\"");
+        enumSchema.Content.Should().Contain("z.enum(UserRoleValues)");
+        enumSchema.Content.Should().NotContain("UserRoleValues = [");
     }
 }

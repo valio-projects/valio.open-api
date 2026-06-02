@@ -44,7 +44,7 @@ public class StepSnapshotTests
         });
 
         var userSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("models/schemas/user/user.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("schemas/user/user.schema.ts", StringComparison.Ordinal));
         Snapshot.Match(userSchema.Content, "ZodSchemasStep/user_zod3");
     }
 

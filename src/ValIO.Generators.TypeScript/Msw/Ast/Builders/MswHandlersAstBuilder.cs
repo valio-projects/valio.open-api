@@ -8,6 +8,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 
@@ -81,7 +82,11 @@ public sealed class MswHandlersAstBuilder
 
         return new SourceFileNode(
             imports: imports.ToImmutable(),
-            declarations: ImmutableList.Create<DeclarationNode>(declaration));
+            declarations: ImmutableList.Create<DeclarationNode>(declaration),
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                "handlers.ts",
+                "mocks/handlers",
+                "Mock Service Worker (MSW) request handlers for all API operations."));
     }
 
     /// <summary>

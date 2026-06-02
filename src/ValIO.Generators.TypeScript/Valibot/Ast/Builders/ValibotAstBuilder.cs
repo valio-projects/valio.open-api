@@ -10,6 +10,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 
@@ -18,6 +19,13 @@ namespace ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 /// </summary>
 public sealed class ValibotAstBuilder
 {
+    private readonly string _uuidFormat;
+
+    public ValibotAstBuilder(string? uuidFormat = null)
+    {
+        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+    }
+
     public ExpressionNode BuildSchemaFromIrModel(IrModel model)
     {
         if (model.Composition != null && model.Composition.Types.Count > 0)
@@ -153,7 +161,7 @@ public sealed class ValibotAstBuilder
             IrPrimitiveKind.DateTime => Pipe(Call("string"), Call("isoDateTime")),
             IrPrimitiveKind.Date => Pipe(Call("string"), Call("isoDate")),
             IrPrimitiveKind.Time => Pipe(Call("string"), Call("isoTime")),
-            IrPrimitiveKind.Uuid => Pipe(Call("string"), Call("uuid")),
+            IrPrimitiveKind.Uuid => BuildUuidSchema(),
             IrPrimitiveKind.Any => Call("unknown"),
             IrPrimitiveKind.Void => Call("undefined"),
             IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File => Call("unknown"),
@@ -161,6 +169,20 @@ public sealed class ValibotAstBuilder
         };
 
         return ApplyConstraints(baseSchema, kind, constraints);
+    }
+
+    /// <summary>
+    /// UUID schema per configured mode: guid → v.uuid(); string → v.string();
+    /// regex → v.pipe(v.string(), v.regex(UUID_REGEX)).
+    /// </summary>
+    private ExpressionNode BuildUuidSchema()
+    {
+        return _uuidFormat switch
+        {
+            TypeScriptOptionIds.UuidFormat.String => Call("string"),
+            TypeScriptOptionIds.UuidFormat.Regex => Pipe(Call("string"), Call("regex", Id(TypeScriptOptionIds.UuidFormat.RegexConstName))),
+            _ => Pipe(Call("string"), Call("uuid")),
+        };
     }
 
     private static ExpressionNode ApplyConstraints(ExpressionNode schema, IrPrimitiveKind kind, IrPropertyConstraints? constraints)

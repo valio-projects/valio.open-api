@@ -249,6 +249,7 @@ public class ConfigFileOrganization
     public bool SeparateClients { get; set; } = true;
     public string? ModelsPath { get; set; }
     public string? ClientsPath { get; set; }
+    public string? SchemasPath { get; set; }
 }
 
 /// <summary>

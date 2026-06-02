@@ -7,6 +7,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.Tests.Builders;
 
@@ -51,6 +52,52 @@ public class TypeScriptResultsAstBuilderTests
         var source = _sut.BuildResultsSourceFile(op, importPath: null, fileOrganization: null, currentOperationName: "getOne");
         var typeAliases = source.Declarations.OfType<InterfaceDeclarationNode>().Select(d => d.Name.Name).ToList();
         typeAliases.Should().Contain(new[] { "GetOneResult200", "GetOneResultOther" });
+    }
+
+    [Test]
+    public void DefaultSuffix_UnionAliasIsResults_VariantsKeepResultBase()
+    {
+        var op = Op("getOne", responses:
+        [
+            new IrResponse { StatusCode = "200", Type = new IrModelReference { ModelName = "User" } },
+        ]);
+
+        var source = _sut.BuildResultsSourceFile(op, importPath: null, fileOrganization: null, currentOperationName: "getOne");
+
+        _sut.ResultTypeName("getOne").Should().Be("GetOneResults");
+        source.Declarations.OfType<TypeAliasDeclarationNode>().Select(d => d.Name.Name)
+            .Should().ContainSingle().Which.Should().Be("GetOneResults");
+        // Per-status variant interfaces keep the fixed "Result" base.
+        source.Declarations.OfType<InterfaceDeclarationNode>().Select(d => d.Name.Name)
+            .Should().Contain(new[] { "GetOneResult200", "GetOneResultOther" });
+    }
+
+    [Test]
+    public void CustomSuffix_RenamesUnionAliasOnly()
+    {
+        var sut = new TypeScriptResultsAstBuilder(_namingConverter, new TypeScriptIrTypeMapper().MapType, resultSuffix: "Response");
+        var op = Op("getOne", responses:
+        [
+            new IrResponse { StatusCode = "200", Type = new IrModelReference { ModelName = "User" } },
+        ]);
+
+        var source = sut.BuildResultsSourceFile(op, importPath: null, fileOrganization: null, currentOperationName: "getOne");
+
+        sut.ResultTypeName("getOne").Should().Be("GetOneResponse");
+        source.Declarations.OfType<TypeAliasDeclarationNode>().Select(d => d.Name.Name)
+            .Should().ContainSingle().Which.Should().Be("GetOneResponse");
+        // The union suffix never leaks into the variant interface names.
+        source.Declarations.OfType<InterfaceDeclarationNode>().Select(d => d.Name.Name)
+            .Should().Contain(new[] { "GetOneResult200", "GetOneResultOther" });
+    }
+
+    [Test]
+    public void ResolveResultSuffix_FallsBackToResults_AndCapitalisesCustom()
+    {
+        TypeScriptResultsAstBuilder.ResolveResultSuffix(null).Should().Be("Results");
+        TypeScriptResultsAstBuilder.ResolveResultSuffix("   ").Should().Be("Results");
+        TypeScriptResultsAstBuilder.ResolveResultSuffix("response").Should().Be("Response");
+        TypeScriptResultsAstBuilder.ResolveResultSuffix("  outcome ").Should().Be("Outcome");
     }
 
     [Test]

@@ -6,8 +6,10 @@ using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 
@@ -17,11 +19,16 @@ namespace ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 public sealed class ValibotSchemaSourceFileBuilder
 {
     private readonly INamingConverter _namingConverter;
-    private readonly ValibotAstBuilder _builder = new();
+    private readonly ValibotAstBuilder _builder;
+    private readonly string _modelsPath;
+    private readonly string _uuidFormat;
 
-    public ValibotSchemaSourceFileBuilder(INamingConverter namingConverter)
+    public ValibotSchemaSourceFileBuilder(INamingConverter namingConverter, string modelsPath = "models", string? uuidFormat = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
+        _modelsPath = string.IsNullOrWhiteSpace(modelsPath) ? "models" : modelsPath;
+        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+        _builder = new ValibotAstBuilder(uuidFormat);
     }
 
     public SourceFileNode BuildModelSchemaSourceFile(IrModel model, bool separateModels)
@@ -46,7 +53,8 @@ public sealed class ValibotSchemaSourceFileBuilder
                     initializer: _builder.BuildSchemaFromIrModel(model),
                     documentation: BuildDocumentation(model.Description),
                     isExported: true))
-                .Add(BuildInferOutputTypeAlias(model.Name, schemaName)));
+                .Add(BuildInferOutputTypeAlias(model.Name, schemaName)),
+            fileDocumentation: SchemaFileHeader(model.Name, "Valibot"));
     }
 
     private static bool IsSelfRecursive(IrModel model)
@@ -92,32 +100,52 @@ public sealed class ValibotSchemaSourceFileBuilder
         }
     }
 
-    public SourceFileNode BuildEnumSchemaSourceFile(IrEnum enumModel)
+    public SourceFileNode BuildEnumSchemaSourceFile(IrEnum enumModel, bool separateModels)
     {
         ArgumentNullException.ThrowIfNull(enumModel);
 
-        var valuesName = $"{enumModel.Name}Values";
         var schemaName = GetSchemaName(enumModel.Name);
-        var values = enumModel.Values
-            .Select(value => BuildEnumValueLiteral(value.Value, enumModel.BaseType))
-            .ToImmutableList<ExpressionNode>();
 
+        // Переиспользуем {Name}Values из модели enum (v.picklist принимает этот массив),
+        // не дублируя значения в файле схемы.
         return new SourceFileNode(
-            imports: BuildValibotImport(),
+            imports: BuildEnumImports(enumModel, separateModels),
             declarations: ImmutableList<DeclarationNode>.Empty
-                .Add(new VariableDeclarationNode(
-                    name: new IdentifierNode(valuesName),
-                    declarationKind: VariableDeclarationKind.Const,
-                    initializer: new ArrayLiteralExpressionNode(values, preferMultilineFormat: true),
-                    isExported: true,
-                    asConstAssertion: true))
                 .Add(new VariableDeclarationNode(
                     name: new IdentifierNode(schemaName),
                     declarationKind: VariableDeclarationKind.Const,
                     initializer: _builder.BuildEnumSchema(enumModel),
                     documentation: BuildDocumentation(enumModel.Description),
                     isExported: true))
-                .Add(BuildInferOutputTypeAlias(enumModel.Name, schemaName)));
+                .Add(BuildInferOutputTypeAlias(enumModel.Name, schemaName)),
+            fileDocumentation: SchemaFileHeader(enumModel.Name, "Valibot"));
+    }
+
+    private CommentNode SchemaFileHeader(string typeName, string library)
+    {
+        var fileBase = _namingConverter.ToCamelCase(typeName);
+        return TypeScriptDoc.FileHeader(
+            $"{fileBase}.schema.ts",
+            $"schemas/{fileBase}",
+            $"{library} validation schema for {typeName}.");
+    }
+
+    private IReadOnlyList<ImportNode> BuildEnumImports(IrEnum enumModel, bool separateModels)
+    {
+        var imports = ImmutableList.CreateBuilder<ImportNode>();
+        imports.AddRange(BuildValibotImport());
+
+        var enumFileName = _namingConverter.ToCamelCase(enumModel.Name);
+        var modelPath = separateModels
+            ? $"../../{_modelsPath}/{enumFileName}/{enumFileName}"
+            : $"../{_modelsPath}/{enumFileName}";
+
+        imports.Add(new ImportNode(
+            items: ImmutableList.Create(new IdentifierNode($"{enumModel.Name}Values")),
+            from: modelPath,
+            kind: ImportKind.Named));
+
+        return imports.ToImmutable();
     }
 
     private static string GetSchemaName(string name) => $"{name}Schema";
@@ -140,8 +168,8 @@ public sealed class ValibotSchemaSourceFileBuilder
         {
             var ownFileName = _namingConverter.ToCamelCase(model.Name);
             var ownPath = separateModels
-                ? $"../../{ownFileName}/{ownFileName}"
-                : $"../{ownFileName}";
+                ? $"../../{_modelsPath}/{ownFileName}/{ownFileName}"
+                : $"../{_modelsPath}/{ownFileName}";
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(model.Name)),
                 from: ownPath,
@@ -167,6 +195,17 @@ public sealed class ValibotSchemaSourceFileBuilder
                 kind: ImportKind.Named));
         }
 
+        // Shared UUID regex constant (regex mode): schema sits in {schemas}/{name}/ → ../formats.
+        if (_uuidFormat == TypeScriptOptionIds.UuidFormat.Regex && UuidFormatSupport.ModelUsesUuid(model))
+        {
+            imports.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode(TypeScriptOptionIds.UuidFormat.RegexConstName)),
+                from: separateModels
+                    ? $"../{TypeScriptOptionIds.UuidFormat.ConstFileName}"
+                    : $"./{TypeScriptOptionIds.UuidFormat.ConstFileName}",
+                kind: ImportKind.Named));
+        }
+
         return imports.ToImmutable();
     }
 
@@ -174,7 +213,10 @@ public sealed class ValibotSchemaSourceFileBuilder
     {
         return new TypeAliasDeclarationNode(
             name: new IdentifierNode($"{name}SchemaOutput"),
-            type: new RawTypeNode($"v.InferOutput<typeof {schemaName}>"));
+            type: new RawTypeNode($"v.InferOutput<typeof {schemaName}>"),
+            documentation: TypeScriptDoc.Block(
+                $"Inferred output type of {schemaName}.",
+                ("typedef", $"{{v.InferOutput<typeof {schemaName}>}} {name}SchemaOutput")));
     }
 
     private static CommentNode? BuildDocumentation(string? description)
@@ -182,14 +224,6 @@ public sealed class ValibotSchemaSourceFileBuilder
         return string.IsNullOrWhiteSpace(description)
             ? null
             : new CommentNode(description, CommentKind.JSDoc);
-    }
-
-    private static LiteralExpressionNode BuildEnumValueLiteral(object? value, IrEnumBaseType baseType)
-    {
-        if (baseType == IrEnumBaseType.Integer)
-            return new LiteralExpressionNode(value ?? 0, LiteralKind.Number);
-
-        return new LiteralExpressionNode(value?.ToString() ?? string.Empty, LiteralKind.String);
     }
 
     private IReadOnlyList<string> ExtractDependencies(IrModel model)

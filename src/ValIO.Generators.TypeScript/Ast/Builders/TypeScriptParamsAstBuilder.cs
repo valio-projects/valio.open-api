@@ -6,6 +6,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -151,10 +152,15 @@ public sealed class TypeScriptParamsAstBuilder
 
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
+        var fileBase = _namingConverter.ToCamelCase(operation.MethodName);
         return new SourceFileNode(
             imports: imports.ToImmutableList(),
             exports: exports,
-            declarations: declarations.ToImmutableList());
+            declarations: declarations.ToImmutableList(),
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{fileBase}.params.ts",
+                $"endpoints/{fileBase}",
+                $"Request parameter types for the {operation.MethodName} operation."));
     }
 
     private InterfaceDeclarationNode BuildRouteParamsInterface(IrOperation operation)

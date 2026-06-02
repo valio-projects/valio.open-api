@@ -53,13 +53,13 @@ public class KyClientStepTests
             ValidationLibrary = "zod3",
         });
 
-        // Regression: ky originally generated `../../models/schemas/Pet/Pet.schema`
+        // Regression: ky originally generated `../../schemas/Pet/Pet.schema`
         // (PascalCase), causing TS1261 on case-sensitive filesystems.
         var withSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith(".ky.ts", StringComparison.Ordinal)
             && f.Content.Contains("Schema", StringComparison.Ordinal));
-        withSchema.Content.Should().NotMatchRegex(@"models/schemas/[A-Z]\w*/[A-Z]\w*\.schema");
-        withSchema.Content.Should().MatchRegex(@"models/schemas/[a-z]\w*/[a-z]\w*\.schema");
+        withSchema.Content.Should().NotMatchRegex(@"schemas/[A-Z]\w*/[A-Z]\w*\.schema");
+        withSchema.Content.Should().MatchRegex(@"schemas/[a-z]\w*/[a-z]\w*\.schema");
     }
 
     [Test]

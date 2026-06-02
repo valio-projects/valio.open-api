@@ -9,6 +9,7 @@ using ValIO.Core.IR;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Angular.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
@@ -34,7 +35,7 @@ public sealed class AngularServiceAstBuilder
         _options = options;
         var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix);
     }
 
     /// <summary>
@@ -63,9 +64,14 @@ public sealed class AngularServiceAstBuilder
         var imports = BuildImports(client, fileOrganization);
         var serviceClass = BuildServiceClass(client);
 
+        var fileBase = ServiceFileName(client.Name);
         return new SourceFileNode(
             imports: imports,
-            declarations: ImmutableList.Create<DeclarationNode>(serviceClass));
+            declarations: ImmutableList.Create<DeclarationNode>(serviceClass),
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{fileBase}.service.ts",
+                $"services/{fileBase}",
+                $"Angular HttpClient service for the {client.Name} API."));
     }
 
     private AngularServiceClassNode BuildServiceClass(IrClient client)

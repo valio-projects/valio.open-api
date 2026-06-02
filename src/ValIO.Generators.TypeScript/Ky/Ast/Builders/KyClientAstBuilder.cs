@@ -10,6 +10,7 @@ using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
@@ -27,17 +28,21 @@ public sealed class KyClientAstBuilder
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly EndpointValidationLibrary _validationLibrary;
-    private readonly TypeBoxAstBuilder _typeBoxAstBuilder = new();
-    private readonly ValibotAstBuilder _valibotAstBuilder = new();
+    private readonly TypeBoxAstBuilder _typeBoxAstBuilder;
+    private readonly ValibotAstBuilder _valibotAstBuilder;
+    private readonly string _uuidFormat;
 
     public KyClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validationLibrary = EndpointValidationLibrary.From(options);
+        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(options?.UuidFormat);
+        _typeBoxAstBuilder = new TypeBoxAstBuilder(options?.UuidFormat);
+        _valibotAstBuilder = new ValibotAstBuilder(options?.UuidFormat);
 
         var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix);
     }
 
     public SourceFileNode BuildOperationClientSourceFile(IrOperation operation, FileOrganization fileOrganization)
@@ -58,7 +63,11 @@ public sealed class KyClientAstBuilder
 
         return new SourceFileNode(
             imports: BuildImports(operation, operationFileName, fileOrganization, hasParameters, hasResultType, declarations.Count > 1),
-            declarations: declarations.ToImmutable());
+            declarations: declarations.ToImmutable(),
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{operationFileName}.ky.ts",
+                $"endpoints/{operationFileName}",
+                $"Ky HTTP client for the {operation.MethodName} operation."));
     }
 
     private IReadOnlyList<ImportNode> BuildImports(
@@ -109,6 +118,8 @@ public sealed class KyClientAstBuilder
                     from: BuildSchemaImportPath(schemaName[..^"Schema".Length], fileOrganization),
                     kind: ImportKind.Named));
             }
+
+            AddUuidFormatImport(imports, operation, fileOrganization);
         }
 
         return imports.ToImmutable();
@@ -599,7 +610,7 @@ public sealed class KyClientAstBuilder
         };
     }
 
-    private static ExpressionNode BuildZodPrimitive(IrPrimitiveKind kind)
+    private ExpressionNode BuildZodPrimitive(IrPrimitiveKind kind)
     {
         return kind switch
         {
@@ -607,7 +618,12 @@ public sealed class KyClientAstBuilder
             IrPrimitiveKind.Number => ZodCall("number"),
             IrPrimitiveKind.Integer or IrPrimitiveKind.Long => Call(Member(ZodCall("number"), "int")),
             IrPrimitiveKind.Boolean => ZodCall("boolean"),
-            IrPrimitiveKind.Uuid => Call(Member(ZodCall("string"), "uuid")),
+            IrPrimitiveKind.Uuid => _uuidFormat switch
+            {
+                TypeScriptOptionIds.UuidFormat.String => ZodCall("string"),
+                TypeScriptOptionIds.UuidFormat.Regex => Call(Member(ZodCall("string"), "regex"), Id(TypeScriptOptionIds.UuidFormat.RegexConstName)),
+                _ => Call(Member(ZodCall("string"), "uuid")),
+            },
             IrPrimitiveKind.Any => ZodCall("unknown"),
             IrPrimitiveKind.Void => ZodCall("void"),
             _ => ZodCall("unknown")
@@ -640,11 +656,26 @@ public sealed class KyClientAstBuilder
 
     private string BuildSchemaImportPath(string modelName, FileOrganization fileOrganization)
     {
-        var modelsPath = fileOrganization.ModelsPath ?? "models";
+        var schemasPath = fileOrganization.SchemasPath ?? "schemas";
         var modelFileName = _namingConverter.ToCamelCase(modelName);
         return fileOrganization.SeparateModels
-            ? $"../../{modelsPath}/schemas/{modelFileName}/{modelFileName}.schema"
-            : $"../../{modelsPath}/schemas/{modelFileName}.schema";
+            ? $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema"
+            : $"../../{schemasPath}/{modelFileName}.schema";
+    }
+
+    private void AddUuidFormatImport(ImmutableList<ImportNode>.Builder imports, IrOperation operation, FileOrganization fileOrganization)
+    {
+        if (_uuidFormat != TypeScriptOptionIds.UuidFormat.Regex || !UuidFormatSupport.OperationParamsUseUuid(operation))
+            return;
+
+        var schemasPath = fileOrganization.SchemasPath ?? "schemas";
+        var symbol = _validationLibrary.Kind == EndpointValidationKind.TypeBox
+            ? TypeScriptOptionIds.UuidFormat.PatternConstName
+            : TypeScriptOptionIds.UuidFormat.RegexConstName;
+        imports.Add(new ImportNode(
+            items: ImmutableList.Create(new IdentifierNode(symbol)),
+            from: $"../../{schemasPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
+            kind: ImportKind.Named));
     }
 
     private static ExpressionNode BuildParameterAccess(ExpressionNode source, string name, bool sourceMayBeUndefined)

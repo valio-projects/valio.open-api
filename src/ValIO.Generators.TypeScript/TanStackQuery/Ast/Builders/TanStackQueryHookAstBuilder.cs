@@ -7,6 +7,7 @@ using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 namespace ValIO.Generators.TypeScript.TanStackQuery.Ast.Builders;
@@ -27,13 +28,14 @@ public sealed class TanStackQueryHookAstBuilder
     public TanStackQueryHookAstBuilder(
         INamingConverter namingConverter,
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder,
-        string clientSuffix = "axios")
+        string clientSuffix = "axios",
+        string? resultSuffix = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _clientSuffix = string.IsNullOrWhiteSpace(clientSuffix) ? "fetch" : clientSuffix;
         _hookUsesAxios = _clientSuffix.Equals("axios", StringComparison.OrdinalIgnoreCase);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix);
         _typeBuilder = new TanStackQueryTypeBuilder(namingConverter, _hookUsesAxios);
     }
 
@@ -61,7 +63,11 @@ public sealed class TanStackQueryHookAstBuilder
             ? BuildMutationDeclarations(operation, hookBaseName, paramsTypeName, resultTypeName, dataType, variablesType)
             : BuildQueryDeclarations(operation, hookBaseName, paramsTypeName, hasParams, resultTypeName, dataType);
 
-        return new SourceFileNode(imports: imports, declarations: declarations);
+        return new SourceFileNode(imports: imports, declarations: declarations,
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{operationFileName}.query.ts",
+                $"endpoints/{operationFileName}",
+                $"TanStack Query (React) hooks for the {operation.MethodName} operation."));
     }
 
     private static IReadOnlyList<ImportNode> BuildImports(

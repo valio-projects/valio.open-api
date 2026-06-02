@@ -63,8 +63,8 @@ public class PetstoreMatrixTests
         PathsEndingWith(ctx, ".axios.ts").Should().NotBeEmpty();
         PathsEndingWith(ctx, ".params.schema.ts").Should().NotBeEmpty("zod3 emits {op}.params.schema.ts when path/query params exist");
 
-        var modelSchemas = Paths(ctx).Where(p => p.Contains("/schemas/", StringComparison.Ordinal) && p.EndsWith(".schema.ts", StringComparison.Ordinal)).ToList();
-        modelSchemas.Should().NotBeEmpty("model schemas should be emitted under models/schemas/");
+        var modelSchemas = Paths(ctx).Where(p => p.Contains("schemas/", StringComparison.Ordinal) && p.EndsWith(".schema.ts", StringComparison.Ordinal)).ToList();
+        modelSchemas.Should().NotBeEmpty("model schemas should be emitted under the root schemas/ folder");
         modelSchemas.Should().AllSatisfy(p => p.Split('/').Should().Contain("schemas"));
     }
 
@@ -140,7 +140,7 @@ public class PetstoreMatrixTests
         var kySource = ctx.GeneratedFiles.First(f => f.RelativePath.EndsWith(".ky.ts", StringComparison.Ordinal));
         if (kySource.Content.Contains("schema", StringComparison.Ordinal))
         {
-            kySource.Content.Should().NotMatchRegex(@"models/schemas/[A-Z][a-zA-Z]*/[A-Z][a-zA-Z]*\.schema",
+            kySource.Content.Should().NotMatchRegex(@"schemas/[A-Z][a-zA-Z]*/[A-Z][a-zA-Z]*\.schema",
                 "schema imports must be camelCased");
         }
     }

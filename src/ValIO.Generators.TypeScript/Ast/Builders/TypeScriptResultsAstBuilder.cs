@@ -6,7 +6,9 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.Models;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
@@ -18,25 +20,44 @@ public sealed class TypeScriptResultsAstBuilder
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
+    private readonly string _resultSuffix;
 
     public TypeScriptResultsAstBuilder(
         INamingConverter namingConverter,
-        Func<IrType, TypeNode> typeBuilder)
+        Func<IrType, TypeNode> typeBuilder,
+        string? resultSuffix = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
+        _resultSuffix = ResolveResultSuffix(resultSuffix);
     }
 
     /// <summary>
-    /// Имя Result типа: {OperationName}Result
+    /// Normalises a configured result-type suffix to the value used in generated names:
+    /// null/whitespace falls back to <see cref="TypeScriptOptionIds.ResultSuffix.Default"/>
+    /// (<c>Results</c>); otherwise the trimmed value with its first character capitalised.
+    /// Shared so every result-name producer resolves the suffix identically.
+    /// </summary>
+    public static string ResolveResultSuffix(string? configured)
+    {
+        if (string.IsNullOrWhiteSpace(configured))
+            return TypeScriptOptionIds.ResultSuffix.Default;
+
+        var trimmed = configured.Trim();
+        return char.ToUpperInvariant(trimmed[0]) + trimmed[1..];
+    }
+
+    /// <summary>
+    /// Имя Result типа (discriminated union alias): {OperationName}{ResultSuffix} (default "Results").
     /// </summary>
     public string ResultTypeName(string operationName)
     {
-        return $"{_namingConverter.ToPascalCase(operationName)}Result";
+        return $"{_namingConverter.ToPascalCase(operationName)}{_resultSuffix}";
     }
 
     /// <summary>
-    /// Имя variant интерфейса: {OperationName}Result{StatusCode}
+    /// Имя variant интерфейса: {OperationName}Result{StatusCode}. The per-status variants keep the
+    /// fixed <c>Result</c> base regardless of the configured union-alias suffix.
     /// </summary>
     public string ResultVariantInterfaceName(string operationName, string statusCode)
     {
@@ -175,10 +196,15 @@ public sealed class TypeScriptResultsAstBuilder
 
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
+        var fileBase = _namingConverter.ToCamelCase(currentOperationName);
         return new SourceFileNode(
             imports: imports.ToImmutableList(),
             exports: exports,
-            declarations: declarations.ToImmutableList());
+            declarations: declarations.ToImmutableList(),
+            fileDocumentation: TypeScriptDoc.FileHeader(
+                $"{fileBase}.results.ts",
+                $"endpoints/{fileBase}",
+                $"Discriminated-union result types for the {currentOperationName} operation."));
     }
 
     /// <summary>

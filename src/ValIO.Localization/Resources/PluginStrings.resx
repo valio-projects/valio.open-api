@@ -38,6 +38,8 @@
   <data name="ts.validationLibrary.desc" xml:space="preserve"><value>Validation library for runtime schemas (zod, valibot, typebox or none).</value></data>
   <data name="ts.queryWrapper.desc" xml:space="preserve"><value>Optional React/Vue/Solid/Svelte/Angular query wrapper integration.</value></data>
   <data name="ts.mockLibrary.desc" xml:space="preserve"><value>Generate MSW mock handlers alongside clients.</value></data>
+  <data name="ts.resultTypeSuffix.desc" xml:space="preserve"><value>Suffix for the per-operation result-union type name (Result, Results, Response, Responses, or a custom string). Defaults to Results.</value></data>
+  <data name="ts.uuidFormat.desc" xml:space="preserve"><value>How Guid/Uuid fields are validated: guid (built-in uuid validator, default), string (no refinement), or regex (shared format-regex constant in schemas/formats.ts).</value></data>
   <data name="csharp.namespace.desc" xml:space="preserve"><value>Root namespace for generated C# code.</value></data>
   <data name="csharp.nullable.desc" xml:space="preserve"><value>Emit nullable-reference annotations on generated types.</value></data>
   <data name="java.package.desc" xml:space="preserve"><value>Java package for generated classes.</value></data>

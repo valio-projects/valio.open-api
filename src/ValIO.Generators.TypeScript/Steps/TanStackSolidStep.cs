@@ -47,7 +47,7 @@ public sealed class TanStackSolidStep : ICodeGenerationStep
         var clientSuffix = TypeScriptClientTransport.GetPrimaryGeneratedClientSuffix(opts);
 
         var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        var hookBuilder = new TanStackSolidHookAstBuilder(_namingConverter, astBuilder.BuildType);
+        var hookBuilder = new TanStackSolidHookAstBuilder(_namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix);
 
         foreach (var client in context.IrDocument.Clients)
         {

@@ -1,11 +1,18 @@
-import * as v from "valibot";
+/**
+ * @file userRole.schema.ts
+ * @module schemas/userRole
+ * @description Valibot validation schema for UserRole.
+ * @generated
+ * Do not edit by hand — regenerate via ValIO.
+ */
 
-export const UserRoleValues = [
-    "admin",
-    "user",
-    "guest"
-] as const;
+import * as v from "valibot";
+import { UserRoleValues } from "../../models/userRole/userRole";
 
 export const UserRoleSchema = v.picklist(UserRoleValues);
 
+/**
+ * Inferred output type of UserRoleSchema.
+ * @typedef {v.InferOutput<typeof UserRoleSchema>} UserRoleSchemaOutput
+ */
 export type UserRoleSchemaOutput = v.InferOutput<typeof UserRoleSchema>;

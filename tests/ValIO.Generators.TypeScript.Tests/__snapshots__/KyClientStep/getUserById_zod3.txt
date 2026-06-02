@@ -1,9 +1,17 @@
+/**
+ * @file getUserById.ky.ts
+ * @module endpoints/getUserById
+ * @description Ky HTTP client for the getUserById operation.
+ * @generated
+ * Do not edit by hand — regenerate via ValIO.
+ */
+
 import ky from "ky";
 import type { Options } from "ky";
 import { z } from "zod";
 import type { GetUserByIdParams } from "./getUserById.params";
-import type { GetUserByIdResult } from "./getUserById.results";
-import { UserSchema } from "../../models/schemas/user/user.schema";
+import type { GetUserByIdResults } from "./getUserById.results";
+import { UserSchema } from "../../schemas/user/user.schema";
 
 const GetUserByIdRouteParamsSchema = z.object({
     id: z.number().int()
@@ -16,13 +24,13 @@ const GetUserByIdRouteParamsSchema = z.object({
  * @param {GetUserByIdParams} params
  * @param {Options} [options]
  * @param {AbortSignal} [signal]
- * @returns {Promise<GetUserByIdResult>}
+ * @returns {Promise<GetUserByIdResults>}
  */
 export async function getUserById(
     params: GetUserByIdParams,
     options?: Options,
     signal?: AbortSignal
-): Promise<GetUserByIdResult> {
+): Promise<GetUserByIdResults> {
     const parsedRoute = GetUserByIdRouteParamsSchema.parse(params);
     
     const requestUrl = `/users/${parsedRoute.id}`;
@@ -47,7 +55,7 @@ export async function getUserById(
             body: UserSchema.parse(responseData),
             isSuccessful: true,
             isFailed: false
-        } as GetUserByIdResult);
+        } as GetUserByIdResults);
     }
 
     return ({
@@ -55,5 +63,5 @@ export async function getUserById(
         body: responseData,
         isSuccessful: ((response.status >= 200) && (response.status < 300)),
         isFailed: !((response.status >= 200) && (response.status < 300))
-    } as GetUserByIdResult);
+    } as GetUserByIdResults);
 }

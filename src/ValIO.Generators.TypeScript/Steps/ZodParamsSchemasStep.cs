@@ -39,11 +39,13 @@ public sealed class ZodParamsSchemasStep : ICodeGenerationStep
         var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
         TypeNode TypeBuilder(IrType type) => astBuilder.BuildType(type);
 
-        var renderer = new ZodSchemaRenderer(_namingConverter, TypeBuilder, zodVersion: zodVersion);
-
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
         var modelsPath = fileOrg.ModelsPath ?? "models";
+        var schemasPath = fileOrg.SchemasPath ?? "schemas";
+
+        var renderer = new ZodSchemaRenderer(_namingConverter, TypeBuilder, zodVersion: zodVersion,
+            modelsPath: modelsPath, uuidFormat: opts?.UuidFormat);
 
         foreach (var client in context.IrDocument.Clients)
         {
@@ -60,7 +62,8 @@ public sealed class ZodParamsSchemasStep : ICodeGenerationStep
                 var content = renderer.RenderParamsSchemasFromOperation(
                     operation,
                     operationFileName: fileName,
-                    modelsPath: modelsPath);
+                    modelsPath: modelsPath,
+                    schemasPath: schemasPath);
 
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.params.schema.ts";
                 context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));

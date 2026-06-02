@@ -1,3 +1,11 @@
+/**
+ * @file user.ts
+ * @module models/user
+ * @description User model.
+ * @generated
+ * Do not edit by hand — regenerate via ValIO.
+ */
+
 import { UserRole } from "../userRole/userRole";
 
 export interface User {

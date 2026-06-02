@@ -126,7 +126,8 @@ public class ConfigurationLoader : IConfigurationLoader
                 SeparateModels = projectConfig.FileOrganization.SeparateModels,
                 SeparateClients = projectConfig.FileOrganization.SeparateClients,
                 ModelsPath = projectConfig.FileOrganization.ModelsPath,
-                ClientsPath = projectConfig.FileOrganization.ClientsPath
+                ClientsPath = projectConfig.FileOrganization.ClientsPath,
+                SchemasPath = projectConfig.FileOrganization.SchemasPath
             };
         }
 

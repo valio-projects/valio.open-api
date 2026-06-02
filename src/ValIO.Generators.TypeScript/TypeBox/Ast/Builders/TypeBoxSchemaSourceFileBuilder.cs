@@ -5,7 +5,9 @@ using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 
@@ -15,11 +17,16 @@ namespace ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 public sealed class TypeBoxSchemaSourceFileBuilder
 {
     private readonly INamingConverter _namingConverter;
-    private readonly TypeBoxAstBuilder _builder = new();
+    private readonly TypeBoxAstBuilder _builder;
+    private readonly string _modelsPath;
+    private readonly string _uuidFormat;
 
-    public TypeBoxSchemaSourceFileBuilder(INamingConverter namingConverter)
+    public TypeBoxSchemaSourceFileBuilder(INamingConverter namingConverter, string modelsPath = "models", string? uuidFormat = null)
     {
         _namingConverter = namingConverter;
+        _modelsPath = string.IsNullOrWhiteSpace(modelsPath) ? "models" : modelsPath;
+        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+        _builder = new TypeBoxAstBuilder(uuidFormat);
     }
 
     public SourceFileNode BuildModelSchemaSourceFile(IrModel model, string? currentFileName = null, string? schemasPath = null)
@@ -36,16 +43,19 @@ public sealed class TypeBoxSchemaSourceFileBuilder
                     initializer: _builder.BuildSchemaFromIrModel(model),
                     documentation: BuildDocumentation(model.Description),
                     isExported: true))
-                .Add(BuildStaticTypeAlias(model.Name, schemaName)));
+                .Add(BuildStaticTypeAlias(model.Name, schemaName)),
+            fileDocumentation: SchemaFileHeader(model.Name));
     }
 
-    public SourceFileNode BuildEnumSchemaSourceFile(IrEnum irEnum)
+    public SourceFileNode BuildEnumSchemaSourceFile(IrEnum irEnum, bool separateModels)
     {
         ArgumentNullException.ThrowIfNull(irEnum);
 
         var schemaName = GetSchemaName(irEnum.Name);
+
+        // Переиспользуем {Name}Values из модели enum: Type.Union(...map(Type.Literal)).
         return new SourceFileNode(
-            imports: BuildTypeBoxImports(),
+            imports: BuildEnumImports(irEnum, separateModels),
             declarations: ImmutableList<DeclarationNode>.Empty
                 .Add(new VariableDeclarationNode(
                     name: new IdentifierNode(schemaName),
@@ -53,7 +63,35 @@ public sealed class TypeBoxSchemaSourceFileBuilder
                     initializer: _builder.BuildEnumSchema(irEnum),
                     documentation: BuildDocumentation(irEnum.Description),
                     isExported: true))
-                .Add(BuildStaticTypeAlias(irEnum.Name, schemaName)));
+                .Add(BuildStaticTypeAlias(irEnum.Name, schemaName)),
+            fileDocumentation: SchemaFileHeader(irEnum.Name));
+    }
+
+    private CommentNode SchemaFileHeader(string typeName)
+    {
+        var fileBase = _namingConverter.ToCamelCase(typeName);
+        return TypeScriptDoc.FileHeader(
+            $"{fileBase}.schema.ts",
+            $"schemas/{fileBase}",
+            $"TypeBox validation schema for {typeName}.");
+    }
+
+    private IReadOnlyList<ImportNode> BuildEnumImports(IrEnum irEnum, bool separateModels)
+    {
+        var imports = ImmutableList.CreateBuilder<ImportNode>();
+        imports.AddRange(BuildTypeBoxImports());
+
+        var enumFileName = _namingConverter.ToCamelCase(irEnum.Name);
+        var modelPath = separateModels
+            ? $"../../{_modelsPath}/{enumFileName}/{enumFileName}"
+            : $"../{_modelsPath}/{enumFileName}";
+
+        imports.Add(new ImportNode(
+            items: ImmutableList.Create(new IdentifierNode($"{irEnum.Name}Values")),
+            from: modelPath,
+            kind: ImportKind.Named));
+
+        return imports.ToImmutable();
     }
 
     private static string GetSchemaName(string name) => $"{name}Schema";
@@ -70,6 +108,15 @@ public sealed class TypeBoxSchemaSourceFileBuilder
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(GetSchemaName(dependency))),
                 from: CalculateImportPath(currentFileName, depFileName, schemasPath),
+                kind: ImportKind.Named));
+        }
+
+        // Shared UUID pattern constant (regex mode): schema sits in {schemas}/{name}/ → ../formats.
+        if (_uuidFormat == TypeScriptOptionIds.UuidFormat.Regex && UuidFormatSupport.ModelUsesUuid(model))
+        {
+            imports.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode(TypeScriptOptionIds.UuidFormat.PatternConstName)),
+                from: $"../{TypeScriptOptionIds.UuidFormat.ConstFileName}",
                 kind: ImportKind.Named));
         }
 
@@ -94,7 +141,10 @@ public sealed class TypeBoxSchemaSourceFileBuilder
     {
         return new TypeAliasDeclarationNode(
             name: new IdentifierNode($"{name}SchemaOutput"),
-            type: new RawTypeNode($"Static<typeof {schemaName}>"));
+            type: new RawTypeNode($"Static<typeof {schemaName}>"),
+            documentation: TypeScriptDoc.Block(
+                $"Inferred static type of {schemaName}.",
+                ("typedef", $"{{Static<typeof {schemaName}>}} {name}SchemaOutput")));
     }
 
     private static CommentNode? BuildDocumentation(string? description)

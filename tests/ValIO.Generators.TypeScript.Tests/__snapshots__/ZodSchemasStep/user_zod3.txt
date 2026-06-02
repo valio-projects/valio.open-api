@@ -1,6 +1,14 @@
+/**
+ * @file user.schema.ts
+ * @module schemas/user
+ * @description Zod validation schema for User.
+ * @generated
+ * Do not edit by hand — regenerate via ValIO.
+ */
+
 import { z, ZodSchema } from 'zod';
 
-import type { User } from "../../user/user";
+import type { User } from "../../models/user/user";
 import { UserRoleSchema } from '../userRole/userRole.schema';
 
 export const UserSchema: ZodSchema<User> = z.object({

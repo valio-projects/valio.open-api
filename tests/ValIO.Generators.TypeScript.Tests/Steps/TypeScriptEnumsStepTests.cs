@@ -43,4 +43,21 @@ public class TypeScriptEnumsStepTests
         enumFile.Content.Should().Contain("\"user\"");
         enumFile.Content.Should().Contain("\"guest\"");
     }
+
+    [Test]
+    public async Task ValuesArray_IsLiteralTuple_NotWidenedToReadonlyStringArray()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
+
+        var enumFile = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.Replace('\\', '/').EndsWith("userRole/userRole.ts", StringComparison.Ordinal));
+
+        // Values keep their literal-tuple type via `as const satisfies` so they can be reused
+        // by z.enum(...) / v.picklist(...) / Type.Union(...). The widening `: readonly string[]`
+        // annotation would defeat that and must NOT be emitted.
+        enumFile.Content.Should().Contain("export const UserRoleValues = [");
+        enumFile.Content.Should().Contain("as const satisfies readonly UserRole[]");
+        enumFile.Content.Should().NotContain("UserRoleValues: readonly string[]");
+    }
 }

@@ -48,6 +48,21 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         new("msw", "Mock Service Worker", "ts.mocks.msw.desc"),
     ];
 
+    private static readonly OptionChoice[] UuidFormatChoices =
+    [
+        new("guid",   "Built-in uuid validator", "ts.uuidFormat.guid.desc"),
+        new("string", "Plain string",            "ts.uuidFormat.string.desc"),
+        new("regex",  "Shared format regex",     "ts.uuidFormat.regex.desc"),
+    ];
+
+    private static readonly OptionChoice[] ResultSuffixChoices =
+    [
+        new("Results",   "Results (default)", "ts.resultTypeSuffix.results.desc"),
+        new("Result",    "Result",            "ts.resultTypeSuffix.result.desc"),
+        new("Response",  "Response",          "ts.resultTypeSuffix.response.desc"),
+        new("Responses", "Responses",         "ts.resultTypeSuffix.responses.desc"),
+    ];
+
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
         var errorList = new List<string>();
@@ -89,6 +104,33 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             opts.MockLibrary = NormalizeMockLibrary(mocks.GetString(), errorList);
         else if (rawOptions.TryGetValue("mockLibrary", out var mockLibrary) && mockLibrary.ValueKind == JsonValueKind.String)
             opts.MockLibrary = NormalizeMockLibrary(mockLibrary.GetString(), errorList);
+
+        // Suffix for the result-union type name. Accept "resultTypeSuffix" (primary) and
+        // "resultSuffix" (alias). Presets are recommended; custom strings pass through.
+        if (rawOptions.TryGetValue("uuidFormat", out var uuidFormat) && uuidFormat.ValueKind == JsonValueKind.String)
+            opts.UuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat.GetString());
+
+        if (rawOptions.TryGetValue("resultTypeSuffix", out var resultSuffix) && resultSuffix.ValueKind == JsonValueKind.String)
+            opts.ResultTypeSuffix = NormalizeResultSuffix(resultSuffix.GetString());
+        else if (rawOptions.TryGetValue("resultSuffix", out var resultSuffixAlias) && resultSuffixAlias.ValueKind == JsonValueKind.String)
+            opts.ResultTypeSuffix = NormalizeResultSuffix(resultSuffixAlias.GetString());
+
+        // Custom axios instance: { "axios": { "customInstancePath": "...", "customInstanceName": "..." } }.
+        if (rawOptions.TryGetValue("axios", out var axios) && axios.ValueKind == JsonValueKind.Object)
+        {
+            var axiosOpts = new TypeScriptAxiosOptions
+            {
+                CustomInstancePath = GetStringProperty(axios, "customInstancePath"),
+                CustomInstanceName = GetStringProperty(axios, "customInstanceName"),
+            };
+
+            var hasPath = !string.IsNullOrWhiteSpace(axiosOpts.CustomInstancePath);
+            var hasName = !string.IsNullOrWhiteSpace(axiosOpts.CustomInstanceName);
+            if (hasPath ^ hasName)
+                errorList.Add("Option 'axios' requires both 'customInstancePath' and 'customInstanceName' to use a custom instance");
+            if (hasPath || hasName)
+                opts.Axios = axiosOpts;
+        }
 
         errors = errorList.AsReadOnly();
         return opts;
@@ -154,6 +196,26 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             Choices:        MockChoices,
             DescriptionKey: "ts.mockLibrary.desc",
             Group:          "Testing"),
+
+        new(
+            Name:           "uuidFormat",
+            Description:    "How Guid/Uuid fields are validated: 'guid' (built-in uuid validator, default), 'string' (no refinement), or 'regex' (shared format-regex constant).",
+            DefaultValue:   TypeScriptOptionIds.UuidFormat.Default,
+            IsRequired:     false,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        UuidFormatChoices,
+            DescriptionKey: "ts.uuidFormat.desc",
+            Group:          "Validation"),
+
+        new(
+            Name:           "resultTypeSuffix",
+            Description:    "Suffix for the per-operation result-union type name (e.g. {Operation}Results). Presets listed; any custom string is also accepted. Aliased as 'resultSuffix'.",
+            DefaultValue:   TypeScriptOptionIds.ResultSuffix.Default,
+            IsRequired:     false,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        ResultSuffixChoices,
+            DescriptionKey: "ts.resultTypeSuffix.desc",
+            Group:          "Clients"),
     ];
 
     private static string? NormalizeTransport(string? value, List<string> errors)
@@ -223,9 +285,35 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         };
     }
 
+    /// <summary>
+    /// Normalises the result-type suffix. The four presets (case-insensitive) map to
+    /// canonical PascalCase; any other non-empty value is treated as a custom suffix with
+    /// its first character capitalised. Empty/whitespace falls back to the default.
+    /// </summary>
+    private static string NormalizeResultSuffix(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return TypeScriptOptionIds.ResultSuffix.Default;
+
+        var trimmed = value.Trim();
+        return trimmed.ToLowerInvariant() switch
+        {
+            "result"    => TypeScriptOptionIds.ResultSuffix.Result,
+            "results"   => TypeScriptOptionIds.ResultSuffix.Results,
+            "response"  => TypeScriptOptionIds.ResultSuffix.Response,
+            "responses" => TypeScriptOptionIds.ResultSuffix.Responses,
+            _ => char.ToUpperInvariant(trimmed[0]) + trimmed[1..],
+        };
+    }
+
     private static string? AddError(List<string> errors, string message)
     {
         errors.Add(message);
         return null;
     }
+
+    private static string? GetStringProperty(JsonElement obj, string propertyName)
+        => obj.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()
+            : null;
 }

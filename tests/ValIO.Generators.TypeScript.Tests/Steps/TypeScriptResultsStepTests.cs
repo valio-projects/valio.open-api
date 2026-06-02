@@ -33,9 +33,33 @@ public class TypeScriptResultsStepTests
         var content = resultsFile!.Content;
         content.Should().Contain("interface GetUserByIdResult200");
         content.Should().Contain("interface GetUserByIdResultOther");
-        content.Should().Contain("type GetUserByIdResult");
+        // Default union-alias suffix is "Results"; variant interfaces keep the fixed "Result" base.
+        content.Should().Contain("type GetUserByIdResults");
         content.Should().Contain("isSuccessful:");
         content.Should().Contain("isFailed:");
+    }
+
+    [Test]
+    public async Task ResultTypeSuffix_RenamesUnionAliasOnly_VariantsKeepResultBase()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ResultTypeSuffix = "Response",
+        });
+
+        var resultsFile = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith("getUserById.results.ts", StringComparison.Ordinal));
+
+        var content = resultsFile.Content;
+        // The union alias adopts the configured suffix...
+        content.Should().Contain("type GetUserByIdResponse =");
+        content.Should().NotContain("type GetUserByIdResult ");
+        content.Should().NotContain("type GetUserByIdResults");
+        // ...while the per-status variant interfaces keep the fixed "Result" base.
+        content.Should().Contain("interface GetUserByIdResult200");
+        content.Should().Contain("interface GetUserByIdResultOther");
     }
 
     [Test]

@@ -80,10 +80,11 @@ public class AngularRxjsClientStepTests
         var petService = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("petService.service.ts", StringComparison.Ordinal));
 
-        // getPetById has a path param, GET verb, returns a Pet → Observable<GetPetByIdResult>.
+        // getPetById has a path param, GET verb, returns a Pet → Observable<GetPetByIdResults>
+        // (default result-union suffix is "Results").
         petService.Content.Should().MatchRegex(
-            @"getPetById\(params: GetPetByIdParams\)\s*:\s*Observable<GetPetByIdResult>");
-        petService.Content.Should().Contain("this.http.get<GetPetByIdResult>(");
+            @"getPetById\(params: GetPetByIdParams\)\s*:\s*Observable<GetPetByIdResults>");
+        petService.Content.Should().Contain("this.http.get<GetPetByIdResults>(");
 
         // POST addPet — passes body argument before any options object.
         petService.Content.Should().Contain("this.http.post<");

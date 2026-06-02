@@ -33,10 +33,11 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
 
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
+        var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var fileOrg = context.Configuration.FileOrganization;
         var modelsPath = fileOrg.ModelsPath ?? "models";
-        var schemasPath = $"{modelsPath}/schemas";
-        var builder = new TypeBoxSchemaSourceFileBuilder(_namingConverter);
+        var schemasPath = fileOrg.SchemasPath ?? "schemas";
+        var builder = new TypeBoxSchemaSourceFileBuilder(_namingConverter, modelsPath, opts?.UuidFormat);
         var renderer = new TypeScriptAstRenderer(_nodeRenderers);
 
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
@@ -98,7 +99,7 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         string schemasPath,
         bool separateModels)
     {
-        var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum));
+        var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum, separateModels));
 
         var fileName = _namingConverter.ToCamelCase(irEnum.Name);
         var relativePath = separateModels

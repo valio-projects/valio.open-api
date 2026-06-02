@@ -8,6 +8,8 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Ast.Builders;
+using ValIO.Generators.TypeScript.Ast.JsDoc;
+using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Zod.Ast.Builders;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 using ValIO.Generators.TypeScript.Zod.Ast.Renderers;
@@ -23,20 +25,38 @@ public class ZodSchemaRenderer
     private readonly Func<IrType, ValIO.Core.Ast.Nodes.TypeNode> _typeBuilder;
     private readonly bool _useBigInt;
     private readonly string _zodImportPath;
+    private readonly string _modelsPath;
+    private readonly string _uuidFormat;
 
     public ZodSchemaRenderer(
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
         bool useBigInt = false,
-        string zodVersion = "zod3")
+        string zodVersion = "zod3",
+        string modelsPath = "models",
+        string? uuidFormat = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
         _useBigInt = useBigInt;
         _zodImportPath = zodVersion == "zod4" ? "zod/v4" : "zod";
+        _modelsPath = string.IsNullOrWhiteSpace(modelsPath) ? "models" : modelsPath;
+        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
     }
 
     private string ZodImportLine => $"import {{ z, ZodSchema }} from '{_zodImportPath}';";
+
+    private bool UsesUuidRegex => _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex;
+
+    /// <summary>Prepends the standard generated-file JSDoc header (@file/@module/@generated) to the buffer.</summary>
+    private static void AppendFileHeader(StringBuilder sb, string fileName, string module, string description)
+    {
+        CommentGenerator.GenerateJSDocComment(sb, 0, TypeScriptDoc.FileHeader(fileName, module, description).Text);
+        sb.AppendLine();
+    }
+
+    private static string FormatsImportLine(string relativeDir) =>
+        $"import {{ {TypeScriptOptionIds.UuidFormat.RegexConstName} }} from \"{relativeDir}/{TypeScriptOptionIds.UuidFormat.ConstFileName}\";";
     
     /// <summary>
     /// Рендерит Zod схему для IR модели
@@ -55,7 +75,8 @@ public class ZodSchemaRenderer
         
         var schemaName = $"{model.Name}Schema";
         var modelFileName = _namingConverter.ToCamelCase(model.Name);
-        
+
+        AppendFileHeader(sb, $"{modelFileName}.schema.ts", $"schemas/{modelFileName}", $"Zod validation schema for {model.Name}.");
         sb.AppendLine(ZodImportLine);
         sb.AppendLine();
 
@@ -76,6 +97,10 @@ public class ZodSchemaRenderer
             sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
         }
 
+        // Shared UUID regex constant (regex mode): schema sits in {schemas}/{name}/ → ../formats.
+        if (UsesUuidRegex && UuidFormatSupport.ModelUsesUuid(model))
+            sb.AppendLine(FormatsImportLine(".."));
+
         var dependencies = ExtractDependencies(model);
         if (dependencies.Count > 0)
         {
@@ -93,7 +118,7 @@ public class ZodSchemaRenderer
             CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
         }
         
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt);
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
         var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
         
         var zodRenderer = new ZodAstRenderer();
@@ -116,64 +141,64 @@ public class ZodSchemaRenderer
             throw new ArgumentNullException(nameof(enumModel));
         
         var sb = new StringBuilder();
-        
+
         var schemaName = $"{enumModel.Name}Schema";
         var typeName = enumModel.Name;
         var enumFileName = _namingConverter.ToCamelCase(enumModel.Name);
         var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
         var constArrayName = $"{typeName}Values";
-        
+
+        AppendFileHeader(sb, $"{enumFileName}.schema.ts", $"schemas/{enumFileName}", $"Zod validation schema for the {typeName} enum.");
         sb.AppendLine(ZodImportLine);
         sb.AppendLine();
         var enumImportPath = !string.IsNullOrEmpty(importPath)
             ? $"{NormalizePath(importPath)}/{enumFileName}/{enumFileName}"
             : BuildModelImportPathFromSchema(currentFileName, schemasPath, enumFileName);
         sb.AppendLine($"import type {{ {typeName} }} from \"{enumImportPath}\";");
-        sb.AppendLine();
-        
-        // Строим Zod AST из IR enum
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt);
-        var zodEnum = zodBuilder.BuildZodEnum(enumModel);
-        
-        // Генерируем массив значений enum
+
         if (isStringEnum)
         {
-            CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
-            for (int i = 0; i < enumModel.Values.Count; i++)
+            // Переиспользуем массив значений из модели enum вместо повторного объявления:
+            // z.enum принимает кортеж строковых литералов, который даёт {Name}Values из модели.
+            sb.AppendLine($"import {{ {constArrayName} }} from \"{enumImportPath}\";");
+            sb.AppendLine();
+
+            if (!string.IsNullOrEmpty(enumModel.Description))
             {
-                var value = enumModel.Values[i];
-                var comma = i < enumModel.Values.Count - 1 ? "," : "";
-                var valueString = FormatEnumValue(value.Value?.ToString() ?? "", "string");
-                CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
+                CommentGenerator.GenerateJSDocComment(sb, 0, enumModel.Description);
             }
-            CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly string[];");
-            CodeFormatter.AppendEmptyLine(sb);
+
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{typeName}> = z.enum({constArrayName});");
+            return sb.ToString();
         }
-        else
+
+        // Числовые enum: z.enum работает только со строками, поэтому сохраняем
+        // прежнее поведение (локальный массив значений + текущая сборка схемы).
+        sb.AppendLine();
+
+        CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
+        for (int i = 0; i < enumModel.Values.Count; i++)
         {
-            CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
-            for (int i = 0; i < enumModel.Values.Count; i++)
-            {
-                var value = enumModel.Values[i];
-                var comma = i < enumModel.Values.Count - 1 ? "," : "";
-                var valueString = value.Value?.ToString() ?? "0";
-                CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
-            }
-            CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly number[];");
-            CodeFormatter.AppendEmptyLine(sb);
+            var value = enumModel.Values[i];
+            var comma = i < enumModel.Values.Count - 1 ? "," : "";
+            var valueString = value.Value?.ToString() ?? "0";
+            CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
         }
-        
-        // Генерируем JSDoc комментарий
+        CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly number[];");
+        CodeFormatter.AppendEmptyLine(sb);
+
         if (!string.IsNullOrEmpty(enumModel.Description))
         {
             CommentGenerator.GenerateJSDocComment(sb, 0, enumModel.Description);
         }
-        
+
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
+        var zodEnum = zodBuilder.BuildZodEnum(enumModel);
         var zodRenderer = new ZodAstRenderer();
         var zodEnumCode = zodRenderer.VisitZodEnum(zodEnum);
-        
+
         CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{typeName}> = {zodEnumCode};");
-        
+
         return sb.ToString();
     }
     
@@ -247,19 +272,6 @@ public class ZodSchemaRenderer
         }
     }
     
-    private string FormatEnumValue(string valueString, string underlyingType)
-    {
-        if (underlyingType == "string")
-        {
-            if (valueString.StartsWith("\"") && valueString.EndsWith("\""))
-            {
-                return valueString;
-            }
-            return $"\"{valueString}\"";
-        }
-        return valueString;
-    }
-    
     private string SchemaNameToFileName(string schemaName)
     {
         var typeName = schemaName.EndsWith("Schema", StringComparison.OrdinalIgnoreCase) 
@@ -283,11 +295,9 @@ public class ZodSchemaRenderer
         if (string.IsNullOrEmpty(schemasPath) || string.IsNullOrEmpty(currentFileName))
             return $"./{modelFileName}";
 
-        // Структура с под‑директориями (наиболее частый случай). Схема:
-        // {schemasPath}/{currentFileName}/{currentFileName}.schema.ts.
-        // Поднимаемся на 2 уровня, до родителя schemas (например, "models/"),
-        // оттуда — в {modelFileName}/{modelFileName}.
-        return $"../../{modelFileName}/{modelFileName}";
+        // Схема живёт в {schemasPath}/{currentFileName}/{currentFileName}.schema.ts (root-level
+        // schemas). Поднимаемся на 2 уровня до корня, оттуда — в {modelsPath}/{name}/{name}.
+        return $"../../{_modelsPath}/{modelFileName}/{modelFileName}";
     }
 
     /// <summary>
@@ -384,14 +394,15 @@ public class ZodSchemaRenderer
     public string RenderParamsSchemasFromOperation(
         IrOperation operation,
         string? operationFileName = null,
-        string? modelsPath = null)
+        string? modelsPath = null,
+        string? schemasPath = null)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
 
         var sb = new StringBuilder();
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt);
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
         var zodRenderer = new ZodAstRenderer();
         var paramsAst = new TypeScriptParamsAstBuilder(_namingConverter, _typeBuilder);
 
@@ -429,11 +440,15 @@ public class ZodSchemaRenderer
         if (queryInterfaceForGeneric != null && queryInterfaceForGeneric != routeInterfaceForGeneric)
             typesToImport.Add(queryInterfaceForGeneric);
 
+        AppendFileHeader(sb, $"{fileBase}.params.schema.ts", $"endpoints/{fileBase}", $"Zod parameter validation schemas for the {operation.MethodName} operation.");
         sb.AppendLine(ZodImportLine);
         if (typesToImport.Count > 0)
         {
             sb.AppendLine($"import type {{ {string.Join(", ", typesToImport.Distinct())} }} from './{fileBase}.params';");
         }
+        // Shared UUID regex constant (regex mode): params schema sits in {clients}/{op}/ → ../../{schemas}/formats.
+        if (UsesUuidRegex && UuidFormatSupport.OperationParamsUseUuid(operation))
+            sb.AppendLine(FormatsImportLine($"../../{schemasPath ?? "schemas"}"));
         sb.AppendLine();
 
         if (hasRoute)
