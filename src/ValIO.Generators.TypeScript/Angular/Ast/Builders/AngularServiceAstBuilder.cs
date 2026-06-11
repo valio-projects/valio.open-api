@@ -350,7 +350,8 @@ public sealed class AngularServiceAstBuilder
         foreach (var parameter in operation.PathParameters)
         {
             var token = $"{{{parameter.Name}}}";
-            var index = operation.Path.IndexOf(token, cursor, StringComparison.Ordinal);
+            // Casing плейсхолдера в пути может отличаться от имени параметра — сопоставляем без учёта регистра.
+            var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
             if (index < 0)
                 continue;
 

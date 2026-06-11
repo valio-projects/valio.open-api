@@ -152,6 +152,11 @@ npm run dev   # http://localhost:4321
 
 Pull requests are welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines, the development loop, and the code-of-conduct.
 
+For the internals — how the IR, AST, builders, renderers, plugins, options and tests fit together, and
+how to add a new option, transport, validation library, stack or language — read the
+**[Developer Guide](./docs/DEVELOPER_GUIDE.md)**. Each project under `src/` and `tests/` also has its own
+`README.md` describing its responsibility.
+
 ## License
 
 ValIO is released under the [MIT License](./LICENSE).

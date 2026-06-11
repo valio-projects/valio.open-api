@@ -3,6 +3,9 @@
 Thanks for your interest in ValIO! We welcome contributions of all kinds — bug fixes, new generators, documentation, translations, examples.
 
 This guide describes how to set up your development environment, run tests, and submit pull requests.
+For the architecture and how to extend the generator (IR, AST, builders, renderers, plugins, options,
+testing, and adding new options/transports/validation libraries/stacks/languages), see the
+**[Developer Guide](./docs/DEVELOPER_GUIDE.md)**.
 
 ## Code of Conduct
 

@@ -1,0 +1,43 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Route Param Casing API",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/dictionaries/{dictionaryId}/items": {
+      "get": {
+        "operationId": "getDictionaryItemsList",
+        "summary": "List dictionary items",
+        "tags": ["dictionary"],
+        "parameters": [
+          {
+            "name": "DictionaryId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Dictionary items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

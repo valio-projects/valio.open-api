@@ -237,7 +237,9 @@ public class AxiosAstBuilder
         foreach (var param in pathParams)
         {
             var paramPlaceholder = $"{{{param.Name}}}";
-            var index = currentPath.IndexOf(paramPlaceholder, StringComparison.Ordinal);
+            // Спецификация может задавать casing плейсхолдера в пути (`{dictionaryId}`)
+            // иначе, чем имя параметра (`DictionaryId`); сопоставляем без учёта регистра.
+            var index = currentPath.IndexOf(paramPlaceholder, StringComparison.OrdinalIgnoreCase);
 
             if (index >= 0)
             {
@@ -289,7 +291,9 @@ public class AxiosAstBuilder
         {
             // Path parameters в OpenAPI имеют формат {paramName}, в TypeScript template literal - ${variableName}
             var paramPlaceholder = $"{{{param.Name}}}";
-            var index = currentPath.IndexOf(paramPlaceholder, StringComparison.Ordinal);
+            // Спецификация может задавать casing плейсхолдера в пути (`{dictionaryId}`)
+            // иначе, чем имя параметра (`DictionaryId`); сопоставляем без учёта регистра.
+            var index = currentPath.IndexOf(paramPlaceholder, StringComparison.OrdinalIgnoreCase);
             
             if (index >= 0)
             {
