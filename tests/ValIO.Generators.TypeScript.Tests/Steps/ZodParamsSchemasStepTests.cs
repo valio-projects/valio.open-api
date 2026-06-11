@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NUnit.Framework;
+using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
@@ -60,6 +61,54 @@ public class ZodParamsSchemasStepTests
         var paramsSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.params.schema.ts", StringComparison.Ordinal));
         paramsSchema.Content.Should().Contain("from 'zod/v4'");
+    }
+
+    [Test]
+    public async Task QueryParamReferencingEnum_ImportsEnumSchema()
+    {
+        // Regression: a query param that $refs a named enum renders as `UserRoleSchema`
+        // in the Zod params schema, but the import for it was dropped (TS2304 / ReferenceError),
+        // even though the params interface correctly imported the `UserRole` type.
+        var doc = await PipelineTestHarness.LoadDocumentAsync("enum-query-param.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "zod3",
+        });
+
+        var paramsSchema = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith("listUsers.params.schema.ts", StringComparison.Ordinal));
+
+        // The generated schema references the enum schema...
+        paramsSchema.Content.Should().Contain("UserRoleSchema");
+        // ...and now imports it from the schemas folder (separate-models subfolder layout).
+        paramsSchema.Content.Should().Contain(
+            "import { UserRoleSchema } from '../../schemas/userRole/userRole.schema';");
+    }
+
+    [Test]
+    public async Task QueryParamReferencingEnum_FlatSchemas_ImportsEnumSchemaWithFlatPath()
+    {
+        // When SeparateModels is false, schema files are flat ({schemas}/{name}.schema.ts),
+        // so the dependency import must not include the per-name subfolder.
+        var doc = await PipelineTestHarness.LoadDocumentAsync("enum-query-param.json");
+        var ctx = await _harness.RunAsync(
+            doc,
+            new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = "zod3" },
+            new FileOrganization
+            {
+                SeparateModels = false,
+                SeparateClients = true,
+                ModelsPath = "models",
+                ClientsPath = "api",
+            });
+
+        var paramsSchema = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith("listUsers.params.schema.ts", StringComparison.Ordinal));
+
+        paramsSchema.Content.Should().Contain(
+            "import { UserRoleSchema } from '../../schemas/userRole.schema';");
+        paramsSchema.Content.Should().NotContain("schemas/userRole/userRole.schema");
     }
 
     [Test]

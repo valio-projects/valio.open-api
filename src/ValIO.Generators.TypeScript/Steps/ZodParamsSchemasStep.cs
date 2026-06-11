@@ -63,7 +63,8 @@ public sealed class ZodParamsSchemasStep : ICodeGenerationStep
                     operation,
                     operationFileName: fileName,
                     modelsPath: modelsPath,
-                    schemasPath: schemasPath);
+                    schemasPath: schemasPath,
+                    separateModels: fileOrg.SeparateModels);
 
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.params.schema.ts";
                 context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));

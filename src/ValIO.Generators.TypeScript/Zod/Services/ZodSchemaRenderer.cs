@@ -395,7 +395,8 @@ public class ZodSchemaRenderer
         IrOperation operation,
         string? operationFileName = null,
         string? modelsPath = null,
-        string? schemasPath = null)
+        string? schemasPath = null,
+        bool separateModels = true)
     {
         if (operation == null)
             throw new ArgumentNullException(nameof(operation));
@@ -440,11 +441,32 @@ public class ZodSchemaRenderer
         if (queryInterfaceForGeneric != null && queryInterfaceForGeneric != routeInterfaceForGeneric)
             typesToImport.Add(queryInterfaceForGeneric);
 
+        // Схемы enum/model, на которые ссылаются параметры: BuildZodObjectFromParameters
+        // рендерит такую ссылку как `{Name}Schema`. Без импорта это TS2304 / ReferenceError —
+        // params-интерфейс импортирует тип, а схема обязана импортировать соответствующую Zod-схему.
+        var schemaDeps = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var p in operation.PathParameters)
+            ExtractDependenciesFromIrType(p.Type, schemaDeps, currentModelName: string.Empty);
+        foreach (var p in operation.QueryParameters)
+            ExtractDependenciesFromIrType(p.Type, schemaDeps, currentModelName: string.Empty);
+
         AppendFileHeader(sb, $"{fileBase}.params.schema.ts", $"endpoints/{fileBase}", $"Zod parameter validation schemas for the {operation.MethodName} operation.");
         sb.AppendLine(ZodImportLine);
         if (typesToImport.Count > 0)
         {
             sb.AppendLine($"import type {{ {string.Join(", ", typesToImport.Distinct())} }} from './{fileBase}.params';");
+        }
+        // Импорты Zod-схем зависимостей. Params-схема живёт в {clients}/{op}/ → поднимаемся в корень
+        // и идём в {schemas}. Раскладка схемы зависит от separateModels (см. ZodSchemasStep):
+        // separate → {schemas}/{dep}/{dep}.schema, flat → {schemas}/{dep}.schema.
+        foreach (var dep in schemaDeps.OrderBy(d => d, StringComparer.Ordinal))
+        {
+            var depFileName = SchemaNameToFileName(dep);
+            var schemasRoot = $"../../{schemasPath ?? "schemas"}";
+            var schemaImportPath = separateModels
+                ? $"{schemasRoot}/{depFileName}/{depFileName}.schema"
+                : $"{schemasRoot}/{depFileName}.schema";
+            sb.AppendLine($"import {{ {dep} }} from '{schemaImportPath}';");
         }
         // Shared UUID regex constant (regex mode): params schema sits in {clients}/{op}/ → ../../{schemas}/formats.
         if (UsesUuidRegex && UuidFormatSupport.OperationParamsUseUuid(operation))
