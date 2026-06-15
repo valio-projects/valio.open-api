@@ -32,6 +32,7 @@ public sealed class OFetchClientAstBuilder
     private readonly EndpointValidationLibrary _validationLibrary;
     private readonly TypeBoxAstBuilder _typeBoxAstBuilder;
     private readonly ValibotAstBuilder _valibotAstBuilder;
+    private readonly Validation.ZodSchemaExpressionBuilder _zodSchemaExpression;
     private readonly string _uuidFormat;
 
     public OFetchClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
@@ -41,6 +42,7 @@ public sealed class OFetchClientAstBuilder
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(options?.UuidFormat);
         _typeBoxAstBuilder = new TypeBoxAstBuilder(options?.UuidFormat);
         _valibotAstBuilder = new ValibotAstBuilder(options?.UuidFormat);
+        _zodSchemaExpression = new Validation.ZodSchemaExpressionBuilder(options?.UuidFormat);
 
         var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
@@ -513,7 +515,7 @@ public sealed class OFetchClientAstBuilder
     {
         var schema = _validationLibrary.Kind switch
         {
-            EndpointValidationKind.Zod => BuildZodSchemaFromIrType(parameter.Type),
+            EndpointValidationKind.Zod => _zodSchemaExpression.Build(parameter.Type),
             EndpointValidationKind.Valibot => _valibotAstBuilder.BuildSchemaFromIrType(parameter.Type),
             EndpointValidationKind.TypeBox => _typeBoxAstBuilder.BuildSchemaFromIrType(parameter.Type),
             _ => EmptyObject()
@@ -531,38 +533,7 @@ public sealed class OFetchClientAstBuilder
         };
     }
 
-    private ExpressionNode BuildZodSchemaFromIrType(IrType type) =>
-        type switch
-        {
-            IrPrimitiveType primitive => BuildZodPrimitive(primitive.PrimitiveKind),
-            IrModelReference reference => Id($"{reference.ModelName}Schema"),
-            IrArrayType array => ZodCall("array", BuildZodSchemaFromIrType(array.ElementType)),
-            IrDictionaryType dictionary => ZodCall("record", BuildZodSchemaFromIrType(dictionary.ValueType)),
-            IrNullableType nullable => Call(Member(BuildZodSchemaFromIrType(nullable.InnerType), "nullable")),
-            IrOptionalType optional => Call(Member(BuildZodSchemaFromIrType(optional.InnerType), "optional")),
-            IrUnionType union => ZodCall("union", new ArrayLiteralExpressionNode(union.Types.Select(BuildZodSchemaFromIrType).ToImmutableList())),
-            _ => ZodCall("unknown")
-        };
-
-    private ExpressionNode BuildZodPrimitive(IrPrimitiveKind kind) =>
-        kind switch
-        {
-            IrPrimitiveKind.String => ZodCall("string"),
-            IrPrimitiveKind.Number => ZodCall("number"),
-            IrPrimitiveKind.Integer or IrPrimitiveKind.Long => Call(Member(ZodCall("number"), "int")),
-            IrPrimitiveKind.Boolean => ZodCall("boolean"),
-            IrPrimitiveKind.Uuid => _uuidFormat switch
-            {
-                TypeScriptOptionIds.UuidFormat.String => ZodCall("string"),
-                TypeScriptOptionIds.UuidFormat.Regex => Call(Member(ZodCall("string"), "regex"), Id(TypeScriptOptionIds.UuidFormat.RegexConstName)),
-                _ => Call(Member(ZodCall("string"), "uuid")),
-            },
-            IrPrimitiveKind.Any => ZodCall("unknown"),
-            IrPrimitiveKind.Void => ZodCall("void"),
-            _ => ZodCall("unknown")
-        };
-
-    private ExpressionNode BuildParseCall(string schemaName, ExpressionNode input) =>
+private ExpressionNode BuildParseCall(string schemaName, ExpressionNode input) =>
         _validationLibrary.Kind switch
         {
             EndpointValidationKind.Zod => Call(Member(Id(schemaName), "parse"), input),

@@ -1037,90 +1037,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             kind: ImportKind.Named,
             isTypeOnly: true));
 
-        var paramsParamsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
-        if (paramsParamsBuilder.HasParameters(operation))
-        {
-            var paramsTypeName = paramsParamsBuilder.ParamsInterfaceName(operation.MethodName);
-            var operationFileName = GetModelFileName(operation.MethodName);
-            result.Add(new ImportNode(
-                items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
-                from: $"./{operationFileName}.params",
-                kind: ImportKind.Named,
-                isTypeOnly: true));
-        }
-
-        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
-        if (resultsAstBuilder.HasResponsesWithBody(operation))
-        {
-            var resultTypeName = resultsAstBuilder.ResultTypeName(operation.MethodName);
-            var operationFileName = GetModelFileName(operation.MethodName);
-            result.Add(new ImportNode(
-                items: new[] { new IdentifierNode(resultTypeName) }.ToImmutableList(),
-                from: $"./{operationFileName}.results",
-                kind: ImportKind.Named,
-                isTypeOnly: true));
-        }
-
-        // Импорты схем валидации для выбранной библиотеки (zod/valibot/typebox)
-        if (_validation.IsEnabled)
-        {
-            var opName = _namingConverter.ToPascalCase(operation.MethodName);
-            var operationFileName = GetModelFileName(operation.MethodName);
-            var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
-
-            var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
-
-            // Params: zod импортирует именованную схему; valibot/typebox строят схему параметров inline.
-            if (_validation.ImportsNamedParamsSchema)
-            {
-                var paramsSchemaImports = new List<IdentifierNode>();
-                if (operation.PathParameters.Count > 0)
-                    paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
-                if (operation.QueryParameters.Count > 0)
-                    paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
-
-                if (paramsSchemaImports.Count > 0)
-                {
-                    result.Add(new ImportNode(
-                        items: paramsSchemaImports.ToImmutableList(),
-                        from: $"./{operationFileName}.params.schema",
-                        kind: ImportKind.Named));
-                }
-            }
-
-            // Вынесенные result-схемы (constructed-ответы: union/array/...) из {op}.results.schemas.
-            var resultSchemaNames = ClientResultSchemaNames(operation);
-            if (resultSchemaNames.Count > 0)
-            {
-                result.Add(new ImportNode(
-                    items: resultSchemaNames.OrderBy(n => n, StringComparer.Ordinal)
-                        .Select(n => new IdentifierNode(n)).ToImmutableList(),
-                    from: $"./{operationFileName}.results.schemas",
-                    kind: ImportKind.Named));
-            }
-
-            // Model-схемы тела/голых-ответов. Для inline-параметров добавляем также схемы enum/model,
-            // на которые ссылаются типы параметров.
-            var modelSchemaNames = ClientModelSchemaNames(operation);
-            if (!_validation.ImportsNamedParamsSchema)
-            {
-                foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
-                    ValidationTypes.CollectModelSchemaNames(parameter.Type, modelSchemaNames);
-            }
-
-            foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
-            {
-                var modelFileName = GetModelFileName(modelName);
-                result.Add(new ImportNode(
-                    items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
-                    from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
-                    kind: ImportKind.Named));
-            }
-
-            // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
-            result.AddRange(_validation.RuntimeImports(
-                ClientInlineConstructedTypes(operation), hasParams, ClientHasResponseValidation(operation)));
-        }
+        AddCommonEndpointImports(result, operation, fileOrganization);
 
         result.AddRange(existingImports);
         return result;
@@ -1136,97 +1053,117 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         var result = new List<ImportNode>();
 
-        var paramsParamsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
-        if (paramsParamsBuilder.HasParameters(operation))
-        {
-            var paramsTypeName = paramsParamsBuilder.ParamsInterfaceName(operation.MethodName);
-            var operationFileName = GetModelFileName(operation.MethodName);
-            result.Add(new ImportNode(
-                items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
-                from: $"./{operationFileName}.params",
-                kind: ImportKind.Named,
-                isTypeOnly: true));
-        }
-
-        var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
-        if (resultsAstBuilder.HasResponsesWithBody(operation))
-        {
-            var resultTypeName = resultsAstBuilder.ResultTypeName(operation.MethodName);
-            var operationFileName = GetModelFileName(operation.MethodName);
-            result.Add(new ImportNode(
-                items: new[] { new IdentifierNode(resultTypeName) }.ToImmutableList(),
-                from: $"./{operationFileName}.results",
-                kind: ImportKind.Named,
-                isTypeOnly: true));
-        }
-
-        // Импорты схем валидации для выбранной библиотеки (zod/valibot/typebox)
-        if (_validation.IsEnabled)
-        {
-            var opName = _namingConverter.ToPascalCase(operation.MethodName);
-            var operationFileName = GetModelFileName(operation.MethodName);
-            var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
-
-            var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
-
-            // Params: zod импортирует именованную схему; valibot/typebox строят схему параметров inline.
-            if (_validation.ImportsNamedParamsSchema)
-            {
-                var paramsSchemaImports = new List<IdentifierNode>();
-                if (operation.PathParameters.Count > 0)
-                    paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
-                if (operation.QueryParameters.Count > 0)
-                    paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
-
-                if (paramsSchemaImports.Count > 0)
-                {
-                    result.Add(new ImportNode(
-                        items: paramsSchemaImports.ToImmutableList(),
-                        from: $"./{operationFileName}.params.schema",
-                        kind: ImportKind.Named));
-                }
-            }
-
-            // Вынесенные result-схемы (constructed-ответы: union/array/...) из {op}.results.schemas.
-            var resultSchemaNames = ClientResultSchemaNames(operation);
-            if (resultSchemaNames.Count > 0)
-            {
-                result.Add(new ImportNode(
-                    items: resultSchemaNames.OrderBy(n => n, StringComparer.Ordinal)
-                        .Select(n => new IdentifierNode(n)).ToImmutableList(),
-                    from: $"./{operationFileName}.results.schemas",
-                    kind: ImportKind.Named));
-            }
-
-            // Model-схемы тела/голых-ответов. Для inline-параметров добавляем также схемы enum/model,
-            // на которые ссылаются типы параметров.
-            var modelSchemaNames = ClientModelSchemaNames(operation);
-            if (!_validation.ImportsNamedParamsSchema)
-            {
-                foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
-                    ValidationTypes.CollectModelSchemaNames(parameter.Type, modelSchemaNames);
-            }
-
-            foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
-            {
-                var modelFileName = GetModelFileName(modelName);
-                result.Add(new ImportNode(
-                    items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
-                    from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
-                    kind: ImportKind.Named));
-            }
-
-            // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
-            result.AddRange(_validation.RuntimeImports(
-                ClientInlineConstructedTypes(operation), hasParams, ClientHasResponseValidation(operation)));
-        }
+        AddCommonEndpointImports(result, operation, fileOrganization);
 
         result.AddRange(existingImports);
         return result;
     }
 
+    /// <summary>
+    /// Общие импорты endpoint-файла (axios/fetch): типы params/results и схемы валидации
+    /// выбранной библиотеки. Транспорт-специфичные импорты добавляются вызывающим.
+    /// </summary>
+    private void AddCommonEndpointImports(
+        List<ImportNode> result,
+        IrOperation operation,
+        FileOrganization? fileOrganization)
+    {
+        var operationFileName = GetModelFileName(operation.MethodName);
+
+        var paramsBuilder = new TypeScriptParamsAstBuilder(_namingConverter, BuildType);
+        if (paramsBuilder.HasParameters(operation))
+        {
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode(paramsBuilder.ParamsInterfaceName(operation.MethodName)) }.ToImmutableList(),
+                from: $"./{operationFileName}.params",
+                kind: ImportKind.Named,
+                isTypeOnly: true));
+        }
+
+        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
+        if (resultsBuilder.HasResponsesWithBody(operation))
+        {
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode(resultsBuilder.ResultTypeName(operation.MethodName)) }.ToImmutableList(),
+                from: $"./{operationFileName}.results",
+                kind: ImportKind.Named,
+                isTypeOnly: true));
+        }
+
+        AddValidationSchemaImports(result, operation, fileOrganization);
+    }
+
+    /// <summary>
+    /// Импорты схем валидации для выбранной библиотеки: params-схемы (zod), вынесенные result-схемы,
+    /// model-схемы тела/голых-ответов и runtime-импорты (z / v / Type / Value).
+    /// </summary>
+    private void AddValidationSchemaImports(
+        List<ImportNode> result,
+        IrOperation operation,
+        FileOrganization? fileOrganization)
+    {
+        if (!_validation.IsEnabled)
+            return;
+
+        var opName = _namingConverter.ToPascalCase(operation.MethodName);
+        var operationFileName = GetModelFileName(operation.MethodName);
+        var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
+        var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
+
+        // Params: zod импортирует именованную схему; valibot/typebox строят схему параметров inline.
+        if (_validation.ImportsNamedParamsSchema)
+        {
+            var paramsSchemaImports = new List<IdentifierNode>();
+            if (operation.PathParameters.Count > 0)
+                paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
+            if (operation.QueryParameters.Count > 0)
+                paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+
+            if (paramsSchemaImports.Count > 0)
+            {
+                result.Add(new ImportNode(
+                    items: paramsSchemaImports.ToImmutableList(),
+                    from: $"./{operationFileName}.params.schema",
+                    kind: ImportKind.Named));
+            }
+        }
+
+        // Вынесенные result-схемы (constructed-ответы: union/array/...) из {op}.results.schemas.
+        var resultSchemaNames = ClientResultSchemaNames(operation);
+        if (resultSchemaNames.Count > 0)
+        {
+            result.Add(new ImportNode(
+                items: resultSchemaNames.OrderBy(n => n, StringComparer.Ordinal)
+                    .Select(n => new IdentifierNode(n)).ToImmutableList(),
+                from: $"./{operationFileName}.results.schemas",
+                kind: ImportKind.Named));
+        }
+
+        // Model-схемы тела/голых-ответов. Для inline-параметров добавляем также схемы enum/model,
+        // на которые ссылаются типы параметров.
+        var modelSchemaNames = ClientModelSchemaNames(operation);
+        if (!_validation.ImportsNamedParamsSchema)
+        {
+            foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
+                ValidationTypes.CollectModelSchemaNames(parameter.Type, modelSchemaNames);
+        }
+
+        foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
+        {
+            var modelFileName = GetModelFileName(modelName);
+            result.Add(new ImportNode(
+                items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
+                from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
+                kind: ImportKind.Named));
+        }
+
+        // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
+        result.AddRange(_validation.RuntimeImports(
+            ClientInlineConstructedTypes(operation), hasParams, ClientHasResponseValidation(operation)));
+    }
+
     // Приватные вспомогательные методы для IR операций
-    
+
     private IReadOnlyList<ParameterDeclarationNode> BuildFunctionParameters(IrOperation operation)
     {
         if (UseParamsStyleEndpointTransport())
