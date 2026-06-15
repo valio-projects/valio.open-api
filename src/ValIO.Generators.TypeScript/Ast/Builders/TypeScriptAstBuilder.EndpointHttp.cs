@@ -68,12 +68,12 @@ public partial class TypeScriptAstBuilder
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             var before = ctx.LeadingStatements.Count;
 
-            // Route/query параметры валидируются выбранной библиотекой: zod — по импортируемой
-            // именованной схеме, valibot/typebox — по inline-схеме параметров.
+            // Route/query параметры валидируются по импортируемой именованной схеме
+            // ({op}.params.schema.ts) — единообразно для всех библиотек.
             if (hasRoute)
             {
                 var routeInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
-                var parseCall = _validation.ValidateParams($"{opName}RouteParamsSchema", operation.PathParameters, routeInput);
+                var parseCall = _validation.ValidateNamed($"{opName}RouteParamsSchema", routeInput);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedRoute"),
                     type: null,
@@ -83,7 +83,7 @@ public partial class TypeScriptAstBuilder
             if (hasQuery)
             {
                 var queryInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
-                var parseCall = _validation.ValidateParams($"{opName}QueryParamsSchema", operation.QueryParameters, queryInput);
+                var parseCall = _validation.ValidateNamed($"{opName}QueryParamsSchema", queryInput);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedQuery"),
                     type: null,

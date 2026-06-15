@@ -14,7 +14,7 @@ internal sealed class NoneValidationStrategy : IClientValidationStrategy
 
     public bool IsEnabled => false;
 
-    public bool ImportsNamedParamsSchema => false;
+    public string? UuidConstName => null;
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) => input;
 
@@ -24,8 +24,6 @@ internal sealed class NoneValidationStrategy : IClientValidationStrategy
     public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters) => new IdentifierExpressionNode(new IdentifierNode("unknown"));
 
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) => input;
-
-    public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) => input;
 
     public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
         [];

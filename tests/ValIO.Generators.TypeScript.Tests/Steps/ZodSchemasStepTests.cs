@@ -27,7 +27,8 @@ public class ZodSchemasStepTests
         });
 
         var schema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal));
+            f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal)
+            && !f.RelativePath.Contains(".params.schema", StringComparison.Ordinal));
         schema.Content.Should().Contain("from 'zod'");
         schema.Content.Should().NotContain("from 'zod/v4'");
     }
@@ -43,7 +44,8 @@ public class ZodSchemasStepTests
         });
 
         var schema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal));
+            f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal)
+            && !f.RelativePath.Contains(".params.schema", StringComparison.Ordinal));
         schema.Content.Should().Contain("from 'zod/v4'");
     }
 

@@ -22,8 +22,7 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
 
     public bool IsEnabled => true;
 
-    // Zod-схемы параметров генерируются отдельным шагом и импортируются по имени.
-    public bool ImportsNamedParamsSchema => true;
+    public string? UuidConstName => Options.TypeScriptOptionIds.UuidFormat.RegexConstName;
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
         Call(Member(_schema.Build(type), "parse"), input);
@@ -34,9 +33,6 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
 
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id(schemaName), "parse"), input);
-
-    public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) =>
-        Call(Member(Id(importedSchemaName), "parse"), input);
 
     public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
         // `z` нужен только когда строится inline `z.*` (union/array/... в теле запроса);

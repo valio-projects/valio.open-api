@@ -21,8 +21,7 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
 
     public bool IsEnabled => true;
 
-    // Схема параметров строится inline из самих параметров.
-    public bool ImportsNamedParamsSchema => false;
+    public string? UuidConstName => Options.TypeScriptOptionIds.UuidFormat.RegexConstName;
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
         Call(Member(Id("v"), "parse"), _builder.BuildSchemaFromIrType(type), input);
@@ -33,9 +32,6 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
 
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id("v"), "parse"), Id(schemaName), input);
-
-    public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) =>
-        Call(Member(Id("v"), "parse"), _builder.BuildObjectFromParameters(parameters), input);
 
     public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
         // Любой `v.parse(...)` / `v.object(...)` обращается к пространству `v`.

@@ -7,8 +7,8 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 namespace ValIO.Generators.TypeScript.Tests.Steps;
 
 /// <summary>
-/// Unit tests for <c>ZodParamsSchemasStep</c> — emits
-/// <c>{operation}.params.schema.ts</c> with Route/Query Zod schemas
+/// Tests for <c>TypeScriptParamsSchemasStep</c> with Zod — emits
+/// <c>{operation}.params.schema.ts</c> with Route/Query schemas
 /// when validation is zod3 or zod4 and the operation has route/query params.
 /// </summary>
 [TestFixture]
@@ -60,7 +60,7 @@ public class ZodParamsSchemasStepTests
 
         var paramsSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.params.schema.ts", StringComparison.Ordinal));
-        paramsSchema.Content.Should().Contain("from 'zod/v4'");
+        paramsSchema.Content.Should().Contain("from \"zod/v4\"");
     }
 
     [Test]
@@ -83,7 +83,7 @@ public class ZodParamsSchemasStepTests
         paramsSchema.Content.Should().Contain("UserRoleSchema");
         // ...and now imports it from the schemas folder (separate-models subfolder layout).
         paramsSchema.Content.Should().Contain(
-            "import { UserRoleSchema } from '../../schemas/userRole/userRole.schema';");
+            "import { UserRoleSchema } from \"../../schemas/userRole/userRole.schema\";");
     }
 
     [Test]
@@ -107,7 +107,7 @@ public class ZodParamsSchemasStepTests
             f.RelativePath.EndsWith("listUsers.params.schema.ts", StringComparison.Ordinal));
 
         paramsSchema.Content.Should().Contain(
-            "import { UserRoleSchema } from '../../schemas/userRole.schema';");
+            "import { UserRoleSchema } from \"../../schemas/userRole.schema\";");
         paramsSchema.Content.Should().NotContain("schemas/userRole/userRole.schema");
     }
 

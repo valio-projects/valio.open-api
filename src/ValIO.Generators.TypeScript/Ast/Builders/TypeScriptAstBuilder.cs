@@ -1110,22 +1110,19 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
         var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
 
-        // Params: zod импортирует именованную схему; valibot/typebox строят схему параметров inline.
-        if (_validation.ImportsNamedParamsSchema)
-        {
-            var paramsSchemaImports = new List<IdentifierNode>();
-            if (operation.PathParameters.Count > 0)
-                paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
-            if (operation.QueryParameters.Count > 0)
-                paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+        // Params: единообразно для всех библиотек импортируем именованные схемы из {op}.params.schema.ts.
+        var paramsSchemaImports = new List<IdentifierNode>();
+        if (operation.PathParameters.Count > 0)
+            paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
+        if (operation.QueryParameters.Count > 0)
+            paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
 
-            if (paramsSchemaImports.Count > 0)
-            {
-                result.Add(new ImportNode(
-                    items: paramsSchemaImports.ToImmutableList(),
-                    from: $"./{operationFileName}.params.schema",
-                    kind: ImportKind.Named));
-            }
+        if (paramsSchemaImports.Count > 0)
+        {
+            result.Add(new ImportNode(
+                items: paramsSchemaImports.ToImmutableList(),
+                from: $"./{operationFileName}.params.schema",
+                kind: ImportKind.Named));
         }
 
         // Вынесенные result-схемы (constructed-ответы: union/array/...) из {op}.results.schemas.
@@ -1139,14 +1136,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 kind: ImportKind.Named));
         }
 
-        // Model-схемы тела/голых-ответов. Для inline-параметров добавляем также схемы enum/model,
-        // на которые ссылаются типы параметров.
+        // Model-схемы тела/голых-ответов. Схемы enum/model, на которые ссылаются типы параметров,
+        // импортируются файлом {op}.params.schema.ts — клиенту они не нужны.
         var modelSchemaNames = ClientModelSchemaNames(operation);
-        if (!_validation.ImportsNamedParamsSchema)
-        {
-            foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
-                ValidationTypes.CollectModelSchemaNames(parameter.Type, modelSchemaNames);
-        }
 
         foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
         {

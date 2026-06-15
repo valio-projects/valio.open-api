@@ -8,14 +8,10 @@
 
 import ky from "ky";
 import type { Options } from "ky";
-import { z } from "zod";
 import type { GetUserByIdParams } from "./getUserById.params";
 import type { GetUserByIdResults } from "./getUserById.results";
+import { GetUserByIdRouteParamsSchema } from "./getUserById.params.schema";
 import { UserSchema } from "../../schemas/user/user.schema";
-
-const GetUserByIdRouteParamsSchema = z.object({
-    id: z.number().int()
-});
 
 /**
  * @description Get user by ID

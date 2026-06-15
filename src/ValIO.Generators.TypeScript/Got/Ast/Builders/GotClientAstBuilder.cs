@@ -14,8 +14,6 @@ using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
-using ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
-using ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 
 namespace ValIO.Generators.TypeScript.Got.Ast.Builders;
 
@@ -29,20 +27,12 @@ public sealed class GotClientAstBuilder
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
-    private readonly EndpointValidationLibrary _validationLibrary;
-    private readonly TypeBoxAstBuilder _typeBoxAstBuilder;
-    private readonly ValibotAstBuilder _valibotAstBuilder;
-    private readonly Validation.ZodSchemaExpressionBuilder _zodSchemaExpression;
-    private readonly string _uuidFormat;
+    private readonly Validation.IClientValidationStrategy _validation;
 
     public GotClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
-        _validationLibrary = EndpointValidationLibrary.From(options);
-        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(options?.UuidFormat);
-        _typeBoxAstBuilder = new TypeBoxAstBuilder(options?.UuidFormat);
-        _valibotAstBuilder = new ValibotAstBuilder(options?.UuidFormat);
-        _zodSchemaExpression = new Validation.ZodSchemaExpressionBuilder(options?.UuidFormat);
+        _validation = Validation.ClientValidationStrategyFactory.Create(options);
 
         var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
@@ -58,13 +48,10 @@ public sealed class GotClientAstBuilder
         var hasResultType = _resultsBuilder.HasResponsesWithBody(operation);
         var declarations = ImmutableList.CreateBuilder<DeclarationNode>();
 
-        if (_validationLibrary.IsEnabled)
-            AddParameterSchemaDeclarations(operation, declarations);
-
         declarations.Add(BuildOperationFunction(operation, hasParameters, hasResultType));
 
         return new SourceFileNode(
-            imports: BuildImports(operation, operationFileName, fileOrganization, hasParameters, hasResultType, declarations.Count > 1),
+            imports: BuildImports(operation, operationFileName, fileOrganization, hasParameters, hasResultType),
             declarations: declarations.ToImmutable(),
             fileDocumentation: TypeScriptDoc.FileHeader(
                 $"{operationFileName}.got.ts",
@@ -77,8 +64,7 @@ public sealed class GotClientAstBuilder
         string operationFileName,
         FileOrganization fileOrganization,
         bool hasParameters,
-        bool hasResultType,
-        bool hasLocalValidationSchemas)
+        bool hasResultType)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
         imports.Add(new ImportNode(
@@ -86,7 +72,11 @@ public sealed class GotClientAstBuilder
             from: "got",
             kind: ImportKind.Default));
 
-        AddValidationRuntimeImports(imports, hasLocalValidationSchemas);
+        // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
+        imports.AddRange(_validation.RuntimeImports(
+            ClientInlineConstructedTypes(operation),
+            hasParams: operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0,
+            hasNamedSchemaParse: Validation.ClientResponseSchemas.ValidatedResponses(operation).Any()));
 
         if (hasParameters)
         {
@@ -106,8 +96,11 @@ public sealed class GotClientAstBuilder
                 isTypeOnly: true));
         }
 
-        if (_validationLibrary.IsEnabled)
+        if (_validation.IsEnabled)
         {
+            // Схемы параметров (route/query) импортируются из {op}.params.schema.ts.
+            AddParamsSchemaImports(imports, operation, operationFileName);
+
             // Model-схемы тела/голых-ответов (рекурсивно). Члены union/array constructed-ответов
             // импортируются файлом {op}.results.schemas.ts.
             foreach (var modelName in Validation.ClientResponseSchemas.ModelSchemaNames(operation))
@@ -127,69 +120,30 @@ public sealed class GotClientAstBuilder
                     from: $"./{operationFileName}.results.schemas",
                     kind: ImportKind.Named));
             }
-
-            AddUuidFormatImport(imports, operation, fileOrganization);
         }
 
         return imports.ToImmutable();
     }
 
-    private void AddValidationRuntimeImports(ImmutableList<ImportNode>.Builder imports, bool hasLocalValidationSchemas)
-    {
-        if (!_validationLibrary.IsEnabled)
-            return;
-
-        switch (_validationLibrary.Kind)
-        {
-            case EndpointValidationKind.Zod when hasLocalValidationSchemas:
-                imports.Add(new ImportNode(
-                    items: ImmutableList.Create(new IdentifierNode("z")),
-                    from: _validationLibrary.ZodImportPath,
-                    kind: ImportKind.Named));
-                break;
-            case EndpointValidationKind.Valibot:
-                imports.Add(new ImportNode(
-                    items: ImmutableList.Create(new IdentifierNode("v")),
-                    from: "valibot",
-                    kind: ImportKind.Namespace));
-                break;
-            case EndpointValidationKind.TypeBox:
-                imports.Add(new ImportNode(
-                    items: ImmutableList.Create(new IdentifierNode("Type")),
-                    from: "@sinclair/typebox",
-                    kind: ImportKind.Named));
-                imports.Add(new ImportNode(
-                    items: ImmutableList.Create(new IdentifierNode("Value")),
-                    from: "@sinclair/typebox/value",
-                    kind: ImportKind.Named));
-                break;
-        }
-    }
-
-    private void AddParameterSchemaDeclarations(
-        IrOperation operation,
-        ImmutableList<DeclarationNode>.Builder declarations)
+    private void AddParamsSchemaImports(ImmutableList<ImportNode>.Builder imports, IrOperation operation, string operationFileName)
     {
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
-
+        var names = new List<IdentifierNode>();
         if (operation.PathParameters.Count > 0)
-        {
-            declarations.Add(new VariableDeclarationNode(
-                name: new IdentifierNode($"{opName}RouteParamsSchema"),
-                declarationKind: VariableDeclarationKind.Const,
-                initializer: BuildParameterObjectSchema(operation.PathParameters),
-                isExported: false));
-        }
-
+            names.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
         if (operation.QueryParameters.Count > 0)
-        {
-            declarations.Add(new VariableDeclarationNode(
-                name: new IdentifierNode($"{opName}QueryParamsSchema"),
-                declarationKind: VariableDeclarationKind.Const,
-                initializer: BuildParameterObjectSchema(operation.QueryParameters),
-                isExported: false));
-        }
+            names.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+        if (names.Count > 0)
+            imports.Add(new ImportNode(
+                items: names.ToImmutableList(),
+                from: $"./{operationFileName}.params.schema",
+                kind: ImportKind.Named));
     }
+
+    private static IReadOnlyCollection<IrType> ClientInlineConstructedTypes(IrOperation operation) =>
+        operation.RequestBody != null && Validation.ValidationTypes.IsValidatable(operation.RequestBody.Type)
+            ? new[] { operation.RequestBody.Type }
+            : Array.Empty<IrType>();
 
     private FunctionDeclarationNode BuildOperationFunction(
         IrOperation operation,
@@ -229,7 +183,7 @@ public sealed class GotClientAstBuilder
         var statements = new List<StatementNode>();
         var sources = BuildParameterSources(operation);
 
-        if (_validationLibrary.IsEnabled)
+        if (_validation.IsEnabled)
             AddValidationParsingStatements(operation, sources, statements);
 
         statements.Add(new VariableDeclarationStatementNode(
@@ -283,7 +237,7 @@ public sealed class GotClientAstBuilder
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("parsedRoute"),
                 type: null,
-                initializer: BuildParseCall($"{opName}RouteParamsSchema", sources.RouteSource)));
+                initializer: _validation.ValidateNamed($"{opName}RouteParamsSchema", sources.RouteSource)));
             sources.RouteSource = Id("parsedRoute");
         }
 
@@ -296,17 +250,20 @@ public sealed class GotClientAstBuilder
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("parsedQuery"),
                 type: null,
-                initializer: BuildParseCall($"{opName}QueryParamsSchema", queryInput)));
+                initializer: _validation.ValidateNamed($"{opName}QueryParamsSchema", queryInput)));
             sources.QuerySource = Id("parsedQuery");
             sources.QuerySourceMayBeUndefined = false;
         }
 
-        if (operation.RequestBody?.Type is IrModelReference bodyModelRef && sources.BodySource != null)
+        // Тело запроса валидируется схемой выбранной библиотеки (модель/union/array/...) — inline.
+        if (operation.RequestBody != null
+            && Validation.ValidationTypes.IsValidatable(operation.RequestBody.Type)
+            && sources.BodySource != null)
         {
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("parsedBody"),
                 type: null,
-                initializer: BuildParseCall($"{bodyModelRef.ModelName}Schema", sources.BodySource)));
+                initializer: _validation.Validate(operation.RequestBody.Type, sources.BodySource)));
             sources.BodySource = Id("parsedBody");
             sources.BodySourceMayBeUndefined = false;
         }
@@ -447,11 +404,11 @@ public sealed class GotClientAstBuilder
     /// </summary>
     private ExpressionNode BuildResponseBody(IrOperation operation, IrResponse response, ExpressionNode responseData)
     {
-        if (!_validationLibrary.IsEnabled || !Validation.ValidationTypes.IsValidatable(response.Type!))
+        if (!_validation.IsEnabled || !Validation.ValidationTypes.IsValidatable(response.Type!))
             return responseData;
         if (response.Type is IrModelReference modelRef)
-            return BuildParseCall($"{modelRef.ModelName}Schema", responseData);
-        return BuildParseCall(
+            return _validation.ValidateNamed($"{modelRef.ModelName}Schema", responseData);
+        return _validation.ValidateNamed(
             Validation.ClientResponseSchemas.ResultSchemaName(_namingConverter, operation.MethodName, response.StatusCode),
             responseData);
     }
@@ -527,55 +484,6 @@ public sealed class GotClientAstBuilder
     private static ExpressionNode BodyPropertyAccess(IrRequestBody requestBody, ExpressionNode source) =>
         Member(source, requestBody.IsForm ? "form" : "body");
 
-    private ExpressionNode BuildParameterObjectSchema(IReadOnlyList<IrParameter> parameters)
-    {
-        var properties = parameters
-            .Select(parameter => new PropertyAssignmentNode(
-                new IdentifierNode(parameter.Name),
-                BuildParameterSchema(parameter)))
-            .ToImmutableList();
-
-        return _validationLibrary.Kind switch
-        {
-            EndpointValidationKind.Zod => ZodCall("object", new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true)),
-            EndpointValidationKind.Valibot => Call(Member(Id("v"), "object"), new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true)),
-            EndpointValidationKind.TypeBox => Call(Member(Id("Type"), "Object"), new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true)),
-            _ => EmptyObject()
-        };
-    }
-
-    private ExpressionNode BuildParameterSchema(IrParameter parameter)
-    {
-        var schema = _validationLibrary.Kind switch
-        {
-            EndpointValidationKind.Zod => _zodSchemaExpression.Build(parameter.Type),
-            EndpointValidationKind.Valibot => _valibotAstBuilder.BuildSchemaFromIrType(parameter.Type),
-            EndpointValidationKind.TypeBox => _typeBoxAstBuilder.BuildSchemaFromIrType(parameter.Type),
-            _ => EmptyObject()
-        };
-
-        if (parameter.IsRequired)
-            return schema;
-
-        return _validationLibrary.Kind switch
-        {
-            EndpointValidationKind.Zod => Call(Member(schema, "optional")),
-            EndpointValidationKind.Valibot => Call(Member(Id("v"), "optional"), schema),
-            EndpointValidationKind.TypeBox => Call(Member(Id("Type"), "Optional"), schema),
-            _ => schema
-        };
-    }
-
-
-    private ExpressionNode BuildParseCall(string schemaName, ExpressionNode input) =>
-        _validationLibrary.Kind switch
-        {
-            EndpointValidationKind.Zod => Call(Member(Id(schemaName), "parse"), input),
-            EndpointValidationKind.Valibot => Call(Member(Id("v"), "parse"), Id(schemaName), input),
-            EndpointValidationKind.TypeBox => Call(Member(Id("Value"), "Parse"), Id(schemaName), input),
-            _ => input
-        };
-
     private string BuildSchemaImportPath(string modelName, FileOrganization fileOrganization)
     {
         var schemasPath = fileOrganization.SchemasPath ?? "schemas";
@@ -583,21 +491,6 @@ public sealed class GotClientAstBuilder
         return fileOrganization.SeparateModels
             ? $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{schemasPath}/{modelFileName}.schema";
-    }
-
-    private void AddUuidFormatImport(ImmutableList<ImportNode>.Builder imports, IrOperation operation, FileOrganization fileOrganization)
-    {
-        if (_uuidFormat != TypeScriptOptionIds.UuidFormat.Regex || !UuidFormatSupport.OperationParamsUseUuid(operation))
-            return;
-
-        var schemasPath = fileOrganization.SchemasPath ?? "schemas";
-        var symbol = _validationLibrary.Kind == EndpointValidationKind.TypeBox
-            ? TypeScriptOptionIds.UuidFormat.PatternConstName
-            : TypeScriptOptionIds.UuidFormat.RegexConstName;
-        imports.Add(new ImportNode(
-            items: ImmutableList.Create(new IdentifierNode(symbol)),
-            from: $"../../{schemasPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
-            kind: ImportKind.Named));
     }
 
     private static ExpressionNode BuildParameterAccess(ExpressionNode source, string name, bool sourceMayBeUndefined) =>
@@ -624,9 +517,6 @@ public sealed class GotClientAstBuilder
 
     private static ObjectLiteralExpressionNode EmptyObject() =>
         new(ImmutableList<PropertyAssignmentNode>.Empty);
-
-    private static CallExpressionNode ZodCall(string methodName, params ExpressionNode[] arguments) =>
-        Call(Member(Id("z"), methodName), arguments);
 
     private static CallExpressionNode Call(ExpressionNode target, params ExpressionNode[] arguments) =>
         new(target, arguments.ToImmutableList());
@@ -658,28 +548,5 @@ public sealed class GotClientAstBuilder
         public bool HeadersSourceMayBeUndefined { get; set; }
         public ExpressionNode? BodySource { get; set; }
         public bool BodySourceMayBeUndefined { get; set; }
-    }
-
-    private enum EndpointValidationKind
-    {
-        None,
-        Zod,
-        Valibot,
-        TypeBox
-    }
-
-    private sealed record EndpointValidationLibrary(EndpointValidationKind Kind, string ZodImportPath)
-    {
-        public bool IsEnabled => Kind != EndpointValidationKind.None;
-
-        public static EndpointValidationLibrary From(TypeScriptGenerationOptions? options) =>
-            options?.ValidationLibrary switch
-            {
-                TypeScriptOptionIds.Validation.Zod4 => new EndpointValidationLibrary(EndpointValidationKind.Zod, "zod/v4"),
-                TypeScriptOptionIds.Validation.Zod3 => new EndpointValidationLibrary(EndpointValidationKind.Zod, "zod"),
-                TypeScriptOptionIds.Validation.Valibot => new EndpointValidationLibrary(EndpointValidationKind.Valibot, "zod"),
-                TypeScriptOptionIds.Validation.TypeBox => new EndpointValidationLibrary(EndpointValidationKind.TypeBox, "zod"),
-                _ => new EndpointValidationLibrary(EndpointValidationKind.None, "zod")
-            };
     }
 }

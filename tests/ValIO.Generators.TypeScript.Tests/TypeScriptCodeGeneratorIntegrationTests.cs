@@ -133,7 +133,8 @@ public class TypeScriptCodeGeneratorIntegrationTests
 
         schemaFiles.Should().NotBeEmpty("should generate schema files with zod3");
 
-        var userSchema = schemaFiles.FirstOrDefault(f => f.RelativePath.Contains("User", StringComparison.OrdinalIgnoreCase));
+        var userSchema = schemaFiles.FirstOrDefault(f =>
+            f.RelativePath.Replace('\\', '/').EndsWith("/user.schema.ts", StringComparison.OrdinalIgnoreCase));
         userSchema.Should().NotBeNull("should generate User schema");
         userSchema!.Content.Should().Contain("z.object");
         userSchema.Content.Should().Contain("UserSchema");
@@ -200,7 +201,8 @@ public class TypeScriptCodeGeneratorIntegrationTests
             .ToList();
 
         schemaFiles.Should().NotBeEmpty("should generate schema files with TypeBox");
-        var userSchema = schemaFiles.FirstOrDefault(f => f.RelativePath.Contains("User", StringComparison.OrdinalIgnoreCase));
+        var userSchema = schemaFiles.FirstOrDefault(f =>
+            f.RelativePath.Replace('\\', '/').EndsWith("/user.schema.ts", StringComparison.OrdinalIgnoreCase));
         userSchema.Should().NotBeNull("should generate User TypeBox schema");
         userSchema!.Content.Should().Contain("@sinclair/typebox");
         userSchema.Content.Should().Contain("export const UserSchema");
@@ -223,7 +225,8 @@ public class TypeScriptCodeGeneratorIntegrationTests
             .ToList();
 
         schemaFiles.Should().NotBeEmpty("should generate schema files with Valibot");
-        var userSchema = schemaFiles.FirstOrDefault(f => f.RelativePath.Contains("User", StringComparison.OrdinalIgnoreCase));
+        var userSchema = schemaFiles.FirstOrDefault(f =>
+            f.RelativePath.Replace('\\', '/').EndsWith("/user.schema.ts", StringComparison.OrdinalIgnoreCase));
         userSchema.Should().NotBeNull("should generate User Valibot schema");
         userSchema!.Content.Should().Contain("import * as v from \"valibot\"");
         userSchema.Content.Should().Contain("export const UserSchema");

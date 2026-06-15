@@ -58,7 +58,7 @@ public class JsDocGenerationTests
 
         ShouldHaveHeader(File(ctx, "schemas/user/user.schema.ts"), "user.schema.ts", "schemas/user");
         ShouldHaveHeader(File(ctx, "getUserById.ky.ts"), "getUserById.ky.ts", "endpoints/getUserById");
-        ShouldHaveHeader(File(ctx, "getUserById.params.schema.ts"), "getUserById.params.schema.ts", "endpoints/getUserById");
+        ShouldHaveHeader(File(ctx, "getUserById.params.schema.ts"), "getUserById.params.schema.ts", "getUserById.params.schema");
         ShouldHaveHeader(File(ctx, "mocks/handlers.ts"), "handlers.ts", "mocks/handlers");
         ShouldHaveHeader(File(ctx, "index.ts"), "index.ts", "index");
     }

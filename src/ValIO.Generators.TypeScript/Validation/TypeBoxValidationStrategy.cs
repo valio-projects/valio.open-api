@@ -21,8 +21,7 @@ internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
 
     public bool IsEnabled => true;
 
-    // Схема параметров строится inline (Type.Object) из самих параметров.
-    public bool ImportsNamedParamsSchema => false;
+    public string? UuidConstName => Options.TypeScriptOptionIds.UuidFormat.PatternConstName;
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
         Call(Member(Id("Value"), "Parse"), _builder.BuildSchemaFromIrType(type), input);
@@ -34,15 +33,13 @@ internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id("Value"), "Parse"), Id(schemaName), input);
 
-    public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) =>
-        Call(Member(Id("Value"), "Parse"), _builder.BuildObjectFromParameters(parameters), input);
-
     public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
 
-        // `Type` нужен для inline-построения схем: Type.Object для параметров, Type.Union/Array/... для тела.
-        if (hasParams || inlineConstructedTypes.Any(ValidationTypes.NeedsConstructedSchema))
+        // `Type` нужен только для inline-построения схем тела (Type.Union/Array/...); схемы параметров
+        // вынесены в {op}.params.schema.ts, поэтому клиенту `Type` для них не нужен.
+        if (inlineConstructedTypes.Any(ValidationTypes.NeedsConstructedSchema))
             imports.Add(TypeImport());
 
         // `Value.Parse(...)` нужен при любой валидации (тело/параметры/именованные result-схемы).

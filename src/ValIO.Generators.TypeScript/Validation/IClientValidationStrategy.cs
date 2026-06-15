@@ -18,11 +18,11 @@ internal interface IClientValidationStrategy
     bool IsEnabled { get; }
 
     /// <summary>
-    /// Валидирует ли стратегия route/query параметры по предварительно сгенерированной импортируемой
-    /// именованной схеме (<c>{op}RouteParamsSchema</c>). Если <c>false</c> — схема параметров строится
-    /// inline из самих параметров. Используется логикой импортов клиента.
+    /// Имя shared-константы UUID-формата для библиотеки (<c>UUID_REGEX</c> для zod/valibot,
+    /// <c>UUID_PATTERN</c> для typebox), на которую ссылаются схемы в режиме <c>uuidFormat = regex</c>;
+    /// <c>null</c> когда валидация выключена. Импортируется файлом, который ОБЪЯВЛЯЕТ схему с uuid.
     /// </summary>
-    bool ImportsNamedParamsSchema { get; }
+    string? UuidConstName { get; }
 
     /// <summary>
     /// Валидирует <paramref name="input"/> по схеме, построенной из <paramref name="type"/>
@@ -44,22 +44,16 @@ internal interface IClientValidationStrategy
     ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters);
 
     /// <summary>
-    /// Валидирует <paramref name="input"/> по импортируемой именованной схеме
-    /// (например модели-ответа). Для None возвращает вход без изменений.
+    /// Валидирует <paramref name="input"/> по импортируемой именованной схеме (модель-ответ,
+    /// вынесенная result-схема или схема параметров). Для None возвращает вход без изменений.
     /// </summary>
     ExpressionNode ValidateNamed(string schemaName, ExpressionNode input);
 
     /// <summary>
-    /// Валидирует объект параметров <paramref name="input"/> для набора route/query
-    /// <paramref name="parameters"/>. Если <see cref="ImportsNamedParamsSchema"/> — использует
-    /// импортируемую схему <paramref name="importedSchemaName"/>; иначе строит схему параметров inline.
-    /// </summary>
-    ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input);
-
-    /// <summary>
     /// Runtime-импорты для КЛИЕНТСКОГО файла: учитывает типы, валидируемые inline (тело),
-    /// валидацию параметров (<paramref name="hasParams"/>) и наличие parse по именованным схемам
-    /// (<paramref name="hasNamedSchemaParse"/> — модели-ответы и вынесенные result-схемы).
+    /// валидацию параметров (<paramref name="hasParams"/> — parse по импортируемой схеме параметров)
+    /// и наличие parse по именованным схемам (<paramref name="hasNamedSchemaParse"/> — модели-ответы
+    /// и вынесенные result-схемы).
     /// </summary>
     IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse);
 

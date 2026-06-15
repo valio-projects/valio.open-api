@@ -6,9 +6,11 @@ using ValIO.Generators.TypeScript.Tests.TestHelpers;
 namespace ValIO.Generators.TypeScript.Tests.Steps;
 
 /// <summary>
-/// Route/query параметры валидируются выбранной библиотекой: zod — по импортируемой именованной
-/// схеме (<c>{op}RouteParamsSchema</c>), valibot/typebox — по inline-схеме параметров.
-/// Раньше для не-zod параметры не валидировались вовсе (жёсткая привязка к zod).
+/// Route/query параметры валидируются единообразно для ВСЕХ библиотек по импортируемой именованной
+/// схеме из <c>{op}.params.schema.ts</c> (<c>{Op}RouteParamsSchema</c>). Сама схема
+/// (<c>z.object</c> / <c>v.object</c> / <c>Type.Object</c>) объявляется в отдельном файле — клиент её
+/// только импортирует и парсит. Раньше zod импортировал схему, а valibot/typebox строили её inline
+/// (расхождение реализаций).
 /// </summary>
 [TestFixture]
 public class ParamsValidationLibraryTests
@@ -21,7 +23,7 @@ public class ParamsValidationLibraryTests
     [OneTimeTearDown]
     public void Teardown() => _harness.Dispose();
 
-    private async Task<string> GetPetByIdClientAsync(string validation)
+    private async Task<(string Client, string ParamsSchema)> GetPetByIdFilesAsync(string validation)
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
@@ -30,38 +32,51 @@ public class ParamsValidationLibraryTests
             ValidationLibrary = validation,
         });
 
-        return ctx.GeneratedFiles
+        var client = ctx.GeneratedFiles
             .First(f => f.RelativePath.EndsWith("getPetById.axios.ts", StringComparison.Ordinal))
             .Content;
+        var paramsSchema = ctx.GeneratedFiles
+            .First(f => f.RelativePath.EndsWith("getPetById.params.schema.ts", StringComparison.Ordinal))
+            .Content;
+        return (client, paramsSchema);
     }
 
     [TestCase("zod3")]
     [TestCase("zod4")]
     public async Task Zod_RouteParams_UseImportedNamedSchema(string validation)
     {
-        var content = await GetPetByIdClientAsync(validation);
-        content.Should().Contain("GetPetByIdRouteParamsSchema.parse");
-        content.Should().Contain(".params.schema");
-        content.Should().NotContain("v.parse(");
-        content.Should().NotContain("Value.Parse(");
+        var (client, paramsSchema) = await GetPetByIdFilesAsync(validation);
+        client.Should().Contain("GetPetByIdRouteParamsSchema.parse");
+        client.Should().Contain(".params.schema");
+        client.Should().NotContain("v.parse(");
+        client.Should().NotContain("Value.Parse(");
+        paramsSchema.Should().Contain("export const GetPetByIdRouteParamsSchema");
+        paramsSchema.Should().Contain("z.object(");
     }
 
     [Test]
-    public async Task Valibot_RouteParams_BuiltInlineWithVObject()
+    public async Task Valibot_RouteParams_ImportedNamedSchema_BuiltInParamsFile()
     {
-        var content = await GetPetByIdClientAsync("valibot");
-        content.Should().Contain("import * as v from \"valibot\"");
-        content.Should().MatchRegex(@"v\.parse\(\s*v\.object\(");
-        // No dependency on a separate (zod-only) params schema file.
-        content.Should().NotContain("GetPetByIdRouteParamsSchema");
+        var (client, paramsSchema) = await GetPetByIdFilesAsync("valibot");
+        // Клиент импортирует именованную схему и парсит её — без inline v.object.
+        client.Should().Contain("import * as v from \"valibot\"");
+        client.Should().MatchRegex(@"v\.parse\(\s*GetPetByIdRouteParamsSchema");
+        client.Should().Contain(".params.schema");
+        client.Should().NotContain("v.object(");
+        // Схема строится в отдельном файле.
+        paramsSchema.Should().Contain("export const GetPetByIdRouteParamsSchema");
+        paramsSchema.Should().Contain("v.object(");
     }
 
     [Test]
-    public async Task TypeBox_RouteParams_BuiltInlineWithTypeObject()
+    public async Task TypeBox_RouteParams_ImportedNamedSchema_BuiltInParamsFile()
     {
-        var content = await GetPetByIdClientAsync("typebox");
-        content.Should().Contain("@sinclair/typebox");
-        content.Should().MatchRegex(@"Value\.Parse\(\s*Type\.Object\(");
-        content.Should().NotContain("GetPetByIdRouteParamsSchema");
+        var (client, paramsSchema) = await GetPetByIdFilesAsync("typebox");
+        client.Should().Contain("@sinclair/typebox");
+        client.Should().MatchRegex(@"Value\.Parse\(\s*GetPetByIdRouteParamsSchema");
+        client.Should().Contain(".params.schema");
+        client.Should().NotContain("Type.Object(");
+        paramsSchema.Should().Contain("export const GetPetByIdRouteParamsSchema");
+        paramsSchema.Should().Contain("Type.Object(");
     }
 }
