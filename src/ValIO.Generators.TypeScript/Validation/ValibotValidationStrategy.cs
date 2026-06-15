@@ -27,15 +27,23 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
         Call(Member(Id("v"), "parse"), _builder.BuildSchemaFromIrType(type), input);
 
+    public ExpressionNode BuildSchema(IrType type) => _builder.BuildSchemaFromIrType(type);
+
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id("v"), "parse"), Id(schemaName), input);
 
     public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) =>
         Call(Member(Id("v"), "parse"), _builder.BuildObjectFromParameters(parameters), input);
 
-    public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineValidatedTypes, bool hasParams) =>
-        // `v.parse(...)` / `v.object(...)` всегда обращаются к пространству `v`.
-        inlineValidatedTypes.Count > 0 || hasParams
-            ? [new ImportNode(ImmutableList.Create(new IdentifierNode("v")), "valibot", ImportKind.Namespace)]
+    public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
+        // Любой `v.parse(...)` / `v.object(...)` обращается к пространству `v`.
+        inlineConstructedTypes.Count > 0 || hasParams || hasNamedSchemaParse
+            ? [ValibotImport()]
             : [];
+
+    public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
+        definedTypes.Count > 0 ? [ValibotImport()] : [];
+
+    private static ImportNode ValibotImport() =>
+        new(ImmutableList.Create(new IdentifierNode("v")), "valibot", ImportKind.Namespace);
 }

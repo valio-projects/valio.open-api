@@ -28,16 +28,25 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
         Call(Member(_schema.Build(type), "parse"), input);
 
+    public ExpressionNode BuildSchema(IrType type) => _schema.Build(type);
+
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id(schemaName), "parse"), input);
 
     public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) =>
         Call(Member(Id(importedSchemaName), "parse"), input);
 
-    public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineValidatedTypes, bool hasParams) =>
-        // Импорт `z` нужен только когда строится inline `z.*` (union/array/...);
-        // голые `{Model}Schema.parse` и импортируемые параметры в `z` не нуждаются.
-        inlineValidatedTypes.Any(ZodSchemaExpressionBuilder.RequiresNamespace)
-            ? [new ImportNode(ImmutableList.Create(new IdentifierNode("z")), _importPath, ImportKind.Named)]
+    public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
+        // `z` нужен только когда строится inline `z.*` (union/array/... в теле запроса);
+        // `{Schema}.parse` (модели, параметры zod, вынесенные result-схемы) в `z` не нуждаются.
+        inlineConstructedTypes.Any(ZodSchemaExpressionBuilder.RequiresNamespace)
+            ? [ZodImport()]
             : [];
+
+    public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
+        // Файл объявляет `z.union([...])` и т.п. → нужен `z`.
+        definedTypes.Count > 0 ? [ZodImport()] : [];
+
+    private ImportNode ZodImport() =>
+        new(ImmutableList.Create(new IdentifierNode("z")), _importPath, ImportKind.Named);
 }

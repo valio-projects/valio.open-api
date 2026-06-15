@@ -18,10 +18,16 @@ internal sealed class NoneValidationStrategy : IClientValidationStrategy
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) => input;
 
+    // Не вызывается (result-схемы генерируются только при включённой валидации).
+    public ExpressionNode BuildSchema(IrType type) => new IdentifierExpressionNode(new IdentifierNode("unknown"));
+
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) => input;
 
     public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) => input;
 
-    public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineValidatedTypes, bool hasParams) =>
+    public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
+        [];
+
+    public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
         [];
 }

@@ -60,9 +60,16 @@ public sealed class TypeScriptResultsAstBuilder
     /// fixed <c>Result</c> base regardless of the configured union-alias suffix.
     /// </summary>
     public string ResultVariantInterfaceName(string operationName, string statusCode)
+        => ResultVariantName(_namingConverter, operationName, statusCode);
+
+    /// <summary>
+    /// Единый источник имени status-варианта результата (<c>{Op}Result{Status}</c>), общий для
+    /// интерфейсов результата, схем (<c>+ "Schema"</c>) и клиента.
+    /// </summary>
+    public static string ResultVariantName(INamingConverter namingConverter, string operationName, string statusCode)
     {
         var suffix = statusCode == "default" ? "Default" : statusCode;
-        return $"{_namingConverter.ToPascalCase(operationName)}Result{suffix}";
+        return $"{namingConverter.ToPascalCase(operationName)}Result{suffix}";
     }
 
     /// <summary>

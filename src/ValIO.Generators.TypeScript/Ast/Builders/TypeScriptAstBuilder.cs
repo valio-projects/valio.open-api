@@ -1088,13 +1088,24 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 }
             }
 
-            // Model-схемы тел/ответов (включая члены union/array). Для inline-параметров добавляем
-            // также схемы enum/model, на которые ссылаются типы параметров.
-            var modelSchemaNames = CollectValidatedModelSchemaNames(operation);
+            // Вынесенные result-схемы (constructed-ответы: union/array/...) из {op}.results.schemas.
+            var resultSchemaNames = ClientResultSchemaNames(operation);
+            if (resultSchemaNames.Count > 0)
+            {
+                result.Add(new ImportNode(
+                    items: resultSchemaNames.OrderBy(n => n, StringComparer.Ordinal)
+                        .Select(n => new IdentifierNode(n)).ToImmutableList(),
+                    from: $"./{operationFileName}.results.schemas",
+                    kind: ImportKind.Named));
+            }
+
+            // Model-схемы тела/голых-ответов. Для inline-параметров добавляем также схемы enum/model,
+            // на которые ссылаются типы параметров.
+            var modelSchemaNames = ClientModelSchemaNames(operation);
             if (!_validation.ImportsNamedParamsSchema)
             {
                 foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
-                    CollectModelReferenceNames(parameter.Type, modelSchemaNames);
+                    ValidationTypes.CollectModelSchemaNames(parameter.Type, modelSchemaNames);
             }
 
             foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
@@ -1107,7 +1118,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             }
 
             // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
-            result.AddRange(_validation.RuntimeImports(CollectInlineValidatedTypes(operation), hasParams));
+            result.AddRange(_validation.RuntimeImports(
+                ClientInlineConstructedTypes(operation), hasParams, ClientHasResponseValidation(operation)));
         }
 
         result.AddRange(existingImports);
@@ -1175,13 +1187,24 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 }
             }
 
-            // Model-схемы тел/ответов (включая члены union/array). Для inline-параметров добавляем
-            // также схемы enum/model, на которые ссылаются типы параметров.
-            var modelSchemaNames = CollectValidatedModelSchemaNames(operation);
+            // Вынесенные result-схемы (constructed-ответы: union/array/...) из {op}.results.schemas.
+            var resultSchemaNames = ClientResultSchemaNames(operation);
+            if (resultSchemaNames.Count > 0)
+            {
+                result.Add(new ImportNode(
+                    items: resultSchemaNames.OrderBy(n => n, StringComparer.Ordinal)
+                        .Select(n => new IdentifierNode(n)).ToImmutableList(),
+                    from: $"./{operationFileName}.results.schemas",
+                    kind: ImportKind.Named));
+            }
+
+            // Model-схемы тела/голых-ответов. Для inline-параметров добавляем также схемы enum/model,
+            // на которые ссылаются типы параметров.
+            var modelSchemaNames = ClientModelSchemaNames(operation);
             if (!_validation.ImportsNamedParamsSchema)
             {
                 foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
-                    CollectModelReferenceNames(parameter.Type, modelSchemaNames);
+                    ValidationTypes.CollectModelSchemaNames(parameter.Type, modelSchemaNames);
             }
 
             foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
@@ -1194,7 +1217,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             }
 
             // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
-            result.AddRange(_validation.RuntimeImports(CollectInlineValidatedTypes(operation), hasParams));
+            result.AddRange(_validation.RuntimeImports(
+                ClientInlineConstructedTypes(operation), hasParams, ClientHasResponseValidation(operation)));
         }
 
         result.AddRange(existingImports);
@@ -1399,7 +1423,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 var dataAccess = new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"));
-                var parseCall = BuildStatusResultBody(resp.Type!, dataAccess);
+                var parseCall = BuildStatusResultBody(operation, resp, dataAccess);
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {
@@ -1495,93 +1519,66 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         _validation.ValidateNamed(schemaName, input);
 
     /// <summary>
-    /// Строит выражение тела (body) для per-status result-ветки клиента: валидирует данные ответа
-    /// по схеме, построенной из типа ответа (ссылка на модель, union, array и т.д.) выбранной
-    /// библиотекой. Для unknown/void и при выключенной валидации возвращает сырые данные.
+    /// Строит выражение тела (body) для per-status result-ветки клиента. Тип, требующий построения
+    /// схемы (union/array/...), валидируется ВЫНЕСЕННОЙ именованной схемой <c>{Op}Result{Status}Schema</c>
+    /// из <c>{op}.results.schemas.ts</c> (строится один раз, а не на каждый вызов); голая ссылка на модель —
+    /// напрямую <c>{Model}Schema</c>. Для unknown/void и при выключенной валидации возвращает сырые данные.
     /// </summary>
-    private ExpressionNode BuildStatusResultBody(IrType responseType, ExpressionNode dataRef)
+    private ExpressionNode BuildStatusResultBody(IrOperation operation, IrResponse response, ExpressionNode dataRef)
     {
-        if (!_validation.IsEnabled || !IsValidatableType(responseType))
+        var type = response.Type!;
+        if (!_validation.IsEnabled || !ValidationTypes.IsValidatable(type))
             return dataRef;
 
-        return _validation.Validate(responseType, dataRef);
+        if (ValidationTypes.NeedsConstructedSchema(type))
+            return _validation.ValidateNamed(ResultSchemaName(operation.MethodName, response.StatusCode), dataRef);
+
+        return _validation.Validate(type, dataRef);
     }
 
-    /// <summary>
-    /// Имеет ли смысл валидировать тип: для <see cref="IrPrimitiveKind.Any"/>/<see cref="IrPrimitiveKind.Void"/>
-    /// схема не несёт пользы.
-    /// </summary>
-    private static bool IsValidatableType(IrType type)
-    {
-        var core = type;
-        while (true)
-        {
-            if (core is IrNullableType n) { core = n.InnerType; continue; }
-            if (core is IrOptionalType o) { core = o.InnerType; continue; }
-            break;
-        }
-
-        return core is not IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Any or IrPrimitiveKind.Void };
-    }
+    private string ResultSchemaName(string operationName, string statusCode)
+        => TypeScriptResultsAstBuilder.ResultVariantName(_namingConverter, operationName, statusCode) + "Schema";
 
     /// <summary>
-    /// Типы, валидируемые inline-схемой (тело запроса + типизированные ответы с числовым статусом).
-    /// Параметры используют именованные схемы и сюда не входят.
+    /// Типы, которые КЛИЕНТ строит inline (тело запроса). Ответы используют именованные/вынесенные схемы.
     /// </summary>
-    private static List<IrType> CollectInlineValidatedTypes(IrOperation operation)
+    private static List<IrType> ClientInlineConstructedTypes(IrOperation operation)
     {
         var types = new List<IrType>();
-        if (operation.RequestBody != null && IsValidatableType(operation.RequestBody.Type))
+        if (operation.RequestBody != null && ValidationTypes.IsValidatable(operation.RequestBody.Type))
             types.Add(operation.RequestBody.Type);
-        foreach (var response in operation.Responses)
-            if (response.Type != null && int.TryParse(response.StatusCode, out _) && IsValidatableType(response.Type))
-                types.Add(response.Type);
         return types;
     }
 
+    /// <summary>Есть ли валидируемые типизированные ответы (любого статуса).</summary>
+    private static bool ClientHasResponseValidation(IrOperation operation)
+        => operation.Responses.Any(r => r.Type != null && int.TryParse(r.StatusCode, out _) && ValidationTypes.IsValidatable(r.Type!));
+
     /// <summary>
-    /// Имена всех model-схем (<c>{Model}Schema</c>), на которые ссылаются валидируемые тела/ответы,
-    /// включая члены union/intersection/array/dictionary — чтобы inline-схемы вроде
-    /// <c>z.union([ASchema, BSchema])</c> получили корректные импорты.
+    /// Model-схемы, импортируемые КЛИЕНТОМ: тело (рекурсивно) + ответы-голые-ссылки. Ответы с
+    /// constructed-схемой импортируют свою result-схему (их члены живут в <c>{op}.results.schemas.ts</c>).
     /// </summary>
-    private static HashSet<string> CollectValidatedModelSchemaNames(IrOperation operation)
+    private static HashSet<string> ClientModelSchemaNames(IrOperation operation)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var type in CollectInlineValidatedTypes(operation))
-            CollectModelReferenceNames(type, names);
+        if (operation.RequestBody != null && ValidationTypes.IsValidatable(operation.RequestBody.Type))
+            ValidationTypes.CollectModelSchemaNames(operation.RequestBody.Type, names);
+
+        foreach (var response in operation.Responses)
+            if (response.Type != null && int.TryParse(response.StatusCode, out _)
+                && ValidationTypes.IsValidatable(response.Type!) && !ValidationTypes.NeedsConstructedSchema(response.Type!))
+                ValidationTypes.CollectModelSchemaNames(response.Type!, names);
+
         return names;
     }
 
-    private static void CollectModelReferenceNames(IrType type, HashSet<string> names)
-    {
-        switch (type)
-        {
-            case IrModelReference reference:
-                names.Add(reference.ModelName);
-                break;
-            case IrArrayType array:
-                CollectModelReferenceNames(array.ElementType, names);
-                break;
-            case IrDictionaryType dictionary:
-                CollectModelReferenceNames(dictionary.ValueType, names);
-                break;
-            case IrNullableType nullable:
-                CollectModelReferenceNames(nullable.InnerType, names);
-                break;
-            case IrOptionalType optional:
-                CollectModelReferenceNames(optional.InnerType, names);
-                break;
-            case IrUnionType union:
-                foreach (var member in union.Types)
-                    CollectModelReferenceNames(member, names);
-                break;
-            case IrIntersectionType intersection:
-                foreach (var member in intersection.Types)
-                    CollectModelReferenceNames(member, names);
-                break;
-        }
-    }
-    
+    /// <summary>Имена вынесенных result-схем (для constructed-ответов), импортируемых клиентом.</summary>
+    private List<string> ClientResultSchemaNames(IrOperation operation)
+        => operation.Responses
+            .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _) && ValidationTypes.NeedsConstructedSchema(r.Type!))
+            .Select(r => ResultSchemaName(operation.MethodName, r.StatusCode))
+            .ToList();
+
     private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
     {
         // Ищем первый успешный ответ (200-299)

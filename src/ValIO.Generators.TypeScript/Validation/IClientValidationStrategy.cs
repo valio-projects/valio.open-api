@@ -31,6 +31,13 @@ internal interface IClientValidationStrategy
     ExpressionNode Validate(IrType type, ExpressionNode input);
 
     /// <summary>
+    /// Строит выражение схемы из <paramref name="type"/> БЕЗ parse-обёртки — для объявления
+    /// именованной константы (например в <c>{op}.results.schemas.ts</c>), чтобы не пересоздавать
+    /// union/array-схему в рантайме на каждый вызов. Для None — не вызывается.
+    /// </summary>
+    ExpressionNode BuildSchema(IrType type);
+
+    /// <summary>
     /// Валидирует <paramref name="input"/> по импортируемой именованной схеме
     /// (например модели-ответа). Для None возвращает вход без изменений.
     /// </summary>
@@ -44,8 +51,16 @@ internal interface IClientValidationStrategy
     ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input);
 
     /// <summary>
-    /// Runtime-импорты библиотеки для сгенерированных выражений валидации, с учётом inline-валидируемых
-    /// типов (тела/ответы) и наличия валидации параметров (<paramref name="hasParams"/>).
+    /// Runtime-импорты для КЛИЕНТСКОГО файла: учитывает типы, валидируемые inline (тело),
+    /// валидацию параметров (<paramref name="hasParams"/>) и наличие parse по именованным схемам
+    /// (<paramref name="hasNamedSchemaParse"/> — модели-ответы и вынесенные result-схемы).
     /// </summary>
-    IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineValidatedTypes, bool hasParams);
+    IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse);
+
+    /// <summary>
+    /// Runtime-импорты для файла, который ОБЪЯВЛЯЕТ схемы (например <c>{op}.results.schemas.ts</c>):
+    /// нужно только пространство построения схем (zod <c>z</c> / valibot <c>v</c> / typebox <c>Type</c>),
+    /// без parse-рантайма.
+    /// </summary>
+    IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes);
 }

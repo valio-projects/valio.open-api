@@ -10,6 +10,7 @@ using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
+using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
@@ -90,7 +91,7 @@ public partial class TypeScriptAstBuilder
                 querySource = new IdentifierExpressionNode(new IdentifierNode("parsedQuery"));
             }
             // Тело запроса валидируется схемой, построенной из типа тела (модель/union/...) выбранной библиотекой.
-            if (hasBody && IsValidatableType(rb!.Type))
+            if (hasBody && ValidationTypes.IsValidatable(rb!.Type))
             {
                 var bodyInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb.IsJson ? "body" : "form"));
                 var parseCall = _validation.Validate(rb.Type, bodyInput);
@@ -326,7 +327,7 @@ public partial class TypeScriptAstBuilder
             {
                 var statusCode = int.Parse(resp.StatusCode);
                 var isSuccessful = statusCode >= 200 && statusCode < 300;
-                var parseCall = BuildStatusResultBody(resp.Type!, responseDataRef);
+                var parseCall = BuildStatusResultBody(operation, resp, responseDataRef);
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {
