@@ -29,6 +29,8 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
 
     public ExpressionNode BuildSchema(IrType type) => _builder.BuildSchemaFromIrType(type);
 
+    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters) => _builder.BuildObjectFromParameters(parameters);
+
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id("v"), "parse"), Id(schemaName), input);
 

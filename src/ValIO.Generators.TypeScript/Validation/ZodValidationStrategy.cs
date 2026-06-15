@@ -30,6 +30,8 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
 
     public ExpressionNode BuildSchema(IrType type) => _schema.Build(type);
 
+    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters) => _schema.BuildObjectFromParameters(parameters);
+
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id(schemaName), "parse"), input);
 

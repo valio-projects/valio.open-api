@@ -38,6 +38,12 @@ internal interface IClientValidationStrategy
     ExpressionNode BuildSchema(IrType type);
 
     /// <summary>
+    /// Строит выражение схемы для объекта параметров (route/query) — для объявления именованной
+    /// константы <c>{Op}RouteParamsSchema</c>/<c>{Op}QueryParamsSchema</c>. Для None — не вызывается.
+    /// </summary>
+    ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters);
+
+    /// <summary>
     /// Валидирует <paramref name="input"/> по импортируемой именованной схеме
     /// (например модели-ответа). Для None возвращает вход без изменений.
     /// </summary>

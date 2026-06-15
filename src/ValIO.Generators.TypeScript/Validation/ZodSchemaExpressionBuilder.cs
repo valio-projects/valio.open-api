@@ -1,8 +1,10 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
 using static ValIO.Generators.TypeScript.Validation.ValidationAst;
@@ -38,6 +40,24 @@ internal sealed class ZodSchemaExpressionBuilder
             IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind),
             _ => Call(Member(Id("z"), "unknown"))
         };
+
+    /// <summary>
+    /// Строит <c>z.object({...})</c> из набора параметров (route/query): необязательные — <c>.optional()</c>.
+    /// </summary>
+    public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters)
+    {
+        var properties = parameters
+            .Select(parameter =>
+            {
+                var schema = Build(parameter.Type);
+                return new PropertyAssignmentNode(
+                    new IdentifierNode(parameter.Name),
+                    parameter.IsRequired ? schema : Call(Member(schema, "optional")));
+            })
+            .ToImmutableList();
+
+        return Call(Member(Id("z"), "object"), new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
+    }
 
     private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types)
     {

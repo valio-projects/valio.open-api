@@ -108,11 +108,23 @@ public sealed class OFetchClientAstBuilder
 
         if (_validationLibrary.IsEnabled)
         {
-            foreach (var schemaName in ExtractModelSchemaNames(operation))
+            // Model-схемы тела/голых-ответов (рекурсивно). Члены union/array constructed-ответов
+            // импортируются файлом {op}.results.schemas.ts.
+            foreach (var modelName in Validation.ClientResponseSchemas.ModelSchemaNames(operation))
             {
                 imports.Add(new ImportNode(
-                    items: ImmutableList.Create(new IdentifierNode(schemaName)),
-                    from: BuildSchemaImportPath(schemaName[..^"Schema".Length], fileOrganization),
+                    items: ImmutableList.Create(new IdentifierNode($"{modelName}Schema")),
+                    from: BuildSchemaImportPath(modelName, fileOrganization),
+                    kind: ImportKind.Named));
+            }
+
+            // Вынесенные result-схемы (constructed-ответы) из {op}.results.schemas.
+            var resultSchemaNames = Validation.ClientResponseSchemas.ConstructedResultSchemaNames(_namingConverter, operation);
+            if (resultSchemaNames.Count > 0)
+            {
+                imports.Add(new ImportNode(
+                    items: resultSchemaNames.Select(n => new IdentifierNode(n)).ToImmutableList(),
+                    from: $"./{operationFileName}.results.schemas",
                     kind: ImportKind.Named));
             }
 
@@ -404,9 +416,7 @@ public sealed class OFetchClientAstBuilder
         {
             var statusCode = int.Parse(response.StatusCode);
             var isSuccessful = statusCode >= 200 && statusCode < 300;
-            var body = response.Type is IrModelReference modelRef && _validationLibrary.IsEnabled
-                ? BuildParseCall($"{modelRef.ModelName}Schema", responseData)
-                : (ExpressionNode)responseData;
+            var body = BuildResponseBody(operation, response, responseData);
 
             var returnObject = new CastExpressionNode(
                 Simple(resultTypeName),
@@ -542,14 +552,19 @@ private ExpressionNode BuildParseCall(string schemaName, ExpressionNode input) =
             _ => input
         };
 
-    private IEnumerable<string> ExtractModelSchemaNames(IrOperation operation)
+    /// <summary>
+    /// Тело ответа: голая ссылка на модель → <c>{Model}Schema</c>; constructed-тип (union/array/...) →
+    /// вынесенная <c>{Op}Result{Status}Schema</c>; иначе/без валидации — сырые данные.
+    /// </summary>
+    private ExpressionNode BuildResponseBody(IrOperation operation, IrResponse response, ExpressionNode responseData)
     {
-        var names = new SortedSet<string>(StringComparer.Ordinal);
-        if (operation.RequestBody?.Type is IrModelReference bodyModelRef)
-            names.Add($"{bodyModelRef.ModelName}Schema");
-        foreach (var modelRef in operation.Responses.Select(response => response.Type).OfType<IrModelReference>())
-            names.Add($"{modelRef.ModelName}Schema");
-        return names;
+        if (!_validationLibrary.IsEnabled || !Validation.ValidationTypes.IsValidatable(response.Type!))
+            return responseData;
+        if (response.Type is IrModelReference modelRef)
+            return BuildParseCall($"{modelRef.ModelName}Schema", responseData);
+        return BuildParseCall(
+            Validation.ClientResponseSchemas.ResultSchemaName(_namingConverter, operation.MethodName, response.StatusCode),
+            responseData);
     }
 
     private string BuildSchemaImportPath(string modelName, FileOrganization fileOrganization)
