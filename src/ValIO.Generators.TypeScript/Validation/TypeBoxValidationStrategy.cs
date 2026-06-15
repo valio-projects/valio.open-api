@@ -1,0 +1,50 @@
+using System.Collections.Immutable;
+using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.IR;
+using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
+using static ValIO.Generators.TypeScript.Validation.ValidationAst;
+
+namespace ValIO.Generators.TypeScript.Validation;
+
+/// <summary>Валидация через TypeBox: <c>Value.Parse(Schema, input)</c>. Схемы строит <see cref="TypeBoxAstBuilder"/>.</summary>
+internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
+{
+    private readonly TypeBoxAstBuilder _builder;
+
+    public TypeBoxValidationStrategy(TypeBoxAstBuilder builder)
+    {
+        _builder = builder;
+    }
+
+    public bool IsEnabled => true;
+
+    // Схема параметров строится inline (Type.Object) из самих параметров.
+    public bool ImportsNamedParamsSchema => false;
+
+    public ExpressionNode Validate(IrType type, ExpressionNode input) =>
+        Call(Member(Id("Value"), "Parse"), _builder.BuildSchemaFromIrType(type), input);
+
+    public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
+        Call(Member(Id("Value"), "Parse"), Id(schemaName), input);
+
+    public ExpressionNode ValidateParams(string importedSchemaName, IReadOnlyList<IrParameter> parameters, ExpressionNode input) =>
+        Call(Member(Id("Value"), "Parse"), _builder.BuildObjectFromParameters(parameters), input);
+
+    public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineValidatedTypes, bool hasParams)
+    {
+        var imports = ImmutableList.CreateBuilder<ImportNode>();
+
+        // `Type` нужен для построения схем (Type.Object для параметров, Type.Union/Array/... для inline-типов).
+        if (hasParams || inlineValidatedTypes.Any(ZodSchemaExpressionBuilder.RequiresNamespace))
+            imports.Add(new ImportNode(ImmutableList.Create(new IdentifierNode("Type")), "@sinclair/typebox", ImportKind.Named));
+
+        // `Value.Parse(...)` нужен при любой валидации.
+        if (inlineValidatedTypes.Count > 0 || hasParams)
+            imports.Add(new ImportNode(ImmutableList.Create(new IdentifierNode("Value")), "@sinclair/typebox/value", ImportKind.Named));
+
+        return imports.ToImmutable();
+    }
+}

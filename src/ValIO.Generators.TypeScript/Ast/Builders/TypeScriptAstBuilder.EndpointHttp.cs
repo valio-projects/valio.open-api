@@ -31,7 +31,6 @@ public partial class TypeScriptAstBuilder
     private HttpParamSourcesContext PrepareHttpParamSourcesWithOptionalZod(IrOperation operation)
     {
         var ctx = new HttpParamSourcesContext();
-        var useZod = _options?.ValidationLibrary is "zod3" or "zod4";
 
         var hasRoute = operation.PathParameters.Count > 0;
         var hasQuery = operation.QueryParameters.Count > 0;
@@ -63,13 +62,17 @@ public partial class TypeScriptAstBuilder
             if (hasHeaders) headersSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("headers"));
         }
 
-        if (useZod)
+        if (_validation.IsEnabled)
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
+            var before = ctx.LeadingStatements.Count;
+
+            // Route/query параметры валидируются выбранной библиотекой: zod — по импортируемой
+            // именованной схеме, valibot/typebox — по inline-схеме параметров.
             if (hasRoute)
             {
                 var routeInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
-                var parseCall = CreateZodParseCall($"{opName}RouteParamsSchema", routeInput);
+                var parseCall = _validation.ValidateParams($"{opName}RouteParamsSchema", operation.PathParameters, routeInput);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedRoute"),
                     type: null,
@@ -79,24 +82,27 @@ public partial class TypeScriptAstBuilder
             if (hasQuery)
             {
                 var queryInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
-                var parseCall = CreateZodParseCall($"{opName}QueryParamsSchema", queryInput);
+                var parseCall = _validation.ValidateParams($"{opName}QueryParamsSchema", operation.QueryParameters, queryInput);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedQuery"),
                     type: null,
                     initializer: parseCall));
                 querySource = new IdentifierExpressionNode(new IdentifierNode("parsedQuery"));
             }
-            if (hasBody && rb!.Type is IrModelReference bodyModelRef)
+            // Тело запроса валидируется схемой, построенной из типа тела (модель/union/...) выбранной библиотекой.
+            if (hasBody && IsValidatableType(rb!.Type))
             {
                 var bodyInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb.IsJson ? "body" : "form"));
-                var parseCall = CreateZodParseCall($"{bodyModelRef.ModelName}Schema", bodyInput);
+                var parseCall = _validation.Validate(rb.Type, bodyInput);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedBody"),
                     type: null,
                     initializer: parseCall));
                 bodySource = new IdentifierExpressionNode(new IdentifierNode("parsedBody"));
             }
-            ctx.LeadingStatements.Add(CreateBlankLineStatement());
+
+            if (ctx.LeadingStatements.Count > before)
+                ctx.LeadingStatements.Add(CreateBlankLineStatement());
         }
 
         ctx.RouteSource = routeSource;
@@ -301,7 +307,6 @@ public partial class TypeScriptAstBuilder
             initializer: new AwaitExpressionNode(jsonCall)));
         statements.Add(CreateBlankLineStatement());
 
-        var useZod = _options?.ValidationLibrary is "zod3" or "zod4";
         var useResultType = operation.Responses.Any(r => r.Type != null);
         var operationReturnType = useResultType
             ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false)
@@ -314,18 +319,14 @@ public partial class TypeScriptAstBuilder
                 new IdentifierNode("status"));
             var responseDataRef = new IdentifierExpressionNode(new IdentifierNode("responseData"));
             var responsesWithType = operation.Responses
-                .Where(r => r.Type is IrModelReference && int.TryParse(r.StatusCode, out _))
+                .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _))
                 .ToList();
 
             foreach (var resp in responsesWithType)
             {
                 var statusCode = int.Parse(resp.StatusCode);
                 var isSuccessful = statusCode >= 200 && statusCode < 300;
-                var modelRef = (IrModelReference)resp.Type!;
-                var schemaName = $"{modelRef.ModelName}Schema";
-                var parseCall = useZod
-                    ? CreateZodParseCall(schemaName, responseDataRef)
-                    : (ExpressionNode)responseDataRef;
+                var parseCall = BuildStatusResultBody(resp.Type!, responseDataRef);
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {
@@ -367,13 +368,13 @@ public partial class TypeScriptAstBuilder
         }
         else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
         {
-            if (useZod)
+            if (_validation.IsEnabled)
             {
                 var successResponse = operation.Responses.FirstOrDefault(r =>
                     int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300);
                 if (successResponse?.Type is IrModelReference responseModelRef)
                 {
-                    var parseCall = CreateZodParseCall($"{responseModelRef.ModelName}Schema",
+                    var parseCall = CreateParseCall($"{responseModelRef.ModelName}Schema",
                         new IdentifierExpressionNode(new IdentifierNode("responseData")));
                     statements.Add(new VariableDeclarationStatementNode(
                         new IdentifierNode("parsedResponse"),

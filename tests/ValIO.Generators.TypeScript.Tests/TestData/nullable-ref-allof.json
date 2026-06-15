@@ -1,0 +1,58 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "Nullable Ref AllOf", "version": "1.0.0" },
+  "paths": {
+    "/things": {
+      "post": {
+        "operationId": "createThing",
+        "tags": ["things"],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "allOf": [ { "$ref": "#/components/schemas/CreateForm" } ],
+                "description": "wrapped form"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [ { "$ref": "#/components/schemas/Wrapper" } ],
+                  "description": "wrapped result"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CompatibilityMode": { "type": "string", "enum": ["None", "Full"] },
+      "CreateForm": { "type": "object", "properties": { "name": { "type": "string" } } },
+      "Base": { "type": "object", "properties": { "id": { "type": "string" } } },
+      "Wrapper": {
+        "type": "object",
+        "properties": {
+          "compat": {
+            "allOf": [ { "$ref": "#/components/schemas/CompatibilityMode" } ],
+            "description": "compatibility; null when unknown",
+            "nullable": true
+          }
+        }
+      },
+      "Inherited": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Base" },
+          { "type": "object", "properties": { "extra": { "type": "string" } } }
+        ]
+      }
+    }
+  }
+}

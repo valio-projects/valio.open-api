@@ -17,6 +17,7 @@ using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
+using ValIO.Generators.TypeScript.Validation;
 using ValIO.Generators.TypeScript.Axios;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -42,6 +43,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private readonly TypeScriptGenerationOptions? _options;
 
     /// <summary>
+    /// Стратегия валидации для выбранной библиотеки (zod/valibot/typebox/none). Строит выражения
+    /// валидации и runtime-импорты, не завязываясь на конкретную библиотеку.
+    /// </summary>
+    private readonly IClientValidationStrategy _validation;
+
+    /// <summary>
     /// Транспорт генерируемого endpoint-файла (axios / fetch). Устанавливается в <see cref="BuildSourceFileForOperation"/>.
     /// </summary>
     private string _activeEndpointTransport = "axios";
@@ -58,6 +65,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _options = options;
         _httpBuilder = new HttpAstBuilder();
+        _validation = ClientValidationStrategyFactory.Create(options);
     }
     
     public TypeAliasDeclarationNode BuildTypeAlias(string name, TypeNode type)
@@ -676,12 +684,20 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private TypeNode BuildUnionType(IrUnionType unionType)
     {
         var types = unionType.Types.Select(BuildType).ToImmutableList();
+        if (types.Count == 0)
+            return new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true);
+        if (types.Count == 1)
+            return types[0];
         return new UnionTypeNode(types);
     }
-    
+
     private TypeNode BuildIntersectionType(IrIntersectionType intersectionType)
     {
         var types = intersectionType.Types.Select(BuildType).ToImmutableList();
+        if (types.Count == 0)
+            return new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true);
+        if (types.Count == 1)
+            return types[0];
         return new IntersectionTypeNode(types);
     }
     
@@ -1045,37 +1061,40 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
-        // При Zod добавляем импорты схем
-        if (_options?.ValidationLibrary is "zod3" or "zod4")
+        // Импорты схем валидации для выбранной библиотеки (zod/valibot/typebox)
+        if (_validation.IsEnabled)
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             var operationFileName = GetModelFileName(operation.MethodName);
             var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
 
-            var paramsSchemaImports = new List<IdentifierNode>();
-            if (operation.PathParameters.Count > 0)
-                paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
-            if (operation.QueryParameters.Count > 0)
-                paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+            var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
 
-            if (paramsSchemaImports.Count > 0)
+            // Params: zod импортирует именованную схему; valibot/typebox строят схему параметров inline.
+            if (_validation.ImportsNamedParamsSchema)
             {
-                result.Add(new ImportNode(
-                    items: paramsSchemaImports.ToImmutableList(),
-                    from: $"./{operationFileName}.params.schema",
-                    kind: ImportKind.Named));
+                var paramsSchemaImports = new List<IdentifierNode>();
+                if (operation.PathParameters.Count > 0)
+                    paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
+                if (operation.QueryParameters.Count > 0)
+                    paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+
+                if (paramsSchemaImports.Count > 0)
+                {
+                    result.Add(new ImportNode(
+                        items: paramsSchemaImports.ToImmutableList(),
+                        from: $"./{operationFileName}.params.schema",
+                        kind: ImportKind.Named));
+                }
             }
 
-            // Body + response schemas из models/schemas (объединяем чтобы не было дубликатов)
-            var modelSchemaNames = new HashSet<string>(StringComparer.Ordinal);
-            if (operation.RequestBody != null && operation.RequestBody.Type is IrModelReference bodyModelRef)
-                modelSchemaNames.Add(bodyModelRef.ModelName);
-
-            foreach (var modelRef in operation.Responses
-                         .Where(r => r.Type is IrModelReference)
-                         .Select(r => (IrModelReference)r.Type!))
+            // Model-схемы тел/ответов (включая члены union/array). Для inline-параметров добавляем
+            // также схемы enum/model, на которые ссылаются типы параметров.
+            var modelSchemaNames = CollectValidatedModelSchemaNames(operation);
+            if (!_validation.ImportsNamedParamsSchema)
             {
-                modelSchemaNames.Add(modelRef.ModelName);
+                foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
+                    CollectModelReferenceNames(parameter.Type, modelSchemaNames);
             }
 
             foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
@@ -1086,6 +1105,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                     from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
                     kind: ImportKind.Named));
             }
+
+            // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
+            result.AddRange(_validation.RuntimeImports(CollectInlineValidatedTypes(operation), hasParams));
         }
 
         result.AddRange(existingImports);
@@ -1126,36 +1148,40 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
-        if (_options?.ValidationLibrary is "zod3" or "zod4")
+        // Импорты схем валидации для выбранной библиотеки (zod/valibot/typebox)
+        if (_validation.IsEnabled)
         {
             var opName = _namingConverter.ToPascalCase(operation.MethodName);
             var operationFileName = GetModelFileName(operation.MethodName);
             var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
 
-            var paramsSchemaImports = new List<IdentifierNode>();
-            if (operation.PathParameters.Count > 0)
-                paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
-            if (operation.QueryParameters.Count > 0)
-                paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+            var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
 
-            if (paramsSchemaImports.Count > 0)
+            // Params: zod импортирует именованную схему; valibot/typebox строят схему параметров inline.
+            if (_validation.ImportsNamedParamsSchema)
             {
-                result.Add(new ImportNode(
-                    items: paramsSchemaImports.ToImmutableList(),
-                    from: $"./{operationFileName}.params.schema",
-                    kind: ImportKind.Named));
+                var paramsSchemaImports = new List<IdentifierNode>();
+                if (operation.PathParameters.Count > 0)
+                    paramsSchemaImports.Add(new IdentifierNode($"{opName}RouteParamsSchema"));
+                if (operation.QueryParameters.Count > 0)
+                    paramsSchemaImports.Add(new IdentifierNode($"{opName}QueryParamsSchema"));
+
+                if (paramsSchemaImports.Count > 0)
+                {
+                    result.Add(new ImportNode(
+                        items: paramsSchemaImports.ToImmutableList(),
+                        from: $"./{operationFileName}.params.schema",
+                        kind: ImportKind.Named));
+                }
             }
 
-            // Body + response schemas из models/schemas (объединяем чтобы не было дубликатов)
-            var modelSchemaNames = new HashSet<string>(StringComparer.Ordinal);
-            if (operation.RequestBody != null && operation.RequestBody.Type is IrModelReference bodyModelRef)
-                modelSchemaNames.Add(bodyModelRef.ModelName);
-
-            foreach (var modelRef in operation.Responses
-                         .Where(r => r.Type is IrModelReference)
-                         .Select(r => (IrModelReference)r.Type!))
+            // Model-схемы тел/ответов (включая члены union/array). Для inline-параметров добавляем
+            // также схемы enum/model, на которые ссылаются типы параметров.
+            var modelSchemaNames = CollectValidatedModelSchemaNames(operation);
+            if (!_validation.ImportsNamedParamsSchema)
             {
-                modelSchemaNames.Add(modelRef.ModelName);
+                foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters))
+                    CollectModelReferenceNames(parameter.Type, modelSchemaNames);
             }
 
             foreach (var modelName in modelSchemaNames.OrderBy(n => n, StringComparer.Ordinal))
@@ -1166,6 +1192,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                     from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
                     kind: ImportKind.Named));
             }
+
+            // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
+            result.AddRange(_validation.RuntimeImports(CollectInlineValidatedTypes(operation), hasParams));
         }
 
         result.AddRange(existingImports);
@@ -1279,8 +1308,6 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var bodySource = ctx.BodySource;
         var headersSource = ctx.HeadersSource;
 
-        var useZod = _options?.ValidationLibrary is "zod3" or "zod4";
-
         var (axiosInstanceName, _) = GetAxiosInstanceImport();
         var axiosInstanceType = new SimpleTypeNode(new IdentifierNode("AxiosInstance"), isPrimitive: false);
         statements.Add(new VariableDeclarationStatementNode(
@@ -1362,21 +1389,17 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("status"));
             var responsesWithType = operation.Responses
-                .Where(r => r.Type is IrModelReference && int.TryParse(r.StatusCode, out _))
+                .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _))
                 .ToList();
 
             foreach (var resp in responsesWithType)
             {
                 var statusCode = int.Parse(resp.StatusCode);
                 var isSuccessful = statusCode >= 200 && statusCode < 300;
-                var modelRef = (IrModelReference)resp.Type!;
-                var schemaName = $"{modelRef.ModelName}Schema";
                 var dataAccess = new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"));
-                var parseCall = useZod
-                    ? CreateZodParseCall(schemaName, dataAccess)
-                    : (ExpressionNode)dataAccess;
+                var parseCall = BuildStatusResultBody(resp.Type!, dataAccess);
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {
@@ -1425,13 +1448,13 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"))));
 
-            if (useZod)
+            if (_validation.IsEnabled)
             {
                 var successResponse = operation.Responses.FirstOrDefault(r =>
                     int.TryParse(r.StatusCode, out var code) && code >= 200 && code < 300);
                 if (successResponse?.Type is IrModelReference responseModelRef)
                 {
-                    var parseCall = CreateZodParseCall($"{responseModelRef.ModelName}Schema",
+                    var parseCall = CreateParseCall($"{responseModelRef.ModelName}Schema",
                         new IdentifierExpressionNode(new IdentifierNode("responseData")));
                     statements.Add(new VariableDeclarationStatementNode(
                         new IdentifierNode("parsedResponse"),
@@ -1464,12 +1487,99 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// <summary>
     /// Создаёт выражение Schema.parse(input)
     /// </summary>
-    private static ExpressionNode CreateZodParseCall(string schemaName, ExpressionNode input)
+    /// <summary>
+    /// Валидирует <paramref name="input"/> импортируемой именованной схемой <paramref name="schemaName"/>
+    /// согласно выбранной библиотеке валидации (делегирует в стратегию).
+    /// </summary>
+    private ExpressionNode CreateParseCall(string schemaName, ExpressionNode input) =>
+        _validation.ValidateNamed(schemaName, input);
+
+    /// <summary>
+    /// Строит выражение тела (body) для per-status result-ветки клиента: валидирует данные ответа
+    /// по схеме, построенной из типа ответа (ссылка на модель, union, array и т.д.) выбранной
+    /// библиотекой. Для unknown/void и при выключенной валидации возвращает сырые данные.
+    /// </summary>
+    private ExpressionNode BuildStatusResultBody(IrType responseType, ExpressionNode dataRef)
     {
-        var schemaAccess = new MemberAccessExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode(schemaName)),
-            new IdentifierNode("parse"));
-        return new CallExpressionNode(schemaAccess, new[] { input }.ToImmutableList());
+        if (!_validation.IsEnabled || !IsValidatableType(responseType))
+            return dataRef;
+
+        return _validation.Validate(responseType, dataRef);
+    }
+
+    /// <summary>
+    /// Имеет ли смысл валидировать тип: для <see cref="IrPrimitiveKind.Any"/>/<see cref="IrPrimitiveKind.Void"/>
+    /// схема не несёт пользы.
+    /// </summary>
+    private static bool IsValidatableType(IrType type)
+    {
+        var core = type;
+        while (true)
+        {
+            if (core is IrNullableType n) { core = n.InnerType; continue; }
+            if (core is IrOptionalType o) { core = o.InnerType; continue; }
+            break;
+        }
+
+        return core is not IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Any or IrPrimitiveKind.Void };
+    }
+
+    /// <summary>
+    /// Типы, валидируемые inline-схемой (тело запроса + типизированные ответы с числовым статусом).
+    /// Параметры используют именованные схемы и сюда не входят.
+    /// </summary>
+    private static List<IrType> CollectInlineValidatedTypes(IrOperation operation)
+    {
+        var types = new List<IrType>();
+        if (operation.RequestBody != null && IsValidatableType(operation.RequestBody.Type))
+            types.Add(operation.RequestBody.Type);
+        foreach (var response in operation.Responses)
+            if (response.Type != null && int.TryParse(response.StatusCode, out _) && IsValidatableType(response.Type))
+                types.Add(response.Type);
+        return types;
+    }
+
+    /// <summary>
+    /// Имена всех model-схем (<c>{Model}Schema</c>), на которые ссылаются валидируемые тела/ответы,
+    /// включая члены union/intersection/array/dictionary — чтобы inline-схемы вроде
+    /// <c>z.union([ASchema, BSchema])</c> получили корректные импорты.
+    /// </summary>
+    private static HashSet<string> CollectValidatedModelSchemaNames(IrOperation operation)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var type in CollectInlineValidatedTypes(operation))
+            CollectModelReferenceNames(type, names);
+        return names;
+    }
+
+    private static void CollectModelReferenceNames(IrType type, HashSet<string> names)
+    {
+        switch (type)
+        {
+            case IrModelReference reference:
+                names.Add(reference.ModelName);
+                break;
+            case IrArrayType array:
+                CollectModelReferenceNames(array.ElementType, names);
+                break;
+            case IrDictionaryType dictionary:
+                CollectModelReferenceNames(dictionary.ValueType, names);
+                break;
+            case IrNullableType nullable:
+                CollectModelReferenceNames(nullable.InnerType, names);
+                break;
+            case IrOptionalType optional:
+                CollectModelReferenceNames(optional.InnerType, names);
+                break;
+            case IrUnionType union:
+                foreach (var member in union.Types)
+                    CollectModelReferenceNames(member, names);
+                break;
+            case IrIntersectionType intersection:
+                foreach (var member in intersection.Types)
+                    CollectModelReferenceNames(member, names);
+                break;
+        }
     }
     
     private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)

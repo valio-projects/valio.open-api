@@ -167,6 +167,25 @@ public sealed class TypeBoxAstBuilder
         return Call("Object", new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
     }
 
+    /// <summary>
+    /// Строит <c>Type.Object({...})</c> из набора параметров операции (route/query):
+    /// необязательные параметры оборачиваются в <c>Type.Optional(...)</c>.
+    /// </summary>
+    public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters)
+    {
+        var properties = parameters
+            .Select(parameter =>
+            {
+                var schema = BuildSchemaFromIrType(parameter.Type);
+                return new PropertyAssignmentNode(
+                    name: new IdentifierNode(parameter.Name),
+                    value: parameter.IsRequired ? schema : Call("Optional", schema));
+            })
+            .ToImmutableList();
+
+        return Call("Object", new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
+    }
+
     private ExpressionNode BuildPropertySchema(IrProperty property, string currentModelName)
     {
         var expression = BuildSchemaFromIrType(property.Type, currentModelName, property.Constraints);

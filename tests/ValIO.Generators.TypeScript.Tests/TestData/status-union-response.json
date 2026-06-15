@@ -1,0 +1,47 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "Status Union Response", "version": "1.0.0" },
+  "paths": {
+    "/things": {
+      "get": {
+        "operationId": "getThing",
+        "tags": ["things"],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Thing" } } }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    { "$ref": "#/components/schemas/ProblemDetails" },
+                    { "$ref": "#/components/schemas/HttpValidationProblemDetails" }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProblemDetails" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Thing": { "type": "object", "properties": { "id": { "type": "string" } } },
+      "ProblemDetails": { "type": "object", "properties": { "title": { "type": "string" }, "status": { "type": "integer" } } },
+      "HttpValidationProblemDetails": {
+        "allOf": [
+          { "$ref": "#/components/schemas/ProblemDetails" },
+          { "type": "object", "properties": { "errors": { "type": "object", "additionalProperties": { "type": "array", "items": { "type": "string" } } } } }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Account API", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "nickname": { "type": "string", "nullable": true }
+        }
+      },
+      "Holder": {
+        "type": "object",
+        "properties": {
+          "envelope": {
+            "allOf": [ { "$ref": "#/components/schemas/Account" } ],
+            "nullable": true
+          }
+        }
+      }
+    }
+  }
+}

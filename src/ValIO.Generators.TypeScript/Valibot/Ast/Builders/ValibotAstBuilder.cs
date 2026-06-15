@@ -76,6 +76,25 @@ public sealed class ValibotAstBuilder
         return Call("object", new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
     }
 
+    /// <summary>
+    /// Строит <c>v.object({...})</c> из набора параметров операции (route/query):
+    /// необязательные параметры оборачиваются в <c>v.optional(...)</c>.
+    /// </summary>
+    public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters)
+    {
+        var properties = parameters
+            .Select(parameter =>
+            {
+                var schema = BuildSchemaFromIrType(parameter.Type);
+                return new PropertyAssignmentNode(
+                    new IdentifierNode(parameter.Name),
+                    parameter.IsRequired ? schema : Call("optional", schema));
+            })
+            .ToImmutableList();
+
+        return Call("object", new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
+    }
+
     private ExpressionNode BuildPropertySchema(IrProperty property, string currentModelName)
     {
         var type = property.Type;
@@ -114,9 +133,12 @@ public sealed class ValibotAstBuilder
             .Select(type => BuildSchemaFromIrType(type, currentModelName))
             .ToImmutableList();
 
-        return schemas.Count == 1
-            ? schemas[0]
-            : Call("union", new ArrayLiteralExpressionNode(schemas));
+        return schemas.Count switch
+        {
+            0 => Call("unknown"),
+            1 => schemas[0],
+            _ => Call("union", new ArrayLiteralExpressionNode(schemas))
+        };
     }
 
     private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types, string? currentModelName)

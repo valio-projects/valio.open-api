@@ -279,11 +279,24 @@ public class IrBuilder
     {
         if (schema.AllOf?.Count > 0)
         {
-            var types = schema.AllOf.Select(s => BuildType(s, document, propertyContext)).ToList();
+            // Для allOf композиция модели описывает НАСЛЕДОВАНИЕ: в Types кладём только
+            // $ref-базовые классы. Свойства inline-членов уже извлечены в Properties
+            // (см. BuildModel), поэтому inline-члены сюда не попадают — это убирает
+            // дублирование свойств и исключает появление «осиротевших» inline-моделей.
+            var baseRefs = schema.AllOf
+                .Where(s => !string.IsNullOrEmpty(GetSchemaNameRaw(s)))
+                .Select(s => BuildType(s, document, propertyContext))
+                .OfType<IrModelReference>()
+                .DistinctBy(r => r.ModelName)
+                .ToList<IrType>();
+
+            if (baseRefs.Count == 0)
+                return null;
+
             return new IrComposition
             {
                 Kind = IrCompositionKind.AllOf,
-                Types = types
+                Types = baseRefs
             };
         }
         
@@ -295,9 +308,12 @@ public class IrBuilder
                 Kind = IrCompositionKind.OneOf,
                 Types = types,
                 DiscriminatorPropertyName = schema.Discriminator?.PropertyName,
+                // Значение mapping — это $ref на схему-вариант. Берём id ссылки
+                // (kvp.Value.Reference.Id, напр. "Dog"), а не Target?.Id (который пуст
+                // для безымянных схем), и санитизируем под имена IR-моделей.
                 DiscriminatorMapping = schema.Discriminator?.Mapping?.ToDictionary(
                     kvp => kvp.Key,
-                    kvp => kvp.Value?.Id ?? string.Empty
+                    kvp => _namingConverter.SanitizeIdentifier(kvp.Value?.Reference?.Id ?? string.Empty)
                 )
             };
         }
@@ -342,19 +358,36 @@ public class IrBuilder
         if (resolvedSchema == null)
             throw new InvalidOperationException("Schema resolver returned null schema");
         
-        // OneOf, AnyOf -> Union (проверяем до проверки Type, так как композиция может не иметь Type)
+        // OneOf, AnyOf -> Union (проверяем до проверки Type, так как композиция может не иметь Type).
+        // Нормализуем: чистые null-ветки ({type:null}) превращаем в nullable-обёртку, а не в член union;
+        // одиночный/пустой union схлопывается (см. IrCompositionNormalizer).
         if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)
         {
             var variants = (resolvedSchema.OneOf ?? resolvedSchema.AnyOf)!;
-            var types = variants.Select(v => BuildType(v, document, propertyContext)).ToList();
-            return new IrUnionType { Types = types };
+            var nullable = SchemaAllowsJsonNull(resolvedSchema);
+            var members = new List<IrType>(variants.Count);
+            foreach (var variant in variants)
+            {
+                if (IsNullOnlySchema(variant))
+                {
+                    nullable = true;
+                    continue;
+                }
+
+                members.Add(BuildType(variant, document, propertyContext));
+            }
+
+            return IrCompositionNormalizer.NormalizeUnion(members, nullable);
         }
-        
-        // AllOf -> Intersection (проверяем до проверки Type)
+
+        // AllOf -> Intersection (проверяем до проверки Type). Нормализуем: single-element allOf
+        // (паттерн Swashbuckle UseAllOfToExtendReferenceSchemas: {allOf:[{$ref}],nullable:true})
+        // схлопывается в сам тип, sibling nullable восстанавливается как IrNullableType.
         if (resolvedSchema.AllOf?.Count > 0)
         {
-            var types = resolvedSchema.AllOf.Select(s => BuildType(s, document, propertyContext)).ToList();
-            return new IrIntersectionType { Types = types };
+            var members = resolvedSchema.AllOf.Select(s => BuildType(s, document, propertyContext)).ToList();
+            var nullable = SchemaAllowsJsonNull(resolvedSchema);
+            return IrCompositionNormalizer.NormalizeIntersection(members, nullable);
         }
         
         // Если Type не указан, но есть Properties - это объект
@@ -479,8 +512,30 @@ public class IrBuilder
             nullableExtension is JsonNodeExtension { Node: { } jsonNode } &&
             jsonNode.GetValueKind() == JsonValueKind.True)
             return true;
-        
+
         return false;
+    }
+
+    /// <summary>
+    /// Схема представляет «только null» (OpenAPI 3.1 <c>{"type":"null"}</c>) — без других
+    /// примитивов, объекта/массива, композиции, $ref или enum. Такая ветка в oneOf/anyOf
+    /// означает nullable, а не отдельный член union.
+    /// </summary>
+    private static bool IsNullOnlySchema(IOpenApiSchema schema)
+    {
+        if (!schema.Type.HasValue || schema.Type.Value != JsonSchemaType.Null)
+            return false;
+
+        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> { Reference.Id.Length: > 0 })
+            return false;
+
+        if (schema.AllOf?.Count > 0 || schema.OneOf?.Count > 0 || schema.AnyOf?.Count > 0)
+            return false;
+
+        if (schema.Properties?.Count > 0 || (schema.Enum?.Count > 0))
+            return false;
+
+        return true;
     }
     
     /// <summary>

@@ -59,6 +59,8 @@ public class ZodAstBuilder
                     var unionVariants = model.Composition.Types
                         .Select(t => BuildZodSchemaFromIrType(t, model.Name))
                         .ToImmutableList();
+                    if (unionVariants.Count == 1)
+                        return unionVariants[0];
                     return new ZodUnionNode(unionVariants);
                 case IrCompositionKind.AllOf:
                     var allOfSchemas = model.Composition.Types
@@ -69,6 +71,8 @@ public class ZodAstBuilder
                         var ownPropsSchema = BuildZodObject(model);
                         allOfSchemas.Add(ownPropsSchema);
                     }
+                    if (allOfSchemas.Count == 0)
+                        return BuildZodObject(model);
                     if (allOfSchemas.Count == 1)
                         return allOfSchemas[0];
                     return new ZodIntersectionNode(allOfSchemas);
@@ -283,6 +287,10 @@ public class ZodAstBuilder
         var variants = unionType.Types
             .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName))
             .ToImmutableList();
+        if (variants.Count == 0)
+            return BuildZodAny();
+        if (variants.Count == 1)
+            return variants[0];
         return new ZodUnionNode(variants);
     }
     
@@ -298,6 +306,10 @@ public class ZodAstBuilder
         var schemas = intersectionType.Types
             .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName))
             .ToImmutableList();
+        if (schemas.Count == 0)
+            return BuildZodAny();
+        if (schemas.Count == 1)
+            return schemas[0];
         return new ZodIntersectionNode(schemas);
     }
     
