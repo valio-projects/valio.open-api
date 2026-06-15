@@ -39,7 +39,7 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
     public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
         // `z` нужен только когда строится inline `z.*` (union/array/... в теле запроса);
         // `{Schema}.parse` (модели, параметры zod, вынесенные result-схемы) в `z` не нуждаются.
-        inlineConstructedTypes.Any(ZodSchemaExpressionBuilder.RequiresNamespace)
+        inlineConstructedTypes.Any(ValidationTypes.NeedsConstructedSchema)
             ? [ZodImport()]
             : [];
 

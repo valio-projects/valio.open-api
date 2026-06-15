@@ -39,24 +39,6 @@ internal sealed class ZodSchemaExpressionBuilder
             _ => Call(Member(Id("z"), "unknown"))
         };
 
-    /// <summary>
-    /// Требуется ли импорт пространства имён <c>z</c> для схемы данного типа.
-    /// Голая ссылка на модель (в т.ч. <c>.nullable()</c>/<c>.optional()</c>) рендерится как
-    /// <c>{Model}Schema</c> и не нуждается в <c>z</c>; всё остальное строит <c>z.*</c>.
-    /// </summary>
-    public static bool RequiresNamespace(IrType type)
-    {
-        var core = type;
-        while (true)
-        {
-            if (core is IrNullableType n) { core = n.InnerType; continue; }
-            if (core is IrOptionalType o) { core = o.InnerType; continue; }
-            break;
-        }
-
-        return core is not IrModelReference;
-    }
-
     private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types)
     {
         // z.intersection(a, b); для >2 членов сворачиваем через .and(...).

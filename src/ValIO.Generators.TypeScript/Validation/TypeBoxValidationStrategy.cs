@@ -40,7 +40,7 @@ internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
         var imports = ImmutableList.CreateBuilder<ImportNode>();
 
         // `Type` нужен для inline-построения схем: Type.Object для параметров, Type.Union/Array/... для тела.
-        if (hasParams || inlineConstructedTypes.Any(ZodSchemaExpressionBuilder.RequiresNamespace))
+        if (hasParams || inlineConstructedTypes.Any(ValidationTypes.NeedsConstructedSchema))
             imports.Add(TypeImport());
 
         // `Value.Parse(...)` нужен при любой валидации (тело/параметры/именованные result-схемы).
