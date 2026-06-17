@@ -43,6 +43,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private readonly TypeScriptGenerationOptions? _options;
 
     /// <summary>
+    /// Карта «affix-имя → исходное имя» для путей/имён файлов. Заполняется при входе в публичные
+    /// Build*-методы из <c>Original*</c>-полей IR. Пустая (тождество) при отсутствии affix.
+    /// </summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// Стратегия валидации для выбранной библиотеки (zod/valibot/typebox/none). Строит выражения
     /// валидации и runtime-импорты, не завязываясь на конкретную библиотеку.
     /// </summary>
@@ -244,9 +250,11 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     {
         if (string.IsNullOrEmpty(typeName))
             return string.Empty;
-        
-        // Преобразуем PascalCase в camelCase для имени файла
-        return _namingConverter.ToCamelCase(typeName);
+
+        // Имя файла строится от ИСХОДНОГО (до affix) имени, чтобы пути не менялись;
+        // при отсутствии affix карта тождественна.
+        var original = _orig.GetValueOrDefault(typeName, typeName);
+        return _namingConverter.ToCamelCase(original);
     }
     
     private static LiteralExpressionNode BuildLiteralFromValue(object value)
@@ -313,6 +321,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
+        OriginalNameMap.AddModel(_orig, model);
         var dependencies = ExtractDependencies(model);
         dependencies = dependencies.Where(d => d != model.Name).ToList();
         var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Models, model.Name);
@@ -324,7 +333,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
-        var modelFileBase = _namingConverter.ToCamelCase(model.Name);
+        var modelFileBase = _namingConverter.ToCamelCase(model.OriginalName);
         return new SourceFileNode(
             imports: imports,
             exports: exports,
@@ -460,11 +469,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     public SourceFileNode BuildSourceFile(IrEnum enumModel, string? importPath = null, FileOrganization? fileOrganization = null)
     {
+        OriginalNameMap.AddEnum(_orig, enumModel);
         var imports = BuildImports(Array.Empty<string>(), importPath, fileOrganization, FileCategory.Models, enumModel.Name);
         var declarations = BuildEnumDeclaration(enumModel);
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
-        
-        var enumFileBase = _namingConverter.ToCamelCase(enumModel.Name);
+
+        var enumFileBase = _namingConverter.ToCamelCase(enumModel.OriginalName);
         return new SourceFileNode(
             imports: imports,
             exports: exports,
@@ -819,7 +829,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         var returnType = useResultType
             ? new GenericTypeNode(
                 new IdentifierNode("Promise"),
-                new[] { new SimpleTypeNode(new IdentifierNode($"{_namingConverter.ToPascalCase(operation.MethodName)}{TypeScriptResultsAstBuilder.ResolveResultSuffix(_options?.ResultTypeSuffix)}"), isPrimitive: false) }.ToImmutableList())
+                new[] { new SimpleTypeNode(new IdentifierNode(TypeScriptResultsAstBuilder.ComposeResultTypeName(_namingConverter, operation.MethodName, _options?.ResultTypePrefix, _options?.ResultTypeSuffix)), isPrimitive: false) }.ToImmutableList())
             : ExtractReturnType(operation.Responses);
         
         var comment = !string.IsNullOrEmpty(operation.Description)
@@ -911,6 +921,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     public SourceFileNode BuildSourceFile(IrClient client, string? importPath = null, FileOrganization? fileOrganization = null)
     {
+        OriginalNameMap.AddClient(_orig, client);
         var imports = BuildImports(ExtractDependencies(client), importPath, fileOrganization, FileCategory.Clients);
         var transport = InferDefaultEndpointTransport();
         _activeEndpointTransport = transport;
@@ -945,10 +956,11 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         string transport = "axios")
     {
         var client = new IrClient { Name = "Temp", Operations = new[] { operation } };
+        OriginalNameMap.AddOperation(_orig, operation);
         _activeEndpointTransport = transport;
         try
         {
-            var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
+            var resultsAstBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix, _options?.ResultTypePrefix);
             var dependencies = UseParamsStyleEndpointTransport()
                 ? Array.Empty<string>()
                 : ExtractDependencies(client, excludeResponseModels: false);
@@ -964,7 +976,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             var declarations = new List<DeclarationNode> { BuildFunction(operation, isExported: true) };
             var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
-            var endpointFileBase = _namingConverter.ToCamelCase(operation.MethodName);
+            var endpointFileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
             return new SourceFileNode(
                 imports: imports,
                 exports: exports,
@@ -1080,7 +1092,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 isTypeOnly: true));
         }
 
-        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix);
+        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, BuildType, _options?.ResultTypeSuffix, _options?.ResultTypePrefix);
         if (resultsBuilder.HasResponsesWithBody(operation))
         {
             result.Add(new ImportNode(

@@ -8,6 +8,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
@@ -28,6 +29,9 @@ public sealed class MswHandlersAstBuilder
 {
     private readonly INamingConverter _namingConverter;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     public MswHandlersAstBuilder(INamingConverter namingConverter)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -37,6 +41,9 @@ public sealed class MswHandlersAstBuilder
     {
         ArgumentNullException.ThrowIfNull(document);
         ArgumentNullException.ThrowIfNull(fileOrganization);
+
+        foreach (var client in document.Clients)
+            OriginalNameMap.AddClient(_orig, client);
 
         // Collect every operation across all clients so the file is a single flat
         // handler array — matches MSW's setupWorker(...handlers) ergonomics.
@@ -193,7 +200,7 @@ public sealed class MswHandlersAstBuilder
         // up one level then into the models path. Mirrors how other builders compute
         // schema import paths relative to per-operation files.
         var modelsPath = fileOrganization.ModelsPath ?? "models";
-        var modelFileName = _namingConverter.ToCamelCase(modelName);
+        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
         return fileOrganization.SeparateModels
             ? $"../{modelsPath}/{modelFileName}/{modelFileName}"
             : $"../{modelsPath}/{modelFileName}";

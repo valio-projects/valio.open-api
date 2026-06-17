@@ -42,15 +42,34 @@ public sealed class PipelineTestHarness : IDisposable
         return result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
     }
 
+    public static async Task<OpenApiDocument> LoadDocumentFromJsonAsync(string json)
+    {
+        await using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
+        var result = await OpenApiDocument.LoadAsync(ms, "json");
+        return result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
+    }
+
     public async Task<GenerationContext> RunAsync(
         OpenApiDocument document,
         TypeScriptGenerationOptions opts,
-        FileOrganization? fileOrganization = null)
+        FileOrganization? fileOrganization = null,
+        NamingConventions? naming = null)
     {
         var namingConverter = _services.GetRequiredService<INamingConverter>();
         var schemaResolver = new SchemaResolver(document);
         var irBuilder = new IrBuilder(schemaResolver, namingConverter);
-        var irDocument = irBuilder.BuildFromOpenApi(document);
+        var affix = naming is null
+            ? NameAffixOptions.None
+            : new NameAffixOptions
+            {
+                ModelPrefix = naming.ModelPrefix,
+                ModelSuffix = naming.ModelSuffix,
+                MethodPrefix = naming.MethodPrefix,
+                MethodSuffix = naming.MethodSuffix,
+                EnumPrefix = naming.EnumPrefix,
+                EnumSuffix = naming.EnumSuffix,
+            };
+        var irDocument = irBuilder.BuildFromOpenApi(document, warnings: null, affixOptions: affix);
 
         var config = new GenerationConfiguration
         {
@@ -59,6 +78,7 @@ public sealed class PipelineTestHarness : IDisposable
             GenerateClients = true,
             GenerateEnums = true,
             PluginOptions = opts,
+            NamingConvention = naming ?? new NamingConventions(),
             FileOrganization = fileOrganization ?? new FileOrganization
             {
                 SeparateModels = true,

@@ -42,7 +42,7 @@ public sealed class TypeScriptEnumsStep : ICodeGenerationStep
         {
             var sourceFile = builder.BuildSourceFile(irEnum, fileOrganization: fileOrg);
             var content = _renderer.Render(sourceFile);
-            var fileName = _namingConverter.ToCamelCase(irEnum.Name);
+            var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
             var relativePath = fileOrg.SeparateModels
                 ? $"{modelsPath}/{fileName}/{fileName}.ts"
                 : $"{modelsPath}/{fileName}.ts";

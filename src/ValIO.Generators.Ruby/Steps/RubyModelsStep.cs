@@ -42,7 +42,10 @@ public sealed class RubyModelsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(model);
             var content = _renderer.Render(file);
-            var fileName = _namingConverter.ToSnakeCase(model.Name);
+            // File name uses the PRE-affix name so generated file paths (and any
+            // requires that point at them) stay stable when an IR affix renames
+            // the emitted class. Identifiers below still use the affixed model.Name.
+            var fileName = _namingConverter.ToSnakeCase(model.OriginalName);
             var relativePath = $"{modelsDir}/{fileName}.rb";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }

@@ -26,11 +26,12 @@ public sealed class TanStackAngularHookAstBuilder
     public TanStackAngularHookAstBuilder(
         INamingConverter namingConverter,
         Func<ValIO.Core.IR.Types.IrType, TypeNode> typeBuilder,
-        string? resultSuffix = null)
+        string? resultSuffix = null,
+        string? resultPrefix = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix, resultPrefix);
     }
 
     public SourceFileNode BuildHookSourceFile(

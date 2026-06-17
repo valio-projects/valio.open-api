@@ -62,14 +62,14 @@ public sealed class CppAstBuilder
         foreach (var model in document.Models)
         {
             var headerNode = _modelBuilder.Build(model, enumNames, modelLookup, result.Warnings);
-            result.Files[naming.ModelFullPath(model.Name)] = headerNode;
+            result.Files[naming.ModelFullPath(model.OriginalName)] = headerNode;
         }
 
         // 2. Enums → Public/Enums/{EnumName}.h
         foreach (var irEnum in document.Enums)
         {
             var headerNode = _enumBuilder.Build(irEnum);
-            result.Files[naming.EnumFullPath(irEnum.Name)] = headerNode;
+            result.Files[naming.EnumFullPath(irEnum.OriginalName)] = headerNode;
         }
 
         // 3. Per-client: Results, Params, endpoints
@@ -77,8 +77,8 @@ public sealed class CppAstBuilder
         {
             foreach (var operation in client.Operations)
             {
-                var opId = operation.MethodName;
-                // Params, Result, endpoint header → Public/Endpoints/{OpId}/
+                var opId = operation.OriginalMethodName;
+                // Params, Result, endpoint header → Public/Endpoints/{OpId}/ (use ORIGINAL name so file paths don't change with affixes)
                 var paramsNode = _paramsBuilder.Build(operation, enumNames, client.Name);
                 result.Files[naming.ParamsFullPath(opId)] = paramsNode;
 

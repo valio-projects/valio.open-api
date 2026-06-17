@@ -57,7 +57,7 @@ public sealed class CSharpModelsStep : ICodeGenerationStep
     {
         var compilationUnit = builder.BuildCompilationUnit(model, ns);
         var content = _renderer.Render(compilationUnit);
-        var relativePath = $"Models/{model.Name}.cs";
+        var relativePath = $"Models/{model.OriginalName}.cs";
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }
 }

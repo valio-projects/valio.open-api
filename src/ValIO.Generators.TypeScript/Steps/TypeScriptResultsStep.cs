@@ -38,7 +38,7 @@ public sealed class TypeScriptResultsStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var astBuilder = new TypeScriptAstBuilder(_namingConverter, opts);
-        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix);
+        var resultsBuilder = new TypeScriptResultsAstBuilder(_namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
 
@@ -51,7 +51,7 @@ public sealed class TypeScriptResultsStep : ICodeGenerationStep
                 if (!operation.Responses.Any(r => r.Type != null))
                     continue;
 
-                var fileName = _namingConverter.ToCamelCase(operation.MethodName);
+                var fileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
                 var sourceFile = resultsBuilder.BuildResultsSourceFile(
                     operation,
                     importPath: null,

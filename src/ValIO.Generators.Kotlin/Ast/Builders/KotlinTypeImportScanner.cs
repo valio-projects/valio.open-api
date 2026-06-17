@@ -12,7 +12,16 @@ internal static class KotlinTypeImportScanner
     public sealed class Result
     {
         public SortedSet<string> StandardImports { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>Referenced model names WITH affix (used as the imported class identifier).</summary>
         public SortedSet<string> ModelReferences { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Maps an affixed referenced model name (as found in <see cref="ModelReferences"/>) to its
+        /// ORIGINAL (pre-affix) name. Self-seeded while walking <see cref="IrModelReference"/> nodes.
+        /// Import PATHS must use the original so generated file names stay stable under affixing.
+        /// </summary>
+        public Dictionary<string, string> OriginalModelNames { get; } = new(StringComparer.Ordinal);
     }
 
     public static Result Scan(params IrType[] roots)
@@ -39,6 +48,7 @@ internal static class KotlinTypeImportScanner
                 break;
             case IrModelReference r:
                 result.ModelReferences.Add(r.ModelName);
+                result.OriginalModelNames[r.ModelName] = r.OriginalModelName;
                 break;
             case IrArrayType a:
                 Walk(a.ElementType, result);

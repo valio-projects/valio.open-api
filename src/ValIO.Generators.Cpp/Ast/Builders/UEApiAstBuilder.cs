@@ -58,7 +58,8 @@ public sealed class UEApiAstBuilder
     /// </summary>
     private CppHeaderFileNode BuildEndpointHeader(IrClient client, IrOperation operation)
     {
-        var headerFileName = _naming.EndpointHeaderFileName(operation.MethodName);
+        // File name uses the ORIGINAL (pre-affix) method name so the emitted file/include doesn't change with affixes.
+        var headerFileName = _naming.EndpointHeaderFileName(operation.OriginalMethodName);
         var declarations = new List<AstNode>
         {
             BuildDelegateDeclaration(operation),
@@ -87,9 +88,10 @@ public sealed class UEApiAstBuilder
         IrOperation operation,
         IReadOnlyDictionary<string, IrModel> modelLookup)
     {
-        var sourceFileName = _naming.EndpointSourceFileName(operation.MethodName);
+        // File name + include path use the ORIGINAL (pre-affix) method name so emitted files/includes don't change with affixes.
+        var sourceFileName = _naming.EndpointSourceFileName(operation.OriginalMethodName);
         // Header в Public/Endpoints/{OpId}/, source в Private/Endpoints/
-        var headerIncludePath = _naming.EndpointHeaderIncludePath(operation.MethodName);
+        var headerIncludePath = _naming.EndpointHeaderIncludePath(operation.OriginalMethodName);
 
         var includes = new List<CppIncludeDirectiveNode>
         {
@@ -134,8 +136,9 @@ public sealed class UEApiAstBuilder
         }
 
         includes.Add(new(_options.BaseAsyncActionIncludePath));
-        includes.Add(new(_naming.ResultIncludePath(operation.MethodName)));
-        includes.Add(new(_naming.ParamsIncludePath(operation.MethodName)));
+        // Result/Params include paths use the ORIGINAL (pre-affix) method name so emitted includes don't change with affixes.
+        includes.Add(new(_naming.ResultIncludePath(operation.OriginalMethodName)));
+        includes.Add(new(_naming.ParamsIncludePath(operation.OriginalMethodName)));
         includes.Add(new(headerFileName.Replace(".h", _options.GeneratedHeaderSuffix)));
 
         return includes;

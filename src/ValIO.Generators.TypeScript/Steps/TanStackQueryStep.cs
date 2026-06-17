@@ -50,7 +50,8 @@ public sealed class TanStackQueryStep : ICodeGenerationStep
             _namingConverter,
             astBuilder.BuildType,
             clientSuffix,
-            opts?.ResultTypeSuffix);
+            opts?.ResultTypeSuffix,
+            opts?.ResultTypePrefix);
 
         foreach (var client in context.IrDocument.Clients)
         {
@@ -59,7 +60,7 @@ public sealed class TanStackQueryStep : ICodeGenerationStep
                 ct.ThrowIfCancellationRequested();
 
                 var isMutation = operation.HttpMethod is "POST" or "PUT" or "PATCH" or "DELETE";
-                var fileName = _namingConverter.ToCamelCase(operation.MethodName);
+                var fileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
                 var sourceFile = hookBuilder.BuildHookSourceFile(operation, fileName, isMutation);
                 var content = _renderer.Render(sourceFile);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.query.ts";

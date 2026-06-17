@@ -28,6 +28,14 @@ public sealed class TypeScriptGenerationOptions
     public string ResultTypeSuffix { get; set; } = TypeScriptOptionIds.ResultSuffix.Default;
 
     /// <summary>
+    /// Optional prefix for the per-operation result-union type name
+    /// (<c>{ResultTypePrefix}{Operation}{ResultTypeSuffix}</c>). Empty by default. Normalised from the
+    /// <c>resultTypePrefix</c> / <c>resultPrefix</c> config key, or the cross-language
+    /// <c>namingConvention.resultTypePrefix</c>.
+    /// </summary>
+    public string ResultTypePrefix { get; set; } = string.Empty;
+
+    /// <summary>
     /// Optional custom axios instance to use instead of the global <c>axios</c> import.
     /// Parsed by <see cref="TypeScriptOptionsDescriptor"/> from the nested <c>axios</c> config
     /// object. When both path and name are set, generated axios clients import the instance and

@@ -36,7 +36,7 @@ public sealed class CSharpEnumsStep : ICodeGenerationStep
         {
             var compilationUnit = builder.BuildCompilationUnit(irEnum, ns);
             var content = _renderer.Render(compilationUnit);
-            var relativePath = $"Models/{irEnum.Name}.cs";
+            var relativePath = $"Models/{irEnum.OriginalName}.cs";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }
 

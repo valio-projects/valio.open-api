@@ -59,7 +59,7 @@ public sealed class TypeScriptResultsSchemasStep : ICodeGenerationStep
                 if (sourceFile == null)
                     continue;
 
-                var fileName = _namingConverter.ToCamelCase(operation.MethodName);
+                var fileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
                 var content = _renderer.Render(sourceFile);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.results.schemas.ts";
                 context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));

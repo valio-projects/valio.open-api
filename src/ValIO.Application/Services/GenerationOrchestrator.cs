@@ -76,7 +76,8 @@ public sealed class GenerationOrchestrator : IGenerationOrchestrator
         var schemaResolver = new CachingSchemaResolver(new SchemaResolver(doc));
         var irBuilder = new IrBuilder(schemaResolver, _namingConverter);
         var warnings = new List<string>();
-        var irDocument = irBuilder.BuildFromOpenApi(doc, warnings);
+        var affixOptions = BuildAffixOptions(config.NamingConvention);
+        var irDocument = irBuilder.BuildFromOpenApi(doc, warnings, affixOptions);
 
         foreach (var w in warnings)
             _logger.LogWarning("{Warning}", w);
@@ -115,4 +116,20 @@ public sealed class GenerationOrchestrator : IGenerationOrchestrator
             Warnings: warnings,
             ErrorMessage: null);
     }
+
+    /// <summary>
+    /// Переносит настраиваемые prefix/suffix имён моделей/методов/enum'ов из конфигурации
+    /// в IR-преобразование. Result/response-type affix (TypeScript) применяется в самом
+    /// генераторе, поэтому здесь не участвует.
+    /// </summary>
+    private static NameAffixOptions BuildAffixOptions(NamingConventions naming)
+        => new()
+        {
+            ModelPrefix = naming.ModelPrefix,
+            ModelSuffix = naming.ModelSuffix,
+            MethodPrefix = naming.MethodPrefix,
+            MethodSuffix = naming.MethodSuffix,
+            EnumPrefix = naming.EnumPrefix,
+            EnumSuffix = naming.EnumSuffix,
+        };
 }

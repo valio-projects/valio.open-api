@@ -68,7 +68,7 @@ public sealed class PythonModelsStep : ICodeGenerationStep
     {
         var module = builder.BuildModule(model, modelModuleByName);
         var content = _renderer.Render(module);
-        var fileName = _namingConverter.ToSnakeCase(model.Name);
+        var fileName = _namingConverter.ToSnakeCase(model.OriginalName);
         var relativePath = $"models/{fileName}.py";
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }

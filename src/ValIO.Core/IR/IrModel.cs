@@ -6,10 +6,23 @@ namespace ValIO.Core.IR;
 public sealed record IrModel
 {
     /// <summary>
-    /// Имя модели (sanitized)
+    /// Имя модели (sanitized, с учётом affix-преобразования, если оно применялось)
     /// </summary>
     public required string Name { get; init; }
-    
+
+    private readonly string? _originalName;
+
+    /// <summary>
+    /// Исходное (до affix) имя модели. Используется для имён файлов и путей импорта,
+    /// которые не должны меняться при добавлении prefix/suffix. По умолчанию равно
+    /// <see cref="Name"/>, если affix не применялся.
+    /// </summary>
+    public string OriginalName
+    {
+        get => _originalName ?? Name;
+        init => _originalName = value;
+    }
+
     /// <summary>
     /// Описание
     /// </summary>

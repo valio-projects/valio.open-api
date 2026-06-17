@@ -28,6 +28,9 @@ public sealed class UndiciClientAstBuilder
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly Validation.IClientValidationStrategy _validation;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     public UndiciClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -35,14 +38,15 @@ public sealed class UndiciClientAstBuilder
 
         var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
     }
 
     public SourceFileNode BuildOperationClientSourceFile(IrOperation operation, FileOrganization fileOrganization)
     {
         ArgumentNullException.ThrowIfNull(operation);
+        OriginalNameMap.AddOperation(_orig, operation);
 
-        var operationFileName = _namingConverter.ToCamelCase(operation.MethodName);
+        var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         var hasParameters = _paramsBuilder.HasParameters(operation);
         var hasResultType = _resultsBuilder.HasResponsesWithBody(operation);
         var declarations = ImmutableList.CreateBuilder<DeclarationNode>();
@@ -506,7 +510,7 @@ public sealed class UndiciClientAstBuilder
     private string BuildSchemaImportPath(string modelName, FileOrganization fileOrganization)
     {
         var schemasPath = fileOrganization.SchemasPath ?? "schemas";
-        var modelFileName = _namingConverter.ToCamelCase(modelName);
+        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
         return fileOrganization.SeparateModels
             ? $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{schemasPath}/{modelFileName}.schema";

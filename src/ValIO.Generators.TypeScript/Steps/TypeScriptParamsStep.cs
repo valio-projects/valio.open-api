@@ -51,7 +51,7 @@ public sealed class TypeScriptParamsStep : ICodeGenerationStep
                 if (!paramsBuilder.HasParameters(operation))
                     continue;
 
-                var fileName = _namingConverter.ToCamelCase(operation.MethodName);
+                var fileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
                 var sourceFile = paramsBuilder.BuildParamsSourceFile(
                     operation,
                     importPath: null,

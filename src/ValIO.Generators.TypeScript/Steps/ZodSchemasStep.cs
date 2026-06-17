@@ -77,7 +77,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         string schemasPath,
         bool separateModels)
     {
-        var fileName = _namingConverter.ToCamelCase(model.Name);
+        var fileName = _namingConverter.ToCamelCase(model.OriginalName);
         // importPath=null — renderer построит относительный путь к модели
         // из schemasPath + currentFileName сам.
         var content = renderer.RenderFromIr(model,
@@ -100,7 +100,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         string schemasPath,
         bool separateModels)
     {
-        var fileName = _namingConverter.ToCamelCase(irEnum.Name);
+        var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
         var content = renderer.RenderEnumFromIr(irEnum,
             importPath: null,
             currentFileName: fileName,

@@ -64,6 +64,73 @@ These match the host language style guides (PEP 8 for Python, Rust
 formatting rules, etc.). Override only when you need to interoperate
 with an existing codebase that uses different conventions.
 
+## Prefix / suffix (affixes)
+
+Beyond casing, you can wrap generated identifiers with an optional
+prefix and/or suffix per identifier kind. This is the recommended way to
+resolve clashes between a DTO type and an operation function that share a
+name (e.g. an OpenAPI schema `CreateJournalSchema` and an `operationId`
+`CreateJournalSchema`), which would otherwise produce an ambiguous
+re-export (TypeScript **TS2308**) in the barrel.
+
+```json
+{
+  "namingConvention": {
+    "models":      "PascalCase",
+    "methods":     "PascalCase",
+    "enums":       "PascalCase",
+
+    "modelPrefix":  "",
+    "modelSuffix":  "Model",
+    "methodPrefix": "",
+    "methodSuffix": "",
+    "enumPrefix":   "",
+    "enumSuffix":   ""
+  }
+}
+```
+
+| Key            | Wraps                                                              |
+|----------------|-------------------------------------------------------------------|
+| `modelPrefix`  / `modelSuffix`  | Model (DTO) type names — and everything derived from them: type references, validation-schema constants, etc. |
+| `methodPrefix` / `methodSuffix` | Operation/client function names (across every transport).        |
+| `enumPrefix`   / `enumSuffix`   | Enum type names.                                                  |
+
+The example above renders the schema as `CreateJournalSchemaModel` while
+the client function stays `CreateJournalSchema` — distinct identifiers,
+no collision. Prefix and suffix compose: `modelPrefix: "Api"` +
+`modelSuffix: "Dto"` on `User` → `ApiUserDto`.
+
+Affixes are applied once, at the language-agnostic IR layer, so they
+propagate consistently to **every** target language, transport and
+reference site — type references, imports, validation schemas, query
+keys and the barrel — automatically.
+
+**File names and import paths are *not* affixed.** Only the emitted
+identifiers change; `models/createJournalSchema/createJournalSchema.ts`
+keeps its path (and your existing deep-path imports keep working) while
+the interface inside it is now `CreateJournalSchemaModel`.
+
+Defaults are empty (no affix), so omitting these keys preserves the
+current output exactly.
+
+### Result/response-union type (TypeScript)
+
+The per-operation result-union type has its own affix, configured in the
+TypeScript generator **options** (it is a TS-specific synthesized type):
+
+```json
+{
+  "options": {
+    "resultTypeSuffix": "Results",
+    "resultTypePrefix": ""
+  }
+}
+```
+
+`resultTypeSuffix` (default `Results`) and `resultTypePrefix` (default
+empty) wrap the union alias, e.g. `getUser` → `ApiGetUserResults`.
+
 ## Reserved-keyword handling
 
 The naming converter (`INamingConverter`) also sanitizes reserved

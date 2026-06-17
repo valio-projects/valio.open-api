@@ -35,30 +35,47 @@ public class IrBuilder
     /// </summary>
     /// <param name="document">OpenAPI документ</param>
     /// <param name="warnings">Опциональная коллекция для записи предупреждений (дубликаты параметров и т.д.)</param>
-    public IrDocument BuildFromOpenApi(OpenApiDocument document, ICollection<string>? warnings = null)
+    /// <param name="affixOptions">
+    /// Опциональные prefix/suffix для имён моделей/методов/enum'ов. Применяются на уровне IR
+    /// (см. <see cref="IrNameAffixer"/>) до построения графа зависимостей, поэтому распространяются
+    /// на все определения, ссылки и импорты во всех языках. По умолчанию (null или <see cref="NameAffixOptions.IsNoOp"/>)
+    /// преобразование пропускается и поведение идентично прежнему.
+    /// </param>
+    public IrDocument BuildFromOpenApi(
+        OpenApiDocument document,
+        ICollection<string>? warnings = null,
+        NameAffixOptions? affixOptions = null)
     {
         if (document == null)
             throw new ArgumentNullException(nameof(document));
-        
+
         // Очищаем словарь inline моделей перед началом
         _inlineModels.Clear();
         _inlineModelCounter = 0;
-        
+
         var models = ExtractModels(document);
         var enums = ExtractEnums(document);
         var clients = ExtractClients(document, warnings);
-        
+
         // Добавляем inline модели к основным моделям
-        var allModels = models.Concat(_inlineModels.Values).ToList();
-        
-        var typeDependencies = BuildTypeDependencyGraph(allModels, enums, clients);
-        
+        IReadOnlyList<IrModel> allModels = models.Concat(_inlineModels.Values).ToList();
+        IReadOnlyList<IrEnum> allEnums = enums;
+        IReadOnlyList<IrClient> allClients = clients;
+
+        // Применяем affix (prefix/suffix) к именам ДО построения графа зависимостей,
+        // чтобы граф и все ссылки оперировали уже переименованными именами.
+        if (affixOptions is { IsNoOp: false })
+            (allModels, allEnums, allClients) =
+                IrNameAffixer.Apply(allModels, allEnums, allClients, affixOptions, _namingConverter);
+
+        var typeDependencies = BuildTypeDependencyGraph(allModels, allEnums, allClients);
+
         return new IrDocument
         {
             Metadata = ExtractMetadata(document),
             Models = allModels,
-            Enums = enums,
-            Clients = clients,
+            Enums = allEnums,
+            Clients = allClients,
             TypeDependencies = typeDependencies
         };
     }

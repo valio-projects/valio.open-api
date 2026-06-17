@@ -134,17 +134,30 @@ public class ConfigurationLoader : IConfigurationLoader
         // Маппинг конвенций именования
         if (projectConfig.NamingConvention != null)
         {
+            var nc = projectConfig.NamingConvention;
             generationConfig.NamingConvention = new NamingConventions
             {
-                Models = ParseNamingConvention(projectConfig.NamingConvention.Models),
-                Properties = ParseNamingConvention(projectConfig.NamingConvention.Properties),
-                Methods = ParseNamingConvention(projectConfig.NamingConvention.Methods),
-                Enums = ParseNamingConvention(projectConfig.NamingConvention.Enums)
+                Models = ParseNamingConvention(nc.Models),
+                Properties = ParseNamingConvention(nc.Properties),
+                Methods = ParseNamingConvention(nc.Methods),
+                Enums = ParseNamingConvention(nc.Enums),
+                ModelPrefix = NormalizeAffix(nc.ModelPrefix),
+                ModelSuffix = NormalizeAffix(nc.ModelSuffix),
+                MethodPrefix = NormalizeAffix(nc.MethodPrefix),
+                MethodSuffix = NormalizeAffix(nc.MethodSuffix),
+                EnumPrefix = NormalizeAffix(nc.EnumPrefix),
+                EnumSuffix = NormalizeAffix(nc.EnumSuffix)
             };
         }
 
         return generationConfig;
     }
+
+    /// <summary>
+    /// Нормализует значение affix: null/пробелы → пустая строка, иначе обрезает пробелы.
+    /// </summary>
+    private static string NormalizeAffix(string? affix)
+        => string.IsNullOrWhiteSpace(affix) ? string.Empty : affix.Trim();
 
     private static FileGroupingStrategy ParseFileGroupingStrategy(string? strategy)
     {

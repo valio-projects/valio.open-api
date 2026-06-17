@@ -37,8 +37,10 @@ public sealed class KotlinEnumsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(irEnum, modelsPackage);
             var content = _renderer.Render(file);
-            var className = _namingConverter.ToPascalCase(irEnum.Name);
-            var relativePath = $"{modelsDir}/{className}.kt";
+            // File name uses the ORIGINAL (pre-affix) name so files don't move when an
+            // affix is applied; the emitted enum identifier stays affixed (see builder).
+            var fileName = _namingConverter.ToPascalCase(irEnum.OriginalName);
+            var relativePath = $"{modelsDir}/{fileName}.kt";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }
 

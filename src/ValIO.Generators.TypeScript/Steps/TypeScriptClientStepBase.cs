@@ -87,7 +87,7 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
 
                 var sourceFile = BuildOperationSourceFile(operation, fileOrg, opts);
                 var content = Renderer.Render(sourceFile);
-                var fileName = NamingConverter.ToCamelCase(operation.MethodName);
+                var fileName = NamingConverter.ToCamelCase(operation.OriginalMethodName);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}{FileSuffix}";
                 context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
             }

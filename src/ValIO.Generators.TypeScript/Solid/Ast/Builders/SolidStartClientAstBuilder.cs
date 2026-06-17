@@ -52,7 +52,7 @@ public sealed class SolidStartClientAstBuilder
             ["directive"] = "use server"
         };
 
-        var fileBase = _namingConverter.ToCamelCase(operation.MethodName);
+        var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         return new SourceFileNode(
             imports: fetchSource.Imports,
             exports: fetchSource.Exports,

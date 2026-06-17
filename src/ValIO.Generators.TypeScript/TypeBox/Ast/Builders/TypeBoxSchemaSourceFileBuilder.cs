@@ -21,6 +21,9 @@ public sealed class TypeBoxSchemaSourceFileBuilder
     private readonly string _modelsPath;
     private readonly string _uuidFormat;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     public TypeBoxSchemaSourceFileBuilder(INamingConverter namingConverter, string modelsPath = "models", string? uuidFormat = null)
     {
         _namingConverter = namingConverter;
@@ -33,6 +36,8 @@ public sealed class TypeBoxSchemaSourceFileBuilder
     {
         ArgumentNullException.ThrowIfNull(model);
 
+        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddModel(_orig, model);
+
         var schemaName = GetSchemaName(model.Name);
         return new SourceFileNode(
             imports: BuildImports(model, currentFileName, schemasPath),
@@ -44,12 +49,14 @@ public sealed class TypeBoxSchemaSourceFileBuilder
                     documentation: BuildDocumentation(model.Description),
                     isExported: true))
                 .Add(BuildStaticTypeAlias(model.Name, schemaName)),
-            fileDocumentation: SchemaFileHeader(model.Name));
+            fileDocumentation: SchemaFileHeader(model.OriginalName, model.Name));
     }
 
     public SourceFileNode BuildEnumSchemaSourceFile(IrEnum irEnum, bool separateModels)
     {
         ArgumentNullException.ThrowIfNull(irEnum);
+
+        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddEnum(_orig, irEnum);
 
         var schemaName = GetSchemaName(irEnum.Name);
 
@@ -64,12 +71,14 @@ public sealed class TypeBoxSchemaSourceFileBuilder
                     documentation: BuildDocumentation(irEnum.Description),
                     isExported: true))
                 .Add(BuildStaticTypeAlias(irEnum.Name, schemaName)),
-            fileDocumentation: SchemaFileHeader(irEnum.Name));
+            fileDocumentation: SchemaFileHeader(irEnum.OriginalName, irEnum.Name));
     }
 
-    private CommentNode SchemaFileHeader(string typeName)
+    private CommentNode SchemaFileHeader(string originalName, string typeName)
     {
-        var fileBase = _namingConverter.ToCamelCase(typeName);
+        // Имя файла/модуля — от исходного (до affix) имени, чтобы путь не менялся.
+        // Текст описания ссылается на идентификатор и сохраняет affix-имя.
+        var fileBase = _namingConverter.ToCamelCase(originalName);
         return TypeScriptDoc.FileHeader(
             $"{fileBase}.schema.ts",
             $"schemas/{fileBase}",
@@ -81,7 +90,7 @@ public sealed class TypeBoxSchemaSourceFileBuilder
         var imports = ImmutableList.CreateBuilder<ImportNode>();
         imports.AddRange(BuildTypeBoxImports());
 
-        var enumFileName = _namingConverter.ToCamelCase(irEnum.Name);
+        var enumFileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
         var modelPath = separateModels
             ? $"../../{_modelsPath}/{enumFileName}/{enumFileName}"
             : $"../{_modelsPath}/{enumFileName}";
@@ -104,7 +113,8 @@ public sealed class TypeBoxSchemaSourceFileBuilder
 
         foreach (var dependency in dependencies.OrderBy(name => name, StringComparer.Ordinal))
         {
-            var depFileName = _namingConverter.ToCamelCase(dependency);
+            // Имя файла зависимости — от исходного (до affix) имени; спецификатор импорта affix.
+            var depFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(dependency, dependency));
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(GetSchemaName(dependency))),
                 from: CalculateImportPath(currentFileName, depFileName, schemasPath),

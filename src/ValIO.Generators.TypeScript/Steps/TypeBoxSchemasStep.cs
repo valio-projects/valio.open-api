@@ -78,7 +78,7 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         string schemasPath,
         bool separateModels)
     {
-        var fileName = _namingConverter.ToCamelCase(model.Name);
+        var fileName = _namingConverter.ToCamelCase(model.OriginalName);
         var content = renderer.Render(builder.BuildModelSchemaSourceFile(
             model,
             currentFileName: fileName,
@@ -101,7 +101,7 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
     {
         var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum, separateModels));
 
-        var fileName = _namingConverter.ToCamelCase(irEnum.Name);
+        var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
         var relativePath = separateModels
             ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
             : $"{schemasPath}/{fileName}.schema.ts";

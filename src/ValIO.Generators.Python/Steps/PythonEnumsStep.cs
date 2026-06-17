@@ -33,7 +33,7 @@ public sealed class PythonEnumsStep : ICodeGenerationStep
         {
             var module = builder.BuildModule(irEnum);
             var content = _renderer.Render(module);
-            var fileName = _namingConverter.ToSnakeCase(irEnum.Name);
+            var fileName = _namingConverter.ToSnakeCase(irEnum.OriginalName);
             var relativePath = $"models/{fileName}.py";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }

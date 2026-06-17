@@ -8,10 +8,23 @@ namespace ValIO.Core.IR;
 public sealed record IrOperation
 {
     /// <summary>
-    /// Имя метода (sanitized)
+    /// Имя метода (sanitized, с учётом affix-преобразования, если оно применялось)
     /// </summary>
     public required string MethodName { get; init; }
-    
+
+    private readonly string? _originalMethodName;
+
+    /// <summary>
+    /// Исходное (до affix) имя метода. Используется для имён файлов, путей импорта и
+    /// производных типов (result/params), которые не должны менять базу при добавлении
+    /// method-prefix/suffix. По умолчанию равно <see cref="MethodName"/>, если affix не применялся.
+    /// </summary>
+    public string OriginalMethodName
+    {
+        get => _originalMethodName ?? MethodName;
+        init => _originalMethodName = value;
+    }
+
     /// <summary>
     /// HTTP метод (GET, POST, PUT, DELETE и т.д.)
     /// </summary>

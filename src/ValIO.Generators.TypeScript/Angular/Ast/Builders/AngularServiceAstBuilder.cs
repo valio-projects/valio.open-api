@@ -35,7 +35,7 @@ public sealed class AngularServiceAstBuilder
         _options = options;
         var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
     }
 
     /// <summary>
@@ -430,7 +430,7 @@ public sealed class AngularServiceAstBuilder
         var clientsPath = fileOrganization?.ClientsPath ?? "api";
         foreach (var operation in client.Operations)
         {
-            var operationFileName = _namingConverter.ToCamelCase(operation.MethodName);
+            var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
             if (_paramsBuilder.HasParameters(operation))
             {
                 imports.Add(new ImportNode(

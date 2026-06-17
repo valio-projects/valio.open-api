@@ -86,7 +86,10 @@ public sealed class OkHttpClientAstBuilder
             imports.Add(new KotlinImportNode(stdImport));
         foreach (var modelName in importScan.ModelReferences)
         {
+            // modelName carries the affix and is matched against the affixed known names.
             if (!knownModelNames.Contains(modelName)) continue;
+            // Kotlin imports resolve by fully-qualified CLASS name (package + affixed type name),
+            // independent of the .kt file name — so the import uses the affixed identifier.
             imports.Add(new KotlinImportNode($"{modelsPackage}.{modelName}"));
         }
 

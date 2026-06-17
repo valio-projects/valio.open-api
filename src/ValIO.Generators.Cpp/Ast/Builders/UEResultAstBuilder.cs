@@ -36,7 +36,8 @@ public sealed class UEResultAstBuilder
     public CppHeaderFileNode Build(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
     {
         var resultName = _naming.ResultStructName(operation.MethodName);
-        var fileName = _naming.ResultFileName(operation.MethodName);
+        // File name uses the ORIGINAL (pre-affix) method name so the emitted file/include doesn't change with affixes.
+        var fileName = _naming.ResultFileName(operation.OriginalMethodName);
         var category = _naming.OperationTypeCategory(_options.BlueprintCategory, clientName, operation.MethodName);
 
         var fields = new List<UPropertyFieldNode>();
@@ -105,9 +106,10 @@ public sealed class UEResultAstBuilder
         // Result в Public/Endpoints/{OpId}/, Models/Enums в Public/Models, Public/Enums
         if (successResponse?.Type is IrModelReference successModelRef)
         {
+            // enum/model classification uses the affixed name; the include PATH uses the ORIGINAL name.
             var path = enumNames.Contains(successModelRef.ModelName)
-                ? _naming.EnumIncludePathFromEndpoint(successModelRef.ModelName)
-                : _naming.ModelIncludePathFromEndpoint(successModelRef.ModelName);
+                ? _naming.EnumIncludePathFromEndpoint(successModelRef.OriginalModelName)
+                : _naming.ModelIncludePathFromEndpoint(successModelRef.OriginalModelName);
             includes.Add(new CppIncludeDirectiveNode(path));
         }
 
@@ -115,9 +117,10 @@ public sealed class UEResultAstBuilder
         {
             if (r.Type is IrModelReference modelRef)
             {
+                // enum/model classification uses the affixed name; the include PATH uses the ORIGINAL name.
                 var path = enumNames.Contains(modelRef.ModelName)
-                    ? _naming.EnumIncludePathFromEndpoint(modelRef.ModelName)
-                    : _naming.ModelIncludePathFromEndpoint(modelRef.ModelName);
+                    ? _naming.EnumIncludePathFromEndpoint(modelRef.OriginalModelName)
+                    : _naming.ModelIncludePathFromEndpoint(modelRef.OriginalModelName);
                 includes.Add(new CppIncludeDirectiveNode(path));
             }
         }

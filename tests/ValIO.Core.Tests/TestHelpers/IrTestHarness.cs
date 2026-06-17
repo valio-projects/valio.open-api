@@ -33,6 +33,17 @@ internal static class IrTestHarness
     }
 
     /// <summary>
+    /// Строит IR с применением affix-преобразования имён (prefix/suffix).
+    /// </summary>
+    public static async Task<IrDocument> BuildIrAsync(string json, NameAffixOptions affixOptions)
+    {
+        var doc = await LoadAsync(json);
+        var resolver = new SchemaResolver(doc);
+        var converter = new NamingConverter();
+        return new IrBuilder(resolver, converter).BuildFromOpenApi(doc, warnings: null, affixOptions: affixOptions);
+    }
+
+    /// <summary>
     /// Строит документ с заданными component-схемами и возвращает построенный IR.
     /// </summary>
     public static Task<IrDocument> BuildIrFromSchemasAsync(string openapiVersion, params (string name, string body)[] schemas)

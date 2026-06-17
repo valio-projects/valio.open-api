@@ -42,7 +42,9 @@ public sealed class SwiftModelsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(model);
             var content = _renderer.Render(file);
-            var typeName = _namingConverter.ToPascalCase(model.Name);
+            // Emitted identifiers keep the affixed name (built in the AST builder from model.Name),
+            // but the FILE NAME must use the pre-affix name so generated files don't move.
+            var typeName = _namingConverter.ToPascalCase(model.OriginalName);
             var relativePath = $"{modelsDir}/{typeName}.swift";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }

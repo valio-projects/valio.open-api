@@ -31,7 +31,8 @@ public sealed class UEEnumAstBuilder
     public CppHeaderFileNode Build(IrEnum irEnum)
     {
         var enumName = _naming.EnumName(irEnum.Name);
-        var fileName = _naming.EnumFileName(irEnum.Name);
+        // File name uses the ORIGINAL (pre-affix) name so the emitted file/include doesn't change with affixes.
+        var fileName = _naming.EnumFileName(irEnum.OriginalName);
 
         // UE Blueprints требуют uint8 как базовый тип для UENUM
         var underlyingType = new SimpleTypeNode(new IdentifierNode("uint8"), isPrimitive: true);

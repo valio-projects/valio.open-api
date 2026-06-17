@@ -29,39 +29,46 @@ public partial class TypeScriptAstBuilder
         public bool IsFlat { get; set; }
     }
 
+    /// <summary>
+    /// Доступ к телу запроса внутри объекта <c>params</c>: тело всегда вложено — в
+    /// <c>params.form</c> (multipart/url-encoded) либо <c>params.body</c> (JSON и любой иной
+    /// content-type). Согласовано с <c>TypeScriptParamsAstBuilder</c> и bespoke-транспортами.
+    /// </summary>
+    private static MemberAccessExpressionNode BodyPropertyAccess(IrRequestBody requestBody, ExpressionNode paramsExpr)
+        => new(paramsExpr, new IdentifierNode(requestBody.IsForm ? "form" : "body"));
+
     private HttpParamSourcesContext PrepareHttpParamSourcesWithOptionalZod(IrOperation operation)
     {
         var ctx = new HttpParamSourcesContext();
 
         var hasRoute = operation.PathParameters.Count > 0;
         var hasQuery = operation.QueryParameters.Count > 0;
-        var hasBody = operation.RequestBody != null && (operation.RequestBody.IsJson || operation.RequestBody.IsForm);
-        var hasHeaders = operation.HeaderParameters.Count > 0;
         var rb = operation.RequestBody;
+        // Любое тело запроса (JSON, multipart/url-encoded form, или иной content-type —
+        // напр. application/octet-stream) образует одну группу параметров — так же, как
+        // в TypeScriptParamsAstBuilder, иначе groupCount/flat рассинхронизируются с params-интерфейсом.
+        var hasBody = rb != null;
+        var hasHeaders = operation.HeaderParameters.Count > 0;
         var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasHeaders ? 1 : 0);
         var isFlat = groupCount <= 1;
         ctx.IsFlat = isFlat;
 
         var paramsExpr = new IdentifierExpressionNode(new IdentifierNode("params"));
-        ExpressionNode? routeSource = null;
-        ExpressionNode? querySource = null;
-        ExpressionNode? bodySource = null;
-        ExpressionNode? headersSource = null;
 
-        if (isFlat)
-        {
-            if (hasRoute) routeSource = paramsExpr;
-            if (hasQuery) querySource = paramsExpr;
-            if (hasBody) bodySource = paramsExpr;
-            if (hasHeaders) headersSource = paramsExpr;
-        }
-        else
-        {
-            if (hasRoute) routeSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
-            if (hasQuery) querySource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
-            if (hasBody) bodySource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb!.IsJson ? "body" : "form"));
-            if (hasHeaders) headersSource = new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("headers"));
-        }
+        // Route/query/headers «расплющиваются» в сам params, когда являются единственной группой
+        // (плоский интерфейс кладёт их поля прямо в params). ТЕЛО запроса, напротив, ВСЕГДА лежит
+        // во вложенном свойстве params.body / params.form (см. BuildFlatParamsInterface) — и в flat,
+        // и в aggregate. Поэтому body-источник не зависит от isFlat.
+        ExpressionNode? routeSource = hasRoute
+            ? (isFlat ? paramsExpr : new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route")))
+            : null;
+        ExpressionNode? querySource = hasQuery
+            ? (isFlat ? paramsExpr : new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query")))
+            : null;
+        ExpressionNode? headersSource = hasHeaders
+            ? (isFlat ? paramsExpr : new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("headers")))
+            : null;
+        ExpressionNode? bodySource = hasBody ? BodyPropertyAccess(rb!, paramsExpr) : null;
 
         if (_validation.IsEnabled)
         {
@@ -93,7 +100,7 @@ public partial class TypeScriptAstBuilder
             // Тело запроса валидируется схемой, построенной из типа тела (модель/union/...) выбранной библиотекой.
             if (hasBody && ValidationTypes.IsValidatable(rb!.Type))
             {
-                var bodyInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode(rb.IsJson ? "body" : "form"));
+                var bodyInput = BodyPropertyAccess(rb, paramsExpr);
                 var parseCall = _validation.Validate(rb.Type, bodyInput);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedBody"),
@@ -235,11 +242,12 @@ public partial class TypeScriptAstBuilder
                 new[] { ctx.BodySource }.ToImmutableList());
             initProps.Add(new PropertyAssignmentNode(new IdentifierNode("body"), jsonStringify));
         }
-        else if (operation.RequestBody != null && operation.RequestBody.IsForm && ctx.BodySource != null)
+        else if (operation.RequestBody != null && ctx.BodySource != null)
         {
-            // multipart/form-data: типизированный params.form (узкий интерфейс) не
-            // соответствует BodyInit. Кастуем через unknown — runtime пусть
-            // строит FormData сам.
+            // Не-JSON тело: form-data / url-encoded (params.form) или иной content-type,
+            // напр. application/octet-stream (params.body). Типизированный источник (узкий
+            // интерфейс) не совпадает с BodyInit — кастуем через unknown, runtime строит
+            // FormData/Blob/stream сам.
             var bodyCast = new CastExpressionNode(
                 new SimpleTypeNode(new IdentifierNode("BodyInit"), isPrimitive: false),
                 new CastExpressionNode(

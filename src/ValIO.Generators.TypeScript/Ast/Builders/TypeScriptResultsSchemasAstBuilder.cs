@@ -20,6 +20,9 @@ public sealed class TypeScriptResultsSchemasAstBuilder
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     internal TypeScriptResultsSchemasAstBuilder(INamingConverter namingConverter, IClientValidationStrategy validation)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -42,6 +45,8 @@ public sealed class TypeScriptResultsSchemasAstBuilder
         if (!_validation.IsEnabled)
             return null;
 
+        OriginalNameMap.AddOperation(_orig, operation);
+
         var constructed = operation.Responses
             .Where(r => r.Type != null
                 && int.TryParse(r.StatusCode, out _)
@@ -62,7 +67,9 @@ public sealed class TypeScriptResultsSchemasAstBuilder
 
         var imports = BuildImports(constructed.Select(r => r.Type!).ToList(), fileOrganization);
 
-        var fileBase = _namingConverter.ToCamelCase(operation.MethodName);
+        // Имя файла/модуля — от исходного (до affix) имени метода, чтобы путь не менялся.
+        // Текст описания ссылается на идентификатор метода и сохраняет affix-имя.
+        var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         return new SourceFileNode(
             imports: imports,
             declarations: declarations,
@@ -84,7 +91,8 @@ public sealed class TypeScriptResultsSchemasAstBuilder
 
         foreach (var modelName in modelNames.OrderBy(n => n, StringComparer.Ordinal))
         {
-            var modelFile = _namingConverter.ToCamelCase(modelName);
+            // Имя файла модели — от исходного (до affix) имени; спецификатор импорта affix.
+            var modelFile = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode($"{modelName}Schema")),
                 from: $"../../{schemasPath}/{modelFile}/{modelFile}.schema",

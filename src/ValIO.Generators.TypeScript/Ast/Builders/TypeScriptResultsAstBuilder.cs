@@ -21,15 +21,21 @@ public sealed class TypeScriptResultsAstBuilder
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
     private readonly string _resultSuffix;
+    private readonly string _resultPrefix;
+
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
     public TypeScriptResultsAstBuilder(
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
-        string? resultSuffix = null)
+        string? resultSuffix = null,
+        string? resultPrefix = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
         _resultSuffix = ResolveResultSuffix(resultSuffix);
+        _resultPrefix = resultPrefix?.Trim() ?? string.Empty;
     }
 
     /// <summary>
@@ -52,8 +58,16 @@ public sealed class TypeScriptResultsAstBuilder
     /// </summary>
     public string ResultTypeName(string operationName)
     {
-        return $"{_namingConverter.ToPascalCase(operationName)}{_resultSuffix}";
+        return $"{_resultPrefix}{_namingConverter.ToPascalCase(operationName)}{_resultSuffix}";
     }
+
+    /// <summary>
+    /// Composes the result-union type name from its parts (prefix + Pascal(op) + suffix) without a
+    /// builder instance. Shared so inline producers (e.g. the client return type) stay identical to
+    /// <see cref="ResultTypeName"/>.
+    /// </summary>
+    public static string ComposeResultTypeName(INamingConverter namingConverter, string operationName, string? resultPrefix, string? resultSuffix)
+        => $"{resultPrefix?.Trim() ?? string.Empty}{namingConverter.ToPascalCase(operationName)}{ResolveResultSuffix(resultSuffix)}";
 
     /// <summary>
     /// Имя variant интерфейса: {OperationName}Result{StatusCode}. The per-status variants keep the
@@ -81,6 +95,8 @@ public sealed class TypeScriptResultsAstBuilder
         FileOrganization? fileOrganization,
         string currentOperationName)
     {
+        OriginalNameMap.AddOperation(_orig, operation);
+
         var declarations = new List<DeclarationNode>();
         var imports = new List<ImportNode>();
 
@@ -191,7 +207,7 @@ public sealed class TypeScriptResultsAstBuilder
             var modelsPath = fileOrganization?.ModelsPath ?? "models";
             foreach (var modelName in modelRefs.OrderBy(n => n, StringComparer.Ordinal))
             {
-                var modelFileName = _namingConverter.ToCamelCase(modelName);
+                var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
                 var relativePath = $"../../{modelsPath}/{modelFileName}/{modelFileName}";
                 imports.Add(new ImportNode(
                     items: new[] { new IdentifierNode(modelName) }.ToImmutableList(),
@@ -203,7 +219,7 @@ public sealed class TypeScriptResultsAstBuilder
 
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
-        var fileBase = _namingConverter.ToCamelCase(currentOperationName);
+        var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         return new SourceFileNode(
             imports: imports.ToImmutableList(),
             exports: exports,

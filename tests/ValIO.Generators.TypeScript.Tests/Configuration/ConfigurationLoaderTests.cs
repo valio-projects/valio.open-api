@@ -184,4 +184,42 @@ Projects:
         generation.NamingConvention.Models.Should().Be(expected);
         generation.NamingConvention.Properties.Should().Be(expected);
     }
+
+    [Test]
+    public void MapToGenerationConfiguration_NamingAffixes_AreMappedAndNormalized()
+    {
+        var proj = new ProjectConfig
+        {
+            Language = "typescript", Schema = "x", OutputPath = "y",
+            NamingConvention = new ConfigNamingConventions
+            {
+                ModelPrefix = "Api",
+                ModelSuffix = "  Model  ",   // trimmed
+                MethodSuffix = "Method",
+                EnumPrefix = null,            // → empty
+                EnumSuffix = "   ",           // whitespace → empty
+            },
+        };
+
+        var nc = _sut.MapToGenerationConfiguration(proj).NamingConvention;
+        nc.ModelPrefix.Should().Be("Api");
+        nc.ModelSuffix.Should().Be("Model");
+        nc.MethodPrefix.Should().BeEmpty();
+        nc.MethodSuffix.Should().Be("Method");
+        nc.EnumPrefix.Should().BeEmpty();
+        nc.EnumSuffix.Should().BeEmpty();
+    }
+
+    [Test]
+    public void MapToGenerationConfiguration_NoAffixes_DefaultToEmpty()
+    {
+        var proj = new ProjectConfig { Language = "typescript", Schema = "x", OutputPath = "y" };
+        var nc = _sut.MapToGenerationConfiguration(proj).NamingConvention;
+        nc.ModelPrefix.Should().BeEmpty();
+        nc.ModelSuffix.Should().BeEmpty();
+        nc.MethodPrefix.Should().BeEmpty();
+        nc.MethodSuffix.Should().BeEmpty();
+        nc.EnumPrefix.Should().BeEmpty();
+        nc.EnumSuffix.Should().BeEmpty();
+    }
 }

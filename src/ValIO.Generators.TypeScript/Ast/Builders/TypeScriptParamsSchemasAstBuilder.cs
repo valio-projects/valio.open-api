@@ -24,6 +24,9 @@ public sealed class TypeScriptParamsSchemasAstBuilder
     private readonly IClientValidationStrategy _validation;
     private readonly string _uuidFormat;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     internal TypeScriptParamsSchemasAstBuilder(INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -53,6 +56,8 @@ public sealed class TypeScriptParamsSchemasAstBuilder
         if (!hasRoute && !hasQuery)
             return null;
 
+        OriginalNameMap.AddOperation(_orig, operation);
+
         var declarations = new List<DeclarationNode>();
         if (hasRoute)
             declarations.Add(BuildParamsSchemaDeclaration(
@@ -64,7 +69,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder
         var paramTypes = operation.PathParameters.Concat(operation.QueryParameters).Select(p => p.Type).ToList();
         var imports = BuildImports(operation, paramTypes, fileOrganization);
 
-        var fileBase = _namingConverter.ToCamelCase(operation.MethodName);
+        var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         return new SourceFileNode(
             imports: imports,
             declarations: declarations,
@@ -107,7 +112,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder
 
         foreach (var modelName in modelNames.OrderBy(n => n, StringComparer.Ordinal))
         {
-            var modelFile = _namingConverter.ToCamelCase(modelName);
+            var modelFile = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
             var from = separateModels
                 ? $"../../{schemasPath}/{modelFile}/{modelFile}.schema"
                 : $"../../{schemasPath}/{modelFile}.schema";

@@ -84,7 +84,7 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         bool separateModels)
     {
         var content = renderer.Render(builder.BuildModelSchemaSourceFile(model, separateModels));
-        var fileName = _namingConverter.ToCamelCase(model.Name);
+        var fileName = _namingConverter.ToCamelCase(model.OriginalName);
         var relativePath = separateModels
             ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
             : $"{schemasPath}/{fileName}.schema.ts";
@@ -101,7 +101,7 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         bool separateModels)
     {
         var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum, separateModels));
-        var fileName = _namingConverter.ToCamelCase(irEnum.Name);
+        var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
         var relativePath = separateModels
             ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
             : $"{schemasPath}/{fileName}.schema.ts";

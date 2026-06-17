@@ -13,7 +13,7 @@ internal static class PythonStepHelper
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var model in doc.Models)
-            map[model.Name] = $".{naming.ToSnakeCase(model.Name)}";
+            map[model.Name] = $".{naming.ToSnakeCase(model.OriginalName)}";
         return map;
     }
 
@@ -21,7 +21,7 @@ internal static class PythonStepHelper
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var irEnum in doc.Enums)
-            map[irEnum.Name] = $".{naming.ToSnakeCase(irEnum.Name)}";
+            map[irEnum.Name] = $".{naming.ToSnakeCase(irEnum.OriginalName)}";
         return map;
     }
 
@@ -30,7 +30,7 @@ internal static class PythonStepHelper
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var model in doc.Models)
-            map[model.Name] = $"..models.{naming.ToSnakeCase(model.Name)}";
+            map[model.Name] = $"..models.{naming.ToSnakeCase(model.OriginalName)}";
         return map;
     }
 
@@ -38,10 +38,10 @@ internal static class PythonStepHelper
     {
         var map = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var irEnum in doc.Enums)
-            map[irEnum.Name] = $"..{naming.ToSnakeCase(irEnum.Name)}";
+            map[irEnum.Name] = $"..{naming.ToSnakeCase(irEnum.OriginalName)}";
         // FIX: enums are in /models/ too.
         foreach (var irEnum in doc.Enums)
-            map[irEnum.Name] = $"..models.{naming.ToSnakeCase(irEnum.Name)}";
+            map[irEnum.Name] = $"..models.{naming.ToSnakeCase(irEnum.OriginalName)}";
         return map;
     }
 }

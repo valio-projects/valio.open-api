@@ -29,13 +29,14 @@ public sealed class TanStackQueryHookAstBuilder
         INamingConverter namingConverter,
         Func<ValIO.Core.IR.Types.IrType, ValIO.Core.Ast.Nodes.TypeNode> typeBuilder,
         string clientSuffix = "axios",
-        string? resultSuffix = null)
+        string? resultSuffix = null,
+        string? resultPrefix = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _clientSuffix = string.IsNullOrWhiteSpace(clientSuffix) ? "fetch" : clientSuffix;
         _hookUsesAxios = _clientSuffix.Equals("axios", StringComparison.OrdinalIgnoreCase);
         _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder, resultSuffix, resultPrefix);
         _typeBuilder = new TanStackQueryTypeBuilder(namingConverter, _hookUsesAxios);
     }
 

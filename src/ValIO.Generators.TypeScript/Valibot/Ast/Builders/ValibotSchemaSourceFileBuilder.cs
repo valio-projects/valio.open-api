@@ -23,6 +23,9 @@ public sealed class ValibotSchemaSourceFileBuilder
     private readonly string _modelsPath;
     private readonly string _uuidFormat;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     public ValibotSchemaSourceFileBuilder(INamingConverter namingConverter, string modelsPath = "models", string? uuidFormat = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -34,6 +37,8 @@ public sealed class ValibotSchemaSourceFileBuilder
     public SourceFileNode BuildModelSchemaSourceFile(IrModel model, bool separateModels)
     {
         ArgumentNullException.ThrowIfNull(model);
+
+        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddModel(_orig, model);
 
         var schemaName = GetSchemaName(model.Name);
         var isRecursive = IsSelfRecursive(model);
@@ -54,7 +59,7 @@ public sealed class ValibotSchemaSourceFileBuilder
                     documentation: BuildDocumentation(model.Description),
                     isExported: true))
                 .Add(BuildInferOutputTypeAlias(model.Name, schemaName)),
-            fileDocumentation: SchemaFileHeader(model.Name, "Valibot"));
+            fileDocumentation: SchemaFileHeader(model.OriginalName, model.Name, "Valibot"));
     }
 
     private static bool IsSelfRecursive(IrModel model)
@@ -104,6 +109,8 @@ public sealed class ValibotSchemaSourceFileBuilder
     {
         ArgumentNullException.ThrowIfNull(enumModel);
 
+        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddEnum(_orig, enumModel);
+
         var schemaName = GetSchemaName(enumModel.Name);
 
         // Переиспользуем {Name}Values из модели enum (v.picklist принимает этот массив),
@@ -118,12 +125,14 @@ public sealed class ValibotSchemaSourceFileBuilder
                     documentation: BuildDocumentation(enumModel.Description),
                     isExported: true))
                 .Add(BuildInferOutputTypeAlias(enumModel.Name, schemaName)),
-            fileDocumentation: SchemaFileHeader(enumModel.Name, "Valibot"));
+            fileDocumentation: SchemaFileHeader(enumModel.OriginalName, enumModel.Name, "Valibot"));
     }
 
-    private CommentNode SchemaFileHeader(string typeName, string library)
+    private CommentNode SchemaFileHeader(string originalName, string typeName, string library)
     {
-        var fileBase = _namingConverter.ToCamelCase(typeName);
+        // Имя файла/модуля — от исходного (до affix) имени, чтобы путь не менялся.
+        // Текст описания ссылается на идентификатор и сохраняет affix-имя.
+        var fileBase = _namingConverter.ToCamelCase(originalName);
         return TypeScriptDoc.FileHeader(
             $"{fileBase}.schema.ts",
             $"schemas/{fileBase}",
@@ -135,7 +144,7 @@ public sealed class ValibotSchemaSourceFileBuilder
         var imports = ImmutableList.CreateBuilder<ImportNode>();
         imports.AddRange(BuildValibotImport());
 
-        var enumFileName = _namingConverter.ToCamelCase(enumModel.Name);
+        var enumFileName = _namingConverter.ToCamelCase(enumModel.OriginalName);
         var modelPath = separateModels
             ? $"../../{_modelsPath}/{enumFileName}/{enumFileName}"
             : $"../{_modelsPath}/{enumFileName}";
@@ -166,7 +175,7 @@ public sealed class ValibotSchemaSourceFileBuilder
         // Для рекурсивных схем — нужен тип самой модели (для аннотации v.GenericSchema<T>).
         if (includeOwnModelType)
         {
-            var ownFileName = _namingConverter.ToCamelCase(model.Name);
+            var ownFileName = _namingConverter.ToCamelCase(model.OriginalName);
             var ownPath = separateModels
                 ? $"../../{_modelsPath}/{ownFileName}/{ownFileName}"
                 : $"../{_modelsPath}/{ownFileName}";
@@ -184,7 +193,8 @@ public sealed class ValibotSchemaSourceFileBuilder
 
         foreach (var dependency in dependencies)
         {
-            var depFileName = _namingConverter.ToCamelCase(dependency);
+            // Имя файла зависимости — от исходного (до affix) имени; спецификатор импорта affix.
+            var depFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(dependency, dependency));
             var importPath = separateModels
                 ? $"../{depFileName}/{depFileName}.schema"
                 : $"./{depFileName}.schema";

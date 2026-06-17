@@ -115,6 +115,13 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         else if (rawOptions.TryGetValue("resultSuffix", out var resultSuffixAlias) && resultSuffixAlias.ValueKind == JsonValueKind.String)
             opts.ResultTypeSuffix = NormalizeResultSuffix(resultSuffixAlias.GetString());
 
+        // Optional prefix for the result-union type name. Accept "resultTypePrefix" (primary) and
+        // "resultPrefix" (alias). Passed through trimmed; empty means no prefix.
+        if (rawOptions.TryGetValue("resultTypePrefix", out var resultPrefix) && resultPrefix.ValueKind == JsonValueKind.String)
+            opts.ResultTypePrefix = resultPrefix.GetString()?.Trim() ?? string.Empty;
+        else if (rawOptions.TryGetValue("resultPrefix", out var resultPrefixAlias) && resultPrefixAlias.ValueKind == JsonValueKind.String)
+            opts.ResultTypePrefix = resultPrefixAlias.GetString()?.Trim() ?? string.Empty;
+
         // Custom axios instance: { "axios": { "customInstancePath": "...", "customInstanceName": "..." } }.
         if (rawOptions.TryGetValue("axios", out var axios) && axios.ValueKind == JsonValueKind.Object)
         {
@@ -215,6 +222,16 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             Kind:           OptionKind.EnumSingle,
             Choices:        ResultSuffixChoices,
             DescriptionKey: "ts.resultTypeSuffix.desc",
+            Group:          "Clients"),
+
+        new(
+            Name:           "resultTypePrefix",
+            Description:    "Optional prefix for the per-operation result-union type name (e.g. {Prefix}{Operation}{ResultTypeSuffix}). Empty by default. Aliased as 'resultPrefix'.",
+            DefaultValue:   null,
+            IsRequired:     false,
+            Kind:           OptionKind.String,
+            Choices:        null,
+            DescriptionKey: "ts.resultTypePrefix.desc",
             Group:          "Clients"),
     ];
 

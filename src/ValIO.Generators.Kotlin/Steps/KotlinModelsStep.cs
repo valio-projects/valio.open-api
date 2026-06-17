@@ -46,8 +46,10 @@ public sealed class KotlinModelsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(model, modelsPackage, knownNames);
             var content = _renderer.Render(file);
-            var className = _namingConverter.ToPascalCase(model.Name);
-            var relativePath = $"{modelsDir}/{className}.kt";
+            // File name uses the ORIGINAL (pre-affix) name so files don't move when an
+            // affix is applied; the emitted class identifier stays affixed (see builder).
+            var fileName = _namingConverter.ToPascalCase(model.OriginalName);
+            var relativePath = $"{modelsDir}/{fileName}.kt";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }
 

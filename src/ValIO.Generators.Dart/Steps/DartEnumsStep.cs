@@ -32,7 +32,7 @@ public sealed class DartEnumsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(en);
             var content = _renderer.Render(file);
-            var fileBase = _namingConverter.ToSnakeCase(en.Name);
+            var fileBase = _namingConverter.ToSnakeCase(en.OriginalName);
             context.GeneratedFiles.Add(new GeneratedFile($"models/{fileBase}.dart", content));
         }
         return Task.CompletedTask;

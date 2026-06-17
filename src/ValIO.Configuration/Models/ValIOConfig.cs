@@ -261,5 +261,19 @@ public class ConfigNamingConventions
     public string Properties { get; set; } = "CamelCase";
     public string Methods { get; set; } = "CamelCase";
     public string Enums { get; set; } = "PascalCase";
+
+    /// <summary>
+    /// Опциональные prefix/suffix к ИМЕНАМ-ИДЕНТИФИКАТОРАМ генерируемых сущностей
+    /// (моделей, методов/операций, enum'ов, result/response-типов). Не влияют на имена
+    /// файлов и пути импорта. Применяются ко всем языкам/транспортам. Примеры:
+    /// modelSuffix="Request" → CreateJournalSchemaRequest; modelPrefix="Api" → ApiCreateJournalSchema;
+    /// methodSuffix="Method" → CreateJournalSchemaMethod.
+    /// </summary>
+    public string? ModelPrefix { get; set; }
+    public string? ModelSuffix { get; set; }
+    public string? MethodPrefix { get; set; }
+    public string? MethodSuffix { get; set; }
+    public string? EnumPrefix { get; set; }
+    public string? EnumSuffix { get; set; }
 }
 

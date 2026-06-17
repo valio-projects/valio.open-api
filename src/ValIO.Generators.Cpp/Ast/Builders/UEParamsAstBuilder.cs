@@ -35,7 +35,8 @@ public sealed class UEParamsAstBuilder
     public CppHeaderFileNode Build(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
     {
         var paramsName = _naming.ParamsStructName(operation.MethodName);
-        var fileName = _naming.ParamsFileName(operation.MethodName);
+        // File name uses the ORIGINAL (pre-affix) method name so the emitted file/include doesn't change with affixes.
+        var fileName = _naming.ParamsFileName(operation.OriginalMethodName);
         var category = _naming.OperationTypeCategory(_options.BlueprintCategory, clientName, operation.MethodName);
 
         var declarations = new List<AstNode>();
@@ -175,20 +176,34 @@ public sealed class UEParamsAstBuilder
 
         var referencedModels = new HashSet<string>();
         var referencedEnums = new HashSet<string>();
+        // Map affixed reference name → ORIGINAL name so #include paths don't change with affixes.
+        var orig = new Dictionary<string, string>(StringComparer.Ordinal);
         if (operation.RequestBody?.Type != null)
+        {
             CollectTypeReferences(operation.RequestBody.Type, referencedModels, referencedEnums, enumNames);
+            CollectOriginalNames(operation.RequestBody.Type, orig);
+        }
         foreach (var p in operation.PathParameters)
+        {
             CollectTypeReferences(p.Type, referencedModels, referencedEnums, enumNames);
+            CollectOriginalNames(p.Type, orig);
+        }
         foreach (var p in operation.QueryParameters)
+        {
             CollectTypeReferences(p.Type, referencedModels, referencedEnums, enumNames);
+            CollectOriginalNames(p.Type, orig);
+        }
         foreach (var p in operation.HeaderParameters)
+        {
             CollectTypeReferences(p.Type, referencedModels, referencedEnums, enumNames);
+            CollectOriginalNames(p.Type, orig);
+        }
 
         // Params в Public/Endpoints/{OpId}/, Models/Enums в Public/Models, Public/Enums
         foreach (var modelName in referencedModels.OrderBy(x => x))
-            includes.Add(new CppIncludeDirectiveNode(_naming.ModelIncludePathFromEndpoint(modelName)));
+            includes.Add(new CppIncludeDirectiveNode(_naming.ModelIncludePathFromEndpoint(orig.GetValueOrDefault(modelName, modelName))));
         foreach (var enumName in referencedEnums.OrderBy(x => x))
-            includes.Add(new CppIncludeDirectiveNode(_naming.EnumIncludePathFromEndpoint(enumName)));
+            includes.Add(new CppIncludeDirectiveNode(_naming.EnumIncludePathFromEndpoint(orig.GetValueOrDefault(enumName, enumName))));
 
         // .generated.h должен быть всегда последним (требование UHT)
         includes.Add(new CppIncludeDirectiveNode(fileName.Replace(".h", _options.GeneratedHeaderSuffix)));
@@ -259,6 +274,39 @@ public sealed class UEParamsAstBuilder
             defaultValue: defaultValue,
             documentation: !string.IsNullOrWhiteSpace(param.Description)
                 ? new CommentNode($"@brief {param.Description}", CommentKind.MultiLine) : null);
+    }
+
+    /// <summary>
+    /// Рекурсивно собирает сопоставления «affix-имя ссылки → исходное имя» из IrType.
+    /// Используется для путей #include, которые не должны меняться при affix.
+    /// </summary>
+    private static void CollectOriginalNames(IrType type, Dictionary<string, string> orig)
+    {
+        switch (type)
+        {
+            case IrModelReference modelRef:
+                orig[modelRef.ModelName] = modelRef.OriginalModelName;
+                break;
+            case IrArrayType array:
+                CollectOriginalNames(array.ElementType, orig);
+                break;
+            case IrDictionaryType dict:
+                CollectOriginalNames(dict.KeyType, orig);
+                CollectOriginalNames(dict.ValueType, orig);
+                break;
+            case IrNullableType nullable:
+                CollectOriginalNames(nullable.InnerType, orig);
+                break;
+            case IrOptionalType optional:
+                CollectOriginalNames(optional.InnerType, orig);
+                break;
+            case IrUnionType union:
+                foreach (var t in union.Types) CollectOriginalNames(t, orig);
+                break;
+            case IrIntersectionType intersection:
+                foreach (var t in intersection.Types) CollectOriginalNames(t, orig);
+                break;
+        }
     }
 
     /// <summary>

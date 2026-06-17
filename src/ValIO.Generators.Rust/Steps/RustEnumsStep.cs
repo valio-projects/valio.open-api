@@ -36,7 +36,7 @@ public sealed class RustEnumsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(irEnum);
             var content = _renderer.Render(file);
-            var snake = _namingConverter.ToSnakeCase(irEnum.Name);
+            var snake = _namingConverter.ToSnakeCase(irEnum.OriginalName);
             var relativePath = $"{modelsDir}/{snake}.rs";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }

@@ -33,11 +33,14 @@ public sealed class FSharpEnumsStep : ICodeGenerationStep
 
         foreach (var irEnum in context.IrDocument.Enums)
         {
+            // Emitted module/type identifiers keep the affixed name; the file name
+            // derives from the pre-affix original so generated paths don't change.
             var typeName = _namingConverter.ToPascalCase(irEnum.Name);
+            var fileName = _namingConverter.ToPascalCase(irEnum.OriginalName);
             var moduleName = FSharpStepHelper.ModelModuleName(opts, typeName);
             var file = builder.BuildFile(irEnum, moduleName);
             var content = _renderer.Render(file);
-            var relativePath = $"{FSharpStepHelper.ModelsDir}/{typeName}.fs";
+            var relativePath = $"{FSharpStepHelper.ModelsDir}/{fileName}.fs";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }
 

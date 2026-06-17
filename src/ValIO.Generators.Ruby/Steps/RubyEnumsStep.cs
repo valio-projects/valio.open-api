@@ -37,7 +37,10 @@ public sealed class RubyEnumsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(irEnum);
             var content = _renderer.Render(file);
-            var fileName = _namingConverter.ToSnakeCase(irEnum.Name);
+            // File name uses the PRE-affix name so generated file paths stay stable
+            // when an IR affix renames the emitted class. The class identifier built
+            // by the builder still uses the affixed irEnum.Name.
+            var fileName = _namingConverter.ToSnakeCase(irEnum.OriginalName);
             var relativePath = $"{modelsDir}/{fileName}.rb";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }

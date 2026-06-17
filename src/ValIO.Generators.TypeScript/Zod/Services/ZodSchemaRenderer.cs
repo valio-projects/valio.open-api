@@ -28,6 +28,9 @@ public class ZodSchemaRenderer
     private readonly string _modelsPath;
     private readonly string _uuidFormat;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     public ZodSchemaRenderer(
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
@@ -72,9 +75,11 @@ public class ZodSchemaRenderer
             throw new ArgumentNullException(nameof(model));
         
         var sb = new StringBuilder(4096);
-        
+
+        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddModel(_orig, model);
+
         var schemaName = $"{model.Name}Schema";
-        var modelFileName = _namingConverter.ToCamelCase(model.Name);
+        var modelFileName = _namingConverter.ToCamelCase(model.OriginalName);
 
         AppendFileHeader(sb, $"{modelFileName}.schema.ts", $"schemas/{modelFileName}", $"Zod validation schema for {model.Name}.");
         sb.AppendLine(ZodImportLine);
@@ -142,9 +147,11 @@ public class ZodSchemaRenderer
         
         var sb = new StringBuilder();
 
+        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddEnum(_orig, enumModel);
+
         var schemaName = $"{enumModel.Name}Schema";
         var typeName = enumModel.Name;
-        var enumFileName = _namingConverter.ToCamelCase(enumModel.Name);
+        var enumFileName = _namingConverter.ToCamelCase(enumModel.OriginalName);
         var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
         var constArrayName = $"{typeName}Values";
 
@@ -274,14 +281,15 @@ public class ZodSchemaRenderer
     
     private string SchemaNameToFileName(string schemaName)
     {
-        var typeName = schemaName.EndsWith("Schema", StringComparison.OrdinalIgnoreCase) 
-            ? schemaName.Substring(0, schemaName.Length - 6) 
+        var typeName = schemaName.EndsWith("Schema", StringComparison.OrdinalIgnoreCase)
+            ? schemaName.Substring(0, schemaName.Length - 6)
             : schemaName;
-            
+
         if (string.IsNullOrEmpty(typeName))
             return schemaName.ToLowerInvariant();
-        
-        return _namingConverter.ToCamelCase(typeName);
+
+        // Имя файла — от исходного (до affix) имени, чтобы путь не менялся.
+        return _namingConverter.ToCamelCase(_orig.GetValueOrDefault(typeName, typeName));
     }
     
     /// <summary>

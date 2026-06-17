@@ -22,8 +22,9 @@
           "axios": {
             "customInstancePath": "@app/valioAxios.ts",
             "customInstanceName": "PanoramasValioAxiosClient"
-          }
-        
+          },
+          "resultTypePrefix": ""
+
       },
       "fileOrganization": {
         "groupingStrategy": "by-route",
@@ -37,7 +38,13 @@
         "models": "PascalCase",
         "properties": "CamelCase",
         "methods": "PascalCase",
-        "enums": "PascalCase"
+        "enums": "PascalCase",
+        "modelPrefix": "",
+        "modelSuffix": "",
+        "methodPrefix": "",
+        "methodSuffix": "",
+        "enumPrefix": "",
+        "enumSuffix": ""
       }
     }
   }

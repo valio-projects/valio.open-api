@@ -37,7 +37,7 @@ public sealed class DartModelsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(model);
             var content = _renderer.Render(file);
-            var fileBase = _namingConverter.ToSnakeCase(model.Name);
+            var fileBase = _namingConverter.ToSnakeCase(model.OriginalName);
             context.GeneratedFiles.Add(new GeneratedFile($"models/{fileBase}.dart", content));
         }
         return Task.CompletedTask;

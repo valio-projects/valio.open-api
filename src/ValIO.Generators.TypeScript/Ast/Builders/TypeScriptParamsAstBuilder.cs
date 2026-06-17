@@ -21,6 +21,9 @@ public sealed class TypeScriptParamsAstBuilder
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
 
+    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
+    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
+
     public TypeScriptParamsAstBuilder(
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder)
@@ -92,6 +95,8 @@ public sealed class TypeScriptParamsAstBuilder
         FileOrganization? fileOrganization,
         string currentOperationName)
     {
+        OriginalNameMap.AddOperation(_orig, operation);
+
         var declarations = new List<DeclarationNode>();
         var imports = new List<ImportNode>();
 
@@ -152,7 +157,7 @@ public sealed class TypeScriptParamsAstBuilder
 
         var exports = declarations.Select(d => new ExportNode(d, ExportKind.Named)).ToImmutableList();
 
-        var fileBase = _namingConverter.ToCamelCase(operation.MethodName);
+        var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         return new SourceFileNode(
             imports: imports.ToImmutableList(),
             exports: exports,
@@ -411,7 +416,7 @@ public sealed class TypeScriptParamsAstBuilder
 
     private ImportNode CreateModelImport(string typeName, FileOrganization? fileOrganization)
     {
-        var modelFileName = _namingConverter.ToCamelCase(typeName);
+        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(typeName, typeName));
         var relativePath = $"../../{fileOrganization?.ModelsPath ?? "models"}/{modelFileName}/{modelFileName}";
         return new ImportNode(
             items: new[] { new IdentifierNode(typeName) }.ToImmutableList(),

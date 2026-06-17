@@ -36,7 +36,9 @@ public sealed class SwiftEnumsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(irEnum);
             var content = _renderer.Render(file);
-            var typeName = _namingConverter.ToPascalCase(irEnum.Name);
+            // Emitted identifiers keep the affixed name (built in the AST builder from irEnum.Name),
+            // but the FILE NAME must use the pre-affix name so generated files don't move.
+            var typeName = _namingConverter.ToPascalCase(irEnum.OriginalName);
             var relativePath = $"{modelsDir}/{typeName}.swift";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }

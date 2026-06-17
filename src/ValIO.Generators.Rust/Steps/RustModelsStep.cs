@@ -41,7 +41,7 @@ public sealed class RustModelsStep : ICodeGenerationStep
         {
             var file = builder.BuildFile(model);
             var content = _renderer.Render(file);
-            var snake = _namingConverter.ToSnakeCase(model.Name);
+            var snake = _namingConverter.ToSnakeCase(model.OriginalName);
             var relativePath = $"{modelsDir}/{snake}.rs";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }
