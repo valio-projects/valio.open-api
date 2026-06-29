@@ -179,20 +179,11 @@ public class ZodSchemaRenderer
             return sb.ToString();
         }
 
-        // Числовые enum: z.enum работает только со строками, поэтому сохраняем
-        // прежнее поведение (локальный массив значений + текущая сборка схемы).
+        // Числовые enum: z.enum работает только со строками, поэтому строим схему через ZodAstBuilder.
+        // Массив значений {Name}Values здесь НЕ объявляем и НЕ реэкспортируем — единственный источник
+        // в модели enum (models/{enum}/{enum}.ts). Иначе баррел index.ts реэкспортирует {Name}Values
+        // из обоих модулей → TS2308 (ambiguous re-export). Схема не использует этот массив.
         sb.AppendLine();
-
-        CodeFormatter.AppendLine(sb, 0, $"export const {constArrayName} = [");
-        for (int i = 0; i < enumModel.Values.Count; i++)
-        {
-            var value = enumModel.Values[i];
-            var comma = i < enumModel.Values.Count - 1 ? "," : "";
-            var valueString = value.Value?.ToString() ?? "0";
-            CodeFormatter.AppendLine(sb, 1, $"{valueString}{comma}");
-        }
-        CodeFormatter.AppendLine(sb, 0, "] as const satisfies readonly number[];");
-        CodeFormatter.AppendEmptyLine(sb);
 
         if (!string.IsNullOrEmpty(enumModel.Description))
         {
