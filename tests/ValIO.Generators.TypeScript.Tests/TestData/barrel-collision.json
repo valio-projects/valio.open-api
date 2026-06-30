@@ -1,0 +1,29 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "barrel-collision", "version": "1.0.0" },
+  "paths": {
+    "/thing": {
+      "get": {
+        "operationId": "getThing",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/GetThingQueryResult" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "GetThingQueryResult": {
+        "type": "object",
+        "properties": { "id": { "type": "string" } }
+      }
+    }
+  }
+}

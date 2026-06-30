@@ -1,0 +1,21 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "parameterless-mutation", "version": "1.0.0" },
+  "paths": {
+    "/ping": {
+      "post": {
+        "operationId": "doPing",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
