@@ -50,7 +50,7 @@ public class ZodSchemasStepTests
     }
 
     [Test]
-    public async Task ModelSchema_ImportsModelType_ViaRelativeUpwardsPath()
+    public async Task ModelSchema_IsColocatedWithModel_AndImportsTypeFromSameDirectory()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
@@ -59,11 +59,14 @@ public class ZodSchemasStepTests
             ValidationLibrary = "zod3",
         });
 
+        // The schema is co-located with the model under models/user/, next to user.ts, so it imports
+        // the interface from the sibling file via "./user" — not an upward ../../models path.
         var userSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/user/user.schema.ts", StringComparison.Ordinal));
-        // From schemas/user/user.schema.ts (root schemas), the model lives at
-        // models/user/user.ts → relative ../../models/user/user.
-        userSchema.Content.Should().Contain("../../models/user/user");
+            f.RelativePath.Replace('\\', '/').EndsWith("models/user/user.schema.ts", StringComparison.Ordinal));
+        ctx.GeneratedFiles.Should().Contain(f =>
+            f.RelativePath.Replace('\\', '/').EndsWith("models/user/user.ts", StringComparison.Ordinal));
+        userSchema.Content.Should().Contain("from \"./user\"");
+        userSchema.Content.Should().NotContain("../../models/");
     }
 
     [Test]
@@ -78,7 +81,7 @@ public class ZodSchemasStepTests
 
         // Pet schema imports CategorySchema and TagSchema from sibling directories.
         var petSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/pet/pet.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/pet/pet.schema.ts", StringComparison.Ordinal));
         petSchema.Content.Should().Contain("'../category/category.schema'");
         petSchema.Content.Should().Contain("'../tag/tag.schema'");
     }
@@ -94,10 +97,10 @@ public class ZodSchemasStepTests
         });
 
         var enumSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/userRole/userRole.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/userRole/userRole.schema.ts", StringComparison.Ordinal));
 
         // Reuses UserRoleValues from the enum model instead of re-declaring it.
-        enumSchema.Content.Should().Contain("import { UserRoleValues } from \"../../models/userRole/userRole\"");
+        enumSchema.Content.Should().Contain("import { UserRoleValues } from \"./userRole\"");
         enumSchema.Content.Should().Contain("z.enum(UserRoleValues)");
         enumSchema.Content.Should().NotContain("UserRoleValues = [");
     }

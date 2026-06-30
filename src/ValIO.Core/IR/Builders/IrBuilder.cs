@@ -1436,7 +1436,10 @@ public class IrBuilder
             Name = name,
             Type = type,
             IsRequired = isRequired,
-            Description = parameter.Description
+            // Parameter-level description wins; otherwise fall back to the parameter's schema description
+            // (some OpenAPI emitters put it there). Then the default comes from the parameter's schema.
+            Description = !string.IsNullOrWhiteSpace(parameter.Description) ? parameter.Description : schema.Description,
+            DefaultValue = ExtractDefaultValue(schema.Default)
         };
     }
     

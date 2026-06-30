@@ -63,4 +63,17 @@ internal interface IClientValidationStrategy
     /// без parse-рантайма.
     /// </summary>
     IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes);
+
+    /// <summary>
+    /// Returns the typed annotation for a declared schema const whose validated type is
+    /// <paramref name="validatedTypeName"/>, so a params/results schema reads like a model schema
+    /// (e.g. Zod <c>ZodSchema&lt;T&gt;</c>, Valibot <c>v.GenericSchema&lt;T&gt;</c>).
+    /// </summary>
+    /// <param name="validatedTypeName">The generated interface/type name the schema validates.</param>
+    /// <returns>
+    /// The annotation <see cref="TypeNode"/>, or <see langword="null"/> for validators that do not
+    /// annotate the const (TypeBox relies on <c>Static&lt;typeof&gt;</c>; None when validation is off).
+    /// The caller adds a type-only import for <paramref name="validatedTypeName"/> only when this is non-null.
+    /// </returns>
+    TypeNode? SchemaTypeAnnotation(string validatedTypeName);
 }

@@ -81,7 +81,7 @@ public sealed class TypeBoxSchemaSourceFileBuilder
         var fileBase = _namingConverter.ToCamelCase(originalName);
         return TypeScriptDoc.FileHeader(
             $"{fileBase}.schema.ts",
-            $"schemas/{fileBase}",
+            $"{_modelsPath}/{fileBase}",
             $"TypeBox validation schema for {typeName}.");
     }
 
@@ -91,9 +91,8 @@ public sealed class TypeBoxSchemaSourceFileBuilder
         imports.AddRange(BuildTypeBoxImports());
 
         var enumFileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
-        var modelPath = separateModels
-            ? $"../../{_modelsPath}/{enumFileName}/{enumFileName}"
-            : $"../{_modelsPath}/{enumFileName}";
+        // Co-located: the enum interface + {Name}Values live next to the schema in the same directory.
+        var modelPath = $"./{enumFileName}";
 
         imports.Add(new ImportNode(
             items: ImmutableList.Create(new IdentifierNode($"{irEnum.Name}Values")),

@@ -48,6 +48,45 @@ public class ZodParamsSchemasStepTests
         paramsSchema!.Content.Should().Contain("GetUserByIdRouteParamsSchema");
     }
 
+    // Request A: the params-schema const is typed against its params interface (imported type-only),
+    // mirroring model schemas. getUserById has a single (route) param group → the flat {Op}Params type.
+    [Test]
+    public async Task Zod_ParamsSchema_IsTypedWithParamsInterface()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "zod3",
+        });
+
+        var paramsSchema = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith("getUserById.params.schema.ts", StringComparison.Ordinal));
+        paramsSchema.Content.Should().Contain("import { z, ZodSchema }");
+        paramsSchema.Content.Should().Contain("import type { GetUserByIdParams } from \"./getUserById.params\"");
+        paramsSchema.Content.Should().Contain("GetUserByIdRouteParamsSchema: ZodSchema<GetUserByIdParams>");
+    }
+
+    // Query params arrive as strings → numeric/boolean primitives coerce; OpenAPI default → .default(),
+    // and the parameter description → .describe() (Zod schema metadata).
+    [Test]
+    public async Task Zod_QueryParams_Coerce_Default_AndDescribe()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("numeric-query-param.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "zod3",
+        });
+
+        var paramsSchema = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith("listItems.params.schema.ts", StringComparison.Ordinal));
+        // page: integer, optional, default 10, described.
+        paramsSchema.Content.Should().Contain("z.coerce.number().int().optional().default(10).describe(\"Page number (1-based).\")");
+        // active: boolean, optional, coerced.
+        paramsSchema.Content.Should().Contain("z.coerce.boolean().optional()");
+    }
+
     [Test]
     public async Task Zod4_UsesZodV4ImportPath()
     {
@@ -83,7 +122,7 @@ public class ZodParamsSchemasStepTests
         paramsSchema.Content.Should().Contain("UserRoleSchema");
         // ...and now imports it from the schemas folder (separate-models subfolder layout).
         paramsSchema.Content.Should().Contain(
-            "import { UserRoleSchema } from \"../../schemas/userRole/userRole.schema\";");
+            "import { UserRoleSchema } from \"../../models/userRole/userRole.schema\";");
     }
 
     [Test]
@@ -107,8 +146,8 @@ public class ZodParamsSchemasStepTests
             f.RelativePath.EndsWith("listUsers.params.schema.ts", StringComparison.Ordinal));
 
         paramsSchema.Content.Should().Contain(
-            "import { UserRoleSchema } from \"../../schemas/userRole.schema\";");
-        paramsSchema.Content.Should().NotContain("schemas/userRole/userRole.schema");
+            "import { UserRoleSchema } from \"../../models/userRole.schema\";");
+        paramsSchema.Content.Should().NotContain("models/userRole/userRole.schema");
     }
 
     [Test]

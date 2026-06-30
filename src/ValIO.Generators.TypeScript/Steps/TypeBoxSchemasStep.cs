@@ -36,7 +36,6 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var fileOrg = context.Configuration.FileOrganization;
         var modelsPath = fileOrg.ModelsPath ?? "models";
-        var schemasPath = fileOrg.SchemasPath ?? "schemas";
         var builder = new TypeBoxSchemaSourceFileBuilder(_namingConverter, modelsPath, opts?.UuidFormat);
         var renderer = new TypeScriptAstRenderer(_nodeRenderers);
 
@@ -50,7 +49,7 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
             if (!byName.TryGetValue(name, out var model))
                 continue;
 
-            AddModelSchema(context, builder, renderer, model, schemasPath, fileOrg.SeparateModels);
+            AddModelSchema(context, builder, renderer, model, modelsPath, fileOrg.SeparateModels);
             processed.Add(name);
         }
 
@@ -58,13 +57,13 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         {
             ct.ThrowIfCancellationRequested();
             if (!processed.Contains(model.Name))
-                AddModelSchema(context, builder, renderer, model, schemasPath, fileOrg.SeparateModels);
+                AddModelSchema(context, builder, renderer, model, modelsPath, fileOrg.SeparateModels);
         }
 
         foreach (var irEnum in context.IrDocument.Enums)
         {
             ct.ThrowIfCancellationRequested();
-            AddEnumSchema(context, builder, renderer, irEnum, schemasPath, fileOrg.SeparateModels);
+            AddEnumSchema(context, builder, renderer, irEnum, modelsPath, fileOrg.SeparateModels);
         }
 
         return Task.CompletedTask;
@@ -75,18 +74,19 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         TypeBoxSchemaSourceFileBuilder builder,
         TypeScriptAstRenderer renderer,
         ValIO.Core.IR.IrModel model,
-        string schemasPath,
+        string modelsPath,
         bool separateModels)
     {
         var fileName = _namingConverter.ToCamelCase(model.OriginalName);
         var content = renderer.Render(builder.BuildModelSchemaSourceFile(
             model,
             currentFileName: fileName,
-            schemasPath: schemasPath));
+            schemasPath: modelsPath));
 
+        // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
         var relativePath = separateModels
-            ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
-            : $"{schemasPath}/{fileName}.schema.ts";
+            ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
+            : $"{modelsPath}/{fileName}.schema.ts";
 
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }
@@ -96,15 +96,16 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         TypeBoxSchemaSourceFileBuilder builder,
         TypeScriptAstRenderer renderer,
         ValIO.Core.IR.IrEnum irEnum,
-        string schemasPath,
+        string modelsPath,
         bool separateModels)
     {
         var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum, separateModels));
 
         var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
+        // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
         var relativePath = separateModels
-            ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
-            : $"{schemasPath}/{fileName}.schema.ts";
+            ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
+            : $"{modelsPath}/{fileName}.schema.ts";
 
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }

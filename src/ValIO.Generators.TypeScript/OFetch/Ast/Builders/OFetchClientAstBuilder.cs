@@ -398,18 +398,15 @@ public sealed class OFetchClientAstBuilder
     {
         var resultTypeName = _resultsBuilder.ResultTypeName(operation.MethodName);
         var responseStatus = Member(Id("response"), "status");
-        var successful = new BinaryExpressionNode(
-            new BinaryExpressionNode(responseStatus, BinaryOperator.GreaterThanOrEqual, Number(200)),
-            BinaryOperator.LogicalAnd,
-            new BinaryExpressionNode(responseStatus, BinaryOperator.LessThan, Number(300)));
-
+        // Undocumented status → catch-all `…ResultOther`, typed as a literal failure
+        // (isSuccessful: false, isFailed: true) so the result union stays discriminable.
         return new ReturnStatementNode(new CastExpressionNode(
             Simple(resultTypeName),
             Object(
                 ("status", responseStatus),
                 ("body", Id("responseData")),
-                ("isSuccessful", successful),
-                ("isFailed", new UnaryExpressionNode(UnaryOperator.LogicalNot, successful))),
+                ("isSuccessful", Bool(false)),
+                ("isFailed", Bool(true))),
             useAsOperator: true));
     }
 
@@ -482,11 +479,12 @@ public sealed class OFetchClientAstBuilder
 
     private string BuildSchemaImportPath(string modelName, FileOrganization fileOrganization)
     {
-        var schemasPath = fileOrganization.SchemasPath ?? "schemas";
+        // Model schemas are co-located with their models under modelsPath.
+        var modelsPath = fileOrganization.ModelsPath ?? "models";
         var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
         return fileOrganization.SeparateModels
-            ? $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema"
-            : $"../../{schemasPath}/{modelFileName}.schema";
+            ? $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema"
+            : $"../../{modelsPath}/{modelFileName}.schema";
     }
 
     private static ExpressionNode BuildParameterAccess(ExpressionNode source, string name, bool sourceMayBeUndefined) =>

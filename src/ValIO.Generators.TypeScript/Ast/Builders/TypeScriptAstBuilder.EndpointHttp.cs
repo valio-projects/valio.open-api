@@ -362,17 +362,12 @@ public partial class TypeScriptAstBuilder
                 {
                     new PropertyAssignmentNode(new IdentifierNode("status"), responseStatusRef),
                     new PropertyAssignmentNode(new IdentifierNode("body"), responseDataRef),
+                    // Undocumented status → catch-all `…ResultOther`, which is typed as a literal failure
+                    // (isSuccessful: false, isFailed: true) to keep the result union discriminable.
                     new PropertyAssignmentNode(new IdentifierNode("isSuccessful"),
-                        new BinaryExpressionNode(
-                            new BinaryExpressionNode(responseStatusRef, BinaryOperator.GreaterThanOrEqual, new LiteralExpressionNode(200, LiteralKind.Number)),
-                            BinaryOperator.LogicalAnd,
-                            new BinaryExpressionNode(responseStatusRef, BinaryOperator.LessThan, new LiteralExpressionNode(300, LiteralKind.Number)))),
+                        new LiteralExpressionNode(false, LiteralKind.Boolean)),
                     new PropertyAssignmentNode(new IdentifierNode("isFailed"),
-                        new UnaryExpressionNode(UnaryOperator.LogicalNot,
-                            new BinaryExpressionNode(
-                                new BinaryExpressionNode(responseStatusRef, BinaryOperator.GreaterThanOrEqual, new LiteralExpressionNode(200, LiteralKind.Number)),
-                                BinaryOperator.LogicalAnd,
-                                new BinaryExpressionNode(responseStatusRef, BinaryOperator.LessThan, new LiteralExpressionNode(300, LiteralKind.Number)))))
+                        new LiteralExpressionNode(true, LiteralKind.Boolean))
                 }.ToImmutableList())));
         }
         else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })

@@ -56,7 +56,7 @@ public class JsDocGenerationTests
             MockLibrary = "msw",
         });
 
-        ShouldHaveHeader(File(ctx, "schemas/user/user.schema.ts"), "user.schema.ts", "schemas/user");
+        ShouldHaveHeader(File(ctx, "models/user/user.schema.ts"), "user.schema.ts", "models/user");
         ShouldHaveHeader(File(ctx, "getUserById.ky.ts"), "getUserById.ky.ts", "endpoints/getUserById");
         ShouldHaveHeader(File(ctx, "getUserById.params.schema.ts"), "getUserById.params.schema.ts", "getUserById.params.schema");
         ShouldHaveHeader(File(ctx, "mocks/handlers.ts"), "handlers.ts", "mocks/handlers");
@@ -88,6 +88,6 @@ public class JsDocGenerationTests
             ValidationLibrary = "valibot",
         });
 
-        File(ctx, "schemas/userRole/userRole.schema.ts").Should().Contain("@typedef");
+        File(ctx, "models/userRole/userRole.schema.ts").Should().Contain("@typedef");
     }
 }

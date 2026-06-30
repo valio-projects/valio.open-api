@@ -24,7 +24,7 @@ public class TypeScriptModelsStepTests
 
         var modelFiles = ctx.GeneratedFiles
             .Where(f => f.RelativePath.Replace('\\', '/').StartsWith("models/", StringComparison.Ordinal)
-                        && !f.RelativePath.Contains("/schemas/", StringComparison.Ordinal))
+                        && !f.RelativePath.Contains("/models/", StringComparison.Ordinal))
             .ToList();
         modelFiles.Should().NotBeEmpty();
         modelFiles.Should().AllSatisfy(f => f.RelativePath.Replace('\\', '/').Should().MatchRegex(@"models/[a-z]\w*/[a-z]\w*\.ts"));

@@ -1,0 +1,21 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "numeric-query-param", "version": "1.0.0" },
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "listItems",
+        "parameters": [
+          { "name": "page", "in": "query", "required": false, "description": "Page number (1-based).", "schema": { "type": "integer", "default": 10 } },
+          { "name": "active", "in": "query", "required": false, "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": { "type": "object", "properties": { "ok": { "type": "boolean" } } } } }
+          }
+        }
+      }
+    }
+  }
+}

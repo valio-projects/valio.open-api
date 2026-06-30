@@ -39,7 +39,7 @@ public class ComplexSchemaTests
         });
 
         var treeSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/treeNode/treeNode.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/treeNode/treeNode.schema.ts", StringComparison.Ordinal));
         treeSchema.Content.Should().Contain("z.lazy");
     }
 
@@ -53,7 +53,7 @@ public class ComplexSchemaTests
         });
 
         var treeSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/treeNode/treeNode.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/treeNode/treeNode.schema.ts", StringComparison.Ordinal));
         // Without this annotation TS infers `any` because v.lazy(...) breaks inference.
         treeSchema.Content.Should().Contain("v.GenericSchema<TreeNode>");
         treeSchema.Content.Should().Contain("import type { TreeNode }");
@@ -70,7 +70,7 @@ public class ComplexSchemaTests
         });
 
         var treeSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/treeNode/treeNode.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/treeNode/treeNode.schema.ts", StringComparison.Ordinal));
         // Type.Recursive((This) => Type.Object({..., children: Type.Array(This)}))
         treeSchema.Content.Should().Contain("Type.Recursive");
         treeSchema.Content.Should().MatchRegex(@"\(This\)\s*=>");
@@ -87,7 +87,7 @@ public class ComplexSchemaTests
         });
 
         var uploadFormSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/uploadForm/uploadForm.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/uploadForm/uploadForm.schema.ts", StringComparison.Ordinal));
         // Required binary field needs z.instanceof(Blob) — z.any() infers as
         // `any | undefined` and breaks the required match against `Blob`.
         uploadFormSchema.Content.Should().Contain("z.instanceof(Blob)");

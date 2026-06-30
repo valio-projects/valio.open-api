@@ -28,7 +28,7 @@ export interface GetUserByIdResult200 {
     isFailed: false;
 }
 
-// Response for status codes not explicitly defined in OpenAPI schema
+// Response for status codes not explicitly defined in OpenAPI schema. Treated as a failure (isSuccessful: false) so the union stays discriminable; an undocumented 2xx (e.g. 204) lands here.
 export interface GetUserByIdResultOther {
     /**
      * HTTP status code not in schema (e.g. 204, 301, 503)
@@ -39,13 +39,13 @@ export interface GetUserByIdResultOther {
      */
     body: unknown;
     /**
-     * Computed from status — true if 2xx
+     * Always false — undocumented status codes are treated as non-success
      */
-    isSuccessful: boolean;
+    isSuccessful: false;
     /**
-     * Computed from status — true if not 2xx
+     * Always true — undocumented status codes are treated as failures
      */
-    isFailed: boolean;
+    isFailed: true;
 }
 
 // Discriminated union result for getUserById. Check status to narrow type.

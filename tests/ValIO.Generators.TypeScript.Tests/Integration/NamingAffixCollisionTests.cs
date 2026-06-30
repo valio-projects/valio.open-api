@@ -70,7 +70,7 @@ public class NamingAffixCollisionTests
         files.Should().NotContain(f => Norm(f.RelativePath).Contains("createJournalSchemaModel"));
 
         // 5) Zod-схема названа по affix-типу, но импортирует модель из прежнего пути.
-        var schemaFile = files.Single(f => Norm(f.RelativePath) == "schemas/createJournalSchema/createJournalSchema.schema.ts");
+        var schemaFile = files.Single(f => Norm(f.RelativePath) == "models/createJournalSchema/createJournalSchema.schema.ts");
         schemaFile.Content.Should().Contain("CreateJournalSchemaModelSchema");
         schemaFile.Content.Should().Contain("import type { CreateJournalSchemaModel }");
     }

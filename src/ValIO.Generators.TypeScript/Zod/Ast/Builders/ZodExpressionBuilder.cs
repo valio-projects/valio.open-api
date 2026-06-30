@@ -30,11 +30,16 @@ public static class ZodExpressionBuilder
         bool useBigInt,
         IrPropertyConstraints? constraints = null,
         string? constraintsRef = null,
-        string? uuidFormat = null)
+        string? uuidFormat = null,
+        string? description = null)
     {
         var expr = BuildBasePrimitive(primitiveKind, useBigInt);
         expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
         expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
+        // Carry the OpenAPI property description into the schema as Zod metadata (.describe(...)).
+        if (!string.IsNullOrWhiteSpace(description))
+            expr = Chain(expr, "describe",
+                new[] { (ExpressionNode)new LiteralExpressionNode(description!, ValIO.Core.Ast.Enums.LiteralKind.String) });
         return new ZodExpressionSchemaNode(expr);
     }
 

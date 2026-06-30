@@ -95,11 +95,17 @@ public sealed record IrParameter
     /// Является ли параметр обязательным
     /// </summary>
     public required bool IsRequired { get; init; }
-    
+
     /// <summary>
     /// Описание
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>
+    /// Значение по умолчанию из OpenAPI (<c>parameter.schema.default</c>), или <see langword="null"/>.
+    /// Используется для генерации <c>.default(...)</c> в схеме параметра.
+    /// </summary>
+    public object? DefaultValue { get; init; }
 }
 
 /// <summary>

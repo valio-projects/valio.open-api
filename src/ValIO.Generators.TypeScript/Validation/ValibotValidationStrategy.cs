@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Generators.TypeScript.Valibot.Ast.Builders;
@@ -41,6 +42,10 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
 
     public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
         definedTypes.Count > 0 ? [ValibotImport()] : [];
+
+    /// <inheritdoc/>
+    public TypeNode? SchemaTypeAnnotation(string validatedTypeName) =>
+        new RawTypeNode($"v.GenericSchema<{validatedTypeName}>");
 
     private static ImportNode ValibotImport() =>
         new(ImmutableList.Create(new IdentifierNode("v")), "valibot", ImportKind.Namespace);

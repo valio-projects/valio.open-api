@@ -159,7 +159,8 @@ public class ZodAstBuilder
                 property?.Constraints,
                 property != null && !string.IsNullOrEmpty(constraintsObjectName)
                     ? $"{constraintsObjectName}.{property.Name}"
-                    : null),
+                    : null,
+                property?.Description),
             IrModelReference r => BuildZodModelReference(r, currentModelName),
             IrArrayType arr => BuildZodArray(arr, currentModelName),
             IrDictionaryType dict => BuildZodDictionary(dict),
@@ -221,7 +222,8 @@ public class ZodAstBuilder
     private ZodSchemaNode BuildZodPrimitive(
         IrPrimitiveType primitiveType,
         IrPropertyConstraints? constraints = null,
-        string? constraintsRef = null)
+        string? constraintsRef = null,
+        string? description = null)
     {
         var kind = primitiveType.PrimitiveKind;
         // Binary/ByteArray/File сериализуются runtime'ом как Blob/File.
@@ -233,7 +235,7 @@ public class ZodAstBuilder
         if (kind is IrPrimitiveKind.File)
             return BuildZodInstanceOf("File");
 
-        return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef, _uuidFormat);
+        return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef, _uuidFormat, description);
     }
 
     private static ZodExpressionSchemaNode BuildZodInstanceOf(string typeName)

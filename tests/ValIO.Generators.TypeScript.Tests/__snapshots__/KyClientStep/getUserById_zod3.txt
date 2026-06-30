@@ -11,7 +11,7 @@ import type { Options } from "ky";
 import type { GetUserByIdParams } from "./getUserById.params";
 import type { GetUserByIdResults } from "./getUserById.results";
 import { GetUserByIdRouteParamsSchema } from "./getUserById.params.schema";
-import { UserSchema } from "../../schemas/user/user.schema";
+import { UserSchema } from "../../models/user/user.schema";
 
 /**
  * @description Get user by ID
@@ -57,7 +57,7 @@ export async function getUserById(
     return ({
         status: response.status,
         body: responseData,
-        isSuccessful: ((response.status >= 200) && (response.status < 300)),
-        isFailed: !((response.status >= 200) && (response.status < 300))
+        isSuccessful: false,
+        isFailed: true
     } as GetUserByIdResults);
 }

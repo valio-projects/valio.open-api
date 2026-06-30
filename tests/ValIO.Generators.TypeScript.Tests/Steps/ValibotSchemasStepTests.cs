@@ -36,7 +36,7 @@ public class ValibotSchemasStepTests
         });
 
         var userSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').Contains("schemas/user/user.schema", StringComparison.OrdinalIgnoreCase));
+            f.RelativePath.Replace('\\', '/').Contains("models/user/user.schema", StringComparison.OrdinalIgnoreCase));
         userSchema.Content.Should().Contain("import * as v from \"valibot\"");
         userSchema.Content.Should().Contain("v.object");
         userSchema.Content.Should().Contain("export const UserSchema");
@@ -56,7 +56,7 @@ public class ValibotSchemasStepTests
         // pet schema references Category and Tag — those imports must use
         // camelCased file names (./category/category.schema), not PascalCase.
         var petSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').Contains("schemas/pet/pet.schema", StringComparison.OrdinalIgnoreCase));
+            f.RelativePath.Replace('\\', '/').Contains("models/pet/pet.schema", StringComparison.OrdinalIgnoreCase));
         petSchema.Content.Should().Contain("../category/category.schema");
         petSchema.Content.Should().Contain("../tag/tag.schema");
         petSchema.Content.Should().NotMatchRegex(@"\.\./(Category|Tag)/(Category|Tag)\.schema");
@@ -73,11 +73,11 @@ public class ValibotSchemasStepTests
         });
 
         var userRoleSchema = ctx.GeneratedFiles.FirstOrDefault(f =>
-            f.RelativePath.Replace('\\', '/').Contains("schemas/userRole/userRole.schema", StringComparison.OrdinalIgnoreCase));
+            f.RelativePath.Replace('\\', '/').Contains("models/userRole/userRole.schema", StringComparison.OrdinalIgnoreCase));
         userRoleSchema.Should().NotBeNull();
         userRoleSchema!.Content.Should().Contain("v.picklist(UserRoleValues)");
         // Values are imported from the enum model, not re-declared in the schema file.
-        userRoleSchema.Content.Should().Contain("import { UserRoleValues } from \"../../models/userRole/userRole\"");
+        userRoleSchema.Content.Should().Contain("import { UserRoleValues } from \"./userRole\"");
         userRoleSchema.Content.Should().NotContain("UserRoleValues = [");
     }
 }

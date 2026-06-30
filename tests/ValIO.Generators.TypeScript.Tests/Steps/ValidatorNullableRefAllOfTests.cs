@@ -41,7 +41,7 @@ public class ValidatorNullableRefAllOfTests
 
         return ctx.GeneratedFiles
             .First(f => f.RelativePath.Replace('\\', '/')
-                .EndsWith($"schemas/{camelModel}/{camelModel}.schema.ts", StringComparison.Ordinal))
+                .EndsWith($"models/{camelModel}/{camelModel}.schema.ts", StringComparison.Ordinal))
             .Content;
     }
 

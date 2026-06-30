@@ -53,6 +53,10 @@ internal sealed class TypeBoxValidationStrategy : IClientValidationStrategy
         // Файл объявляет `Type.Union([...])` и т.п. → нужен только `Type` (без `Value`).
         definedTypes.Count > 0 ? [TypeImport()] : [];
 
+    /// <inheritdoc/>
+    /// <remarks>TypeBox derives the static type via <c>Static&lt;typeof Schema&gt;</c>, so the const is not annotated.</remarks>
+    public TypeNode? SchemaTypeAnnotation(string validatedTypeName) => null;
+
     private static ImportNode TypeImport() =>
         new(ImmutableList.Create(new IdentifierNode("Type")), "@sinclair/typebox", ImportKind.Named);
 

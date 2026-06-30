@@ -85,9 +85,10 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
             currentFileName: fileName,
             schemasPath: schemasPath);
 
+        // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
         var relativePath = separateModels
-            ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
-            : $"{schemasPath}/{fileName}.schema.ts";
+            ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
+            : $"{modelsPath}/{fileName}.schema.ts";
 
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }
@@ -106,9 +107,10 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
             currentFileName: fileName,
             schemasPath: schemasPath);
 
+        // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
         var relativePath = separateModels
-            ? $"{schemasPath}/{fileName}/{fileName}.schema.ts"
-            : $"{schemasPath}/{fileName}.schema.ts";
+            ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
+            : $"{modelsPath}/{fileName}.schema.ts";
 
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
     }

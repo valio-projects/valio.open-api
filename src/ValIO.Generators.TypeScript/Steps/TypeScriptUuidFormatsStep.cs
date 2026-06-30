@@ -5,10 +5,14 @@ using ValIO.Generators.TypeScript.Options;
 namespace ValIO.Generators.TypeScript.Steps;
 
 /// <summary>
-/// Step: emits the shared <c>{schemasPath}/formats.ts</c> constant file (UUID pattern + regex) used by
+/// Step: emits the shared <c>{modelsPath}/formats.ts</c> constant file (UUID pattern + regex) used by
 /// generated validation schemas when <c>uuidFormat == "regex"</c>. Only runs when validation is
 /// enabled and the document actually contains a uuid field.
 /// </summary>
+/// <remarks>
+/// The file lives under <c>modelsPath</c> alongside the co-located model schemas (which import it as
+/// <c>../formats</c>); params/results schemas reference it as <c>../../{modelsPath}/formats</c>.
+/// </remarks>
 public sealed class TypeScriptUuidFormatsStep : ICodeGenerationStep
 {
     public string Name => "typescript-uuid-formats";
@@ -25,14 +29,14 @@ public sealed class TypeScriptUuidFormatsStep : ICodeGenerationStep
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var fileOrg = context.Configuration.FileOrganization;
-        var schemasPath = fileOrg.SchemasPath ?? "schemas";
+        var modelsPath = fileOrg.ModelsPath ?? "models";
 
         var sb = new StringBuilder();
         sb.AppendLine("// Shared format patterns for generated validation schemas.");
         sb.AppendLine($"export const {TypeScriptOptionIds.UuidFormat.PatternConstName} = \"{TypeScriptOptionIds.UuidFormat.Pattern}\";");
         sb.AppendLine($"export const {TypeScriptOptionIds.UuidFormat.RegexConstName} = new RegExp({TypeScriptOptionIds.UuidFormat.PatternConstName});");
 
-        var relativePath = $"{schemasPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}.ts";
+        var relativePath = $"{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}.ts";
         context.GeneratedFiles.Add(new GeneratedFile(relativePath, sb.ToString()));
         return Task.CompletedTask;
     }

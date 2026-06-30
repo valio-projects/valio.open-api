@@ -176,16 +176,19 @@ public sealed class TypeScriptResultsAstBuilder
                         documentation: new CommentNode("Response body for unhandled status")),
                     new PropertySignatureNode(
                         new IdentifierNode("isSuccessful"),
-                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true),
+                        // Literal `false` (not `boolean`) so this catch-all is a discriminable failure
+                        // member: `if (r.isSuccessful)` excludes it and narrows to the typed variant(s).
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: false),
                         isRequired: true,
-                        documentation: new CommentNode("Computed from status — true if 2xx")),
+                        documentation: new CommentNode("Always false — undocumented status codes are treated as non-success")),
                     new PropertySignatureNode(
                         new IdentifierNode("isFailed"),
-                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true),
+                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: true),
                         isRequired: true,
-                        documentation: new CommentNode("Computed from status — true if not 2xx"))
+                        documentation: new CommentNode("Always true — undocumented status codes are treated as failures"))
                 }.ToImmutableList(),
-                documentation: new CommentNode("Response for status codes not explicitly defined in OpenAPI schema"));
+                documentation: new CommentNode("Response for status codes not explicitly defined in OpenAPI schema. " +
+                    "Treated as a failure (isSuccessful: false) so the union stays discriminable; an undocumented 2xx (e.g. 204) lands here."));
             declarations.Add(otherVariantInterface);
             variantTypes.Add(new SimpleTypeNode(new IdentifierNode(otherVariantName), isPrimitive: false));
 

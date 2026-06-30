@@ -84,7 +84,9 @@ public sealed class TypeScriptResultsSchemasAstBuilder
         var imports = new List<ImportNode>();
         imports.AddRange(_validation.SchemaDefinitionImports(definedTypes));
 
-        var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
+        // Model schemas are co-located under modelsPath; this results-schema file sits at
+        // {clientsPath}/{op}/ → two levels up to the output root, then into modelsPath.
+        var modelsPath = fileOrganization?.ModelsPath ?? "models";
         var modelNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in definedTypes)
             ValidationTypes.CollectModelSchemaNames(type, modelNames);
@@ -95,7 +97,7 @@ public sealed class TypeScriptResultsSchemasAstBuilder
             var modelFile = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode($"{modelName}Schema")),
-                from: $"../../{schemasPath}/{modelFile}/{modelFile}.schema",
+                from: $"../../{modelsPath}/{modelFile}/{modelFile}.schema",
                 kind: ImportKind.Named));
         }
 

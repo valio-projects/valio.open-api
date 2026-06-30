@@ -30,4 +30,7 @@ internal sealed class NoneValidationStrategy : IClientValidationStrategy
 
     public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
         [];
+
+    // Not called (schemas are only generated when validation is enabled).
+    public TypeNode? SchemaTypeAnnotation(string validatedTypeName) => null;
 }

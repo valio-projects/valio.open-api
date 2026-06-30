@@ -81,7 +81,7 @@ public class ZodSchemaRenderer
         var schemaName = $"{model.Name}Schema";
         var modelFileName = _namingConverter.ToCamelCase(model.OriginalName);
 
-        AppendFileHeader(sb, $"{modelFileName}.schema.ts", $"schemas/{modelFileName}", $"Zod validation schema for {model.Name}.");
+        AppendFileHeader(sb, $"{modelFileName}.schema.ts", $"{_modelsPath}/{modelFileName}", $"Zod validation schema for {model.Name}.");
         sb.AppendLine(ZodImportLine);
         sb.AppendLine();
 
@@ -155,7 +155,7 @@ public class ZodSchemaRenderer
         var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
         var constArrayName = $"{typeName}Values";
 
-        AppendFileHeader(sb, $"{enumFileName}.schema.ts", $"schemas/{enumFileName}", $"Zod validation schema for the {typeName} enum.");
+        AppendFileHeader(sb, $"{enumFileName}.schema.ts", $"{_modelsPath}/{enumFileName}", $"Zod validation schema for the {typeName} enum.");
         sb.AppendLine(ZodImportLine);
         sb.AppendLine();
         var enumImportPath = !string.IsNullOrEmpty(importPath)
@@ -284,20 +284,20 @@ public class ZodSchemaRenderer
     }
     
     /// <summary>
-    /// Строит относительный путь от файла Zod‑схемы к файлу модели.
-    /// Схема живёт в {schemasPath}/{name}/{name}.schema.ts (separateModels=true)
-    /// или {schemasPath}/{name}.schema.ts (separateModels=false).
-    /// Модель — в parent_of_schemas/{name}/{name}.ts или parent_of_schemas/{name}.ts.
+    /// Builds the relative import path from a Zod schema file to its model/enum interface file.
     /// </summary>
+    /// <remarks>
+    /// Model schemas are co-located with the model: the schema lives at
+    /// <c>{modelsPath}/{name}/{name}.schema.ts</c> (or <c>{modelsPath}/{name}.schema.ts</c> when
+    /// <c>separateModels</c> is false) right next to <c>{name}.ts</c>, so the interface is always a
+    /// sibling in the same directory — <c>./{name}</c>.
+    /// </remarks>
+    /// <param name="currentFileName">The schema's own file-name stem (unused; retained for symmetry).</param>
+    /// <param name="schemasPath">The schema base directory (unused; retained for symmetry).</param>
+    /// <param name="modelFileName">The model/enum file-name stem.</param>
+    /// <returns>A same-directory relative specifier, e.g. <c>./coefficientsInlineModel</c>.</returns>
     private string BuildModelImportPathFromSchema(string? currentFileName, string? schemasPath, string modelFileName)
-    {
-        if (string.IsNullOrEmpty(schemasPath) || string.IsNullOrEmpty(currentFileName))
-            return $"./{modelFileName}";
-
-        // Схема живёт в {schemasPath}/{currentFileName}/{currentFileName}.schema.ts (root-level
-        // schemas). Поднимаемся на 2 уровня до корня, оттуда — в {modelsPath}/{name}/{name}.
-        return $"../../{_modelsPath}/{modelFileName}/{modelFileName}";
-    }
+        => $"./{modelFileName}";
 
     /// <summary>
     /// Вычисляет относительный путь для импорта схемы.

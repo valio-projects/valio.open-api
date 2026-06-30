@@ -1133,7 +1133,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
         var operationFileName = GetModelFileName(operation.MethodName);
-        var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
+        // Model schemas are co-located with their models under modelsPath (not a separate schemas/ tree).
+        var modelsPath = fileOrganization?.ModelsPath ?? "models";
         var hasParams = operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0;
 
         // Params: единообразно для всех библиотек импортируем именованные схемы из {op}.params.schema.ts.
@@ -1171,7 +1172,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             var modelFileName = GetModelFileName(modelName);
             result.Add(new ImportNode(
                 items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
-                from: $"../../{schemasPath}/{modelFileName}/{modelFileName}.schema",
+                from: $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema",
                 kind: ImportKind.Named));
         }
 
@@ -1405,17 +1406,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 {
                     new PropertyAssignmentNode(new IdentifierNode("status"), responseStatusRef),
                     new PropertyAssignmentNode(new IdentifierNode("body"), responseDataRef),
+                    // Undocumented status → catch-all `…ResultOther`, typed as a literal failure
+                    // (isSuccessful: false, isFailed: true) so the result union stays discriminable.
                     new PropertyAssignmentNode(new IdentifierNode("isSuccessful"),
-                        new BinaryExpressionNode(
-                            new BinaryExpressionNode(responseStatusRef, BinaryOperator.GreaterThanOrEqual, new LiteralExpressionNode(200, LiteralKind.Number)),
-                            BinaryOperator.LogicalAnd,
-                            new BinaryExpressionNode(responseStatusRef, BinaryOperator.LessThan, new LiteralExpressionNode(300, LiteralKind.Number)))),
+                        new LiteralExpressionNode(false, LiteralKind.Boolean)),
                     new PropertyAssignmentNode(new IdentifierNode("isFailed"),
-                        new UnaryExpressionNode(UnaryOperator.LogicalNot,
-                            new BinaryExpressionNode(
-                                new BinaryExpressionNode(responseStatusRef, BinaryOperator.GreaterThanOrEqual, new LiteralExpressionNode(200, LiteralKind.Number)),
-                                BinaryOperator.LogicalAnd,
-                                new BinaryExpressionNode(responseStatusRef, BinaryOperator.LessThan, new LiteralExpressionNode(300, LiteralKind.Number)))))
+                        new LiteralExpressionNode(true, LiteralKind.Boolean))
                 }.ToImmutableList())));
         }
         else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })

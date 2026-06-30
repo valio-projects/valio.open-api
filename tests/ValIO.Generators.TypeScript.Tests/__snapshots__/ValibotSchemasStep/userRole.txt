@@ -1,13 +1,13 @@
 /**
  * @file userRole.schema.ts
- * @module schemas/userRole
+ * @module models/userRole
  * @description Valibot validation schema for UserRole.
  * @generated
  * Do not edit by hand — regenerate via ValIO.
  */
 
 import * as v from "valibot";
-import { UserRoleValues } from "../../models/userRole/userRole";
+import { UserRoleValues } from "./userRole";
 
 export const UserRoleSchema = v.picklist(UserRoleValues);
 

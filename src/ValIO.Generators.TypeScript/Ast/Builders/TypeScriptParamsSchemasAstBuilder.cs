@@ -58,18 +58,49 @@ public sealed class TypeScriptParamsSchemasAstBuilder
 
         OriginalNameMap.AddOperation(_orig, operation);
 
+        // Each param-schema const is annotated with the corresponding params interface (e.g.
+        // `: ZodSchema<{Op}QueryParams>`) so it reads like a model schema. The Route/Query sub-interfaces
+        // are only emitted when the params model is split into more than one group (route/query/body/
+        // form/headers); with a single group only the flat {Op}Params interface exists. Re-derive that
+        // group decision (mirrors TypeScriptParamsAstBuilder) so we never annotate against a missing type.
+        var rb = operation.RequestBody;
+        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0)
+            + (rb != null && !rb.IsForm ? 1 : 0) + (rb != null && rb.IsForm ? 1 : 0)
+            + (operation.HeaderParameters.Count > 0 ? 1 : 0);
+        var useFlatOnly = groupCount <= 1;
+        var opPascal = _namingConverter.ToPascalCase(operation.MethodName);
+
+        var annotatedInterfaces = new SortedSet<string>(StringComparer.Ordinal);
+
+        // Resolves the annotation for a schema validating interface `interfaceName`; records the
+        // interface for a type-only import only when the validator actually annotates the const.
+        TypeNode? Annotate(string interfaceName)
+        {
+            var annotation = _validation.SchemaTypeAnnotation(interfaceName);
+            if (annotation != null)
+                annotatedInterfaces.Add(interfaceName);
+            return annotation;
+        }
+
         var declarations = new List<DeclarationNode>();
         if (hasRoute)
+        {
+            var routeInterface = useFlatOnly ? $"{opPascal}Params" : $"{opPascal}RouteParams";
             declarations.Add(BuildParamsSchemaDeclaration(
-                RouteParamsSchemaName(operation.MethodName), operation.PathParameters, "Route (path) parameter validation schema."));
+                RouteParamsSchemaName(operation.MethodName), operation.PathParameters,
+                "Route (path) parameter validation schema.", Annotate(routeInterface)));
+        }
         if (hasQuery)
+        {
+            var queryInterface = useFlatOnly ? $"{opPascal}Params" : $"{opPascal}QueryParams";
             declarations.Add(BuildParamsSchemaDeclaration(
-                QueryParamsSchemaName(operation.MethodName), operation.QueryParameters, "Query parameter validation schema."));
+                QueryParamsSchemaName(operation.MethodName), operation.QueryParameters,
+                "Query parameter validation schema.", Annotate(queryInterface)));
+        }
 
         var paramTypes = operation.PathParameters.Concat(operation.QueryParameters).Select(p => p.Type).ToList();
-        var imports = BuildImports(operation, paramTypes, fileOrganization);
-
         var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
+        var imports = BuildImports(operation, paramTypes, fileOrganization, annotatedInterfaces, fileBase);
         return new SourceFileNode(
             imports: imports,
             declarations: declarations,
@@ -79,31 +110,58 @@ public sealed class TypeScriptParamsSchemasAstBuilder
                 $"Route/query parameter validation schemas for {operation.MethodName}."));
     }
 
-    private DeclarationNode BuildParamsSchemaDeclaration(string schemaName, IReadOnlyList<IrParameter> parameters, string summary)
+    /// <summary>Builds an exported <c>export const {schemaName}[: annotation] = {schema};</c> declaration.</summary>
+    /// <param name="schemaName">The schema constant name (e.g. <c>{Op}QueryParamsSchema</c>).</param>
+    /// <param name="parameters">The parameters whose object schema is the initializer.</param>
+    /// <param name="summary">The JSDoc summary for the declaration.</param>
+    /// <param name="annotation">The optional typed annotation (e.g. <c>ZodSchema&lt;{Op}QueryParams&gt;</c>), or <see langword="null"/>.</param>
+    /// <returns>The variable declaration node.</returns>
+    private DeclarationNode BuildParamsSchemaDeclaration(string schemaName, IReadOnlyList<IrParameter> parameters, string summary, TypeNode? annotation)
         => new VariableDeclarationNode(
             name: new IdentifierNode(schemaName),
             declarationKind: VariableDeclarationKind.Const,
+            type: annotation,
             initializer: _validation.BuildParamsSchema(parameters),
             documentation: new CommentNode(summary, CommentKind.JSDoc),
             isExported: true);
 
-    private IReadOnlyList<ImportNode> BuildImports(IrOperation operation, IReadOnlyList<IrType> paramTypes, FileOrganization? fileOrganization)
+    /// <summary>Builds the imports for the params-schema file: schema runtime, the annotated params
+    /// interface(s) (type-only, sibling <c>./{op}.params</c>), the shared UUID constant and any model schemas.</summary>
+    private IReadOnlyList<ImportNode> BuildImports(
+        IrOperation operation,
+        IReadOnlyList<IrType> paramTypes,
+        FileOrganization? fileOrganization,
+        IReadOnlyCollection<string> annotatedInterfaces,
+        string fileBase)
     {
         var imports = new List<ImportNode>();
         imports.AddRange(_validation.SchemaDefinitionImports(paramTypes));
 
-        var schemasPath = fileOrganization?.SchemasPath ?? "schemas";
+        // Type-only import of the params interface(s) the schema consts are annotated against.
+        // The params interface file is a sibling of this schema file: ./{op}.params.ts.
+        if (annotatedInterfaces.Count > 0)
+        {
+            imports.Add(new ImportNode(
+                items: annotatedInterfaces.Select(n => new IdentifierNode(n)).ToImmutableList(),
+                from: $"./{fileBase}.params",
+                kind: ImportKind.Named,
+                isTypeOnly: true));
+        }
+
+        // Model schemas and the shared formats.ts are co-located under modelsPath; this params-schema
+        // file sits at {clientsPath}/{op}/ → two levels up to the output root, then into modelsPath.
+        var modelsPath = fileOrganization?.ModelsPath ?? "models";
         var separateModels = fileOrganization?.SeparateModels ?? true;
 
-        // Shared UUID-константа (uuidFormat = regex): схема параметра рендерится как `.regex(UUID_REGEX)` /
-        // `pattern: UUID_PATTERN` и обязана импортировать константу из общего файла schemas/formats.ts.
+        // Shared UUID constant (uuidFormat = regex): a parameter schema rendered as `.regex(UUID_REGEX)` /
+        // `pattern: UUID_PATTERN` must import the constant from the shared {modelsPath}/formats.ts file.
         if (_validation.UuidConstName != null
             && _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex
             && UuidFormatSupport.OperationParamsUseUuid(operation))
         {
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(_validation.UuidConstName)),
-                from: $"../../{schemasPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
+                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
                 kind: ImportKind.Named));
         }
         var modelNames = new HashSet<string>(StringComparer.Ordinal);
@@ -114,8 +172,8 @@ public sealed class TypeScriptParamsSchemasAstBuilder
         {
             var modelFile = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
             var from = separateModels
-                ? $"../../{schemasPath}/{modelFile}/{modelFile}.schema"
-                : $"../../{schemasPath}/{modelFile}.schema";
+                ? $"../../{modelsPath}/{modelFile}/{modelFile}.schema"
+                : $"../../{modelsPath}/{modelFile}.schema";
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode($"{modelName}Schema")),
                 from: from,

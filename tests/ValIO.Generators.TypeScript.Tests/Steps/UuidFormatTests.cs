@@ -22,13 +22,13 @@ public class UuidFormatTests
     public void Teardown() => _harness.Dispose();
 
     private static string ModelSchema(GenerationContext ctx) =>
-        ctx.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("schemas/document/document.schema.ts", StringComparison.Ordinal)).Content;
+        ctx.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/document/document.schema.ts", StringComparison.Ordinal)).Content;
 
     private static string ParamsSchema(GenerationContext ctx) =>
         ctx.GeneratedFiles.First(f => f.RelativePath.EndsWith("getDocumentById.params.schema.ts", StringComparison.Ordinal)).Content;
 
     private static bool HasFormatsFile(GenerationContext ctx) =>
-        ctx.GeneratedFiles.Any(f => f.RelativePath.Replace('\\', '/').EndsWith("schemas/formats.ts", StringComparison.Ordinal));
+        ctx.GeneratedFiles.Any(f => f.RelativePath.Replace('\\', '/').EndsWith("models/formats.ts", StringComparison.Ordinal));
 
     [Test]
     public async Task DefaultGuid_Zod_EmitsUuidValidator_NoFormatsFile()
@@ -82,11 +82,11 @@ public class UuidFormatTests
 
         // Route params schema reaches the const at the root schemas folder.
         var prms = ParamsSchema(ctx);
-        prms.Should().Contain("import { UUID_REGEX } from \"../../schemas/formats\"");
+        prms.Should().Contain("import { UUID_REGEX } from \"../../models/formats\"");
         prms.Should().Contain("z.string().regex(UUID_REGEX)");
 
         // The shared constant file is generated once.
-        var formats = ctx.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("schemas/formats.ts", StringComparison.Ordinal));
+        var formats = ctx.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/formats.ts", StringComparison.Ordinal));
         formats.Content.Should().Contain("export const UUID_PATTERN");
         formats.Content.Should().Contain("export const UUID_REGEX = new RegExp(UUID_PATTERN)");
     }

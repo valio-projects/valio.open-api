@@ -135,7 +135,7 @@ public sealed class ValibotSchemaSourceFileBuilder
         var fileBase = _namingConverter.ToCamelCase(originalName);
         return TypeScriptDoc.FileHeader(
             $"{fileBase}.schema.ts",
-            $"schemas/{fileBase}",
+            $"{_modelsPath}/{fileBase}",
             $"{library} validation schema for {typeName}.");
     }
 
@@ -145,9 +145,8 @@ public sealed class ValibotSchemaSourceFileBuilder
         imports.AddRange(BuildValibotImport());
 
         var enumFileName = _namingConverter.ToCamelCase(enumModel.OriginalName);
-        var modelPath = separateModels
-            ? $"../../{_modelsPath}/{enumFileName}/{enumFileName}"
-            : $"../{_modelsPath}/{enumFileName}";
+        // Co-located: the enum interface + {Name}Values live next to the schema in the same directory.
+        var modelPath = $"./{enumFileName}";
 
         imports.Add(new ImportNode(
             items: ImmutableList.Create(new IdentifierNode($"{enumModel.Name}Values")),
@@ -176,9 +175,8 @@ public sealed class ValibotSchemaSourceFileBuilder
         if (includeOwnModelType)
         {
             var ownFileName = _namingConverter.ToCamelCase(model.OriginalName);
-            var ownPath = separateModels
-                ? $"../../{_modelsPath}/{ownFileName}/{ownFileName}"
-                : $"../{_modelsPath}/{ownFileName}";
+            // Co-located: the model interface lives next to its schema in the same directory.
+            var ownPath = $"./{ownFileName}";
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(model.Name)),
                 from: ownPath,

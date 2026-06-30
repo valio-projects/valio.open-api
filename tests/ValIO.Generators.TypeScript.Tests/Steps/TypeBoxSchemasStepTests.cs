@@ -36,7 +36,7 @@ public class TypeBoxSchemasStepTests
         });
 
         var userSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').Contains("schemas/user/user.schema", StringComparison.OrdinalIgnoreCase));
+            f.RelativePath.Replace('\\', '/').Contains("models/user/user.schema", StringComparison.OrdinalIgnoreCase));
         userSchema.Content.Should().Contain("@sinclair/typebox");
         userSchema.Content.Should().Contain("Type.Object");
         userSchema.Content.Should().Contain("export const UserSchema");
@@ -54,7 +54,7 @@ public class TypeBoxSchemasStepTests
         });
 
         var petSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').Contains("schemas/pet/pet.schema", StringComparison.OrdinalIgnoreCase));
+            f.RelativePath.Replace('\\', '/').Contains("models/pet/pet.schema", StringComparison.OrdinalIgnoreCase));
         petSchema.Content.Should().NotMatchRegex(@"\.\./(Category|Tag)/(Category|Tag)\.schema");
     }
 
@@ -69,10 +69,10 @@ public class TypeBoxSchemasStepTests
         });
 
         var enumSchema = ctx.GeneratedFiles.First(f =>
-            f.RelativePath.Replace('\\', '/').EndsWith("schemas/userRole/userRole.schema.ts", StringComparison.Ordinal));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/userRole/userRole.schema.ts", StringComparison.Ordinal));
 
         // Reuses UserRoleValues from the enum model: Type.Union(UserRoleValues.map((value) => Type.Literal(value))).
-        enumSchema.Content.Should().Contain("import { UserRoleValues } from \"../../models/userRole/userRole\"");
+        enumSchema.Content.Should().Contain("import { UserRoleValues } from \"./userRole\"");
         enumSchema.Content.Should().Contain("Type.Union(UserRoleValues.map(");
         enumSchema.Content.Should().Contain("Type.Literal(value)");
     }

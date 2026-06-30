@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.IR;
@@ -25,39 +26,96 @@ internal sealed class ZodSchemaExpressionBuilder
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
     }
 
-    public ExpressionNode Build(IrType type) =>
+    /// <summary>
+    /// Builds a Zod schema expression from an <see cref="IrType"/>.
+    /// </summary>
+    /// <param name="type">The IR type to build a schema for.</param>
+    /// <param name="coerceParams">
+    /// When <see langword="true"/>, numeric/boolean primitives use <c>z.coerce.*</c> — for route/query
+    /// parameters, which always arrive as strings. Response/body schemas pass <see langword="false"/>.
+    /// </param>
+    public ExpressionNode Build(IrType type, bool coerceParams = false) =>
         type switch
         {
             IrModelReference reference => Id($"{reference.ModelName}Schema"),
-            IrArrayType array => Call(Member(Id("z"), "array"), Build(array.ElementType)),
-            IrDictionaryType dictionary => Call(Member(Id("z"), "record"), Build(dictionary.ValueType)),
-            IrNullableType nullable => Call(Member(Build(nullable.InnerType), "nullable")),
-            IrOptionalType optional => Call(Member(Build(optional.InnerType), "optional")),
+            IrArrayType array => Call(Member(Id("z"), "array"), Build(array.ElementType, coerceParams)),
+            IrDictionaryType dictionary => Call(Member(Id("z"), "record"), Build(dictionary.ValueType, coerceParams)),
+            IrNullableType nullable => Call(Member(Build(nullable.InnerType, coerceParams), "nullable")),
+            IrOptionalType optional => Call(Member(Build(optional.InnerType, coerceParams), "optional")),
             IrUnionType union => Call(
                 Member(Id("z"), "union"),
-                new ArrayLiteralExpressionNode(union.Types.Select(Build).ToImmutableList())),
+                new ArrayLiteralExpressionNode(union.Types.Select(t => Build(t, coerceParams)).ToImmutableList())),
             IrIntersectionType intersection => BuildIntersection(intersection.Types),
-            IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind),
+            IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind, coerceParams),
             _ => Call(Member(Id("z"), "unknown"))
         };
 
     /// <summary>
-    /// Строит <c>z.object({...})</c> из набора параметров (route/query): необязательные — <c>.optional()</c>.
+    /// Builds <c>z.object({...})</c> from a set of route/query parameters: numeric/boolean primitives are
+    /// coerced (params arrive as strings), optional params get <c>.optional()</c>, OpenAPI defaults become
+    /// <c>.default(...)</c>, and descriptions become <c>.describe(...)</c>.
     /// </summary>
+    /// <param name="parameters">The route or query parameters.</param>
+    /// <returns>The <c>z.object(...)</c> schema expression.</returns>
     public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters)
     {
         var properties = parameters
             .Select(parameter =>
             {
-                var schema = Build(parameter.Type);
-                return new PropertyAssignmentNode(
-                    new IdentifierNode(parameter.Name),
-                    parameter.IsRequired ? schema : Call(Member(schema, "optional")));
+                var schema = Build(parameter.Type, coerceParams: true);
+
+                if (!parameter.IsRequired)
+                    schema = Call(Member(schema, "optional"));
+                // `.default(x)` after `.optional()` so an undefined param is replaced by the OpenAPI default.
+                if (TryDefaultLiteral(parameter.DefaultValue, out var defaultLiteral))
+                    schema = Call(Member(schema, "default"), defaultLiteral!);
+                if (!string.IsNullOrWhiteSpace(parameter.Description))
+                    schema = Call(Member(schema, "describe"),
+                        new LiteralExpressionNode(parameter.Description!, LiteralKind.String));
+
+                return new PropertyAssignmentNode(new IdentifierNode(parameter.Name), schema);
             })
             .ToImmutableList();
 
         return Call(Member(Id("z"), "object"), new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
     }
+
+    /// <summary>Converts an OpenAPI default value to a Zod <c>.default(...)</c> literal argument.</summary>
+    /// <param name="value">The default value (number/string/bool, or a <see cref="System.Text.Json"/> node).</param>
+    /// <param name="literal">The resulting literal expression, or <see langword="null"/> if unrenderable.</param>
+    /// <returns><see langword="true"/> when a literal could be produced.</returns>
+    private static bool TryDefaultLiteral(object? value, out ExpressionNode? literal)
+    {
+        literal = value switch
+        {
+            bool b => new LiteralExpressionNode(b, LiteralKind.Boolean),
+            string s => new LiteralExpressionNode(s, LiteralKind.String),
+            sbyte or byte or short or ushort or int or uint or long or ulong or float or double or decimal
+                => new LiteralExpressionNode(value, LiteralKind.Number),
+            System.Text.Json.JsonElement el => JsonElementLiteral(el),
+            System.Text.Json.Nodes.JsonValue jv => JsonValueLiteral(jv),
+            _ => null
+        };
+        return literal != null;
+    }
+
+    private static ExpressionNode? JsonElementLiteral(System.Text.Json.JsonElement el) => el.ValueKind switch
+    {
+        System.Text.Json.JsonValueKind.Number => new LiteralExpressionNode(el.GetRawText(), LiteralKind.Number),
+        System.Text.Json.JsonValueKind.String => new LiteralExpressionNode(el.GetString(), LiteralKind.String),
+        System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False
+            => new LiteralExpressionNode(el.GetBoolean(), LiteralKind.Boolean),
+        _ => null
+    };
+
+    private static ExpressionNode? JsonValueLiteral(System.Text.Json.Nodes.JsonValue jv) => jv.GetValueKind() switch
+    {
+        System.Text.Json.JsonValueKind.Number => new LiteralExpressionNode(jv.ToJsonString(), LiteralKind.Number),
+        System.Text.Json.JsonValueKind.String => new LiteralExpressionNode(jv.GetValue<string>(), LiteralKind.String),
+        System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False
+            => new LiteralExpressionNode(jv.GetValue<bool>(), LiteralKind.Boolean),
+        _ => null
+    };
 
     private ExpressionNode BuildIntersection(IReadOnlyList<IrType> types)
     {
@@ -73,13 +131,15 @@ internal sealed class ZodSchemaExpressionBuilder
         return result;
     }
 
-    private ExpressionNode BuildPrimitive(IrPrimitiveKind kind) =>
+    private ExpressionNode BuildPrimitive(IrPrimitiveKind kind, bool coerce = false) =>
         kind switch
         {
             IrPrimitiveKind.String => Call(Member(Id("z"), "string")),
-            IrPrimitiveKind.Number => Call(Member(Id("z"), "number")),
-            IrPrimitiveKind.Integer or IrPrimitiveKind.Long => Call(Member(Call(Member(Id("z"), "number")), "int")),
-            IrPrimitiveKind.Boolean => Call(Member(Id("z"), "boolean")),
+            IrPrimitiveKind.Number => ZodNumber(coerce),
+            IrPrimitiveKind.Integer or IrPrimitiveKind.Long => Call(Member(ZodNumber(coerce), "int")),
+            IrPrimitiveKind.Boolean => coerce
+                ? Call(Member(Member(Id("z"), "coerce"), "boolean"))
+                : Call(Member(Id("z"), "boolean")),
             IrPrimitiveKind.DateTime or IrPrimitiveKind.Date or IrPrimitiveKind.Time => Call(Member(Id("z"), "string")),
             IrPrimitiveKind.Uuid => _uuidFormat switch
             {
@@ -92,4 +152,8 @@ internal sealed class ZodSchemaExpressionBuilder
             IrPrimitiveKind.Null => Call(Member(Id("z"), "null")),
             _ => Call(Member(Id("z"), "unknown"))
         };
+
+    /// <summary><c>z.coerce.number()</c> when <paramref name="coerce"/>, otherwise <c>z.number()</c>.</summary>
+    private static ExpressionNode ZodNumber(bool coerce) =>
+        coerce ? Call(Member(Member(Id("z"), "coerce"), "number")) : Call(Member(Id("z"), "number"));
 }

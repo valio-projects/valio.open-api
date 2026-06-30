@@ -63,9 +63,9 @@ public class PetstoreMatrixTests
         PathsEndingWith(ctx, ".axios.ts").Should().NotBeEmpty();
         PathsEndingWith(ctx, ".params.schema.ts").Should().NotBeEmpty("zod3 emits {op}.params.schema.ts when path/query params exist");
 
-        var modelSchemas = Paths(ctx).Where(p => p.Contains("schemas/", StringComparison.Ordinal) && p.EndsWith(".schema.ts", StringComparison.Ordinal)).ToList();
-        modelSchemas.Should().NotBeEmpty("model schemas should be emitted under the root schemas/ folder");
-        modelSchemas.Should().AllSatisfy(p => p.Split('/').Should().Contain("schemas"));
+        var modelSchemas = Paths(ctx).Where(p => p.Contains("models/", StringComparison.Ordinal) && p.EndsWith(".schema.ts", StringComparison.Ordinal)).ToList();
+        modelSchemas.Should().NotBeEmpty("model schemas should be emitted under the root models/ folder");
+        modelSchemas.Should().AllSatisfy(p => p.Split('/').Should().Contain("models"));
     }
 
     [Test]
@@ -102,8 +102,9 @@ public class PetstoreMatrixTests
         schemaFiles.Should().NotBeEmpty();
         schemaFiles[0].Content.Should().Contain("import * as v from \"valibot\"");
 
+        // Co-located: models/pet/ holds both pet.ts (model) and pet.schema.ts — match the schema file.
         var petSchema = ctx.GeneratedFiles.FirstOrDefault(f =>
-            f.RelativePath.Replace('\\', '/').Contains("schemas/pet/", StringComparison.OrdinalIgnoreCase));
+            f.RelativePath.Replace('\\', '/').EndsWith("models/pet/pet.schema.ts", StringComparison.OrdinalIgnoreCase));
         petSchema.Should().NotBeNull();
         petSchema!.Content.Should().Contain("v.object");
     }
@@ -140,7 +141,7 @@ public class PetstoreMatrixTests
         var kySource = ctx.GeneratedFiles.First(f => f.RelativePath.EndsWith(".ky.ts", StringComparison.Ordinal));
         if (kySource.Content.Contains("schema", StringComparison.Ordinal))
         {
-            kySource.Content.Should().NotMatchRegex(@"schemas/[A-Z][a-zA-Z]*/[A-Z][a-zA-Z]*\.schema",
+            kySource.Content.Should().NotMatchRegex(@"models/[A-Z][a-zA-Z]*/[A-Z][a-zA-Z]*\.schema",
                 "schema imports must be camelCased");
         }
     }
