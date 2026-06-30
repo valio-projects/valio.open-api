@@ -58,6 +58,31 @@ public class TypeScriptIndexStepTests
         index.Should().MatchRegex(@"export \* from ""\.\/[^""]+""");
     }
 
+    // BUG #5: a DTO named <Op>QueryResult collides with the TanStack hook's convenience alias of the
+    // same name. The barrel must dedup (TS2308) — the real model wins via `export *`, and the hook file
+    // switches to an explicit re-export that omits the colliding name.
+    [Test]
+    public async Task CollidingExportNames_AreDeduplicatedInBarrel()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("barrel-collision.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            QueryWrapper = "tanstack-react",
+        });
+
+        var index = IndexOf(ctx);
+
+        // The real model wins the name via a clean star re-export.
+        index.Should().Contain("export * from \"./models/getThingQueryResult/getThingQueryResult\";");
+        // The hook file (which also declares a `GetThingQueryResult` alias) must NOT be a blind `export *`...
+        index.Should().NotContain("export * from \"./api/getThing/getThing.query\";");
+        // ...it is re-exported explicitly (so the colliding alias can be omitted).
+        index.Should().MatchRegex(@"export \{[^}]*useGetThing[^}]*\} from ""\./api/getThing/getThing\.query""");
+        // The colliding alias is not re-exported from the hook file's explicit type re-export.
+        index.Should().NotMatchRegex(@"export type \{[^}]*\bGetThingQueryResult\b[^}]*\} from ""\./api/getThing/getThing\.query""");
+    }
+
     [Test]
     public async Task NoSelfReferenceToOtherIndexFiles()
     {

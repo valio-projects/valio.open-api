@@ -29,12 +29,18 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 {
     /// <summary>
-    /// Категория файла для определения пути импорта
+    /// Identifies the kind of generated file an import is being built for. Drives both the base
+    /// import path and whether dependency imports are emitted as type-only (see <see cref="BuildImports"/>).
     /// </summary>
     private enum FileCategory
     {
+        /// <summary>A model/enum declaration file under <c>models/</c>; dependency imports are type-only.</summary>
         Models,
+
+        /// <summary>A client/endpoint file under <c>api/</c>; dependency imports may include runtime schema values.</summary>
         Clients,
+
+        /// <summary>A validation-schema file under <c>schemas/</c>.</summary>
         Schemas
     }
     
@@ -145,6 +151,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             importsByFile[importPathForFile].Add(dependency);
         }
         
+        // Model files reference their dependencies (other models, enum string-literal-union aliases)
+        // exclusively in type position, so under verbatimModuleSyntax those imports MUST be `import type`
+        // (otherwise TS1484). Client/schema files are left as value imports because they also pull in
+        // runtime Zod/Valibot schema values, which must not be type-only.
+        var dependenciesAreTypeOnly = currentFileCategory == FileCategory.Models;
+
         // Создаем ImportNode для каждой группы
         var imports = new List<ImportNode>();
         foreach (var kvp in importsByFile.OrderBy(kvp => kvp.Key))
@@ -153,7 +165,8 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             var importNode = new ImportNode(
                 items: items,
                 from: kvp.Key,
-                kind: ImportKind.Named);
+                kind: ImportKind.Named,
+                isTypeOnly: dependenciesAreTypeOnly);
             imports.Add(importNode);
         }
         

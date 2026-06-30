@@ -6,7 +6,7 @@
  * Do not edit by hand — regenerate via ValIO.
  */
 
-import { UserRole } from "../userRole/userRole";
+import type { UserRole } from "../userRole/userRole";
 
 export interface User {
     /**

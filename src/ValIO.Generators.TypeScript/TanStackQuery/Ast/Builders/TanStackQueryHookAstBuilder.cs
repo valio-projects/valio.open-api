@@ -61,7 +61,7 @@ public sealed class TanStackQueryHookAstBuilder
 
         var imports = BuildImports(operation, operationFileName, hasParams, paramsTypeName, resultTypeName, isMutation, _clientSuffix, _hookUsesAxios);
         var declarations = isMutation
-            ? BuildMutationDeclarations(operation, hookBaseName, paramsTypeName, resultTypeName, dataType, variablesType)
+            ? BuildMutationDeclarations(operation, hookBaseName, hasParams, paramsTypeName, resultTypeName, dataType, variablesType)
             : BuildQueryDeclarations(operation, hookBaseName, paramsTypeName, hasParams, resultTypeName, dataType);
 
         return new SourceFileNode(imports: imports, declarations: declarations,
@@ -71,6 +71,28 @@ public sealed class TanStackQueryHookAstBuilder
                 $"TanStack Query (React) hooks for the {operation.MethodName} operation."));
     }
 
+    /// <summary>
+    /// Builds the import statements for a generated TanStack Query (React) hook file.
+    /// </summary>
+    /// <remarks>
+    /// The <c>@tanstack/react-query</c> symbols are split into two <see cref="ImportNode"/>s — a plain
+    /// value import for the runtime hooks (<c>useQuery</c>, <c>useMutation</c>, …) and an
+    /// <see cref="ImportNode.IsTypeOnly"/> import for the type-only symbols (<c>UseQueryOptions</c>,
+    /// <c>QueryFunctionContext</c>, <c>QueryClient</c>, …). Emitting the type symbols as a value import
+    /// breaks TypeScript's <c>verbatimModuleSyntax</c> (TS1484), so they must use <c>import type</c>.
+    /// <c>QueryClient</c> is a runtime class but is referenced here exclusively in type position
+    /// (parameter/return annotations), so it belongs in the type-only group.
+    /// </remarks>
+    /// <param name="operation">The operation the hook wraps.</param>
+    /// <param name="operationFileName">The operation's file-name stem, used to build relative import paths.</param>
+    /// <param name="hasParams">Whether the operation has request parameters (drives the params import).</param>
+    /// <param name="paramsTypeName">The generated params interface name, or <see langword="null"/> when the operation has none.</param>
+    /// <param name="resultTypeName">The generated result type name, or <see langword="null"/> when the operation has no response body.</param>
+    /// <param name="isMutation">Whether the hook is a mutation (<see langword="true"/>) or a query (<see langword="false"/>).</param>
+    /// <param name="clientSuffix">The transport file suffix (e.g. <c>axios</c>) of the client function module to import.</param>
+    /// <param name="hookUsesAxios">Whether the hook references <c>AxiosRequestConfig</c> and therefore needs the axios type import.</param>
+    /// <returns>The ordered list of <see cref="ImportNode"/>s for the hook file.</returns>
+    /// <seealso cref="TypeScriptAstRenderer"/>
     private static IReadOnlyList<ImportNode> BuildImports(
         IrOperation operation,
         string operationFileName,
@@ -81,11 +103,25 @@ public sealed class TanStackQueryHookAstBuilder
         string clientSuffix,
         bool hookUsesAxios)
     {
-        var tanstackItems = isMutation
+        // Runtime hook functions — must stay a plain value import.
+        var tanstackValues = isMutation
             ? new[]
             {
                 new IdentifierNode("useMutation"),
                 new IdentifierNode("useIsMutating"),
+            }
+            : new[]
+            {
+                new IdentifierNode("useInfiniteQuery"),
+                new IdentifierNode("useQuery"),
+                new IdentifierNode("useIsFetching"),
+            };
+
+        // Type-only symbols — must use `import type` under verbatimModuleSyntax (TS1484).
+        // QueryClient is a runtime class but is only referenced in type position in this file.
+        var tanstackTypes = isMutation
+            ? new[]
+            {
                 new IdentifierNode("QueryClient"),
                 new IdentifierNode("UseMutationOptions"),
                 new IdentifierNode("UseMutationResult"),
@@ -94,11 +130,7 @@ public sealed class TanStackQueryHookAstBuilder
             }
             : new[]
             {
-                new IdentifierNode("useInfiniteQuery"),
-                new IdentifierNode("useQuery"),
-                new IdentifierNode("useIsFetching"),
                 new IdentifierNode("QueryClient"),
-                //new IdentifierNode("QueryFunction"),
                 new IdentifierNode("QueryFunctionContext"),
                 new IdentifierNode("UseQueryOptions"),
                 new IdentifierNode("UseInfiniteQueryOptions"),
@@ -109,7 +141,8 @@ public sealed class TanStackQueryHookAstBuilder
 
         var items = new List<ImportNode>
         {
-            new(items: tanstackItems.ToImmutableList(), from: "@tanstack/react-query", kind: ImportKind.Named),
+            new(items: tanstackValues.ToImmutableList(), from: "@tanstack/react-query", kind: ImportKind.Named),
+            new(items: tanstackTypes.ToImmutableList(), from: "@tanstack/react-query", kind: ImportKind.Named, isTypeOnly: true),
             new(items: new[] { new IdentifierNode(operation.MethodName) }.ToImmutableList(), from: $"./{operationFileName}.{clientSuffix}", kind: ImportKind.Named)
         };
 
@@ -162,9 +195,26 @@ public sealed class TanStackQueryHookAstBuilder
         return decls;
     }
 
+    /// <summary>
+    /// Builds the declarations (options interfaces, the <c>get…MutationOptions</c> factory, convenience
+    /// aliases and the <c>use…</c> hook) for a mutation operation's hook file.
+    /// </summary>
+    /// <param name="operation">The mutation operation.</param>
+    /// <param name="hookBaseName">The PascalCase hook base name (e.g. <c>ClearPinCode</c>).</param>
+    /// <param name="hasParams">
+    /// Whether the operation has request parameters. When <see langword="false"/> the mutation's
+    /// variables type is <c>void</c> and the generated <c>mutationFn</c> must not forward a variables
+    /// argument to the client function (see <see cref="BuildGetMutationOptionsFn"/>).
+    /// </param>
+    /// <param name="paramsTypeName">The params interface name, or <see langword="null"/> when absent.</param>
+    /// <param name="resultTypeName">The result type name, or <see langword="null"/> when the operation has no response body.</param>
+    /// <param name="dataType">The hook's <c>TData</c> type node.</param>
+    /// <param name="variablesType">The hook's <c>TVariables</c> type node (<c>void</c> when <paramref name="hasParams"/> is <see langword="false"/>).</param>
+    /// <returns>The ordered declaration nodes for the mutation hook file.</returns>
     private IReadOnlyList<DeclarationNode> BuildMutationDeclarations(
         IrOperation operation,
         string hookBaseName,
+        bool hasParams,
         string? paramsTypeName,
         string? resultTypeName,
         TypeNode dataType,
@@ -178,7 +228,7 @@ public sealed class TanStackQueryHookAstBuilder
         var optionsParamsType = new IdentifierNode($"Get{hookBaseName}MutationOptionsParams");
         var optionsResultType = new IdentifierNode($"Get{hookBaseName}MutationOptionsResult");
 
-        decls.Add(BuildGetMutationOptionsFn(operation, hookBaseName, variablesType, optionsParamsType, optionsResultType));
+        decls.Add(BuildGetMutationOptionsFn(operation, hookBaseName, hasParams, variablesType, optionsParamsType, optionsResultType));
         decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}MutationResult"), dataType));
         decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}MutationError"), TanStackQueryTypeBuilder.SimpleType("Error")));
         decls.Add(BuildUseMutationFn(operation, hookBaseName, optionsParamsType, optionsResultType, dataType, variablesType));
@@ -534,9 +584,29 @@ public sealed class TanStackQueryHookAstBuilder
         return list;
     }
 
+    /// <summary>
+    /// Builds the <c>get…MutationOptions</c> factory whose <c>mutationFn</c> calls the generated client function.
+    /// </summary>
+    /// <remarks>
+    /// For a <b>parameterless</b> operation the mutation's variables type is <c>void</c>, and the client
+    /// function's first parameter is its <c>options</c> slot (e.g. <c>AxiosRequestConfig</c>). Forwarding the
+    /// <c>variables</c> (typed <c>void</c>) argument would land <c>void</c> in that slot — TS2345. So when
+    /// <paramref name="hasParams"/> is <see langword="false"/> the arrow keeps a <c>_variables</c> placeholder
+    /// (named with a leading underscore to satisfy <c>noUnusedParameters</c>, and still typed to keep the
+    /// arrow assignable to <c>MutationFunction&lt;TData, void&gt;</c>) but calls the client function with
+    /// <c>requestOptions</c> only, so <c>requestOptions</c> occupies the correct <c>options</c> slot.
+    /// </remarks>
+    /// <param name="operation">The mutation operation.</param>
+    /// <param name="hookBaseName">The PascalCase hook base name.</param>
+    /// <param name="hasParams">Whether the operation has request parameters; see the remarks for the parameterless behavior.</param>
+    /// <param name="variablesType">The <c>TVariables</c> type node (<c>void</c> when <paramref name="hasParams"/> is <see langword="false"/>).</param>
+    /// <param name="optionsParamsType">The generated <c>Get…MutationOptionsParams</c> type name.</param>
+    /// <param name="optionsResultType">The generated <c>Get…MutationOptionsResult</c> type name.</param>
+    /// <returns>The exported <c>get…MutationOptions</c> arrow function declaration.</returns>
     private FunctionDeclarationNode BuildGetMutationOptionsFn(
         IrOperation operation,
         string hookBaseName,
+        bool hasParams,
         TypeNode variablesType,
         IdentifierNode optionsParamsType,
         IdentifierNode optionsResultType)
@@ -544,13 +614,26 @@ public sealed class TanStackQueryHookAstBuilder
         var mutationKey = new ArrayLiteralExpressionNode(
             new[] { new LiteralExpressionNode(_namingConverter.ToCamelCase(operation.MethodName), LiteralKind.String) }.ToImmutableList());
 
-        // MutationFunction<TData, TVariables> = (variables, context: MutationFunctionContext) => Promise<TData>
+        // MutationFunction<TData, TVariables> = (variables, context: MutationFunctionContext) => Promise<TData>.
+        // Parameterless mutations have TVariables = void: keep a (`_`-prefixed) placeholder param but do NOT
+        // forward it to the client function, otherwise `void` lands in the client's options slot (TS2345).
         var contextParam = new ParameterDeclarationNode(new IdentifierNode("_context"), _typeBuilder.BuildMutationFunctionContextType(), isRequired: true);
+        var variablesParamName = hasParams ? "variables" : "_variables";
+        var clientCallArgs = hasParams
+            ? new[]
+            {
+                new IdentifierExpressionNode(new IdentifierNode("variables")),
+                new IdentifierExpressionNode(new IdentifierNode("requestOptions")),
+            }
+            : new[]
+            {
+                new IdentifierExpressionNode(new IdentifierNode("requestOptions")),
+            };
         var mutationFn = new ArrowFunctionExpressionNode(
-            new[] { new ParameterDeclarationNode(new IdentifierNode("variables"), variablesType, isRequired: true), contextParam }.ToImmutableList(),
+            new[] { new ParameterDeclarationNode(new IdentifierNode(variablesParamName), variablesType, isRequired: true), contextParam }.ToImmutableList(),
             new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode(operation.MethodName)),
-                new[] { new IdentifierExpressionNode(new IdentifierNode("variables")), new IdentifierExpressionNode(new IdentifierNode("requestOptions")) }.ToImmutableList()));
+                clientCallArgs.ToImmutableList()));
 
         var resultObj = new ObjectLiteralExpressionNode(new PropertyAssignmentNode[]
         {
