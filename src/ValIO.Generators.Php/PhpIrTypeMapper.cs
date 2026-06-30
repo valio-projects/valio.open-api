@@ -41,6 +41,7 @@ public sealed class PhpIrTypeMapper : IIrTypeMapper
         IrPrimitiveKind.File      => new SimpleTypeNode(new IdentifierNode("\\SplFileInfo"), isPrimitive: false),
         IrPrimitiveKind.Any       => new SimpleTypeNode(new IdentifierNode("mixed"), isPrimitive: true),
         IrPrimitiveKind.Void      => new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true),
+        IrPrimitiveKind.Null      => new SimpleTypeNode(new IdentifierNode("null"), isPrimitive: true),
         _                         => new SimpleTypeNode(new IdentifierNode("mixed"), isPrimitive: true),
     };
 
@@ -88,6 +89,7 @@ public sealed class PhpIrTypeMapper : IIrTypeMapper
                                                                         => "\\SplFileInfo",
         IrPrimitiveKind.Any                                             => "mixed",
         IrPrimitiveKind.Void                                            => "void",
+        IrPrimitiveKind.Null                                            => "null",
         _ => "mixed",
     };
 }

@@ -186,6 +186,7 @@ public sealed class ValibotAstBuilder
             IrPrimitiveKind.Uuid => BuildUuidSchema(),
             IrPrimitiveKind.Any => Call("unknown"),
             IrPrimitiveKind.Void => Call("undefined"),
+            IrPrimitiveKind.Null => Call("null"),
             IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File => Call("unknown"),
             _ => Call("unknown")
         };

@@ -290,7 +290,7 @@ public sealed class HttpxClientAstBuilder
             {
                 lines.Add($"return {responseModelName}.model_validate(response.json())");
             }
-            else if (responseType is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Void })
+            else if (responseType is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Void or IrPrimitiveKind.Null })
             {
                 lines.Add("return None");
             }

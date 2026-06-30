@@ -31,6 +31,7 @@ public class TypeScriptIrTypeMapperTests
     [TestCase(IrPrimitiveKind.File, "File")]
     [TestCase(IrPrimitiveKind.Any, "unknown")]
     [TestCase(IrPrimitiveKind.Void, "void")]
+    [TestCase(IrPrimitiveKind.Null, "null")]
     public void PrimitiveTypes_MapToCorrectTsType(IrPrimitiveKind kind, string expected)
     {
         var mapped = _mapper.MapType(Prim(kind));

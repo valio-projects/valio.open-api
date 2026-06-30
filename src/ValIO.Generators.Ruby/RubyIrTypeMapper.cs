@@ -52,6 +52,7 @@ public sealed class RubyIrTypeMapper : IIrTypeMapper
         IrPrimitiveKind.File      => new SimpleTypeNode(new IdentifierNode("String"),  isPrimitive: true),
         IrPrimitiveKind.Any       => AnyType(),
         IrPrimitiveKind.Void      => new SimpleTypeNode(new IdentifierNode("NilClass"), isPrimitive: true),
+        IrPrimitiveKind.Null      => new SimpleTypeNode(new IdentifierNode("NilClass"), isPrimitive: true),
         _                         => AnyType(),
     };
 

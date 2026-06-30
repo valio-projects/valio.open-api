@@ -55,6 +55,7 @@ public sealed class DartIrTypeMapper : IIrTypeMapper
         IrPrimitiveKind.File      => new SimpleTypeNode(new IdentifierNode("Uint8List"), isPrimitive: true),
         IrPrimitiveKind.Any       => AnyType(),
         IrPrimitiveKind.Void      => new SimpleTypeNode(new IdentifierNode("void"),      isPrimitive: true),
+        IrPrimitiveKind.Null      => new SimpleTypeNode(new IdentifierNode("Null"),      isPrimitive: true),
         _                         => AnyType(),
     };
 

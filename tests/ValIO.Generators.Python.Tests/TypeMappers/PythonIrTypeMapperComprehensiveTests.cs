@@ -32,6 +32,7 @@ public class PythonIrTypeMapperComprehensiveTests
     [TestCase(IrPrimitiveKind.File,      "bytes")]
     [TestCase(IrPrimitiveKind.Any,       "Any")]
     [TestCase(IrPrimitiveKind.Void,      "None")]
+    [TestCase(IrPrimitiveKind.Null,      "None")]
     public void AllPrimitives_MapToExpectedBuiltin(IrPrimitiveKind kind, string expected)
     {
         var mapped = _mapper.MapType(Prim(kind)) as SimpleTypeNode;

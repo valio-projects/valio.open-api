@@ -47,6 +47,13 @@ public class ZodExpressionBuilderTests
     }
 
     [Test]
+    public void Null_BareNullCall()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Null, useBigInt: false);
+        Render(schema).Should().Be("z.null()");
+    }
+
+    [Test]
     public void Integer_AddsIntRefinement()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Integer, useBigInt: false);

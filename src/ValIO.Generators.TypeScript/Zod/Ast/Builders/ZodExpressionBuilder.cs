@@ -77,6 +77,9 @@ public static class ZodExpressionBuilder
             case IrPrimitiveKind.Boolean:
                 baseCall = Call(MemberAccess(Identifier("z"), "boolean"), Array.Empty<ExpressionNode>());
                 break;
+            case IrPrimitiveKind.Null:
+                baseCall = Call(MemberAccess(Identifier("z"), "null"), Array.Empty<ExpressionNode>());
+                break;
             case IrPrimitiveKind.Any:
             default:
                 baseCall = Call(MemberAccess(Identifier("z"), "any"), Array.Empty<ExpressionNode>());

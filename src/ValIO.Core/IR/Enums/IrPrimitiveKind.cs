@@ -69,7 +69,13 @@ public enum IrPrimitiveKind
     /// Пустой тип (void)
     /// </summary>
     Void,
-    
+
+    /// <summary>
+    /// JSON null литерал (OpenAPI 3.1 <c>{"type":"null"}</c>) — значение всегда null.
+    /// В отличие от Any/Void это строгий, валидируемый тип (например <c>z.null()</c>).
+    /// </summary>
+    Null,
+
     /// <summary>
     /// Файл
     /// </summary>

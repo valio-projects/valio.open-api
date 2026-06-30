@@ -37,6 +37,7 @@ public class ValibotAstBuilderTests
     [TestCase(IrPrimitiveKind.Boolean, "v.boolean()")]
     [TestCase(IrPrimitiveKind.Any,     "v.unknown()")]
     [TestCase(IrPrimitiveKind.Void,    "v.undefined()")]
+    [TestCase(IrPrimitiveKind.Null,    "v.null()")]
     public void Primitives_RenderToExpectedCall(IrPrimitiveKind kind, string expected)
     {
         Render(Prim(kind)).Should().Be(expected);

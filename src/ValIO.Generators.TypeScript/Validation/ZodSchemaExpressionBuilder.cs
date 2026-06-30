@@ -89,6 +89,7 @@ internal sealed class ZodSchemaExpressionBuilder
                 _ => Call(Member(Call(Member(Id("z"), "string")), "uuid"))
             },
             IrPrimitiveKind.Void => Call(Member(Id("z"), "void")),
+            IrPrimitiveKind.Null => Call(Member(Id("z"), "null")),
             _ => Call(Member(Id("z"), "unknown"))
         };
 }

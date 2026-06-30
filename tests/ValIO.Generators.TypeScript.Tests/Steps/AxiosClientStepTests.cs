@@ -29,6 +29,21 @@ public class AxiosClientStepTests
     }
 
     [Test]
+    public async Task AxiosClient_TypeImports_AreSplitOnePerLine()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
+
+        var any = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith(".axios.ts", StringComparison.Ordinal));
+
+        // Type-only imports are emitted one specifier per line, not merged into `{ A, B }`.
+        any.Content.Should().Contain("import type { AxiosRequestConfig } from \"axios\";");
+        any.Content.Should().Contain("import type { AxiosInstance } from \"axios\";");
+        any.Content.Should().NotContain("import type { AxiosRequestConfig, AxiosInstance }");
+    }
+
+    [Test]
     public async Task AxiosClient_HeadersAreCast_ToAxiosRequestConfigHeaders()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");

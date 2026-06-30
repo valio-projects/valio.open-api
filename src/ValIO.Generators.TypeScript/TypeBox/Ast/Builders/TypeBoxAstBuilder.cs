@@ -208,6 +208,7 @@ public sealed class TypeBoxAstBuilder
             IrPrimitiveKind.Number => CallOptional("Number", BuildNumberOptions(constraints)),
             IrPrimitiveKind.Boolean => Call("Boolean"),
             IrPrimitiveKind.Void => Call("Void"),
+            IrPrimitiveKind.Null => Call("Null"),
             IrPrimitiveKind.Any => Call("Unknown"),
             _ => Call("Unknown")
         };

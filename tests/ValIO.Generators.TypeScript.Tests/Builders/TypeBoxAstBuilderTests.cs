@@ -35,6 +35,7 @@ public class TypeBoxAstBuilderTests
     [TestCase(IrPrimitiveKind.Number,  "Type.Number()")]
     [TestCase(IrPrimitiveKind.Boolean, "Type.Boolean()")]
     [TestCase(IrPrimitiveKind.Void,    "Type.Void()")]
+    [TestCase(IrPrimitiveKind.Null,    "Type.Null()")]
     [TestCase(IrPrimitiveKind.Any,     "Type.Unknown()")]
     [TestCase(IrPrimitiveKind.Integer, "Type.Integer()")]
     [TestCase(IrPrimitiveKind.Long,    "Type.Integer()")]

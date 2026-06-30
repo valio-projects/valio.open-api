@@ -41,6 +41,7 @@ public sealed class PythonIrTypeMapper : IIrTypeMapper
         IrPrimitiveKind.File      => new SimpleTypeNode(new IdentifierNode("bytes"), isPrimitive: true),
         IrPrimitiveKind.Any       => new SimpleTypeNode(new IdentifierNode("Any"), isPrimitive: true),
         IrPrimitiveKind.Void      => new SimpleTypeNode(new IdentifierNode("None"), isPrimitive: true),
+        IrPrimitiveKind.Null      => new SimpleTypeNode(new IdentifierNode("None"), isPrimitive: true),
         _                         => new SimpleTypeNode(new IdentifierNode("Any"), isPrimitive: true)
     };
 

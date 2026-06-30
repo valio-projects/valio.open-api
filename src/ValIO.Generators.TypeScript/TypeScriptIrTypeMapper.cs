@@ -41,6 +41,7 @@ public sealed class TypeScriptIrTypeMapper : IIrTypeMapper
         IrPrimitiveKind.File     => new SimpleTypeNode(new IdentifierNode("File"), isPrimitive: true),
         IrPrimitiveKind.Any      => new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
         IrPrimitiveKind.Void     => new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true),
+        IrPrimitiveKind.Null     => new SimpleTypeNode(new IdentifierNode("null"), isPrimitive: true),
         _                        => new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true)
     };
 

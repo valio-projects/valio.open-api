@@ -684,6 +684,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             var name = import.Items.Count > 0 ? import.Items[0].Name : "namespace";
             CodeFormatter.AppendLine(_sb, 0, $"import * as {name}{from};");
         }
+        else if (import.IsTypeOnly && import.Items.Count > 1)
+        {
+            // Каждый type-only специфайр — на отдельной строке (`import type { X } from "m";`
+            // на каждый тип). Так требуют линтеры; value/default/namespace-импорты не трогаем.
+            foreach (var item in import.Items)
+                CodeFormatter.AppendLine(_sb, 0, $"import type {{ {item.Name} }}{from};");
+        }
         else
         {
             var namedImports = string.Join(", ", import.Items.Select(i => i.Name));

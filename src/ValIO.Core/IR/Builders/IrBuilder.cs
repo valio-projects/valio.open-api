@@ -23,6 +23,10 @@ public class IrBuilder
     // Словарь для хранения созданных inline моделей
     private readonly Dictionary<string, IrModel> _inlineModels = new();
     private int _inlineModelCounter = 0;
+
+    // Диагностический контекст текущей точки построения типа (endpoint / роль / путь свойства).
+    // Используется только для информативных сообщений об ошибках в BuildType.
+    private SchemaBuildContext _ctx = new();
     
     public IrBuilder(ISchemaResolver schemaResolver, INamingConverter namingConverter)
     {
@@ -123,7 +127,9 @@ public class IrBuilder
             }
             
             var sanitizedName = _namingConverter.SanitizeIdentifier(schemaName);
-            var model = BuildModel(sanitizedName, schema, document);
+            var model = WithContext(
+                new SchemaBuildContext { Role = SchemaRole.Model, RootModelName = sanitizedName },
+                () => BuildModel(sanitizedName, schema, document));
             models.Add(model);
         }
         
@@ -196,11 +202,13 @@ public class IrBuilder
         {
             var sanitizedName = _namingConverter.SanitizeIdentifier(propertyName);
             var safeName = _namingConverter.SanitizeReservedKeyword(sanitizedName);
-            var propertyType = BuildType(propertySchema, document, propertyContext: new PropertyContext
-            {
-                PropertyName = propertyName,
-                ParentModelName = parentModelName
-            });
+            var propertyType = WithContext(
+                _ctx with { PropertyPath = AppendPath(_ctx.PropertyPath, propertyName) },
+                () => BuildType(propertySchema, document, propertyContext: new PropertyContext
+                {
+                    PropertyName = propertyName,
+                    ParentModelName = parentModelName
+                }));
             var isRequired = schema.Required?.Contains(propertyName) ?? false;
             var constraints = ExtractConstraints(propertySchema);
             
@@ -227,6 +235,108 @@ public class IrBuilder
         public string? ParentModelName { get; init; }
         public bool IsForm { get; init; }
         public string? OperationId { get; init; }
+    }
+
+    /// <summary>Роль схемы в документе — для диагностических сообщений об ошибках построения IR.</summary>
+    private enum SchemaRole { None, Model, PathParameter, QueryParameter, HeaderParameter, RequestBody, Response }
+
+    /// <summary>
+    /// Иммутабельный диагностический контекст: endpoint (метод + путь), операция, роль
+    /// (path/query/header-параметр · тело запроса · ответ[код]), модель и путь свойства.
+    /// Используется только для информативных сообщений об ошибках построения типа
+    /// (см. <see cref="BuildType"/>). Сохраняется/восстанавливается через <see cref="WithContext{T}"/>.
+    /// </summary>
+    private sealed record SchemaBuildContext
+    {
+        public string? HttpMethod { get; init; }
+        public string? Path { get; init; }
+        public string? OperationId { get; init; }
+        public SchemaRole Role { get; init; }
+        public string? StatusCode { get; init; }
+        public string? ContentType { get; init; }
+        public string? ParameterName { get; init; }
+        public string? RootModelName { get; init; }
+        public IReadOnlyList<string> PropertyPath { get; init; } = Array.Empty<string>();
+
+        /// <summary>Человекочитаемое описание места, где строится тип — например
+        /// «response 200 (application/json) of operation 'getApartments' [GET /api/apartments], property 'result.data[].error'».</summary>
+        public string Describe()
+        {
+            var parts = new List<string>(2);
+
+            switch (Role)
+            {
+                case SchemaRole.Response:
+                    var resp = "response";
+                    if (!string.IsNullOrEmpty(StatusCode)) resp += $" {StatusCode}";
+                    if (!string.IsNullOrEmpty(ContentType)) resp += $" ({ContentType})";
+                    parts.Add(resp);
+                    break;
+                case SchemaRole.RequestBody:
+                    parts.Add(string.IsNullOrEmpty(ContentType) ? "request body" : $"request body ({ContentType})");
+                    break;
+                case SchemaRole.PathParameter:
+                    parts.Add($"path parameter '{ParameterName}'");
+                    break;
+                case SchemaRole.QueryParameter:
+                    parts.Add($"query parameter '{ParameterName}'");
+                    break;
+                case SchemaRole.HeaderParameter:
+                    parts.Add($"header parameter '{ParameterName}'");
+                    break;
+                case SchemaRole.Model:
+                    if (!string.IsNullOrEmpty(RootModelName)) parts.Add($"model '{RootModelName}'");
+                    break;
+            }
+
+            if (!string.IsNullOrEmpty(OperationId))
+            {
+                var op = $"operation '{OperationId}'";
+                if (!string.IsNullOrEmpty(HttpMethod) && !string.IsNullOrEmpty(Path))
+                    op += $" [{HttpMethod} {Path}]";
+                parts.Add(op);
+            }
+            else if (!string.IsNullOrEmpty(HttpMethod) && !string.IsNullOrEmpty(Path))
+            {
+                parts.Add($"[{HttpMethod} {Path}]");
+            }
+
+            var location = string.Join(" of ", parts);
+
+            if (PropertyPath.Count > 0)
+            {
+                var prop = $"property '{string.Join(".", PropertyPath)}'";
+                location = string.IsNullOrEmpty(location) ? prop : $"{location}, {prop}";
+            }
+
+            return string.IsNullOrEmpty(location) ? "<unknown location>" : location;
+        }
+    }
+
+    /// <summary>Выполняет <paramref name="body"/> с временно установленным диагностическим контекстом.</summary>
+    private T WithContext<T>(SchemaBuildContext ctx, Func<T> body)
+    {
+        var previous = _ctx;
+        _ctx = ctx;
+        try { return body(); }
+        finally { _ctx = previous; }
+    }
+
+    private static IReadOnlyList<string> AppendPath(IReadOnlyList<string> path, string segment)
+    {
+        var list = new List<string>(path.Count + 1);
+        list.AddRange(path);
+        list.Add(segment);
+        return list;
+    }
+
+    private static IReadOnlyList<string> SuffixLastSegment(IReadOnlyList<string> path, string suffix)
+    {
+        if (path.Count == 0)
+            return path;
+        var list = new List<string>(path);
+        list[^1] += suffix;
+        return list;
     }
     
     /// <summary>
@@ -373,7 +483,7 @@ public class IrBuilder
         var resolvedSchema = _schemaResolver.ResolveSchema(schema);
         
         if (resolvedSchema == null)
-            throw new InvalidOperationException("Schema resolver returned null schema");
+            throw new InvalidOperationException($"Schema resolver returned null schema — at {_ctx.Describe()}");
         
         // OneOf, AnyOf -> Union (проверяем до проверки Type, так как композиция может не иметь Type).
         // Нормализуем: чистые null-ветки ({type:null}) превращаем в nullable-обёртку, а не в член union;
@@ -464,14 +574,24 @@ public class IrBuilder
                 PrimitiveKind = MapPrimitive(core, resolvedSchema.Format)
             };
         }
-        
+
+        // OpenAPI 3.1 «только null» ({"type":"null"}) как самостоятельный тип — например конверт
+        // success/error, где свойство `error` всегда null. Внутри oneOf/anyOf такая схема уже
+        // схлопывается в nullable выше (IsNullOnlySchema); здесь обрабатывается standalone-случай.
+        if (resolvedSchema.Type.Value == JsonSchemaType.Null)
+            return new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Null };
+
         // Массив
         if (resolvedSchema.Type.Value.HasFlag(JsonSchemaType.Array))
         {
             if (resolvedSchema.Items == null)
-                throw new InvalidOperationException("Array schema must have Items property");
-            
-            var elementType = BuildType(resolvedSchema.Items, document, propertyContext);
+                throw new InvalidOperationException(
+                    $"Array schema must have Items property — at {_ctx.Describe()}");
+
+            var items = resolvedSchema.Items!;
+            var elementType = WithContext(
+                _ctx with { PropertyPath = SuffixLastSegment(_ctx.PropertyPath, "[]") },
+                () => BuildType(items, document, propertyContext));
             return new IrArrayType { ElementType = elementType };
         }
         
@@ -513,7 +633,7 @@ public class IrBuilder
         }
         
         var typeStr = resolvedSchema.Type?.ToString() ?? "null";
-        throw new InvalidOperationException($"Unknown schema type: {typeStr}");
+        throw new InvalidOperationException($"Unknown schema type: {typeStr} — at {_ctx.Describe()}");
     }
     
     /// <summary>
@@ -1057,17 +1177,34 @@ public class IrBuilder
         var operationId = openApiOperation.OperationId ?? 
             $"{httpMethod.Method.ToLower()}{path.Replace("/", "").Replace("{", "").Replace("}", "")}";
         var methodName = _namingConverter.SanitizeIdentifier(operationId);
-        
+
+        // Базовый диагностический контекст операции (endpoint + operationId). Под-точки построения
+        // (параметры / тело / ответы) уточняют роль через WithContext, восстанавливая этот контекст.
+        _ctx = new SchemaBuildContext
+        {
+            HttpMethod = httpMethod.Method.ToUpperInvariant(),
+            Path = path,
+            OperationId = operationId
+        };
+
         // Извлекаем параметры: объединяем path-level и operation-level (operation переопределяет path)
         var effectiveParameters = GetEffectiveParameters(pathItem, openApiOperation);
         var pathParameters = new List<IrParameter>();
         var queryParameters = new List<IrParameter>();
         var headerParameters = new List<IrParameter>();
-        
+
         foreach (var parameter in effectiveParameters)
             {
-                var irParameter = BuildParameter(parameter, document);
-                
+                var role = parameter.In switch
+                {
+                    ParameterLocation.Path => SchemaRole.PathParameter,
+                    ParameterLocation.Header => SchemaRole.HeaderParameter,
+                    _ => SchemaRole.QueryParameter
+                };
+                var irParameter = WithContext(
+                    _ctx with { Role = role, ParameterName = parameter.Name },
+                    () => BuildParameter(parameter, document));
+
                 switch (parameter.In)
                 {
                     case ParameterLocation.Path:
@@ -1104,7 +1241,7 @@ public class IrBuilder
                 var statusCode = responseEntry.Key;
                 var response = responseEntry.Value;
                 
-                var responseType = ExtractResponseType(response, document);
+                var responseType = ExtractResponseType(response, statusCode, document);
                 
                 responses.Add(new IrResponse
                 {
@@ -1320,13 +1457,15 @@ public class IrBuilder
         var isForm = contentType == "multipart/form-data" || contentType == "application/x-www-form-urlencoded";
         
         var type = schema != null
-            ? BuildType(schema, document, propertyContext: isForm && !string.IsNullOrEmpty(operationId)
-                ? new PropertyContext
-                {
-                    IsForm = true,
-                    OperationId = operationId
-                }
-                : null)
+            ? WithContext(
+                _ctx with { Role = SchemaRole.RequestBody, ContentType = contentType },
+                () => BuildType(schema!, document, propertyContext: isForm && !string.IsNullOrEmpty(operationId)
+                    ? new PropertyContext
+                    {
+                        IsForm = true,
+                        OperationId = operationId
+                    }
+                    : null))
             : new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         
         // Проверяем, есть ли в схеме хотя бы одно required свойство
@@ -1346,16 +1485,18 @@ public class IrBuilder
     /// <summary>
     /// Извлекает тип ответа из OpenAPI response
     /// </summary>
-    private IrType? ExtractResponseType(IOpenApiResponse response, OpenApiDocument document)
+    private IrType? ExtractResponseType(IOpenApiResponse response, string statusCode, OpenApiDocument document)
     {
         // Берем первый content type
         var content = response.Content?.FirstOrDefault();
         var schema = content.HasValue ? content.Value.Value?.Schema : null;
-        
+
         if (schema == null)
             return null;
-        
-        return BuildType(schema, document);
+
+        return WithContext(
+            _ctx with { Role = SchemaRole.Response, StatusCode = statusCode, ContentType = content?.Key },
+            () => BuildType(schema, document));
     }
     
     /// <summary>

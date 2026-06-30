@@ -761,6 +761,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             IrPrimitiveKind.Uuid => "string",
             IrPrimitiveKind.Any => "any",
             IrPrimitiveKind.Void => "void",
+            IrPrimitiveKind.Null => "null",
             IrPrimitiveKind.File => "Blob",
             _ => "unknown"
         };
