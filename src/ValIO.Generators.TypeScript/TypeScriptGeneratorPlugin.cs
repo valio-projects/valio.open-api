@@ -47,6 +47,7 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new GotClientStep(namingConverter, nodeRenderers),
             new AngularRxjsClientStep(namingConverter),
             new SolidStartClientStep(namingConverter, nodeRenderers),
+            new NextjsClientStep(namingConverter, nodeRenderers),
             new TanStackQueryStep(namingConverter, nodeRenderers),
             new TanStackVueStep(namingConverter, nodeRenderers),
             new TanStackAngularStep(namingConverter, nodeRenderers),

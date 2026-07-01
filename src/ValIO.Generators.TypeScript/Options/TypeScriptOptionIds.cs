@@ -13,6 +13,9 @@ public static class TypeScriptOptionIds
         public const string AngularRxjs = "angular-rxjs";
         public const string AngularPromise = "angular-promise";
         public const string Solid = "solid";
+
+        /// <summary>Next.js (App Router) server-safe fetch client with cache tags + revalidation.</summary>
+        public const string Nextjs = "nextjs";
     }
 
     public static class Validation

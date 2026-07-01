@@ -16,6 +16,7 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         new("angular-rxjs",     "Angular HttpClient (RxJS)", "ts.transports.angularRxjs.desc"),
         new("angular-promise",  "Angular HttpClient (Promise)", "ts.transports.angularPromise.desc"),
         new("solid",            "SolidStart fetch",     "ts.transports.solid.desc"),
+        new("nextjs",           "Next.js fetch",        "ts.transports.nextjs.desc"),
     ];
 
     private static readonly OptionChoice[] EnumFormatChoices =
@@ -139,6 +140,18 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
                 opts.Axios = axiosOpts;
         }
 
+        // Next.js transport: { "nextjs": { "defaultRevalidate": 60, "generateRevalidateHelpers": true } }.
+        if (rawOptions.TryGetValue("nextjs", out var nextjs) && nextjs.ValueKind == JsonValueKind.Object)
+        {
+            var nextOpts = new TypeScriptNextJsOptions();
+            if (nextjs.TryGetProperty("defaultRevalidate", out var dr) && dr.ValueKind == JsonValueKind.Number)
+                nextOpts.DefaultRevalidate = dr.GetInt32();
+            if (nextjs.TryGetProperty("generateRevalidateHelpers", out var grh)
+                && (grh.ValueKind == JsonValueKind.True || grh.ValueKind == JsonValueKind.False))
+                nextOpts.GenerateRevalidateHelpers = grh.GetBoolean();
+            opts.NextJs = nextOpts;
+        }
+
         errors = errorList.AsReadOnly();
         return opts;
     }
@@ -254,6 +267,7 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             "angular" or "angular-rxjs" => TypeScriptOptionIds.Transport.AngularRxjs,
             "angular-promise" or "angular-async" => TypeScriptOptionIds.Transport.AngularPromise,
             "solid" or "solidstart" or "solid-start" => TypeScriptOptionIds.Transport.Solid,
+            "nextjs" or "next" or "next.js" => TypeScriptOptionIds.Transport.Nextjs,
             var unknown => AddError(errors, $"Unknown transport: '{unknown}'")
         };
     }

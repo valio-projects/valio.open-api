@@ -44,6 +44,13 @@ public sealed class TypeScriptGenerationOptions
     public TypeScriptAxiosOptions? Axios { get; set; }
 
     /// <summary>
+    /// Options for the <c>nextjs</c> transport (Next.js App Router fetch client). Parsed by
+    /// <see cref="TypeScriptOptionsDescriptor"/> from the nested <c>nextjs</c> config object. When the
+    /// <c>nextjs</c> transport is not selected this is <see langword="null"/> and ignored.
+    /// </summary>
+    public TypeScriptNextJsOptions? NextJs { get; set; }
+
+    /// <summary>
     /// How <c>Guid</c>/<c>Uuid</c> fields are validated in generated schemas:
     /// <c>guid</c> (default — built-in uuid validator), <c>string</c> (no refinement), or
     /// <c>regex</c> (shared format-regex constant). Normalised by
@@ -68,4 +75,24 @@ public sealed class TypeScriptAxiosOptions
     /// Name of the exported axios instance, e.g. <c>apiMutator</c>. Imported as a named export.
     /// </summary>
     public string? CustomInstanceName { get; set; }
+}
+
+/// <summary>
+/// Options for the Next.js (App Router) fetch transport. Mirrors the <c>options.nextjs</c> config object.
+/// </summary>
+public sealed class TypeScriptNextJsOptions
+{
+    /// <summary>
+    /// Default <c>next.revalidate</c> (seconds) applied to cacheable (GET) requests. When
+    /// <see langword="null"/> no default is emitted and Next.js uses its own default caching. Callers can
+    /// still override per call via <c>options.next.revalidate</c>.
+    /// </summary>
+    public int? DefaultRevalidate { get; set; }
+
+    /// <summary>
+    /// Whether to emit a per-operation <c>revalidate&lt;Op&gt;()</c> helper (calling
+    /// <c>revalidateTag(tag, "max")</c> from <c>next/cache</c>) for cacheable GET operations. Defaults to
+    /// <see langword="true"/>.
+    /// </summary>
+    public bool GenerateRevalidateHelpers { get; set; } = true;
 }
