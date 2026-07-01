@@ -38,6 +38,7 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitUnionType(UnionTypeNode node);
     TResult VisitIntersectionType(IntersectionTypeNode node);
     TResult VisitDictionaryType(DictionaryTypeNode node);
+    TResult VisitTypeLiteral(TypeLiteralNode node);
     
     // Выражения (общие)
     TResult VisitLiteralExpression(LiteralExpressionNode node);

@@ -27,6 +27,47 @@ public class TypeScriptAstRendererTests
         new(new IdentifierNode(name), isPrimitive);
 
     [Test]
+    public void TypeLiteral_RendersInlineObjectShape_WithOptionalMember()
+    {
+        var literal = new TypeLiteralNode(ImmutableList.Create(
+            new TypeLiteralMember("a", Simple("string", isPrimitive: true), isOptional: true),
+            new TypeLiteralMember("b", Simple("number", isPrimitive: true))));
+
+        literal.Accept(_renderer).Should().Be("{ a?: string; b: number }");
+    }
+
+    [Test]
+    public void TypeLiteral_Empty_RendersEmptyBraces()
+    {
+        new TypeLiteralNode(ImmutableList<TypeLiteralMember>.Empty).Accept(_renderer).Should().Be("{}");
+    }
+
+    // Locks the exact Next.js fetch options type, composed entirely from AST nodes (no RawTypeNode):
+    // an intersection of RequestInit and a nested inline type literal with a `number | false` union and a string[].
+    [Test]
+    public void TypeLiteral_NestedInIntersection_RendersNextjsFetchOptionsType()
+    {
+        var nextConfig = new TypeLiteralNode(ImmutableList.Create(
+            new TypeLiteralMember(
+                "revalidate",
+                new UnionTypeNode(ImmutableList.Create<TypeNode>(
+                    Simple("number", isPrimitive: true),
+                    new SimpleTypeNode(new IdentifierNode("false"), literalValue: false))),
+                isOptional: true),
+            new TypeLiteralMember(
+                "tags",
+                new ArrayTypeNode(Simple("string", isPrimitive: true)),
+                isOptional: true)));
+
+        var optionsType = new IntersectionTypeNode(ImmutableList.Create<TypeNode>(
+            Simple("RequestInit"),
+            new TypeLiteralNode(ImmutableList.Create(new TypeLiteralMember("next", nextConfig, isOptional: true)))));
+
+        optionsType.Accept(_renderer).Should()
+            .Be("RequestInit & { next?: { revalidate?: number | false; tags?: string[] } }");
+    }
+
+    [Test]
     public void AsyncFunctionWithVoidReturn_WrapsInPromiseVoid()
     {
         var fn = new FunctionDeclarationNode(

@@ -294,6 +294,25 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"Record<{keyType}, {valueType}>";
     }
 
+    public override string VisitTypeLiteral(TypeLiteralNode node)
+    {
+        var suffix = (node.IsNullable ? " | null" : "") + (node.IsOptional ? "?" : "");
+        if (node.Members.Count == 0)
+            return "{}" + suffix;
+        var members = string.Join("; ", node.Members.Select(RenderTypeLiteralMember));
+        return $"{{ {members} }}" + suffix;
+    }
+
+    /// <summary>Renders a single object type-literal member as <c>{readonly }name{?}: Type</c>.</summary>
+    /// <param name="member">The member to render.</param>
+    /// <returns>The TypeScript property-signature text for <paramref name="member"/>.</returns>
+    private string RenderTypeLiteralMember(TypeLiteralMember member)
+    {
+        var readonlyStr = member.IsReadonly ? "readonly " : "";
+        var optionalStr = member.IsOptional ? "?" : "";
+        return $"{readonlyStr}{member.Name}{optionalStr}: {RenderType(member.Type)}";
+    }
+
     public override string VisitLiteralExpression(LiteralExpressionNode node)
     {
         return RenderLiteral(node);

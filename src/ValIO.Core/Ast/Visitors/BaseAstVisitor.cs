@@ -36,6 +36,15 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     public abstract TResult VisitUnionType(UnionTypeNode node);
     public abstract TResult VisitIntersectionType(IntersectionTypeNode node);
     public abstract TResult VisitDictionaryType(DictionaryTypeNode node);
+
+    /// <summary>
+    /// Visits an inline object type literal (<c>{ a?: T; b: U }</c>). Defaults to <see cref="DefaultVisit"/>
+    /// because inline type literals are currently produced only by the TypeScript generator; a language
+    /// visitor that needs them overrides this method (so existing visitors are unaffected by its addition).
+    /// </summary>
+    /// <param name="node">The type-literal node to visit.</param>
+    /// <returns>The visitor result for <paramref name="node"/>.</returns>
+    public virtual TResult VisitTypeLiteral(TypeLiteralNode node) => DefaultVisit(node);
     
     // Выражения
     public abstract TResult VisitLiteralExpression(LiteralExpressionNode node);
