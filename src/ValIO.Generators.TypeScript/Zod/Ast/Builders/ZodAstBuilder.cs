@@ -61,7 +61,20 @@ public class ZodAstBuilder
                         .ToImmutableList();
                     if (unionVariants.Count == 1)
                         return unionVariants[0];
-                    return new ZodUnionNode(unionVariants);
+                    // z.discriminatedUnion needs every variant to be an object with a literal at the
+                    // discriminator key. Enable it only for oneOf + a declared discriminator where every
+                    // variant is a (non-self) model reference — the generated {Model}Schema are z.object,
+                    // whereas a self-reference would render as z.lazy(...) which discriminatedUnion rejects.
+                    // The key is sanitized exactly like model property names so it matches the variants.
+                    var canDiscriminate = model.Composition.Kind == IrCompositionKind.OneOf
+                        && !string.IsNullOrWhiteSpace(model.Composition.DiscriminatorPropertyName)
+                        && model.Composition.Types.All(t =>
+                            t is IrModelReference m && !m.ModelName.Equals(model.Name, StringComparison.OrdinalIgnoreCase));
+                    var discriminator = canDiscriminate
+                        ? _namingConverter.SanitizeReservedKeyword(
+                            _namingConverter.SanitizeIdentifier(model.Composition.DiscriminatorPropertyName!))
+                        : null;
+                    return new ZodUnionNode(unionVariants, discriminator: discriminator);
                 case IrCompositionKind.AllOf:
                     var allOfSchemas = model.Composition.Types
                         .Select(t => BuildZodSchemaFromIrType(t, model.Name))

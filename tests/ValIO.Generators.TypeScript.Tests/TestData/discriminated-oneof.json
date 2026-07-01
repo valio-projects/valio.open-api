@@ -1,0 +1,12 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "discriminated-oneof", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Cat": { "type": "object", "required": ["petType", "meow"], "properties": { "petType": { "type": "string", "enum": ["cat"] }, "meow": { "type": "boolean" } } },
+      "Dog": { "type": "object", "required": ["petType", "bark"], "properties": { "petType": { "type": "string", "enum": ["dog"] }, "bark": { "type": "boolean" } } },
+      "Pet": { "oneOf": [ { "$ref": "#/components/schemas/Cat" }, { "$ref": "#/components/schemas/Dog" } ], "discriminator": { "propertyName": "petType" } }
+    }
+  }
+}

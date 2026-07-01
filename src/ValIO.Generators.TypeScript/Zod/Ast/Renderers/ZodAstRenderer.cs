@@ -178,7 +178,9 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
     public override string VisitZodUnion(ZodUnionNode node)
     {
         var variants = node.Variants.Select(v => Visit((AstNode)v));
-        return $"z.union([{string.Join(", ", variants)}])";
+        return string.IsNullOrEmpty(node.Discriminator)
+            ? $"z.union([{string.Join(", ", variants)}])"
+            : $"z.discriminatedUnion(\"{node.Discriminator}\", [{string.Join(", ", variants)}])";
     }
     
     public override string VisitZodIntersection(ZodIntersectionNode node)

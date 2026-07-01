@@ -104,4 +104,22 @@ public class ZodSchemasStepTests
         enumSchema.Content.Should().Contain("z.enum(UserRoleValues)");
         enumSchema.Content.Should().NotContain("UserRoleValues = [");
     }
+
+    // oneOf + discriminator → z.discriminatedUnion("<key>", [...]) (faster, better errors than z.union);
+    // the discriminator key matches the variants' sanitized property name.
+    [Test]
+    public async Task OneOfWithDiscriminator_EmitsDiscriminatedUnion()
+    {
+        var doc = await PipelineTestHarness.LoadDocumentAsync("discriminated-oneof.json");
+        var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
+        {
+            Transports = ["fetch"],
+            ValidationLibrary = "zod4",
+        });
+
+        var petSchema = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.Replace('\\', '/').EndsWith("models/pet/pet.schema.ts", StringComparison.Ordinal));
+        petSchema.Content.Should().Contain("z.discriminatedUnion(\"petType\", [CatSchema, DogSchema])");
+        petSchema.Content.Should().NotContain("z.union(");
+    }
 }

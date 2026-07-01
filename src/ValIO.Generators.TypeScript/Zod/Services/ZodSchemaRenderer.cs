@@ -62,13 +62,23 @@ public class ZodSchemaRenderer
         $"import {{ {TypeScriptOptionIds.UuidFormat.RegexConstName} }} from \"{relativeDir}/{TypeScriptOptionIds.UuidFormat.ConstFileName}\";";
     
     /// <summary>
-    /// Рендерит Zod схему для IR модели
+    /// Рендерит Zod схему для IR модели.
     /// </summary>
-    /// <param name="model">IR модель</param>
-    /// <param name="importPath">Путь для импортов (опционально)</param>
-    /// <param name="currentFileName">Имя текущего файла (для вычисления относительных путей)</param>
-    /// <param name="schemasPath">Путь к папке со схемами (для вычисления относительных путей)</param>
-    /// <returns>TypeScript код Zod схемы</returns>
+    /// <remarks>
+    /// Design note — the schema is emitted as <c>export const XSchema: ZodSchema&lt;X&gt; = …</c>, annotated
+    /// against the <b>separately generated</b> interface <c>X</c>, instead of deriving the type from the schema
+    /// via <c>export type X = z.infer&lt;typeof XSchema&gt;</c>. Reason: the generated interface carries
+    /// <b>per-field JSDoc</b> sourced from OpenAPI <c>description</c>s (and hover docs in editors), whereas a
+    /// <c>z.infer</c>-derived type is a structural alias that <b>cannot</b> hold per-property JSDoc — those
+    /// comments would be lost. Keeping interface + schema as two artifacts (the schema annotated with the
+    /// interface) preserves documentation while the <c>ZodSchema&lt;X&gt;</c> annotation still guarantees the
+    /// schema's output type matches the interface at compile time.
+    /// </remarks>
+    /// <param name="model">IR модель.</param>
+    /// <param name="importPath">Путь для импортов (опционально).</param>
+    /// <param name="currentFileName">Имя текущего файла (для вычисления относительных путей).</param>
+    /// <param name="schemasPath">Путь к папке со схемами (для вычисления относительных путей).</param>
+    /// <returns>TypeScript код Zod схемы.</returns>
     public string RenderFromIr(IrModel model, string? importPath = null, string? currentFileName = null, string? schemasPath = null)
     {
         if (model == null)
