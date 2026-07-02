@@ -108,6 +108,12 @@ public sealed class GenerationOrchestrator : IGenerationOrchestrator
             return OrchestrationResult.Failure($"Generator pipeline failed: {ex.Message}");
         }
 
+        // Drain non-blocking diagnostics contributed by generation steps (e.g. transport auto-fix) so they are
+        // logged and surfaced alongside the IR-phase warnings.
+        foreach (var w in context.Warnings)
+            _logger.LogWarning("{Warning}", w);
+        warnings.AddRange(context.Warnings);
+
         _logger.LogInformation("Generated {Count} files", context.GeneratedFiles.Count);
 
         return new OrchestrationResult(

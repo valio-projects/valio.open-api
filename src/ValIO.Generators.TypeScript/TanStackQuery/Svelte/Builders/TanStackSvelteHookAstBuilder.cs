@@ -43,11 +43,10 @@ public sealed class TanStackSvelteHookAstBuilder
         var paramsTypeName = hasParams ? _paramsBuilder.ParamsInterfaceName(operation.MethodName) : null;
         var resultTypeName = _resultsBuilder.HasResponsesWithBody(operation) ? _resultsBuilder.ResultTypeName(operation.MethodName) : null;
 
-        var imports = BuildImports(operation, operationFileName, clientSuffix, hasParams, paramsTypeName, resultTypeName, isMutation);
+        var imports = BuildImports(operation, operationFileName, clientSuffix, hookBaseName, hasParams, paramsTypeName, resultTypeName, isMutation);
         var declarations = isMutation
             ? ImmutableList<DeclarationNode>.Empty.Add(BuildUseMutationFn(operation, hookBaseName, paramsTypeName, resultTypeName, hasParams))
             : ImmutableList<DeclarationNode>.Empty
-                .Add(BuildGetQueryKeyFn(operation, hookBaseName, paramsTypeName, hasParams))
                 .Add(BuildUseQueryFn(operation, hookBaseName, paramsTypeName, resultTypeName, hasParams));
 
         return new SourceFileNode(imports: imports, declarations: declarations,
@@ -58,7 +57,7 @@ public sealed class TanStackSvelteHookAstBuilder
     }
 
     private static IReadOnlyList<ImportNode> BuildImports(
-        IrOperation operation, string operationFileName, string clientSuffix,
+        IrOperation operation, string operationFileName, string clientSuffix, string hookBaseName,
         bool hasParams, string? paramsTypeName, string? resultTypeName, bool isMutation)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
@@ -71,6 +70,13 @@ public sealed class TanStackSvelteHookAstBuilder
             items: ImmutableList.Create(new IdentifierNode(operation.MethodName)),
             from: $"./{operationFileName}.{clientSuffix}",
             kind: ImportKind.Named));
+
+        // Query key factory is imported from the shared {op}.query-keys.ts module.
+        if (!isMutation)
+            imports.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode($"get{hookBaseName}QueryKey")),
+                from: $"./{operationFileName}.query-keys",
+                kind: ImportKind.Named));
 
         if (hasParams && paramsTypeName != null)
             imports.Add(new ImportNode(
@@ -87,36 +93,6 @@ public sealed class TanStackSvelteHookAstBuilder
                 isTypeOnly: true));
 
         return imports.ToImmutable();
-    }
-
-    private FunctionDeclarationNode BuildGetQueryKeyFn(IrOperation operation, string hookBaseName, string? paramsTypeName, bool hasParams)
-    {
-        var elements = new List<ExpressionNode>();
-        foreach (var part in GetQueryKeyPathParts(operation))
-            elements.Add(String(part));
-
-        if (hasParams)
-        {
-            var paramsRef = Id("params");
-            var cond = new ConditionalExpressionNode(
-                paramsRef,
-                new ArrayLiteralExpressionNode(ImmutableList.Create<ExpressionNode>(paramsRef)),
-                new ArrayLiteralExpressionNode(ImmutableList<ExpressionNode>.Empty));
-            elements.Add(new SpreadExpressionNode(cond));
-        }
-
-        var parameters = hasParams && paramsTypeName != null
-            ? ImmutableList.Create(new ParameterDeclarationNode(new IdentifierNode("params"), Simple(paramsTypeName), isRequired: false))
-            : ImmutableList<ParameterDeclarationNode>.Empty;
-
-        return new FunctionDeclarationNode(
-            name: new IdentifierNode($"get{hookBaseName}QueryKey"),
-            returnType: new ArrayTypeNode(Simple("unknown", isPrimitive: true), isReadOnly: true),
-            parameters: parameters,
-            body: new BlockNode(ImmutableList.Create<StatementNode>(
-                new ReturnStatementNode(new ArrayLiteralExpressionNode(elements.ToImmutableList(), preferMultilineFormat: true)))),
-            isArrowFunction: true,
-            isExported: true);
     }
 
     private FunctionDeclarationNode BuildUseQueryFn(IrOperation operation, string hookBaseName, string? paramsTypeName, string? resultTypeName, bool hasParams)
@@ -197,14 +173,6 @@ public sealed class TanStackSvelteHookAstBuilder
             body: new BlockNode(ImmutableList.Create<StatementNode>(new ReturnStatementNode(call))),
             isArrowFunction: true,
             isExported: true);
-    }
-
-    private static IReadOnlyList<string> GetQueryKeyPathParts(IrOperation operation)
-    {
-        var path = operation.Path.Trim('/');
-        return string.IsNullOrEmpty(path)
-            ? ["api"]
-            : path.Split('/').Where(part => !string.IsNullOrEmpty(part)).ToList();
     }
 
     private static SimpleTypeNode Simple(string name, bool isPrimitive = false) =>

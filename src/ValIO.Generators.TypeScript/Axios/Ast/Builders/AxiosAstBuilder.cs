@@ -7,6 +7,7 @@ using ValIO.Core.Ast.Nodes.Http;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Axios.Ast.Nodes;
@@ -217,55 +218,10 @@ public class AxiosAstBuilder
     /// Строит выражение URL (литерал или template) с подстановкой route-параметров.
     /// </summary>
     public ExpressionNode BuildUrlWithSource(IrOperation operation, ExpressionNode? routeParamsSource)
-    {
-        var path = operation.Path;
-        var pathParams = operation.PathParameters;
-
-        if (pathParams.Count == 0)
-        {
-            return new LiteralExpressionNode(path, LiteralKind.String);
-        }
-
-        if (routeParamsSource == null)
-        {
-            return new LiteralExpressionNode(path, LiteralKind.String);
-        }
-
-        var parts = new List<TemplateLiteralPart>();
-        var currentPath = path;
-
-        foreach (var param in pathParams)
-        {
-            var paramPlaceholder = $"{{{param.Name}}}";
-            // Спецификация может задавать casing плейсхолдера в пути (`{dictionaryId}`)
-            // иначе, чем имя параметра (`DictionaryId`); сопоставляем без учёта регистра.
-            var index = currentPath.IndexOf(paramPlaceholder, StringComparison.OrdinalIgnoreCase);
-
-            if (index >= 0)
-            {
-                if (index > 0)
-                {
-                    parts.Add(new TemplateLiteralPart(currentPath.Substring(0, index)));
-                }
-
-                var paramAccess = new MemberAccessExpressionNode(
-                    routeParamsSource,
-                    new IdentifierNode(param.Name));
-                parts.Add(new TemplateLiteralPart(paramAccess));
-
-                currentPath = currentPath.Substring(index + paramPlaceholder.Length);
-            }
-        }
-
-        if (currentPath.Length > 0)
-        {
-            parts.Add(new TemplateLiteralPart(currentPath));
-        }
-
-        return parts.Count > 0
-            ? new TemplateLiteralExpressionNode(parts.ToImmutableList())
-            : new LiteralExpressionNode(path, LiteralKind.String);
-    }
+        // Path templating (placeholder → route access) is shared with every other transport; see
+        // TypeScriptRequestPath.BuildUrl(operation, routeSource). Passing a rebound source (e.g. a validated
+        // parsedRoute) is supported there, matching the Axios/fetch validation flow.
+        => TypeScriptRequestPath.BuildUrl(operation, routeParamsSource);
 
     /// <summary>
     /// Строит URL выражение из IrOperation (может быть template literal)

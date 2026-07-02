@@ -22,6 +22,9 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
 
     public bool IsEnabled => true;
 
+    /// <summary>Valibot inlines literal rule values (like its model schemas), so no constants object is imported.</summary>
+    public bool UsesConstraintConstants => false;
+
     public string? UuidConstName => Options.TypeScriptOptionIds.UuidFormat.RegexConstName;
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
@@ -29,7 +32,8 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
 
     public ExpressionNode BuildSchema(IrType type) => _builder.BuildSchemaFromIrType(type);
 
-    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters) => _builder.BuildObjectFromParameters(parameters);
+    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters, string? constraintsRefPrefix = null) =>
+        _builder.BuildObjectFromParameters(parameters);
 
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id("v"), "parse"), Id(schemaName), input);

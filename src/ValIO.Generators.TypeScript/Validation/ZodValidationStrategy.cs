@@ -23,6 +23,9 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
 
     public bool IsEnabled => true;
 
+    /// <summary>Zod references the exported <c>…Constraints</c> constants for rule values.</summary>
+    public bool UsesConstraintConstants => true;
+
     public string? UuidConstName => Options.TypeScriptOptionIds.UuidFormat.RegexConstName;
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) =>
@@ -30,7 +33,8 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
 
     public ExpressionNode BuildSchema(IrType type) => _schema.Build(type);
 
-    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters) => _schema.BuildObjectFromParameters(parameters);
+    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters, string? constraintsRefPrefix = null) =>
+        _schema.BuildObjectFromParameters(parameters, constraintsRefPrefix);
 
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id(schemaName), "parse"), input);

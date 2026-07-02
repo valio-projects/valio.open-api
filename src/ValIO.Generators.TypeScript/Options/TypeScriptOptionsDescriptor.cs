@@ -44,6 +44,13 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         new("swr",              "SWR",                      "ts.queryWrapper.swr.desc"),
     ];
 
+    private static readonly OptionChoice[] QueryTransportChoices =
+    [
+        new("fetch", "Fetch API", "ts.queryTransport.fetch.desc"),
+        new("axios", "Axios",     "ts.queryTransport.axios.desc"),
+        new("ky",    "Ky",        "ts.queryTransport.ky.desc"),
+    ];
+
     private static readonly OptionChoice[] MockChoices =
     [
         new("msw", "Mock Service Worker", "ts.mocks.msw.desc"),
@@ -98,6 +105,13 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
 
         if (rawOptions.TryGetValue("queryWrapper", out var qw) && qw.ValueKind == JsonValueKind.String)
             opts.QueryWrapper = NormalizeQueryWrapper(qw.GetString(), errorList);
+
+        // Which client transport the query hooks wrap (ky/axios/fetch). Accept "queryTransport" (primary) and
+        // "hookTransport" (alias). Left null → resolved from the selected transports at generation time.
+        if (rawOptions.TryGetValue("queryTransport", out var qt) && qt.ValueKind == JsonValueKind.String)
+            opts.QueryTransport = NormalizeQueryTransport(qt.GetString(), errorList);
+        else if (rawOptions.TryGetValue("hookTransport", out var ht) && ht.ValueKind == JsonValueKind.String)
+            opts.QueryTransport = NormalizeQueryTransport(ht.GetString(), errorList);
 
         // Accept both "mocks" and "mockLibrary" config keys for symmetry with
         // "validation" / "validationLibrary"-style aliases the user may already use.
@@ -208,6 +222,17 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             DependsOn:      "transports"),
 
         new(
+            Name:           "queryTransport",
+            Description:    "Which client transport the generated query hooks wrap (ky/axios/fetch). Defaults to the first client-capable transport in 'transports'; added automatically if not already selected.",
+            DefaultValue:   null,
+            IsRequired:     false,
+            Kind:           OptionKind.EnumSingle,
+            Choices:        QueryTransportChoices,
+            DescriptionKey: "ts.queryTransport.desc",
+            Group:          "Query wrappers",
+            DependsOn:      "queryWrapper"),
+
+        new(
             Name:           "mocks",
             Description:    "Generate mock handlers alongside clients.",
             DefaultValue:   null,
@@ -301,6 +326,28 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             "tanstack-svelte" => TypeScriptOptionIds.QueryWrapper.TanStackSvelte,
             "swr" => TypeScriptOptionIds.QueryWrapper.Swr,
             var unknown => AddError(errors, $"Unknown queryWrapper: '{unknown}'")
+        };
+    }
+
+    /// <summary>
+    /// Normalizes the <c>queryTransport</c>/<c>hookTransport</c> value. Only client-capable transports
+    /// (ky/axios/fetch) can back a query hook; anything else (including server-only or framework transports) is
+    /// rejected as an error.
+    /// </summary>
+    /// <param name="value">The raw option value.</param>
+    /// <param name="errors">The accumulating error list.</param>
+    /// <returns>The canonical transport id, or <see langword="null"/> when empty/invalid.</returns>
+    private static string? NormalizeQueryTransport(string? value, List<string> errors)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "fetch" => TypeScriptOptionIds.Transport.Fetch,
+            "axios" => TypeScriptOptionIds.Transport.Axios,
+            "ky" => TypeScriptOptionIds.Transport.Ky,
+            var unknown => AddError(errors, $"Unknown queryTransport: '{unknown}'. Must be one of: fetch, axios, ky.")
         };
     }
 

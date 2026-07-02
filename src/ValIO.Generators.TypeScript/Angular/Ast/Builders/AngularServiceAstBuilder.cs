@@ -151,13 +151,13 @@ public sealed class AngularServiceAstBuilder
     private BlockNode BuildMethodBody(IrOperation operation, bool hasResultType, string resultTypeName)
     {
         var statements = new List<StatementNode>();
-        var sources = BuildParameterSources(operation);
+        var sources = TypeScriptParameterSources.Create(operation);
 
         // const url = `/path/${params.id}`;
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("url"),
             type: null,
-            initializer: BuildUrlExpression(operation, sources)));
+            initializer: TypeScriptRequestPath.BuildUrl(operation, sources.RouteSource)));
 
         // Build HttpParams + HttpHeaders only if relevant.
         var hasOptionsObject = false;
@@ -208,7 +208,7 @@ public sealed class AngularServiceAstBuilder
 
     private ExpressionNode BuildHttpCall(
         IrOperation operation,
-        ParameterSources sources,
+        TypeScriptParameterSources sources,
         bool hasResultType,
         string resultTypeName,
         ExpressionNode? optionsObject)
@@ -255,7 +255,7 @@ public sealed class AngularServiceAstBuilder
             genericTypeArgument: genericTypeArg);
     }
 
-    private ExpressionNode BuildHttpParamsChain(IrOperation operation, ParameterSources sources)
+    private ExpressionNode BuildHttpParamsChain(IrOperation operation, TypeScriptParameterSources sources)
     {
         // Start with `new HttpParams()` then chain `.set('a', String(params.query.a))`
         // for each query parameter. Conditional sets for optional params via
@@ -268,7 +268,7 @@ public sealed class AngularServiceAstBuilder
 
         foreach (var parameter in operation.QueryParameters)
         {
-            var access = BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
+            var access = TypeScriptRequestPath.BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
             var coerced = new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("String")),
                 ImmutableList.Create<ExpressionNode>(access));
@@ -300,7 +300,7 @@ public sealed class AngularServiceAstBuilder
         return chain;
     }
 
-    private ExpressionNode BuildHttpHeadersChain(IrOperation operation, ParameterSources sources)
+    private ExpressionNode BuildHttpHeadersChain(IrOperation operation, TypeScriptParameterSources sources)
     {
         ExpressionNode chain = new CallExpressionNode(
             new IdentifierExpressionNode(new IdentifierNode("HttpHeaders")),
@@ -309,7 +309,7 @@ public sealed class AngularServiceAstBuilder
 
         foreach (var parameter in operation.HeaderParameters)
         {
-            var access = BuildParameterAccess(sources.HeadersSource!, parameter.Name, sources.HeadersSourceMayBeUndefined);
+            var access = TypeScriptRequestPath.BuildParameterAccess(sources.HeadersSource!, parameter.Name, sources.HeadersSourceMayBeUndefined);
             var coerced = new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("String")),
                 ImmutableList.Create<ExpressionNode>(access));
@@ -338,61 +338,6 @@ public sealed class AngularServiceAstBuilder
 
         return chain;
     }
-
-    private static ExpressionNode BuildUrlExpression(IrOperation operation, ParameterSources sources)
-    {
-        if (operation.PathParameters.Count == 0 || sources.RouteSource == null)
-            return new LiteralExpressionNode(operation.Path, LiteralKind.String);
-
-        var parts = new List<TemplateLiteralPart>();
-        var cursor = 0;
-
-        foreach (var parameter in operation.PathParameters)
-        {
-            var token = $"{{{parameter.Name}}}";
-            // Casing плейсхолдера в пути может отличаться от имени параметра — сопоставляем без учёта регистра.
-            var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                continue;
-
-            if (index > cursor)
-                parts.Add(new TemplateLiteralPart(operation.Path[cursor..index]));
-            parts.Add(new TemplateLiteralPart(BuildParameterAccess(sources.RouteSource, parameter.Name, sourceMayBeUndefined: false)));
-            cursor = index + token.Length;
-        }
-
-        if (cursor < operation.Path.Length)
-            parts.Add(new TemplateLiteralPart(operation.Path[cursor..]));
-
-        return parts.Count == 0
-            ? new LiteralExpressionNode(operation.Path, LiteralKind.String)
-            : new TemplateLiteralExpressionNode(parts.ToImmutableList());
-    }
-
-    private static ParameterSources BuildParameterSources(IrOperation operation)
-    {
-        var hasRoute = operation.PathParameters.Count > 0;
-        var hasQuery = operation.QueryParameters.Count > 0;
-        var hasHeaders = operation.HeaderParameters.Count > 0;
-        var hasBody = operation.RequestBody != null;
-        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasHeaders ? 1 : 0) + (hasBody ? 1 : 0);
-        var isFlat = groupCount <= 1;
-        var paramsExpr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode("params"));
-
-        return new ParameterSources
-        {
-            RouteSource = hasRoute ? (isFlat ? paramsExpr : Member(paramsExpr, "route")) : null,
-            QuerySource = hasQuery ? (isFlat ? paramsExpr : Member(paramsExpr, "query")) : null,
-            QuerySourceMayBeUndefined = hasQuery && !isFlat && operation.QueryParameters.All(p => !p.IsRequired),
-            HeadersSource = hasHeaders ? (isFlat ? paramsExpr : Member(paramsExpr, "headers")) : null,
-            HeadersSourceMayBeUndefined = hasHeaders && !isFlat,
-            BodySource = hasBody ? Member(paramsExpr, operation.RequestBody!.IsForm ? "form" : "body") : null,
-            BodySourceMayBeUndefined = hasBody && operation.RequestBody?.IsRequired == false,
-        };
-    }
-
-    private static ExpressionNode BuildParameterAccess(ExpressionNode source, string name, bool sourceMayBeUndefined) =>
-        new MemberAccessExpressionNode(source, new IdentifierNode(name), useOptionalChaining: sourceMayBeUndefined);
 
     private static MemberAccessExpressionNode Member(ExpressionNode source, string name) =>
         new(source, new IdentifierNode(name));
@@ -460,14 +405,4 @@ public sealed class AngularServiceAstBuilder
             : new CommentNode(doc, CommentKind.JSDoc);
     }
 
-    private sealed class ParameterSources
-    {
-        public ExpressionNode? RouteSource { get; set; }
-        public ExpressionNode? QuerySource { get; set; }
-        public bool QuerySourceMayBeUndefined { get; set; }
-        public ExpressionNode? HeadersSource { get; set; }
-        public bool HeadersSourceMayBeUndefined { get; set; }
-        public ExpressionNode? BodySource { get; set; }
-        public bool BodySourceMayBeUndefined { get; set; }
-    }
 }

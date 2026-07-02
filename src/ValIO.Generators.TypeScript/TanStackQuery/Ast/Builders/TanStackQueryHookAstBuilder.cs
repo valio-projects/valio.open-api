@@ -59,7 +59,7 @@ public sealed class TanStackQueryHookAstBuilder
         var dataType = _typeBuilder.BuildDataType(resultTypeName);
         var variablesType = _typeBuilder.BuildVariablesType(paramsTypeName);
 
-        var imports = BuildImports(operation, operationFileName, hasParams, paramsTypeName, resultTypeName, isMutation, _clientSuffix, _hookUsesAxios);
+        var imports = BuildImports(operation, operationFileName, hookBaseName, hasParams, paramsTypeName, resultTypeName, isMutation, _clientSuffix, _hookUsesAxios);
         var declarations = isMutation
             ? BuildMutationDeclarations(operation, hookBaseName, hasParams, paramsTypeName, resultTypeName, dataType, variablesType)
             : BuildQueryDeclarations(operation, hookBaseName, paramsTypeName, hasParams, resultTypeName, dataType);
@@ -96,6 +96,7 @@ public sealed class TanStackQueryHookAstBuilder
     private static IReadOnlyList<ImportNode> BuildImports(
         IrOperation operation,
         string operationFileName,
+        string hookBaseName,
         bool hasParams,
         string? paramsTypeName,
         string? resultTypeName,
@@ -125,7 +126,6 @@ public sealed class TanStackQueryHookAstBuilder
                 new IdentifierNode("QueryClient"),
                 new IdentifierNode("UseMutationOptions"),
                 new IdentifierNode("UseMutationResult"),
-                new IdentifierNode("MutationFunction"),
                 new IdentifierNode("MutationFunctionContext"),
             }
             : new[]
@@ -145,6 +145,18 @@ public sealed class TanStackQueryHookAstBuilder
             new(items: tanstackTypes.ToImmutableList(), from: "@tanstack/react-query", kind: ImportKind.Named, isTypeOnly: true),
             new(items: new[] { new IdentifierNode(operation.MethodName) }.ToImmutableList(), from: $"./{operationFileName}.{clientSuffix}", kind: ImportKind.Named)
         };
+
+        // Query key factories live in the shared, framework-agnostic {op}.query-keys.ts so the Next.js transport
+        // and the client-side hooks share one cache identity (see TypeScriptQueryKeysAstBuilder).
+        if (!isMutation)
+            items.Add(new ImportNode(
+                items: new[]
+                {
+                    new IdentifierNode($"get{hookBaseName}QueryKey"),
+                    new IdentifierNode($"get{hookBaseName}InfiniteQueryKey"),
+                }.ToImmutableList(),
+                from: $"./{operationFileName}.query-keys",
+                kind: ImportKind.Named));
 
         if (hasParams && paramsTypeName != null)
             items.Add(new ImportNode(items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(), from: $"./{operationFileName}.params", kind: ImportKind.Named, isTypeOnly: true));
@@ -166,7 +178,8 @@ public sealed class TanStackQueryHookAstBuilder
         string? resultTypeName,
         TypeNode dataType)
     {
-        var pathParts = GetQueryKeyPathParts(operation);
+        // get{Hook}QueryKey / get{Hook}InfiniteQueryKey are no longer declared here — they are imported from the
+        // shared {op}.query-keys.ts module (see BuildImports and TypeScriptQueryKeysAstBuilder).
         var decls = new List<DeclarationNode>();
 
         decls.Add(_typeBuilder.BuildQueryOptionsParamsInterface(hookBaseName, dataType, isInfinite: false));
@@ -180,8 +193,6 @@ public sealed class TanStackQueryHookAstBuilder
         var queryOptionsResultType = new IdentifierNode($"Get{hookBaseName}QueryOptionsResult");
         var infiniteQueryOptionsResultType = new IdentifierNode($"Get{hookBaseName}InfiniteQueryOptionsResult");
 
-        decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}InfiniteQueryKey", pathParts, hasParams, paramsType, includeInfinite: true));
-        decls.Add(BuildGetQueryKeyFn($"get{hookBaseName}QueryKey", pathParts, hasParams, paramsType, includeInfinite: false));
         decls.Add(BuildGetInfiniteQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, dataType, new IdentifierNode($"get{hookBaseName}InfiniteQueryKey"), new IdentifierNode($"get{hookBaseName}InfiniteQueryOptions"), infiniteQueryOptionsParamsType, infiniteQueryOptionsResultType));
         decls.Add(BuildGetQueryOptionsFn(operation, hookBaseName, paramsType, hasParams, dataType, new IdentifierNode($"get{hookBaseName}QueryKey"), new IdentifierNode($"get{hookBaseName}QueryOptions"), queryOptionsParamsType, queryOptionsResultType));
         decls.Add(new TypeAliasDeclarationNode(new IdentifierNode($"{hookBaseName}QueryResult"), dataType));
@@ -223,7 +234,7 @@ public sealed class TanStackQueryHookAstBuilder
         var decls = new List<DeclarationNode>();
 
         decls.Add(_typeBuilder.BuildMutationOptionsParamsInterface(hookBaseName, dataType, variablesType));
-        decls.Add(_typeBuilder.BuildMutationOptionsResultInterface(hookBaseName, dataType, variablesType));
+        decls.Add(_typeBuilder.BuildMutationOptionsResultTypeAlias(hookBaseName, dataType, variablesType));
 
         var optionsParamsType = new IdentifierNode($"Get{hookBaseName}MutationOptionsParams");
         var optionsResultType = new IdentifierNode($"Get{hookBaseName}MutationOptionsResult");
@@ -235,48 +246,6 @@ public sealed class TanStackQueryHookAstBuilder
         decls.Add(BuildUseIsMutatingFn(operation, hookBaseName));
 
         return decls;
-    }
-
-    private static IReadOnlyList<string> GetQueryKeyPathParts(IrOperation operation)
-    {
-        var path = operation.Path.Trim('/');
-        return string.IsNullOrEmpty(path) ? new[] { "api" } : path.Split('/').Where(p => !string.IsNullOrEmpty(p)).ToList();
-    }
-
-    private FunctionDeclarationNode BuildGetQueryKeyFn(
-        string name,
-        IReadOnlyList<string> pathParts,
-        bool hasParams,
-        TypeNode? paramsType,
-        bool includeInfinite)
-    {
-        var elements = new List<ExpressionNode>();
-        if (includeInfinite)
-            elements.Add(new LiteralExpressionNode("infinite", LiteralKind.String));
-        foreach (var part in pathParts)
-            elements.Add(new LiteralExpressionNode(part, LiteralKind.String));
-        if (hasParams)
-        {
-            var cond = new ConditionalExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("params")),
-                new ArrayLiteralExpressionNode(new[] { new IdentifierExpressionNode(new IdentifierNode("params")) }.ToImmutableList()),
-                new ArrayLiteralExpressionNode(ImmutableList<ExpressionNode>.Empty));
-            elements.Add(new SpreadExpressionNode(cond));
-        }
-
-        var parameters = hasParams && paramsType != null
-            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: false) }.ToImmutableList()
-            : ImmutableList<ParameterDeclarationNode>.Empty;
-
-        return new FunctionDeclarationNode(
-            new IdentifierNode(name),
-            returnType: _typeBuilder.BuildQueryKeyReturnType(),
-            parameters: parameters,
-            body: new BlockNode(new[] { new ReturnStatementNode(new ArrayLiteralExpressionNode(elements.ToImmutableList(), preferMultilineFormat: true)) }.ToImmutableList()),
-            isArrowFunction: true,
-            isAsync: false,
-            documentation: new CommentNode(includeInfinite ? "Query key for useInfiniteQuery." : "Query key for useQuery.", CommentKind.JSDoc),
-            isExported: true);
     }
 
     private FunctionDeclarationNode BuildGetInfiniteQueryOptionsFn(
@@ -350,8 +319,12 @@ public sealed class TanStackQueryHookAstBuilder
             new[] { new ParameterDeclarationNode(new IdentifierNode("context"), contextType, isRequired: true) }.ToImmutableList(),
             queryFnExpr);
 
+        // BUG #11: spread the caller's query options first so enabled / placeholderData / retry / staleTime /
+        // select / … survive. The generated queryKey/queryFn (and the infinite-only fields below) are appended
+        // afterwards so they always win over anything the caller passed.
         var returnObjProps = new List<PropertyAssignmentNode>
         {
+            new(new IdentifierNode("query"), queryOptsRef, isSpread: true),
             new(new IdentifierNode("queryKey"), new IdentifierExpressionNode(new IdentifierNode("queryKey"))),
             new(new IdentifierNode("queryFn"), queryFnArrow),
         };
@@ -557,8 +530,9 @@ public sealed class TanStackQueryHookAstBuilder
                 new[] { new ObjectLiteralExpressionNode(new[] { new PropertyAssignmentNode(new IdentifierNode("queryKey"), getKeyCall) }.ToImmutableList()) }.ToImmutableList()))
         }.ToImmutableList());
 
+        // params is required because get{Hook}QueryKey inlines params.route.id / params.query and requires it.
         var parameters = hasParams && paramsType != null
-            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: false) }.ToImmutableList()
+            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), paramsType, isRequired: true) }.ToImmutableList()
             : ImmutableList<ParameterDeclarationNode>.Empty;
 
         return new FunctionDeclarationNode(
@@ -635,8 +609,15 @@ public sealed class TanStackQueryHookAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode(operation.MethodName)),
                 clientCallArgs.ToImmutableList()));
 
+        // BUG #11 (mutation): spread the caller's mutation options first (onSuccess / onError / retry /
+        // onMutate / …); the generated mutationKey/mutationFn are appended afterwards so they win.
+        var mutationOptsRef = new MemberAccessExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode("options")),
+            new IdentifierNode("mutation"),
+            useOptionalChaining: true);
         var resultObj = new ObjectLiteralExpressionNode(new PropertyAssignmentNode[]
         {
+            new(new IdentifierNode("mutation"), mutationOptsRef, isSpread: true),
             new(new IdentifierNode("mutationKey"), mutationKey),
             new(new IdentifierNode("mutationFn"), mutationFn),
         }.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true);

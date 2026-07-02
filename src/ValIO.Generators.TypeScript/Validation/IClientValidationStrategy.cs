@@ -18,6 +18,14 @@ internal interface IClientValidationStrategy
     bool IsEnabled { get; }
 
     /// <summary>
+    /// Whether this validator references the exported <c>…Constraints</c> constants object for validation-rule
+    /// values (as Zod does, e.g. <c>.min(GetTreeQueryParamsConstraints.limit.min)</c>) rather than inlining
+    /// literals. When <see langword="true"/>, a schema-declaring file must import the constants object; when
+    /// <see langword="false"/> (Valibot/TypeBox/None) the rule values are inlined and no import is needed.
+    /// </summary>
+    bool UsesConstraintConstants { get; }
+
+    /// <summary>
     /// Имя shared-константы UUID-формата для библиотеки (<c>UUID_REGEX</c> для zod/valibot,
     /// <c>UUID_PATTERN</c> для typebox), на которую ссылаются схемы в режиме <c>uuidFormat = regex</c>;
     /// <c>null</c> когда валидация выключена. Импортируется файлом, который ОБЪЯВЛЯЕТ схему с uuid.
@@ -41,7 +49,13 @@ internal interface IClientValidationStrategy
     /// Строит выражение схемы для объекта параметров (route/query) — для объявления именованной
     /// константы <c>{Op}RouteParamsSchema</c>/<c>{Op}QueryParamsSchema</c>. Для None — не вызывается.
     /// </summary>
-    ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters);
+    /// <param name="parameters">The route or query parameters.</param>
+    /// <param name="constraintsRefPrefix">
+    /// The exported constraints-object name (e.g. <c>GetTreeQueryParamsConstraints</c>) a validator that
+    /// <see cref="UsesConstraintConstants"/> references for rule values (<c>{prefix}.{param}.{rule}</c>). Ignored by
+    /// validators that inline literals; <see langword="null"/> when the group has no constrained parameters.
+    /// </param>
+    ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters, string? constraintsRefPrefix = null);
 
     /// <summary>
     /// Валидирует <paramref name="input"/> по импортируемой именованной схеме (модель-ответ,

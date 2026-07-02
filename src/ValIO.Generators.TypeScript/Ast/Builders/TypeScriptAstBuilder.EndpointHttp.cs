@@ -27,48 +27,37 @@ public partial class TypeScriptAstBuilder
         public ExpressionNode? BodySource { get; set; }
         public ExpressionNode? HeadersSource { get; set; }
         public bool IsFlat { get; set; }
-    }
 
-    /// <summary>
-    /// Доступ к телу запроса внутри объекта <c>params</c>: тело всегда вложено — в
-    /// <c>params.form</c> (multipart/url-encoded) либо <c>params.body</c> (JSON и любой иной
-    /// content-type). Согласовано с <c>TypeScriptParamsAstBuilder</c> и bespoke-транспортами.
-    /// </summary>
-    private static MemberAccessExpressionNode BodyPropertyAccess(IrRequestBody requestBody, ExpressionNode paramsExpr)
-        => new(paramsExpr, new IdentifierNode(requestBody.IsForm ? "form" : "body"));
+        /// <summary>
+        /// Whether <see cref="QuerySource"/> may be <c>undefined</c> at runtime (drives optional chaining in the
+        /// query-string build). Reset to <see langword="false"/> once the source is rebound to a validated
+        /// <c>parsedQuery</c> local.
+        /// </summary>
+        public bool QueryMayBeUndefined { get; set; }
+    }
 
     private HttpParamSourcesContext PrepareHttpParamSourcesWithOptionalZod(IrOperation operation)
     {
         var ctx = new HttpParamSourcesContext();
 
-        var hasRoute = operation.PathParameters.Count > 0;
-        var hasQuery = operation.QueryParameters.Count > 0;
+        // The flat/aggregate decision and per-group access are owned by TypeScriptParameterModel so the
+        // fetch/axios bodies can never drift from the emitted params interface or the other transports. Route,
+        // query and headers flatten to `params` when they are the sole group; the request body is always reached
+        // via params.body / params.form (even in flat mode) — see TypeScriptParameterModel.BodyObject.
+        var model = TypeScriptParameterModel.Create(operation);
+        ctx.IsFlat = model.IsFlat;
+
         var rb = operation.RequestBody;
-        // Любое тело запроса (JSON, multipart/url-encoded form, или иной content-type —
-        // напр. application/octet-stream) образует одну группу параметров — так же, как
-        // в TypeScriptParamsAstBuilder, иначе groupCount/flat рассинхронизируются с params-интерфейсом.
-        var hasBody = rb != null;
-        var hasHeaders = operation.HeaderParameters.Count > 0;
-        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasHeaders ? 1 : 0);
-        var isFlat = groupCount <= 1;
-        ctx.IsFlat = isFlat;
+        var hasRoute = model.HasRoute;
+        var hasQuery = model.HasQuery;
+        var hasBody = model.HasBody || model.HasForm;
 
-        var paramsExpr = new IdentifierExpressionNode(new IdentifierNode("params"));
-
-        // Route/query/headers «расплющиваются» в сам params, когда являются единственной группой
-        // (плоский интерфейс кладёт их поля прямо в params). ТЕЛО запроса, напротив, ВСЕГДА лежит
-        // во вложенном свойстве params.body / params.form (см. BuildFlatParamsInterface) — и в flat,
-        // и в aggregate. Поэтому body-источник не зависит от isFlat.
-        ExpressionNode? routeSource = hasRoute
-            ? (isFlat ? paramsExpr : new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route")))
-            : null;
-        ExpressionNode? querySource = hasQuery
-            ? (isFlat ? paramsExpr : new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query")))
-            : null;
-        ExpressionNode? headersSource = hasHeaders
-            ? (isFlat ? paramsExpr : new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("headers")))
-            : null;
-        ExpressionNode? bodySource = hasBody ? BodyPropertyAccess(rb!, paramsExpr) : null;
+        // Initial per-group sources; rebound to the validated locals below when validation is enabled.
+        var routeSource = model.RouteObject();
+        var querySource = model.QueryObject();
+        var headersSource = model.HeadersObject();
+        var bodySource = model.BodyObject();
+        var queryMayBeUndefined = model.QueryMayBeUndefined;
 
         if (_validation.IsEnabled)
         {
@@ -79,8 +68,7 @@ public partial class TypeScriptAstBuilder
             // ({op}.params.schema.ts) — единообразно для всех библиотек.
             if (hasRoute)
             {
-                var routeInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("route"));
-                var parseCall = _validation.ValidateNamed($"{opName}RouteParamsSchema", routeInput);
+                var parseCall = _validation.ValidateNamed($"{opName}RouteParamsSchema", model.RouteObject()!);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedRoute"),
                     type: null,
@@ -89,19 +77,19 @@ public partial class TypeScriptAstBuilder
             }
             if (hasQuery)
             {
-                var queryInput = isFlat ? paramsExpr : (ExpressionNode)new MemberAccessExpressionNode(paramsExpr, new IdentifierNode("query"));
-                var parseCall = _validation.ValidateNamed($"{opName}QueryParamsSchema", queryInput);
+                var parseCall = _validation.ValidateNamed($"{opName}QueryParamsSchema", model.QueryObject()!);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedQuery"),
                     type: null,
                     initializer: parseCall));
                 querySource = new IdentifierExpressionNode(new IdentifierNode("parsedQuery"));
+                // The validated local is always defined; no optional chaining on its field access.
+                queryMayBeUndefined = false;
             }
             // Тело запроса валидируется схемой, построенной из типа тела (модель/union/...) выбранной библиотекой.
             if (hasBody && ValidationTypes.IsValidatable(rb!.Type))
             {
-                var bodyInput = BodyPropertyAccess(rb, paramsExpr);
-                var parseCall = _validation.Validate(rb.Type, bodyInput);
+                var parseCall = _validation.Validate(rb.Type, model.BodyObject()!);
                 ctx.LeadingStatements.Add(new VariableDeclarationStatementNode(
                     new IdentifierNode("parsedBody"),
                     type: null,
@@ -117,50 +105,8 @@ public partial class TypeScriptAstBuilder
         ctx.QuerySource = querySource;
         ctx.BodySource = bodySource;
         ctx.HeadersSource = headersSource;
+        ctx.QueryMayBeUndefined = queryMayBeUndefined;
         return ctx;
-    }
-
-    /// <summary>
-    /// Добавляет к path query-string из <paramref name="querySource"/> по именам параметров из IR.
-    /// </summary>
-    private static ExpressionNode BuildUrlWithQueryStringExpression(
-        IrOperation operation,
-        ExpressionNode pathUrlExpr,
-        ExpressionNode? querySource)
-    {
-        if (operation.QueryParameters.Count == 0 || querySource == null)
-            return pathUrlExpr;
-
-        // Если все query параметры optional — querySource (params.query) сам может
-        // быть undefined, поэтому к доступу используем optional chaining.
-        var sourceMayBeUndefined = operation.QueryParameters.All(p => !p.IsRequired);
-
-        var parts = new List<TemplateLiteralPart>
-        {
-            new(pathUrlExpr),
-            new("?")
-        };
-
-        for (var i = 0; i < operation.QueryParameters.Count; i++)
-        {
-            var qp = operation.QueryParameters[i];
-            if (i > 0)
-                parts.Add(new TemplateLiteralPart("&"));
-            parts.Add(new TemplateLiteralPart($"{qp.Name}="));
-            var member = new MemberAccessExpressionNode(
-                querySource,
-                new IdentifierNode(qp.Name),
-                useOptionalChaining: sourceMayBeUndefined);
-            var asString = new CallExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("String")),
-                new[] { member }.ToImmutableList());
-            var encoded = new CallExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("encodeURIComponent")),
-                new[] { asString }.ToImmutableList());
-            parts.Add(new TemplateLiteralPart(encoded));
-        }
-
-        return new TemplateLiteralExpressionNode(parts.ToImmutableList());
     }
 
     private static ExpressionNode? BuildFetchHeadersObject(
@@ -211,7 +157,10 @@ public partial class TypeScriptAstBuilder
 
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
         var pathUrlExpr = axiosBuilder.BuildUrlWithSource(operation, ctx.RouteSource);
-        var requestUrlExpr = BuildUrlWithQueryStringExpression(operation, pathUrlExpr, ctx.QuerySource);
+        // Explicit URLSearchParams build (shared with the Next.js transport): skips absent optional params
+        // (no `name=undefined`) and lets URLSearchParams handle encoding.
+        var requestUrlExpr = TypeScriptQueryString.AppendQueryToUrl(
+            operation, pathUrlExpr, ctx.QuerySource, ctx.QueryMayBeUndefined, statements);
 
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("requestUrl"),

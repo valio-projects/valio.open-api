@@ -82,25 +82,39 @@ public sealed class TypeScriptParamsSchemasAstBuilder
             return annotation;
         }
 
+        // Records constraint-constant names to import from ./{op}.params, and returns the ref prefix to pass to
+        // the validator — only when this validator references constants (Zod) and the group has constrained params.
+        var constraintConstNames = new List<string>();
+        string? ConstraintsPrefix(IReadOnlyList<IrParameter> parameters, string constName)
+        {
+            if (!_validation.UsesConstraintConstants
+                || !parameters.Any(p => p.Constraints != null && TypeScriptConstraints.HasAnyConstraint(p.Constraints)))
+                return null;
+            constraintConstNames.Add(constName);
+            return constName;
+        }
+
         var declarations = new List<DeclarationNode>();
         if (hasRoute)
         {
             var routeInterface = useFlatOnly ? $"{opPascal}Params" : $"{opPascal}RouteParams";
             declarations.Add(BuildParamsSchemaDeclaration(
                 RouteParamsSchemaName(operation.MethodName), operation.PathParameters,
-                "Route (path) parameter validation schema.", Annotate(routeInterface)));
+                "Route (path) parameter validation schema.", Annotate(routeInterface),
+                ConstraintsPrefix(operation.PathParameters, $"{opPascal}RouteParamsConstraints")));
         }
         if (hasQuery)
         {
             var queryInterface = useFlatOnly ? $"{opPascal}Params" : $"{opPascal}QueryParams";
             declarations.Add(BuildParamsSchemaDeclaration(
                 QueryParamsSchemaName(operation.MethodName), operation.QueryParameters,
-                "Query parameter validation schema.", Annotate(queryInterface)));
+                "Query parameter validation schema.", Annotate(queryInterface),
+                ConstraintsPrefix(operation.QueryParameters, $"{opPascal}QueryParamsConstraints")));
         }
 
         var paramTypes = operation.PathParameters.Concat(operation.QueryParameters).Select(p => p.Type).ToList();
         var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
-        var imports = BuildImports(operation, paramTypes, fileOrganization, annotatedInterfaces, fileBase);
+        var imports = BuildImports(operation, paramTypes, fileOrganization, annotatedInterfaces, fileBase, constraintConstNames);
         return new SourceFileNode(
             imports: imports,
             declarations: declarations,
@@ -116,12 +130,12 @@ public sealed class TypeScriptParamsSchemasAstBuilder
     /// <param name="summary">The JSDoc summary for the declaration.</param>
     /// <param name="annotation">The optional typed annotation (e.g. <c>ZodSchema&lt;{Op}QueryParams&gt;</c>), or <see langword="null"/>.</param>
     /// <returns>The variable declaration node.</returns>
-    private DeclarationNode BuildParamsSchemaDeclaration(string schemaName, IReadOnlyList<IrParameter> parameters, string summary, TypeNode? annotation)
+    private DeclarationNode BuildParamsSchemaDeclaration(string schemaName, IReadOnlyList<IrParameter> parameters, string summary, TypeNode? annotation, string? constraintsRefPrefix = null)
         => new VariableDeclarationNode(
             name: new IdentifierNode(schemaName),
             declarationKind: VariableDeclarationKind.Const,
             type: annotation,
-            initializer: _validation.BuildParamsSchema(parameters),
+            initializer: _validation.BuildParamsSchema(parameters, constraintsRefPrefix),
             documentation: new CommentNode(summary, CommentKind.JSDoc),
             isExported: true);
 
@@ -132,10 +146,21 @@ public sealed class TypeScriptParamsSchemasAstBuilder
         IReadOnlyList<IrType> paramTypes,
         FileOrganization? fileOrganization,
         IReadOnlyCollection<string> annotatedInterfaces,
-        string fileBase)
+        string fileBase,
+        IReadOnlyCollection<string> constraintConstNames)
     {
         var imports = new List<ImportNode>();
         imports.AddRange(_validation.SchemaDefinitionImports(paramTypes));
+
+        // Runtime import of the constraint constants object(s) referenced by the schema (Zod: e.g.
+        // `.min({Op}QueryParamsConstraints.limit.min)`). Value import (not type-only), sibling ./{op}.params.
+        if (constraintConstNames.Count > 0)
+        {
+            imports.Add(new ImportNode(
+                items: constraintConstNames.Select(n => new IdentifierNode(n)).ToImmutableList(),
+                from: $"./{fileBase}.params",
+                kind: ImportKind.Named));
+        }
 
         // Type-only import of the params interface(s) the schema consts are annotated against.
         // The params interface file is a sibling of this schema file: ./{op}.params.ts.

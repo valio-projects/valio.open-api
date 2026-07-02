@@ -3,6 +3,7 @@ using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Generators.TypeScript.Ast.Nodes;
@@ -57,12 +58,17 @@ internal sealed class ZodSchemaExpressionBuilder
     /// </summary>
     /// <param name="parameters">The route or query parameters.</param>
     /// <returns>The <c>z.object(...)</c> schema expression.</returns>
-    public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters)
+    public ExpressionNode BuildObjectFromParameters(IReadOnlyList<IrParameter> parameters, string? constraintsRefPrefix = null)
     {
         var properties = parameters
             .Select(parameter =>
             {
                 var schema = Build(parameter.Type, coerceParams: true);
+
+                // Constraint chain (.min/.max/.gt/.lt/.regex) referencing the exported constants object, mirroring
+                // model-property constraints. Applied to the base primitive before .optional()/.default().
+                if (constraintsRefPrefix != null && parameter.Type is IrPrimitiveType prim && parameter.Constraints != null)
+                    schema = ApplyConstraints(schema, prim.PrimitiveKind, parameter.Constraints, $"{constraintsRefPrefix}.{parameter.Name}");
 
                 if (!parameter.IsRequired)
                     schema = Call(Member(schema, "optional"));
@@ -78,6 +84,65 @@ internal sealed class ZodSchemaExpressionBuilder
             .ToImmutableList();
 
         return Call(Member(Id("z"), "object"), new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true));
+    }
+
+    /// <summary>
+    /// Applies the length/range/pattern constraint chain to a parameter's base schema, referencing the exported
+    /// constants object (<c>{ref}.min</c>, <c>{ref}.maxLength</c>, …) exactly as the model-property schemas do.
+    /// Pattern is emitted as an inline <c>.regex(new RegExp("…"))</c> (matching the model builder).
+    /// </summary>
+    /// <param name="schema">The base primitive schema expression.</param>
+    /// <param name="kind">The parameter's primitive kind (selects numeric vs string rules).</param>
+    /// <param name="constraints">The parameter's constraints.</param>
+    /// <param name="constraintsRef">The dotted reference to the parameter's constraints entry (e.g. <c>GetTreeQueryParamsConstraints.limit</c>).</param>
+    /// <returns>The schema with the constraint chain applied.</returns>
+    private static ExpressionNode ApplyConstraints(ExpressionNode schema, IrPrimitiveKind kind, IrPropertyConstraints constraints, string constraintsRef)
+    {
+        var isNumeric = kind is IrPrimitiveKind.Number or IrPrimitiveKind.Integer or IrPrimitiveKind.Long;
+        var isString = kind is IrPrimitiveKind.String or IrPrimitiveKind.Uuid or IrPrimitiveKind.DateTime
+            or IrPrimitiveKind.Date or IrPrimitiveKind.Time;
+
+        if (isNumeric)
+        {
+            if (constraints.Min.HasValue)
+                schema = Call(Member(schema, "min"), Ref(constraintsRef, "min"));
+            if (constraints.Max.HasValue)
+                schema = Call(Member(schema, "max"), Ref(constraintsRef, "max"));
+            if (constraints.ExclusiveMin.HasValue)
+                schema = Call(Member(schema, "gt"), Ref(constraintsRef, "exclusiveMin"));
+            if (constraints.ExclusiveMax.HasValue)
+                schema = Call(Member(schema, "lt"), Ref(constraintsRef, "exclusiveMax"));
+        }
+        else if (isString)
+        {
+            if (constraints.MinLength.HasValue)
+                schema = Call(Member(schema, "min"), Ref(constraintsRef, "minLength"));
+            if (constraints.MaxLength.HasValue)
+                schema = Call(Member(schema, "max"), Ref(constraintsRef, "maxLength"));
+            if (!string.IsNullOrEmpty(constraints.Pattern))
+            {
+                var regex = new CallExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("RegExp")),
+                    ImmutableList.Create<ExpressionNode>(new LiteralExpressionNode(constraints.Pattern, LiteralKind.String)),
+                    isNewExpression: true);
+                schema = Call(Member(schema, "regex"), regex);
+            }
+        }
+
+        return schema;
+    }
+
+    /// <summary>Builds a member reference <c>{constraintsRef}.{field}</c> (dotted path split into member accesses).</summary>
+    /// <param name="constraintsRef">The dotted constraints reference (e.g. <c>GetTreeQueryParamsConstraints.limit</c>).</param>
+    /// <param name="field">The rule field (e.g. <c>min</c>, <c>maxLength</c>).</param>
+    /// <returns>The member-access expression.</returns>
+    private static ExpressionNode Ref(string constraintsRef, string field)
+    {
+        var parts = constraintsRef.Split('.');
+        ExpressionNode current = Id(parts[0]);
+        for (var i = 1; i < parts.Length; i++)
+            current = Member(current, parts[i]);
+        return Member(current, field);
     }
 
     /// <summary>Converts an OpenAPI default value to a Zod <c>.default(...)</c> literal argument.</summary>

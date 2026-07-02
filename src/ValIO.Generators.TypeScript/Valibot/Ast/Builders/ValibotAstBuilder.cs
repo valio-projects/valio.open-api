@@ -85,7 +85,11 @@ public sealed class ValibotAstBuilder
         var properties = parameters
             .Select(parameter =>
             {
-                var schema = BuildSchemaFromIrType(parameter.Type);
+                // Apply length/range/pattern constraints inline (like model-property schemas) when the parameter
+                // is a bare primitive; otherwise fall back to the plain type schema.
+                var schema = parameter.Type is IrPrimitiveType primitive
+                    ? BuildPrimitive(primitive.PrimitiveKind, parameter.Constraints)
+                    : BuildSchemaFromIrType(parameter.Type);
                 return new PropertyAssignmentNode(
                     new IdentifierNode(parameter.Name),
                     parameter.IsRequired ? schema : Call("optional", schema));

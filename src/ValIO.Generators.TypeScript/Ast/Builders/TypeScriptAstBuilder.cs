@@ -363,63 +363,18 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     /// </summary>
     private VariableDeclarationNode? BuildConstraintsDeclaration(IrModel model)
     {
-        var propConstraints = model.Properties
-            .Where(p => p.Constraints != null && HasAnyConstraint(p.Constraints))
-            .Select(p => new
-            {
-                p.Name,
-                Constraints = p.Constraints!
-            })
-            .ToList();
-        
-        if (propConstraints.Count == 0)
-            return null;
-        
-        var properties = propConstraints.Select(pc =>
-        {
-            var c = pc.Constraints;
-            var props = new List<PropertyAssignmentNode>();
-            if (c.Min.HasValue)
-                props.Add(new PropertyAssignmentNode(new IdentifierNode("min"), new LiteralExpressionNode(c.Min.Value, LiteralKind.Number)));
-            if (c.Max.HasValue)
-                props.Add(new PropertyAssignmentNode(new IdentifierNode("max"), new LiteralExpressionNode(c.Max.Value, LiteralKind.Number)));
-            if (c.ExclusiveMin.HasValue)
-                props.Add(new PropertyAssignmentNode(new IdentifierNode("exclusiveMin"), new LiteralExpressionNode(c.ExclusiveMin.Value, LiteralKind.Number)));
-            if (c.ExclusiveMax.HasValue)
-                props.Add(new PropertyAssignmentNode(new IdentifierNode("exclusiveMax"), new LiteralExpressionNode(c.ExclusiveMax.Value, LiteralKind.Number)));
-            if (c.MinLength.HasValue)
-                props.Add(new PropertyAssignmentNode(new IdentifierNode("minLength"), new LiteralExpressionNode(c.MinLength.Value, LiteralKind.Number)));
-            if (c.MaxLength.HasValue)
-                props.Add(new PropertyAssignmentNode(new IdentifierNode("maxLength"), new LiteralExpressionNode(c.MaxLength.Value, LiteralKind.Number)));
-            if (!string.IsNullOrEmpty(c.Pattern))
-                props.Add(new PropertyAssignmentNode(new IdentifierNode("pattern"), new LiteralExpressionNode(c.Pattern, LiteralKind.String)));
-            
-            return new PropertyAssignmentNode(
-                new IdentifierNode(pc.Name),
-                new ObjectLiteralExpressionNode(
-                    props.ToImmutableList(),
-                    preferMultilineFormat: props.Count > 1,
-                    asConstAssertion: true));
-        }).ToImmutableList();
-        
-        var initializer = new ObjectLiteralExpressionNode(properties, preferMultilineFormat: true);
-        return new VariableDeclarationNode(
-            new IdentifierNode($"{model.Name}Constraints"),
-            VariableDeclarationKind.Const,
-            initializer: initializer,
-            documentation: TypeScriptDoc.Block(
+        // Shared with the params builder so model and params constants can't drift (see TypeScriptConstraints).
+        var entries = model.Properties
+            .Where(p => p.Constraints != null)
+            .Select(p => (p.Name, Constraints: p.Constraints!));
+        return TypeScriptConstraints.BuildConstraintsObject(
+            $"{model.Name}Constraints",
+            entries,
+            TypeScriptDoc.Block(
                 $"Validation constraints for {model.Name} properties (lengths, ranges, patterns).",
-                ("constant", "")),
-            isExported: true,
-            asConstAssertion: true);
+                ("constant", "")));
     }
-    
-    private static bool HasAnyConstraint(IrPropertyConstraints c)
-    {
-        return c.Min.HasValue || c.Max.HasValue || c.ExclusiveMin.HasValue || c.ExclusiveMax.HasValue
-            || c.MinLength.HasValue || c.MaxLength.HasValue || !string.IsNullOrEmpty(c.Pattern);
-    }
-    
+
     /// <summary>
     /// Строит InterfaceDeclarationNode из IrModel
     /// </summary>

@@ -176,7 +176,9 @@ public sealed class TypeBoxAstBuilder
         var properties = parameters
             .Select(parameter =>
             {
-                var schema = BuildSchemaFromIrType(parameter.Type);
+                // Thread the parameter's constraints so lengths/ranges/patterns are inlined into the schema
+                // options, mirroring model-property schemas.
+                var schema = BuildSchemaFromIrType(parameter.Type, currentModelName: null, constraints: parameter.Constraints);
                 return new PropertyAssignmentNode(
                     name: new IdentifierNode(parameter.Name),
                     value: parameter.IsRequired ? schema : Call("Optional", schema));

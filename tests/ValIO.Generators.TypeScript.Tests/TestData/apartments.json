@@ -1,0 +1,63 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Apartments", "version": "1.0.0" },
+  "paths": {
+    "/api/apartments": {
+      "get": {
+        "operationId": "listApartments",
+        "parameters": [
+          { "name": "city", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Apartment" } } } }
+          }
+        }
+      }
+    },
+    "/api/apartments/{id}": {
+      "get": {
+        "operationId": "getApartment",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Apartment" } } }
+          }
+        }
+      }
+    },
+    "/api/apartments/{id}/investor": {
+      "get": {
+        "operationId": "getApartmentInvestor",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "entity", "in": "query", "required": false, "schema": { "type": "string" } },
+          { "name": "tax", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Investor" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Apartment": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "title": { "type": "string" } }
+      },
+      "Investor": {
+        "type": "object",
+        "properties": { "id": { "type": "string" }, "name": { "type": "string" } }
+      }
+    }
+  }
+}

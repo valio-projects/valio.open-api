@@ -54,15 +54,20 @@ public class FetchClientStepTests
     }
 
     [Test]
-    public async Task FetchClient_QueryParams_AppendedToUrlViaEncodeURIComponent()
+    public async Task FetchClient_QueryParams_BuiltViaUrlSearchParams()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var findByStatus = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("findPetsByStatus.fetch.ts", StringComparison.Ordinal));
-        findByStatus.Content.Should().Contain("encodeURIComponent");
-        findByStatus.Content.Should().Contain("status=");
+        // Query string is now built explicitly with URLSearchParams (shared with the Next.js transport),
+        // which handles encoding — no hand-rolled encodeURIComponent and no `name=undefined` for absent params.
+        findByStatus.Content.Should().Contain("new URLSearchParams()");
+        findByStatus.Content.Should().Contain("query.set(");
+        findByStatus.Content.Should().Contain("\"status\"");
+        findByStatus.Content.Should().Contain("(query.size > 0)");
+        findByStatus.Content.Should().NotContain("encodeURIComponent");
     }
 
     [Test]

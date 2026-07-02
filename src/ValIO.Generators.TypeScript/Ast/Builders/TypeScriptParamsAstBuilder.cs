@@ -74,6 +74,18 @@ public sealed class TypeScriptParamsAstBuilder
         return $"{_namingConverter.ToPascalCase(operationName)}QueryParams";
     }
 
+    /// <summary>Name of the exported route-params constraints const: <c>{Operation}RouteParamsConstraints</c>.</summary>
+    /// <param name="operationName">The operation (method) name.</param>
+    /// <returns>The constant name.</returns>
+    public string RouteParamsConstraintsName(string operationName) =>
+        $"{_namingConverter.ToPascalCase(operationName)}RouteParamsConstraints";
+
+    /// <summary>Name of the exported query-params constraints const: <c>{Operation}QueryParamsConstraints</c>.</summary>
+    /// <param name="operationName">The operation (method) name.</param>
+    /// <returns>The constant name.</returns>
+    public string QueryParamsConstraintsName(string operationName) =>
+        $"{_namingConverter.ToPascalCase(operationName)}QueryParamsConstraints";
+
     /// <summary>
     /// Имя Body params типа (используется существующий тип из RequestBody)
     /// </summary>
@@ -100,17 +112,20 @@ public sealed class TypeScriptParamsAstBuilder
         var declarations = new List<DeclarationNode>();
         var imports = new List<ImportNode>();
 
-        var hasRoute = operation.PathParameters.Count > 0;
-        var hasQuery = operation.QueryParameters.Count > 0;
         var rb = operation.RequestBody;
+        // The flat-vs-aggregate decision and the body/form/route/query/header grouping are owned by
+        // TypeScriptParameterModel so the emitted params interface can never drift from how the transport
+        // clients and the TanStack query keys reach into it (params.route.id / params.query / …).
+        var model = TypeScriptParameterModel.Create(operation);
+        var hasRoute = model.HasRoute;
+        var hasQuery = model.HasQuery;
         // body — для JSON и бинарных контентов (octet-stream и т.п.).
         // form — отдельно для multipart/form-data и url-encoded (становится FormData/URLSearchParams).
-        var hasBody = rb != null && !rb.IsForm;
-        var hasForm = rb != null && rb.IsForm;
-        var hasHeaders = operation.HeaderParameters.Count > 0;
+        var hasBody = model.HasBody;
+        var hasForm = model.HasForm;
+        var hasHeaders = model.HasHeaders;
 
-        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasBody ? 1 : 0) + (hasForm ? 1 : 0) + (hasHeaders ? 1 : 0);
-        var useFlatOnly = groupCount <= 1;
+        var useFlatOnly = model.IsFlat;
 
         // Под-интерфейсы Route/Query/Headers — только при агрегатной структуре (groupCount > 1)
         if (!useFlatOnly)
@@ -140,6 +155,24 @@ public sealed class TypeScriptParamsAstBuilder
             : BuildAggregateParamsInterface(operation, hasRoute, hasQuery, hasBody, hasForm, hasHeaders);
 
         declarations.Add(paramsInterface);
+
+        // Exported validation-constraint constants (lengths/ranges/patterns) for route/query params — imported and
+        // referenced by {op}.params.schema.ts, mirroring model-property {Model}Constraints. Emitted only when a
+        // group actually has constrained parameters.
+        var opName = _namingConverter.ToPascalCase(operation.MethodName);
+        var routeConstraints = TypeScriptConstraints.BuildConstraintsObject(
+            RouteParamsConstraintsName(operation.MethodName),
+            operation.PathParameters.Where(p => p.Constraints != null).Select(p => (p.Name, p.Constraints!)),
+            TypeScriptDoc.Block($"Validation constraints for {operation.MethodName} route parameters (lengths, ranges, patterns).", ("constant", "")));
+        if (routeConstraints != null)
+            declarations.Add(routeConstraints);
+
+        var queryConstraints = TypeScriptConstraints.BuildConstraintsObject(
+            QueryParamsConstraintsName(operation.MethodName),
+            operation.QueryParameters.Where(p => p.Constraints != null).Select(p => (p.Name, p.Constraints!)),
+            TypeScriptDoc.Block($"Validation constraints for {operation.MethodName} query parameters (lengths, ranges, patterns).", ("constant", "")));
+        if (queryConstraints != null)
+            declarations.Add(queryConstraints);
 
         // Собираем все модели-зависимости: body/form (включая массивы и т.п.) +
         // route/query/header параметры. Дедупим по имени.

@@ -14,6 +14,9 @@ internal sealed class NoneValidationStrategy : IClientValidationStrategy
 
     public bool IsEnabled => false;
 
+    /// <summary>No validation → no constraints objects are referenced.</summary>
+    public bool UsesConstraintConstants => false;
+
     public string? UuidConstName => null;
 
     public ExpressionNode Validate(IrType type, ExpressionNode input) => input;
@@ -21,7 +24,7 @@ internal sealed class NoneValidationStrategy : IClientValidationStrategy
     // Не вызывается (схемы генерируются только при включённой валидации).
     public ExpressionNode BuildSchema(IrType type) => new IdentifierExpressionNode(new IdentifierNode("unknown"));
 
-    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters) => new IdentifierExpressionNode(new IdentifierNode("unknown"));
+    public ExpressionNode BuildParamsSchema(IReadOnlyList<IrParameter> parameters, string? constraintsRefPrefix = null) => new IdentifierExpressionNode(new IdentifierNode("unknown"));
 
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) => input;
 

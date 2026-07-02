@@ -8,6 +8,17 @@ public sealed class TypeScriptGenerationOptions
     public string? QueryWrapper { get; set; }
 
     /// <summary>
+    /// Which client transport the generated query hooks (TanStack Query / SWR) wrap — one of
+    /// <c>ky</c>/<c>axios</c>/<c>fetch</c>. When <see langword="null"/> the transport is resolved from
+    /// <see cref="Transports"/> (the first client-capable transport, else <c>fetch</c>). Normalised by
+    /// <see cref="TypeScriptOptionsDescriptor"/> from the <c>queryTransport</c> config key. If the chosen
+    /// transport is not already in <see cref="Transports"/> it is added automatically so its client module is
+    /// emitted (see <c>TypeScriptTransportResolutionStep</c>).
+    /// </summary>
+    /// <seealso cref="TypeScriptClientTransport.ResolveHookClientSuffix"/>
+    public string? QueryTransport { get; set; }
+
+    /// <summary>
     /// Mock library to emit alongside the client. Currently supports <c>msw</c> —
     /// generates a single <c>mocks/handlers.ts</c> file containing an
     /// <c>http.{verb}(...)</c> handler per IR operation. Normalised by

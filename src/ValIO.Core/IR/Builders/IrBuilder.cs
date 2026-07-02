@@ -1439,7 +1439,9 @@ public class IrBuilder
             // Parameter-level description wins; otherwise fall back to the parameter's schema description
             // (some OpenAPI emitters put it there). Then the default comes from the parameter's schema.
             Description = !string.IsNullOrWhiteSpace(parameter.Description) ? parameter.Description : schema.Description,
-            DefaultValue = ExtractDefaultValue(schema.Default)
+            DefaultValue = ExtractDefaultValue(schema.Default),
+            // Reuse the same constraint extraction as model properties so params carry lengths/ranges/patterns.
+            Constraints = ExtractConstraints(schema)
         };
     }
     

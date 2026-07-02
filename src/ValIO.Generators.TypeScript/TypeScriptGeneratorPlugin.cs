@@ -29,6 +29,9 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
         var nodeRenderers = services.GetServices<ITypeScriptNodeRenderer>().ToArray();
         var steps = new ICodeGenerationStep[]
         {
+            // Resolves the query-hook transport and auto-adds it to the selected transports (with a warning)
+            // before any client/hook step reads the transport list.
+            new TypeScriptTransportResolutionStep(),
             new TypeScriptModelsStep(namingConverter, nodeRenderers),
             new TypeScriptEnumsStep(namingConverter, nodeRenderers),
             new TypeScriptParamsStep(namingConverter, nodeRenderers),
@@ -39,6 +42,8 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new ZodSchemasStep(namingConverter),
             new ValibotSchemasStep(namingConverter, nodeRenderers),
             new TypeBoxSchemasStep(namingConverter, nodeRenderers),
+            // Shared cache keys/tags — emitted before the transports and framework adapters that import them.
+            new TypeScriptQueryKeysStep(namingConverter, nodeRenderers),
             new FetchClientStep(namingConverter, nodeRenderers),
             new AxiosClientStep(namingConverter, nodeRenderers),
             new KyClientStep(namingConverter, nodeRenderers),

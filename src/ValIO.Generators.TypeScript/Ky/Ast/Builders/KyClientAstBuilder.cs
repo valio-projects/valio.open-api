@@ -192,7 +192,7 @@ public sealed class KyClientAstBuilder
     private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasResultType)
     {
         var statements = new List<StatementNode>();
-        var sources = BuildParameterSources(operation);
+        var sources = TypeScriptParameterSources.Create(operation);
 
         if (_validation.IsEnabled)
         {
@@ -202,7 +202,7 @@ public sealed class KyClientAstBuilder
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("requestUrl"),
             type: null,
-            initializer: BuildUrlExpression(operation, sources.RouteSource)));
+            initializer: TypeScriptRequestPath.BuildUrl(operation, sources.RouteSource)));
         statements.Add(new BlankLineStatementNode());
 
         statements.Add(new VariableDeclarationStatementNode(
@@ -246,7 +246,7 @@ public sealed class KyClientAstBuilder
 
     private void AddValidationParsingStatements(
         IrOperation operation,
-        ParameterSources sources,
+        TypeScriptParameterSources sources,
         List<StatementNode> statements)
     {
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
@@ -293,7 +293,7 @@ public sealed class KyClientAstBuilder
 
     private ObjectLiteralExpressionNode BuildKyOptionsExpression(
         IrOperation operation,
-        ParameterSources sources,
+        TypeScriptParameterSources sources,
         bool hasResultType)
     {
         var properties = new List<PropertyAssignmentNode>();
@@ -368,13 +368,13 @@ public sealed class KyClientAstBuilder
         return new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
     }
 
-    private ExpressionNode BuildSearchParamsObject(IrOperation operation, ParameterSources sources)
+    private ExpressionNode BuildSearchParamsObject(IrOperation operation, TypeScriptParameterSources sources)
     {
         var properties = new List<PropertyAssignmentNode>();
 
         foreach (var parameter in operation.QueryParameters)
         {
-            var access = BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
+            var access = TypeScriptRequestPath.BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
             if (parameter.IsRequired)
             {
                 properties.Add(new PropertyAssignmentNode(new IdentifierNode(parameter.Name), access));
@@ -467,65 +467,6 @@ public sealed class KyClientAstBuilder
             useAsOperator: true));
     }
 
-    private ExpressionNode BuildUrlExpression(IrOperation operation, ExpressionNode? routeSource)
-    {
-        if (operation.PathParameters.Count == 0 || routeSource == null)
-            return String(operation.Path);
-
-        var parts = new List<TemplateLiteralPart>();
-        var cursor = 0;
-
-        foreach (var parameter in operation.PathParameters)
-        {
-            var token = $"{{{parameter.Name}}}";
-            // Casing плейсхолдера в пути может отличаться от имени параметра — сопоставляем без учёта регистра.
-            var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                continue;
-
-            if (index > cursor)
-                parts.Add(new TemplateLiteralPart(operation.Path[cursor..index]));
-
-            parts.Add(new TemplateLiteralPart(BuildParameterAccess(routeSource, parameter.Name, sourceMayBeUndefined: false)));
-            cursor = index + token.Length;
-        }
-
-        if (cursor < operation.Path.Length)
-            parts.Add(new TemplateLiteralPart(operation.Path[cursor..]));
-
-        return parts.Count == 0
-            ? String(operation.Path)
-            : new TemplateLiteralExpressionNode(parts.ToImmutableList());
-    }
-
-    private ParameterSources BuildParameterSources(IrOperation operation)
-    {
-        var hasRoute = operation.PathParameters.Count > 0;
-        var hasQuery = operation.QueryParameters.Count > 0;
-        var hasHeaders = operation.HeaderParameters.Count > 0;
-        var hasBody = operation.RequestBody != null;
-        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasHeaders ? 1 : 0) + (hasBody ? 1 : 0);
-        var isFlat = groupCount <= 1;
-        var paramsExpr = Id("params");
-
-        return new ParameterSources
-        {
-            RouteSource = hasRoute ? isFlat ? paramsExpr : Member(paramsExpr, "route") : null,
-            QuerySource = hasQuery ? isFlat ? paramsExpr : Member(paramsExpr, "query") : null,
-            QuerySourceMayBeUndefined = hasQuery && !isFlat && operation.QueryParameters.All(p => !p.IsRequired),
-            HeadersSource = hasHeaders ? isFlat ? paramsExpr : Member(paramsExpr, "headers") : null,
-            HeadersSourceMayBeUndefined = hasHeaders && !isFlat,
-            BodySource = hasBody ? BodyPropertyAccess(operation.RequestBody!, paramsExpr) : null,
-            BodySourceMayBeUndefined = hasBody && operation.RequestBody?.IsRequired == false
-        };
-    }
-
-    private static ExpressionNode BodyPropertyAccess(IrRequestBody requestBody, ExpressionNode source)
-    {
-        // form-data/url-encoded — отдельное поле `form`. JSON и бинарные — `body`.
-        return Member(source, requestBody.IsForm ? "form" : "body");
-    }
-
     /// <summary>
     /// Тело ответа: голая ссылка на модель → <c>{Model}Schema</c>; constructed-тип (union/array/...) →
     /// вынесенная <c>{Op}Result{Status}Schema</c>; иначе/без валидации — сырые данные.
@@ -549,16 +490,6 @@ public sealed class KyClientAstBuilder
         return fileOrganization.SeparateModels
             ? $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{modelsPath}/{modelFileName}.schema";
-    }
-
-    private static ExpressionNode BuildParameterAccess(ExpressionNode source, string name, bool sourceMayBeUndefined)
-    {
-        return source is IdentifierExpressionNode { Identifier.Name: "undefined" }
-            ? source
-            : new MemberAccessExpressionNode(
-                source,
-                new IdentifierNode(name),
-                useOptionalChaining: sourceMayBeUndefined);
     }
 
     private static CommentNode? BuildDocumentation(IrOperation operation)
@@ -606,14 +537,4 @@ public sealed class KyClientAstBuilder
     private static LiteralExpressionNode Bool(bool value) =>
         new(value, LiteralKind.Boolean);
 
-    private sealed class ParameterSources
-    {
-        public ExpressionNode? RouteSource { get; set; }
-        public ExpressionNode? QuerySource { get; set; }
-        public bool QuerySourceMayBeUndefined { get; set; }
-        public ExpressionNode? HeadersSource { get; set; }
-        public bool HeadersSourceMayBeUndefined { get; set; }
-        public ExpressionNode? BodySource { get; set; }
-        public bool BodySourceMayBeUndefined { get; set; }
-    }
 }

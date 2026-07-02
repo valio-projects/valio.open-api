@@ -77,16 +77,16 @@ public sealed class NextjsClientAstBuilder
         var hasResultType = _resultsBuilder.HasResponsesWithBody(operation);
         // Only GET responses participate in Next's persistent cache, so tags/revalidate apply to GET only.
         var isCacheable = string.Equals(operation.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase);
-        var cacheTagName = $"{operationFileName}CacheTag";
+        // Cache tags are derived in the shared {op}.query-keys.ts module so a server-side revalidateTag mirrors a
+        // client-side prefix invalidateQueries (see TypeScriptQueryKeysAstBuilder / TypeScriptCacheKey).
+        var cacheTagsFnName = $"get{_namingConverter.ToPascalCase(operation.MethodName)}CacheTags";
+        var broadTagName = $"{operationFileName}CacheTag";
 
         var declarations = ImmutableList.CreateBuilder<DeclarationNode>();
-        if (isCacheable)
-            declarations.Add(BuildCacheTagConst(cacheTagName, operationFileName));
-
-        declarations.Add(BuildOperationFunction(operation, hasParameters, hasResultType, isCacheable, cacheTagName));
+        declarations.Add(BuildOperationFunction(operation, hasParameters, hasResultType, isCacheable, cacheTagsFnName));
 
         if (isCacheable && _generateRevalidateHelpers)
-            declarations.Add(BuildRevalidateHelper(operation, cacheTagName));
+            declarations.Add(BuildRevalidateHelper(operation, hasParameters, broadTagName, cacheTagsFnName));
 
         return new SourceFileNode(
             imports: BuildImports(operation, operationFileName, fileOrganization, hasParameters, hasResultType, isCacheable),
@@ -113,6 +113,23 @@ public sealed class NextjsClientAstBuilder
                 items: ImmutableList.Create(new IdentifierNode("revalidateTag")),
                 from: "next/cache",
                 kind: ImportKind.Named));
+
+        // Cache identity comes from the framework-agnostic {op}.query-keys.ts (see TypeScriptQueryKeysAstBuilder):
+        // getXCacheTags(params) feeds next.tags so a server-side revalidateTag mirrors the client-side prefix
+        // invalidateQueries; the broad {op}CacheTag const is the no-params fallback for the revalidate helper.
+        if (isCacheable)
+        {
+            var queryKeyImports = new List<IdentifierNode>
+            {
+                new($"get{_namingConverter.ToPascalCase(operation.MethodName)}CacheTags"),
+            };
+            if (_generateRevalidateHelpers)
+                queryKeyImports.Add(new IdentifierNode($"{operationFileName}CacheTag"));
+            imports.Add(new ImportNode(
+                items: queryKeyImports.ToImmutableList(),
+                from: $"./{operationFileName}.query-keys",
+                kind: ImportKind.Named));
+        }
 
         // Validation runtime imports (z / v / Type / Value), driven by the generated expressions.
         imports.AddRange(_validation.RuntimeImports(
@@ -175,26 +192,74 @@ public sealed class NextjsClientAstBuilder
             ? new[] { operation.RequestBody.Type }
             : Array.Empty<IrType>();
 
-    /// <summary>Builds <c>export const {op}CacheTag = "{tag}";</c> — the per-operation Next.js cache tag.</summary>
-    private static DeclarationNode BuildCacheTagConst(string cacheTagName, string tagValue) =>
-        new VariableDeclarationNode(
-            name: new IdentifierNode(cacheTagName),
-            declarationKind: VariableDeclarationKind.Const,
-            initializer: String(tagValue),
-            documentation: new CommentNode("Next.js cache tag for this operation (use with revalidateTag).", CommentKind.JSDoc),
-            isExported: true);
-
-    /// <summary>Builds <c>export function revalidate{Op}() { revalidateTag({op}CacheTag, "max"); }</c>.</summary>
-    private FunctionDeclarationNode BuildRevalidateHelper(IrOperation operation, string cacheTagName)
+    /// <summary>
+    /// Builds <c>export function revalidate{Op}(params?)</c> — on-demand cache invalidation for the operation.
+    /// </summary>
+    /// <remarks>
+    /// When the operation has parameters, the helper invalidates the <em>most specific</em> cache tag produced by
+    /// <c>get{Op}CacheTags(params)</c> (the last, deepest hierarchical prefix — e.g.
+    /// <c>api:apartments:&lt;id&gt;:investor</c>), so a call clears exactly that entity's cached result rather than
+    /// every result of the operation. When no <c>params</c> are supplied (or the operation is parameterless) it
+    /// falls back to the broad <c>{op}CacheTag</c>, which revalidates all of the operation's cached responses.
+    /// Both the fetch (<see cref="BuildNextConfig"/>) and this helper draw their tags from the shared
+    /// <c>{op}.query-keys.ts</c>, so server-side invalidation mirrors the client-side TanStack query key.
+    /// </remarks>
+    /// <param name="operation">The IR operation.</param>
+    /// <param name="hasParameters">Whether the operation exposes a <c>params</c> argument.</param>
+    /// <param name="broadTagName">The imported broad operation-tag const name (<c>{op}CacheTag</c>).</param>
+    /// <param name="cacheTagsFnName">The imported hierarchical cache-tags function name (<c>get{Op}CacheTags</c>).</param>
+    /// <returns>The exported <c>revalidate{Op}</c> function declaration.</returns>
+    /// <seealso cref="BuildNextConfig"/>
+    private FunctionDeclarationNode BuildRevalidateHelper(
+        IrOperation operation,
+        bool hasParameters,
+        string broadTagName,
+        string cacheTagsFnName)
     {
-        var call = new ExpressionStatementNode(new CallExpressionNode(
-            Id("revalidateTag"),
-            ImmutableList.Create<ExpressionNode>(Id(cacheTagName), String("max"))));
+        var parameters = ImmutableList.CreateBuilder<ParameterDeclarationNode>();
+        BlockNode body;
+
+        if (hasParameters)
+        {
+            parameters.Add(new ParameterDeclarationNode(
+                name: new IdentifierNode("params"),
+                type: Simple(_paramsBuilder.ParamsInterfaceName(operation.MethodName)),
+                isRequired: false,
+                documentation: new CommentNode("When provided, revalidates only this entity's cached result; otherwise revalidates the whole operation.", CommentKind.JSDoc)));
+
+            // const tags = params ? get{Op}CacheTags(params) : [{op}CacheTag];
+            var tagsDecl = new VariableDeclarationStatementNode(
+                new IdentifierNode("tags"),
+                type: null,
+                initializer: new ConditionalExpressionNode(
+                    Id("params"),
+                    new CallExpressionNode(Id(cacheTagsFnName), ImmutableList.Create<ExpressionNode>(Id("params"))),
+                    new ArrayLiteralExpressionNode(ImmutableList.Create<ExpressionNode>(Id(broadTagName)))));
+
+            // revalidateTag(tags.at(-1) ?? {op}CacheTag, "max");
+            var mostSpecific = new BinaryExpressionNode(
+                new CallExpressionNode(Member(Id("tags"), "at"), ImmutableList.Create<ExpressionNode>(Number(-1))),
+                BinaryOperator.NullishCoalescing,
+                Id(broadTagName));
+            var call = new ExpressionStatementNode(new CallExpressionNode(
+                Id("revalidateTag"),
+                ImmutableList.Create<ExpressionNode>(mostSpecific, String("max"))));
+
+            body = new BlockNode(ImmutableList.Create<StatementNode>(tagsDecl, call));
+        }
+        else
+        {
+            var call = new ExpressionStatementNode(new CallExpressionNode(
+                Id("revalidateTag"),
+                ImmutableList.Create<ExpressionNode>(Id(broadTagName), String("max"))));
+            body = new BlockNode(ImmutableList.Create<StatementNode>(call));
+        }
+
         return new FunctionDeclarationNode(
             name: new IdentifierNode($"revalidate{_namingConverter.ToPascalCase(operation.MethodName)}"),
             returnType: Simple("void", isPrimitive: true),
-            parameters: ImmutableList<ParameterDeclarationNode>.Empty,
-            body: new BlockNode(ImmutableList.Create<StatementNode>(call)),
+            parameters: parameters.ToImmutable(),
+            body: body,
             isAsync: false,
             documentation: new CommentNode(
                 $"On-demand invalidation of the {operation.MethodName} cache. Call from a Server Action or Route Handler.",
@@ -207,7 +272,7 @@ public sealed class NextjsClientAstBuilder
         bool hasParameters,
         bool hasResultType,
         bool isCacheable,
-        string cacheTagName)
+        string cacheTagsFnName)
     {
         var returnType = hasResultType
             ? Simple(_resultsBuilder.ResultTypeName(operation.MethodName))
@@ -236,16 +301,16 @@ public sealed class NextjsClientAstBuilder
             name: new IdentifierNode(operation.MethodName),
             returnType: new GenericTypeNode(new IdentifierNode("Promise"), ImmutableList.Create(returnType)),
             parameters: parameters.ToImmutable(),
-            body: BuildOperationFunctionBody(operation, hasResultType, isCacheable, cacheTagName),
+            body: BuildOperationFunctionBody(operation, hasParameters, hasResultType, isCacheable, cacheTagsFnName),
             isAsync: true,
             documentation: BuildDocumentation(operation),
             isExported: true);
     }
 
-    private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasResultType, bool isCacheable, string cacheTagName)
+    private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasParameters, bool hasResultType, bool isCacheable, string cacheTagsFnName)
     {
         var statements = new List<StatementNode>();
-        var sources = BuildParameterSources(operation);
+        var sources = TypeScriptParameterSources.Create(operation);
 
         if (_validation.IsEnabled)
             AddValidationParsingStatements(operation, sources, statements);
@@ -259,7 +324,7 @@ public sealed class NextjsClientAstBuilder
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("requestInit"),
             type: null,
-            initializer: BuildFetchInit(operation, sources, isCacheable, cacheTagName)));
+            initializer: BuildFetchInit(operation, sources, hasParameters, isCacheable, cacheTagsFnName)));
         statements.Add(new BlankLineStatementNode());
 
         var fetchCall = new CallExpressionNode(
@@ -299,42 +364,15 @@ public sealed class NextjsClientAstBuilder
     /// Builds the request URL expression. When query params exist, emits a <c>URLSearchParams</c> populated
     /// from the params and returns <c>`{path}` + (query.size > 0 ? `?${query}` : "")</c>; otherwise the path.
     /// </summary>
-    private ExpressionNode BuildUrlWithQuery(IrOperation operation, ParameterSources sources, List<StatementNode> statements)
+    private static ExpressionNode BuildUrlWithQuery(IrOperation operation, TypeScriptParameterSources sources, List<StatementNode> statements)
     {
-        var pathExpression = BuildUrlExpression(operation, sources);
-        if (operation.QueryParameters.Count == 0 || sources.QuerySource == null)
-            return pathExpression;
-
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("query"),
-            type: null,
-            initializer: new CallExpressionNode(Id("URLSearchParams"), ImmutableList<ExpressionNode>.Empty, isNewExpression: true)));
-
-        foreach (var parameter in operation.QueryParameters)
-        {
-            var access = BuildParameterAccess(sources.QuerySource, parameter.Name, sources.QuerySourceMayBeUndefined);
-            // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
-            var setCall = new ExpressionStatementNode(new CallExpressionNode(
-                Member(Id("query"), "set"),
-                ImmutableList.Create<ExpressionNode>(String(parameter.Name),
-                    new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
-            if (parameter.IsRequired)
-                statements.Add(setCall);
-            else
-                statements.Add(new IfStatementNode(
-                    new BinaryExpressionNode(access, BinaryOperator.NotEqual, Id("undefined")),
-                    new BlockNode(ImmutableList.Create<StatementNode>(setCall))));
-        }
-        statements.Add(new BlankLineStatementNode());
-
-        var queryTail = new ConditionalExpressionNode(
-            new BinaryExpressionNode(Member(Id("query"), "size"), BinaryOperator.GreaterThan, Number(0)),
-            new TemplateLiteralExpressionNode(ImmutableList.Create(new TemplateLiteralPart("?"), new TemplateLiteralPart(Id("query")))),
-            String(string.Empty));
-        return new BinaryExpressionNode(pathExpression, BinaryOperator.Add, queryTail);
+        // Path templating + query-string building are shared with the fetch transport (see TypeScriptQueryString).
+        var pathExpression = TypeScriptRequestPath.BuildUrl(operation, sources.RouteSource);
+        return TypeScriptQueryString.AppendQueryToUrl(
+            operation, pathExpression, sources.QuerySource, sources.QuerySourceMayBeUndefined, statements);
     }
 
-    private void AddValidationParsingStatements(IrOperation operation, ParameterSources sources, List<StatementNode> statements)
+    private void AddValidationParsingStatements(IrOperation operation, TypeScriptParameterSources sources, List<StatementNode> statements)
     {
         var opName = _namingConverter.ToPascalCase(operation.MethodName);
 
@@ -378,7 +416,7 @@ public sealed class NextjsClientAstBuilder
     /// then <c>method</c>, merged <c>headers</c>, JSON <c>body</c>, the Next <c>next</c> config (GET only,
     /// caller-overridable per field), and the optional <c>signal</c>.
     /// </summary>
-    private ObjectLiteralExpressionNode BuildFetchInit(IrOperation operation, ParameterSources sources, bool isCacheable, string cacheTagName)
+    private ObjectLiteralExpressionNode BuildFetchInit(IrOperation operation, TypeScriptParameterSources sources, bool hasParameters, bool isCacheable, string cacheTagsFnName)
     {
         var props = new List<PropertyAssignmentNode>
         {
@@ -419,7 +457,7 @@ public sealed class NextjsClientAstBuilder
         }
 
         if (isCacheable)
-            props.Add(new PropertyAssignmentNode(new IdentifierNode("next"), BuildNextConfig(cacheTagName)));
+            props.Add(new PropertyAssignmentNode(new IdentifierNode("next"), BuildNextConfig(cacheTagsFnName, hasParameters)));
 
         props.Add(SpreadProperty(new ConditionalExpressionNode(Id("signal"), Object(("signal", Id("signal"))), EmptyObject())));
 
@@ -427,16 +465,29 @@ public sealed class NextjsClientAstBuilder
     }
 
     /// <summary>
-    /// Builds the Next config object: <c>{ [revalidate: N,] tags: [{op}CacheTag], ...(options?.next ?? {}) }</c>.
-    /// The trailing spread lets the caller override <c>revalidate</c>/<c>tags</c> per field.
+    /// Builds the Next config object:
+    /// <c>{ [revalidate: N,] tags: get{Op}CacheTags(params), ...(options?.next ?? {}) }</c>.
     /// </summary>
-    private ObjectLiteralExpressionNode BuildNextConfig(string cacheTagName)
+    /// <remarks>
+    /// The <c>tags</c> come from the shared <c>{op}.query-keys.ts</c> (<paramref name="cacheTagsFnName"/>), so the
+    /// server-side fetch is tagged with exactly the hierarchical prefixes that the client-side TanStack query key
+    /// is built from — a single cache identity. The trailing spread lets the caller override
+    /// <c>revalidate</c>/<c>tags</c> per field.
+    /// </remarks>
+    /// <param name="cacheTagsFnName">The imported hierarchical cache-tags function name (<c>get{Op}CacheTags</c>).</param>
+    /// <param name="hasParameters">Whether to pass the <c>params</c> argument to the cache-tags function.</param>
+    /// <returns>The Next.js <c>next</c> config object literal.</returns>
+    /// <seealso cref="BuildRevalidateHelper"/>
+    private ObjectLiteralExpressionNode BuildNextConfig(string cacheTagsFnName, bool hasParameters)
     {
         var nextProps = new List<PropertyAssignmentNode>();
         if (_defaultRevalidate.HasValue)
             nextProps.Add(new PropertyAssignmentNode(new IdentifierNode("revalidate"), Number(_defaultRevalidate.Value)));
+        var tagsArgs = hasParameters
+            ? ImmutableList.Create<ExpressionNode>(Id("params"))
+            : ImmutableList<ExpressionNode>.Empty;
         nextProps.Add(new PropertyAssignmentNode(new IdentifierNode("tags"),
-            new ArrayLiteralExpressionNode(ImmutableList.Create<ExpressionNode>(Id(cacheTagName)))));
+            new CallExpressionNode(Id(cacheTagsFnName), tagsArgs)));
         nextProps.Add(SpreadProperty(new BinaryExpressionNode(
             Member(Id("options"), "next", optional: true), BinaryOperator.NullishCoalescing, EmptyObject())));
         return new ObjectLiteralExpressionNode(nextProps.ToImmutableList(), preferMultilineFormat: true);
@@ -483,55 +534,6 @@ public sealed class NextjsClientAstBuilder
             useAsOperator: true));
     }
 
-    private ExpressionNode BuildUrlExpression(IrOperation operation, ParameterSources sources)
-    {
-        if (operation.PathParameters.Count == 0 || sources.RouteSource == null)
-            return String(operation.Path);
-
-        var parts = new List<TemplateLiteralPart>();
-        var cursor = 0;
-        foreach (var parameter in operation.PathParameters)
-        {
-            var token = $"{{{parameter.Name}}}";
-            var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
-            if (index < 0)
-                continue;
-            if (index > cursor)
-                parts.Add(new TemplateLiteralPart(operation.Path[cursor..index]));
-            parts.Add(new TemplateLiteralPart(BuildParameterAccess(sources.RouteSource, parameter.Name, sourceMayBeUndefined: false)));
-            cursor = index + token.Length;
-        }
-        if (cursor < operation.Path.Length)
-            parts.Add(new TemplateLiteralPart(operation.Path[cursor..]));
-
-        return parts.Count == 0 ? String(operation.Path) : new TemplateLiteralExpressionNode(parts.ToImmutableList());
-    }
-
-    private ParameterSources BuildParameterSources(IrOperation operation)
-    {
-        var hasRoute = operation.PathParameters.Count > 0;
-        var hasQuery = operation.QueryParameters.Count > 0;
-        var hasHeaders = operation.HeaderParameters.Count > 0;
-        var hasBody = operation.RequestBody != null;
-        var groupCount = (hasRoute ? 1 : 0) + (hasQuery ? 1 : 0) + (hasHeaders ? 1 : 0) + (hasBody ? 1 : 0);
-        var isFlat = groupCount <= 1;
-        var paramsExpr = Id("params");
-
-        return new ParameterSources
-        {
-            RouteSource = hasRoute ? isFlat ? paramsExpr : Member(paramsExpr, "route") : null,
-            QuerySource = hasQuery ? isFlat ? paramsExpr : Member(paramsExpr, "query") : null,
-            QuerySourceMayBeUndefined = hasQuery && !isFlat && operation.QueryParameters.All(p => !p.IsRequired),
-            HeadersSource = hasHeaders ? isFlat ? paramsExpr : Member(paramsExpr, "headers") : null,
-            HeadersSourceMayBeUndefined = hasHeaders && !isFlat,
-            BodySource = hasBody ? BodyPropertyAccess(operation.RequestBody!, paramsExpr) : null,
-            BodySourceMayBeUndefined = hasBody && operation.RequestBody?.IsRequired == false
-        };
-    }
-
-    private static ExpressionNode BodyPropertyAccess(IrRequestBody requestBody, ExpressionNode source) =>
-        Member(source, requestBody.IsForm ? "form" : "body");
-
     private ExpressionNode BuildResponseBody(IrOperation operation, IrResponse response, ExpressionNode responseData)
     {
         if (!_validation.IsEnabled || !Validation.ValidationTypes.IsValidatable(response.Type!))
@@ -551,11 +553,6 @@ public sealed class NextjsClientAstBuilder
             ? $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{modelsPath}/{modelFileName}.schema";
     }
-
-    private static ExpressionNode BuildParameterAccess(ExpressionNode source, string name, bool sourceMayBeUndefined) =>
-        source is IdentifierExpressionNode { Identifier.Name: "undefined" }
-            ? source
-            : new MemberAccessExpressionNode(source, new IdentifierNode(name), useOptionalChaining: sourceMayBeUndefined);
 
     private static CommentNode? BuildDocumentation(IrOperation operation)
     {
@@ -625,15 +622,4 @@ public sealed class NextjsClientAstBuilder
     private static LiteralExpressionNode Number(int value) => new(value, LiteralKind.Number);
 
     private static LiteralExpressionNode Bool(bool value) => new(value, LiteralKind.Boolean);
-
-    private sealed class ParameterSources
-    {
-        public ExpressionNode? RouteSource { get; set; }
-        public ExpressionNode? QuerySource { get; set; }
-        public bool QuerySourceMayBeUndefined { get; set; }
-        public ExpressionNode? HeadersSource { get; set; }
-        public bool HeadersSourceMayBeUndefined { get; set; }
-        public ExpressionNode? BodySource { get; set; }
-        public bool BodySourceMayBeUndefined { get; set; }
-    }
 }

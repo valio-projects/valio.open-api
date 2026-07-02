@@ -1,3 +1,4 @@
+using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Types;
 
 namespace ValIO.Core.IR;
@@ -106,6 +107,15 @@ public sealed record IrParameter
     /// Используется для генерации <c>.default(...)</c> в схеме параметра.
     /// </summary>
     public object? DefaultValue { get; init; }
+
+    /// <summary>
+    /// Validation constraints from the parameter's schema (string lengths, numeric ranges, regex pattern), or
+    /// <see langword="null"/> when the schema declares none. Emitted as an exported constants object in the
+    /// generated params interface file and referenced by the params schema — mirroring how model-property
+    /// constraints (<see cref="IrProperty.Constraints"/>) are handled.
+    /// </summary>
+    /// <seealso cref="IrPropertyConstraints"/>
+    public IrPropertyConstraints? Constraints { get; init; }
 }
 
 /// <summary>

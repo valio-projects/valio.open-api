@@ -31,7 +31,7 @@ public class NextjsClientStepTests
     }
 
     [Test]
-    public async Task GetOperation_EmitsCacheTag_NextTags_AndRevalidateHelper()
+    public async Task GetOperation_UsesSharedCacheTags_NextTags_AndRevalidateHelper()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
@@ -39,14 +39,21 @@ public class NextjsClientStepTests
         var getPet = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getPetById.nextjs.ts", StringComparison.Ordinal));
 
-        getPet.Content.Should().Contain("export const getPetByIdCacheTag = \"getPetById\"");
-        getPet.Content.Should().Contain("tags: [getPetByIdCacheTag]");
+        // The cache identity now lives in the shared {op}.query-keys.ts; the nextjs client imports and uses it,
+        // so a server-side revalidateTag mirrors the client-side prefix invalidateQueries.
+        getPet.Content.Should().Contain("from \"./getPetById.query-keys\"");
+        getPet.Content.Should().Contain("tags: getGetPetByIdCacheTags(params)");
         getPet.Content.Should().Contain("import { revalidateTag } from \"next/cache\"");
         getPet.Content.Should().Contain("export function revalidateGetPetById");
         // The revalidateTag(tag, "max") call renders with its args on separate lines.
         getPet.Content.Should().Contain("revalidateTag(");
-        getPet.Content.Should().Contain("getPetByIdCacheTag,");
         getPet.Content.Should().Contain("\"max\"");
+
+        // The broad tag const + hierarchical cache-tags function are emitted once, in the shared module.
+        var queryKeys = ctx.GeneratedFiles.First(f =>
+            f.RelativePath.EndsWith("getPetById.query-keys.ts", StringComparison.Ordinal));
+        queryKeys.Content.Should().Contain("export const getPetByIdCacheTag = \"getPetById\"");
+        queryKeys.Content.Should().Contain("export const getGetPetByIdCacheTags");
     }
 
     [Test]
@@ -92,7 +99,7 @@ public class NextjsClientStepTests
     }
 
     [Test]
-    public async Task GenerateRevalidateHelpersFalse_KeepsTagButOmitsHelper()
+    public async Task GenerateRevalidateHelpersFalse_KeepsNextTagsButOmitsHelper()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
@@ -104,9 +111,9 @@ public class NextjsClientStepTests
         var getPet = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getPetById.nextjs.ts", StringComparison.Ordinal));
 
-        getPet.Content.Should().Contain("export const getPetByIdCacheTag");
-        // No helper function and no next/cache import (the cache tag const stays; its JSDoc may still
-        // mention revalidateTag, so we assert against the function/import, not the bare word).
+        // next.tags still wire up the shared cache tags…
+        getPet.Content.Should().Contain("tags: getGetPetByIdCacheTags(params)");
+        // …but with helpers disabled there is no revalidate helper and no next/cache import.
         getPet.Content.Should().NotContain("export function revalidate");
         getPet.Content.Should().NotContain("next/cache");
     }

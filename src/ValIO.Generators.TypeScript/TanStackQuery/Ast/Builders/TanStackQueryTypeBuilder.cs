@@ -102,29 +102,30 @@ public sealed class TanStackQueryTypeBuilder
             }.ToImmutableList());
     }
 
-    public InterfaceDeclarationNode BuildMutationOptionsResultInterface(
+    /// <summary>
+    /// Builds the <c>Get{hookBaseName}MutationOptionsResult</c> type alias — the full
+    /// <c>UseMutationOptions&lt;TData, Error, TVariables&gt;</c> object returned by <c>get…MutationOptions</c>.
+    /// </summary>
+    /// <remarks>
+    /// Mirrors <see cref="BuildQueryOptionsResultTypeAlias"/>: the factory returns the complete options object
+    /// (the caller's <c>options.mutation</c> merged with the generated <c>mutationKey</c>/<c>mutationFn</c>).
+    /// The result therefore has to be the full <c>UseMutationOptions</c> and not a narrow
+    /// <c>{ mutationKey; mutationFn }</c> shape — otherwise the caller's <c>onSuccess</c>/<c>onError</c>/
+    /// <c>retry</c>/… would be dropped at the type level even though they are present at runtime (BUG #11).
+    /// </remarks>
+    /// <param name="hookBaseName">The PascalCase hook base name (e.g. <c>AddPet</c>).</param>
+    /// <param name="dataType">The mutation's <c>TData</c> type node.</param>
+    /// <param name="variablesType">The mutation's <c>TVariables</c> type node.</param>
+    /// <returns>The exported <c>Get{hookBaseName}MutationOptionsResult</c> type alias declaration.</returns>
+    /// <seealso cref="BuildMutationOptionsParamsInterface"/>
+    public TypeAliasDeclarationNode BuildMutationOptionsResultTypeAlias(
         string hookBaseName,
         TypeNode dataType,
         TypeNode variablesType)
     {
-        // MutationFunction<TData, TVariables> = (variables, context) => Promise<TData>
-        var mutationFnType = GenericType("MutationFunction", dataType, variablesType);
-        var mutationKeyType = ReadonlyArray(SimpleType("string", isPrimitive: true));
-        return new InterfaceDeclarationNode(
-            name: new IdentifierNode($"Get{hookBaseName}MutationOptionsResult"),
-            accessModifier: AccessModifier.Public,
-            baseTypes: ImmutableList<TypeNode>.Empty,
-            members: new List<DeclarationNode>
-            {
-                new PropertySignatureNode(
-                    new IdentifierNode("mutationKey"),
-                    mutationKeyType,
-                    isRequired: true),
-                new PropertySignatureNode(
-                    new IdentifierNode("mutationFn"),
-                    mutationFnType,
-                    isRequired: true)
-            }.ToImmutableList());
+        // UseMutationOptions<TData, TError, TVariables> — TContext defaults to unknown, matching the params interface.
+        var type = GenericType("UseMutationOptions", dataType, SimpleType("Error"), variablesType);
+        return new TypeAliasDeclarationNode(new IdentifierNode($"Get{hookBaseName}MutationOptionsResult"), type);
     }
 
     public InterfaceDeclarationNode BuildQueryOptionsParamsInterface(
