@@ -2,8 +2,8 @@
   "projects": {
     "UEApi": {
       "language": "Cpp",
-      "schema": "../../swagger_23_06_2026_open_api.json",
-      "outputPath": "/Users/wiam/Develop/UE/Projects/CubemapGeneratorMVP1/Source/CubemapGeneratorMVP1/Generated",
+      "schema": "../../swagger_02_07_2026_open_api.json",
+      "outputPath": "../../Source/CubemapGeneratorMVP1/Generated",
       "generateModels": true,
       "generateClients": true,
       "namespace": "CubemapGeneratorMVP1",
