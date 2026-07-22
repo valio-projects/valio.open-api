@@ -266,7 +266,12 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     public override string VisitArrayType(ArrayTypeNode node)
     {
         var readonlyStr = node.IsReadOnly ? "readonly " : "";
-        return $"{readonlyStr}{RenderType(node.ElementType)}[]";
+        var element = RenderType(node.ElementType);
+        // Union/intersection-элемент нужно обернуть в скобки перед `[]`: без них `A | B | C[]` парсится
+        // как `A | B | (C[])`, а не `(A | B | C)[]` (напр. массив дискриминированного объединения блоков).
+        if (node.ElementType is UnionTypeNode or IntersectionTypeNode)
+            element = $"({element})";
+        return $"{readonlyStr}{element}[]";
     }
 
     public override string VisitGenericType(GenericTypeNode node)

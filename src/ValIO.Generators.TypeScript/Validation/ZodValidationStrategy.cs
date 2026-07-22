@@ -47,9 +47,10 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
             : [];
 
     public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
-        // A schema-declaring file uses `z` to build the schema and `ZodSchema` to annotate the const
-        // type (`export const XSchema: ZodSchema<X> = ...`), mirroring the model schema files.
-        definedTypes.Count > 0 ? [SchemaDefImport()] : [];
+        // A schema-declaring file uses `z` (value) to build the schema and `ZodSchema` (type) to annotate the
+        // const type (`export const XSchema: ZodSchema<X> = ...`). `ZodSchema` — только тип, поэтому под
+        // `verbatimModuleSyntax` его нужно импортировать type-only (иначе TS1485), отдельной строкой от `z`.
+        definedTypes.Count > 0 ? [ZodImport(), ZodSchemaTypeImport()] : [];
 
     /// <inheritdoc/>
     public TypeNode? SchemaTypeAnnotation(string validatedTypeName) =>
@@ -58,6 +59,6 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
     private ImportNode ZodImport() =>
         new(ImmutableList.Create(new IdentifierNode("z")), _importPath, ImportKind.Named);
 
-    private ImportNode SchemaDefImport() =>
-        new(ImmutableList.Create(new IdentifierNode("z"), new IdentifierNode("ZodSchema")), _importPath, ImportKind.Named);
+    private ImportNode ZodSchemaTypeImport() =>
+        new(ImmutableList.Create(new IdentifierNode("ZodSchema")), _importPath, ImportKind.Named, isTypeOnly: true);
 }

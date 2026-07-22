@@ -6,7 +6,8 @@
  * Do not edit by hand — regenerate via ValIO.
  */
 
-import { z, ZodSchema } from 'zod';
+import { z } from 'zod';
+import type { ZodSchema } from 'zod';
 
 import type { User } from "./user";
 import { UserRoleSchema } from '../userRole/userRole.schema';

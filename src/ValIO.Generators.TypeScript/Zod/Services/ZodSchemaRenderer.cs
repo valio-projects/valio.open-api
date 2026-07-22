@@ -31,6 +31,13 @@ public class ZodSchemaRenderer
     /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
     private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
+    /// <summary>
+    /// Справочник моделей документа (по <see cref="ValIO.Core.IR.IrModel.Name"/>) для резолва наследования
+    /// allOf в собираемых z-схемах. Устанавливается шагом; по умолчанию пуст.
+    /// </summary>
+    public IReadOnlyDictionary<string, ValIO.Core.IR.IrModel> ModelsByName { get; set; }
+        = new Dictionary<string, ValIO.Core.IR.IrModel>();
+
     public ZodSchemaRenderer(
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
@@ -47,7 +54,9 @@ public class ZodSchemaRenderer
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
     }
 
-    private string ZodImportLine => $"import {{ z, ZodSchema }} from '{_zodImportPath}';";
+    // `ZodSchema` — только тип: под `verbatimModuleSyntax` его импортируем type-only (иначе TS1485),
+    // отдельной строкой от значения `z`.
+    private string ZodImportLine => $"import {{ z }} from '{_zodImportPath}';\nimport type {{ ZodSchema }} from '{_zodImportPath}';";
 
     private bool UsesUuidRegex => _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex;
 
@@ -133,7 +142,10 @@ public class ZodSchemaRenderer
             CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
         }
         
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
+        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt, _uuidFormat)
+        {
+            ModelsByName = ModelsByName
+        };
         var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
         
         var zodRenderer = new ZodAstRenderer();

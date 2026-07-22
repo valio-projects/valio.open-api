@@ -42,6 +42,10 @@ public sealed class TypeScriptModelsStep : ICodeGenerationStep
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
         var byName = context.IrDocument.Models.ToDictionary(m => m.Name);
 
+        // Даём построителю справочник моделей — чтобы BuildInterface резолвил наследование allOf
+        // и не переобъявлял свойства базовых классов.
+        builder.ModelsByName = byName;
+
         var processed = new HashSet<string>();
 
         // Топологический порядок сначала

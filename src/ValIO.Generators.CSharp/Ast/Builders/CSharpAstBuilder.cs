@@ -11,6 +11,7 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 using ValIO.Generators.CSharp.Ast.Nodes;
 using ValIO.Generators.CSharp.Models;
 
@@ -25,7 +26,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     private readonly HttpAstBuilder _httpBuilder;
     private readonly CSharpGenerationOptions _options;
     private Dictionary<string, IrModel>? _modelsByName;
-    
+    private static readonly IReadOnlyDictionary<string, IrModel> EmptyModelLookup = new Dictionary<string, IrModel>();
+
     public CSharpAstBuilder(INamingConverter namingConverter, CSharpGenerationOptions? options = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -101,8 +103,12 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             ? new CommentNode(model.Description, CommentKind.Xml)
             : null;
         
-        var properties = model.Properties.Select(p => BuildProperty(p, model)).ToList<DeclarationNode>();
-        
+        // При наследовании (class X : Base) не переобъявляем свойства базового класса — иначе скрытие/дубль
+        // члена (тот же паттерн, что «incorrectly extends» в TS). Единый резолвер наследования для всех языков.
+        var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(
+            model, model.Properties, _modelsByName ?? EmptyModelLookup);
+        var properties = ownProperties.Select(p => BuildProperty(p, model)).ToList<DeclarationNode>();
+
         // Обрабатываем Composition для allOf (наследование)
         var baseTypes = new List<TypeNode>();
         bool hasBaseClass = false;

@@ -11,6 +11,7 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 using ValIO.Core.Models;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
@@ -28,6 +29,14 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// </summary>
 public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
 {
+    /// <summary>
+    /// Справочник моделей документа (по <see cref="IrModel.Name"/>). Нужен для резолва наследования
+    /// allOf в <see cref="BuildInterface"/>: интерфейс с <c>extends Base</c> не должен переобъявлять
+    /// свойства, унаследованные от базовых классов (иначе «incorrectly extends», TS2430). Устанавливается
+    /// шагом моделей; по умолчанию пуст — фильтрация не применяется (безопасный фолбэк).
+    /// </summary>
+    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
+
     /// <summary>
     /// Identifies the kind of generated file an import is being built for. Drives both the base
     /// import path and whether dependency imports are emitted as type-only (see <see cref="BuildImports"/>).
@@ -385,8 +394,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
             ? new CommentNode(model.Description, CommentKind.JSDoc)
             : null;
         
-        var properties = model.Properties.Select(BuildProperty).ToList<DeclarationNode>();
-        
+        // При наследовании (extends Base) не переобъявляем свойства базовых классов: собственный inline-член
+        // allOf мог переобъявить свойство базы (напр. nullable-дискриминатор) — это несовместимо перекрывает
+        // базу (TS2430). Единый резолвер наследования — общий для всех генераторов.
+        var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, ModelsByName);
+        var properties = ownProperties.Select(BuildProperty).ToList<DeclarationNode>();
+
         var baseTypes = ImmutableList<TypeNode>.Empty;
         if (model.Composition?.Kind == IrCompositionKind.AllOf && model.Composition.Types.Count > 0)
         {

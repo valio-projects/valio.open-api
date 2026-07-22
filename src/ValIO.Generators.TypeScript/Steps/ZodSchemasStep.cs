@@ -46,6 +46,9 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
 
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
         var byName = context.IrDocument.Models.ToDictionary(m => m.Name);
+
+        // Резолв наследования allOf: собственный object z-схемы не переобъявляет свойства базы.
+        renderer.ModelsByName = byName;
         var processed = new HashSet<string>();
 
         foreach (var name in orderedNames)

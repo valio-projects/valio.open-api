@@ -4,6 +4,7 @@ using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 using ValIO.Generators.Cpp.Ast.Nodes;
 using ValIO.Generators.Cpp.Ast.Nodes.UE;
 using ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
@@ -90,7 +91,10 @@ public sealed class UEModelAstBuilder
             modelLookup.TryGetValue(refBases[0].ModelName, out var baseModel))
         {
             var baseStructName = _naming.StructName(baseModel.Name);
-            return (new IdentifierNode(baseStructName), baseModel.Name, model.Properties);
+            // Наследование: только собственные поля, без переобъявления унаследованных от базы
+            // (единый резолвер наследования для всех генераторов).
+            var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, modelLookup);
+            return (new IdentifierNode(baseStructName), baseModel.Name, ownProperties);
         }
 
         return (null, null, GetEffectiveProperties(model, modelLookup));

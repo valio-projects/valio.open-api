@@ -153,7 +153,7 @@ public class IrBuilder
             {
                 var referencedSchemaName = GetSchemaNameRaw(subSchema);
                 bool isBaseClass = !string.IsNullOrEmpty(referencedSchemaName);
-                
+
                 if (!isBaseClass)
                 {
                     // Это inline-схема с собственными свойствами дочернего класса
@@ -162,7 +162,7 @@ public class IrBuilder
                     properties.AddRange(subProperties);
                 }
             }
-            
+
             // Также добавляем свойства, определенные напрямую в схеме после allOf
             if (resolvedSchema.Properties != null && resolvedSchema.Properties.Count > 0)
             {

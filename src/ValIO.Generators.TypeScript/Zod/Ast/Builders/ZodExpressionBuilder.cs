@@ -37,9 +37,14 @@ public static class ZodExpressionBuilder
         expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
         expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
         // Carry the OpenAPI property description into the schema as Zod metadata (.describe(...)).
+        // Многострочные описания иначе выводят сырой перевод строки прямо в строковый литерал и рвут его
+        // (unterminated string literal) — схлопываем любые пробелы/переводы строк в один пробел.
         if (!string.IsNullOrWhiteSpace(description))
+        {
+            var singleLineDescription = System.Text.RegularExpressions.Regex.Replace(description!, @"\s+", " ").Trim();
             expr = Chain(expr, "describe",
-                new[] { (ExpressionNode)new LiteralExpressionNode(description!, ValIO.Core.Ast.Enums.LiteralKind.String) });
+                new[] { (ExpressionNode)new LiteralExpressionNode(singleLineDescription, ValIO.Core.Ast.Enums.LiteralKind.String) });
+        }
         return new ZodExpressionSchemaNode(expr);
     }
 

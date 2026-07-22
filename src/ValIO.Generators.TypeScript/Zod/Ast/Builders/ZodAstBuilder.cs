@@ -8,6 +8,7 @@ using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 
@@ -19,6 +20,14 @@ namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
 /// </summary>
 public class ZodAstBuilder
 {
+    /// <summary>
+    /// Справочник моделей документа (по <see cref="IrModel.Name"/>) для резолва наследования allOf.
+    /// При наследовании z-схема строится как <c>z.intersection([BaseSchema, z.object({...ownProps})])</c>;
+    /// собственный object НЕ должен переобъявлять свойства базы (иначе выведенный тип не совпадает с
+    /// интерфейсом — TS2322). По умолчанию пуст — фильтрация не применяется.
+    /// </summary>
+    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
+
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
     private readonly bool _useBigInt;
@@ -79,9 +88,12 @@ public class ZodAstBuilder
                     var allOfSchemas = model.Composition.Types
                         .Select(t => BuildZodSchemaFromIrType(t, model.Name))
                         .ToList();
-                    if (model.Properties.Count > 0)
+                    // Свойства базы приходят из BaseSchema (первый член intersection); собственный object
+                    // не переобъявляет их, иначе выведенный тип object не совпадает с интерфейсом (TS2322).
+                    var allOfOwnProps = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, ModelsByName);
+                    if (allOfOwnProps.Count > 0)
                     {
-                        var ownPropsSchema = BuildZodObject(model);
+                        var ownPropsSchema = BuildZodObject(model, allOfOwnProps);
                         allOfSchemas.Add(ownPropsSchema);
                     }
                     if (allOfSchemas.Count == 0)
@@ -101,12 +113,19 @@ public class ZodAstBuilder
     /// <param name="model">IR модель</param>
     /// <returns>AST узел Zod object схемы</returns>
     public ZodObjectNode BuildZodObject(IrModel model)
+        => BuildZodObject(model, model.Properties);
+
+    /// <summary>
+    /// Строит ZodObjectNode из заданного набора свойств модели (для allOf — только собственные,
+    /// без унаследованных от базовых классов).
+    /// </summary>
+    public ZodObjectNode BuildZodObject(IrModel model, IReadOnlyList<IrProperty> properties)
     {
         var constraintsName = $"{model.Name}Constraints";
-        var properties = model.Properties
+        var props = properties
             .Select(p => BuildZodProperty(p, model.Name, constraintsName))
             .ToImmutableList();
-        return new ZodObjectNode(properties);
+        return new ZodObjectNode(props);
     }
 
     /// <summary>

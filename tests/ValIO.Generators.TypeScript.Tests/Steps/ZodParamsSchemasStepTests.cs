@@ -62,7 +62,9 @@ public class ZodParamsSchemasStepTests
 
         var paramsSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("getUserById.params.schema.ts", StringComparison.Ordinal));
-        paramsSchema.Content.Should().Contain("import { z, ZodSchema }");
+        // `ZodSchema` — только тип: под verbatimModuleSyntax импортируется type-only, отдельно от значения `z`.
+        paramsSchema.Content.Should().Contain("import { z } from \"zod\"");
+        paramsSchema.Content.Should().Contain("import type { ZodSchema } from \"zod\"");
         paramsSchema.Content.Should().Contain("import type { GetUserByIdParams } from \"./getUserById.params\"");
         paramsSchema.Content.Should().Contain("GetUserByIdRouteParamsSchema: ZodSchema<GetUserByIdParams>");
     }
