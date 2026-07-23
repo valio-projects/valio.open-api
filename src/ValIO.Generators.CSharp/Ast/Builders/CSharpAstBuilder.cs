@@ -1,4 +1,7 @@
 using System.Collections.Immutable;
+using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -187,7 +190,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             : null;
         
         var defaultValue = property.Constraints?.DefaultValue != null
-            ? BuildLiteral(property.Constraints.DefaultValue)
+            ? BuildTypedLiteral(property.Constraints.DefaultValue, GetDefaultValueTargetKind(property.Type))
             : null;
         
         // Собираем атрибуты
@@ -785,16 +788,22 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // DefaultValue константа
         if (constraints.DefaultValue != null)
         {
-            var comment = new CommentNode($"Значение по умолчанию для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
-            var defaultValueField = new FieldDeclarationNode(
-                name: new IdentifierNode("DefaultValue"),
-                type: BuildType(property.Type),
-                accessModifier: AccessModifier.Public,
-                isReadOnly: false, // const не требует readonly, если примитивный тип
-                isStatic: true,
-                defaultValue: BuildLiteral(constraints.DefaultValue),
-                documentation: comment);
-            members.Add(defaultValueField);
+            var defaultValueLiteral = BuildTypedLiteral(constraints.DefaultValue, GetDefaultValueTargetKind(property.Type));
+            // Если распарсить дефолт под тип свойства не удалось — не эмитим константу вовсе,
+            // а не типизированный "на глаз" литерал, который может не совпасть с type (CS0029).
+            if (defaultValueLiteral != null)
+            {
+                var comment = new CommentNode($"Значение по умолчанию для <see cref=\"{model.Name}.{property.Name}\"/>", CommentKind.Xml);
+                var defaultValueField = new FieldDeclarationNode(
+                    name: new IdentifierNode("DefaultValue"),
+                    type: BuildType(property.Type),
+                    accessModifier: AccessModifier.Public,
+                    isReadOnly: false, // const не требует readonly, если примитивный тип
+                    isStatic: true,
+                    defaultValue: defaultValueLiteral,
+                    documentation: comment);
+                members.Add(defaultValueField);
+            }
         }
         
         return members;
@@ -873,8 +882,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             }
             else
             {
-                // Для числовых enum'ов используем обычное присваивание значения
-                value = v.Value != null ? BuildLiteral(v.Value) : null;
+                // Для числовых enum'ов используем обычное присваивание значения (BaseType уже
+                // гарантирует Integer здесь — String уходит в ветку выше)
+                value = v.Value != null ? BuildTypedLiteral(v.Value, IrPrimitiveKind.Integer) : null;
             }
 
             return new EnumMemberDeclarationNode(
@@ -1184,18 +1194,158 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             thenBlock: new BlockNode(new[] { statement }.ToImmutableList()));
     }
     
-    private LiteralExpressionNode BuildLiteral(object value)
+    /// <summary>
+    /// Определяет примитивный тип, под который нужно типизировать default-значение свойства
+    /// (<see cref="BuildTypedLiteral"/>) — по ДЕКЛАРИРОВАННОМУ типу схемы (после снятия
+    /// Nullable/Optional), а не по CLR-типу самого значения.
+    /// </summary>
+    private static IrPrimitiveKind GetDefaultValueTargetKind(IrType type)
     {
-        var literalKind = value switch
+        return UnwrapNullableOrOptional(type) is IrPrimitiveType primitive ? primitive.PrimitiveKind : IrPrimitiveKind.Any;
+    }
+
+    /// <summary>
+    /// Строит литерал ПО ДЕКЛАРИРОВАННОМУ ТИПУ схемы (<paramref name="targetKind"/>), а не по
+    /// CLR-типу <paramref name="value"/>. Источник (<c>IrBuilder.ExtractDefaultValue</c> для
+    /// property-дефолтов, сырые значения enum'ов) отдаёт значение то как boxed-примитив, то как
+    /// <see cref="JsonNode"/>, то (при некоторых путях парсинга схемы) как голую строку "0" — при
+    /// типизации литерала "по значению" числовой/булев default превращался в СТРОКОВЫЙ литерал в
+    /// кавычках (например, <c>public int Offset { get; set; } = "0";</c> → CS0029: cannot convert
+    /// string to int). Если распарсить значение под <paramref name="targetKind"/> не удаётся,
+    /// возвращает <see langword="null"/> — безопаснее не проставлять инициализатор вовсе, чем
+    /// сгенерировать код, который не скомпилируется.
+    /// </summary>
+    private static LiteralExpressionNode? BuildTypedLiteral(object? value, IrPrimitiveKind targetKind)
+    {
+        value = NormalizeRawValue(value);
+        if (value == null)
+            return null;
+
+        switch (targetKind)
         {
-            string => LiteralKind.String,
-            int or long or short or byte => LiteralKind.Number,
-            float or double or decimal => LiteralKind.Number,
-            bool => LiteralKind.Boolean,
-            null => LiteralKind.Null,
-            _ => LiteralKind.String
+            case IrPrimitiveKind.Integer:
+            {
+                var text = ToInvariantIntegerText(value);
+                return text != null ? new LiteralExpressionNode(text, LiteralKind.Number) : null;
+            }
+            case IrPrimitiveKind.Long:
+            {
+                var text = ToInvariantIntegerText(value);
+                return text != null ? new LiteralExpressionNode(text + "L", LiteralKind.Number) : null;
+            }
+            case IrPrimitiveKind.Number:
+            {
+                var text = ToInvariantDoubleText(value);
+                return text != null ? new LiteralExpressionNode(text + "d", LiteralKind.Number) : null;
+            }
+            case IrPrimitiveKind.Boolean:
+            {
+                var text = ToInvariantBoolText(value);
+                return text != null ? new LiteralExpressionNode(text, LiteralKind.Boolean) : null;
+            }
+            case IrPrimitiveKind.String:
+                return new LiteralExpressionNode(value.ToString() ?? string.Empty, LiteralKind.String);
+            default:
+                // Uuid/DateTime/Date/Time/Any/Binary/ByteArray/File/Void/Null — голый строковый литерал
+                // сюда не подходит (например, Guid), а конвертирующих выражений (Guid.Parse(...)) мы не
+                // строим. Пропускаем инициализатор — не рискуем некомпилируемым кодом.
+                return null;
+        }
+    }
+
+    /// <summary>
+    /// Разворачивает "сырое" значение default/enum до plain CLR-примитива или строки.
+    /// Источники расходятся по представлению: property-дефолты (<c>IrBuilder.ExtractDefaultValue</c>)
+    /// дают <c>JsonValue.GetValue&lt;object&gt;()</c>, который для значений, распарсенных из текста
+    /// (<c>JsonNode.Parse</c>), возвращает не boxed int/bool, а <b>boxed <see cref="JsonElement"/></b>
+    /// (проверено эмпирически: <c>JsonNode.Parse("0")</c> → <c>JsonValue.GetValue&lt;object&gt;()</c> →
+    /// <see cref="JsonElement"/> с <see cref="JsonValueKind.Number"/>, а не <see cref="int"/>) — именно
+    /// это боксирование под <c>_ =&gt; LiteralKind.String</c> в старом коде и превращало числовой default
+    /// в квотированную строку. Сырые значения enum'ов (<see cref="IrEnumValue.Value"/>) — это сам
+    /// <see cref="JsonNode"/>, ещё не развёрнутый через <c>GetValue&lt;object&gt;()</c>.
+    /// </summary>
+    private static object? NormalizeRawValue(object? value)
+    {
+        switch (value)
+        {
+            case null:
+                return null;
+            case JsonElement element:
+                return element.ValueKind switch
+                {
+                    JsonValueKind.String => element.GetString(),
+                    // GetRawText() для числа — это ровно исходный JSON-текст ("0", "30", "1.5"),
+                    // валидный и как C#-числовой литерал.
+                    JsonValueKind.Number => element.GetRawText(),
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.Null => null,
+                    _ => element.ToString()
+                };
+            case JsonValue jsonValue:
+                return NormalizeRawValue(TryGetJsonValue(jsonValue));
+            case JsonNode jsonNode:
+                // JsonObject/JsonArray как default примитивного свойства — не наш случай, best-effort.
+                return jsonNode.ToString();
+            default:
+                return value;
+        }
+    }
+
+    private static object? TryGetJsonValue(JsonValue jsonValue)
+    {
+        try
+        {
+            return jsonValue.GetValue<object>();
+        }
+        catch
+        {
+            return jsonValue.ToString();
+        }
+    }
+
+    private static string? ToInvariantIntegerText(object value)
+    {
+        switch (value)
+        {
+            case bool:
+                return null;
+            case byte or sbyte or short or ushort or int or uint or long or ulong:
+                return Convert.ToInt64(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
+            case float or double or decimal:
+                return ((long)Math.Round(Convert.ToDouble(value, CultureInfo.InvariantCulture))).ToString(CultureInfo.InvariantCulture);
+            case string s when long.TryParse(s.Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var asLong):
+                return asLong.ToString(CultureInfo.InvariantCulture);
+            case string s when double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var asDouble):
+                return ((long)Math.Round(asDouble)).ToString(CultureInfo.InvariantCulture);
+            default:
+                return null;
+        }
+    }
+
+    private static string? ToInvariantDoubleText(object value)
+    {
+        switch (value)
+        {
+            case bool:
+                return null;
+            case byte or sbyte or short or ushort or int or uint or long or ulong or float or double or decimal:
+                return Convert.ToDouble(value, CultureInfo.InvariantCulture).ToString(CultureInfo.InvariantCulture);
+            case string s when double.TryParse(s.Trim(), NumberStyles.Float, CultureInfo.InvariantCulture, out var asDouble):
+                return asDouble.ToString(CultureInfo.InvariantCulture);
+            default:
+                return null;
+        }
+    }
+
+    private static string? ToInvariantBoolText(object value)
+    {
+        return value switch
+        {
+            bool b => b ? "true" : "false",
+            string s when bool.TryParse(s.Trim(), out var parsed) => parsed ? "true" : "false",
+            _ => null
         };
-        return new LiteralExpressionNode(value ?? string.Empty, literalKind);
     }
 
 
