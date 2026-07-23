@@ -111,4 +111,36 @@ public class CSharpAstBuilderQueryParametersTests
 
         code.Should().NotContain("queryParts");
     }
+
+    [Test]
+    public void QueryParamWithDottedWireName_UsesOriginalNameAsUrlKeyButSanitizedIdentifier()
+    {
+        // ASP.NET биндит вложенную модель (PagingQuery) по точечным именам Paging.Offset/Paging.Take.
+        // Sanitized-идентификатор метода — Paging_Offset (точка недопустима в имени параметра C#),
+        // но ключ в URL обязан остаться исходным Paging.Offset, иначе сервер параметр не увидит.
+        var op = Operation(new IrParameter
+        {
+            Name = "Paging_Offset",
+            OriginalName = "Paging.Offset",
+            Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer },
+            IsRequired = true,
+        });
+
+        var code = _renderer.Render(_builder.BuildMethod(op));
+
+        // Ключ в URL — исходное «проводное» имя (с точкой)…
+        code.Should().Contain("queryParts.Add(\"Paging.Offset=\" + Paging_Offset.ToString())");
+        // …а НЕ sanitized-идентификатор с подчёркиванием.
+        code.Should().NotContain("\"Paging_Offset=\"");
+    }
+
+    [Test]
+    public void QueryParam_WithoutExplicitOriginalName_FallsBackToName()
+    {
+        // OriginalName по умолчанию равен Name — обычные (без точки) параметры не регрессируют.
+        var op = Operation(Param("countryId", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer }, isRequired: false));
+        var code = _renderer.Render(_builder.BuildMethod(op));
+
+        code.Should().Contain("queryParts.Add(\"countryId=\" + countryId.ToString())");
+    }
 }

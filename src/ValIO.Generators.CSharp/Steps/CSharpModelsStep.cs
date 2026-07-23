@@ -39,6 +39,10 @@ public sealed class CSharpModelsStep : ICodeGenerationStep
         // и не переобъявлял свойства базовых классов (иначе CS0108 hides inherited member).
         builder.ModelsByName = byName;
 
+        // Справочник имён enum'ов — чтобы необязательные enum-свойства ($ref на enum, value-type)
+        // стали nullable и не роняли System.Text.Json на пришедшем с сервера null.
+        builder.EnumNames = context.IrDocument.Enums.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+
         var processed = new HashSet<string>();
 
         foreach (var name in orderedNames)

@@ -86,7 +86,22 @@ public sealed record IrParameter
     /// Имя параметра (sanitized)
     /// </summary>
     public required string Name { get; init; }
-    
+
+    private readonly string? _originalName;
+
+    /// <summary>
+    /// Исходное (до sanitize) имя параметра из OpenAPI — «проводное» имя, которое должно попадать в
+    /// URL query-string / header без изменений (напр. вложенная модель <c>Paging.Offset</c>, которую
+    /// ASP.NET биндит по точечному имени). <see cref="Name"/> может быть sanitized-идентификатором
+    /// (<c>Paging_Offset</c>) ради валидного имени параметра метода, но ключ в запросе обязан
+    /// оставаться исходным. По умолчанию равно <see cref="Name"/>, если sanitize ничего не менял.
+    /// </summary>
+    public string OriginalName
+    {
+        get => _originalName ?? Name;
+        init => _originalName = value;
+    }
+
     /// <summary>
     /// Тип параметра
     /// </summary>

@@ -38,6 +38,16 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// </summary>
     public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
 
+    /// <summary>
+    /// Имена enum-типов документа (sanitized, как в <see cref="IrEnum.Name"/> и в
+    /// <see cref="IrModelReference.ModelName"/>). Нужны, чтобы отличать <c>$ref</c> на enum (value-type
+    /// в C#) от <c>$ref</c> на модель (reference-type): необязательное свойство-enum обязано быть
+    /// nullable (<c>T?</c>), иначе пришедший с сервера <c>null</c> роняет <c>System.Text.Json</c>
+    /// (OpenAPI 3.0 не умеет ставить <c>nullable</c> рядом с <c>$ref</c>, поэтому признак теряется).
+    /// Пустой по умолчанию; заполняется степом — см. <see cref="ValIO.Generators.CSharp.Steps.CSharpModelsStep"/>.
+    /// </summary>
+    public IReadOnlySet<string> EnumNames { get; set; } = new HashSet<string>(StringComparer.Ordinal);
+
     public CSharpAstBuilder(INamingConverter namingConverter, CSharpGenerationOptions? options = null)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -185,6 +195,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     {
         var name = new IdentifierNode(property.Name);
         var type = BuildType(property.Type);
+
+        // Необязательное свойство-enum должно быть nullable: enum — value-type, а сервер (по контракту
+        // «свойство не в required») вправе прислать null. OpenAPI 3.0 не умеет ставить nullable рядом с
+        // $ref, поэтому для примитивов признак приходит из схемы, а для enum-$ref теряется — компенсируем
+        // здесь. Reference-типы ($ref на модель) не трогаем: им null присваивается штатно.
+        if (!property.IsRequired && type is not NullableTypeNode && IsEnumReference(property.Type))
+        {
+            type = new NullableTypeNode(type);
+        }
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.Xml)
             : null;
@@ -1005,6 +1024,23 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         "double", "float", "decimal", "bool", "char",
         "DateTime", "DateOnly", "TimeOnly", "TimeSpan", "Guid", "void"
     };
+
+    /// <summary>
+    /// Является ли IR-тип ссылкой на enum документа (напрямую или под nullable/optional-обёрткой).
+    /// Enum в C# — value-type, поэтому необязательное enum-свойство обязано быть <c>T?</c>.
+    /// </summary>
+    /// <param name="type">IR-тип свойства.</param>
+    /// <returns><see langword="true"/>, если тип разворачивается в <see cref="IrModelReference"/> на enum.</returns>
+    private bool IsEnumReference(IrType type)
+    {
+        return type switch
+        {
+            IrModelReference reference => EnumNames.Contains(reference.ModelName),
+            IrNullableType nullable => IsEnumReference(nullable.InnerType),
+            IrOptionalType optional => IsEnumReference(optional.InnerType),
+            _ => false
+        };
+    }
 
     /// <summary>
     /// Определяет, нужно ли non-nullable свойству <c>= default!;</c>, чтобы не словить CS8618
@@ -2136,7 +2172,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                     var itemExpr = new IdentifierExpressionNode(itemVar);
 
                     var itemPair = new BinaryExpressionNode(
-                        left: new LiteralExpressionNode($"{queryParam.Name}=", LiteralKind.String),
+                        // Ключ в URL — исходное «проводное» имя параметра (Paging.Offset), не sanitized
+                        // идентификатор метода (Paging_Offset): иначе ASP.NET model binding не находит его.
+                        left: new LiteralExpressionNode($"{queryParam.OriginalName}=", LiteralKind.String),
                         @operator: BinaryOperator.Add,
                         right: BuildQueryValueExpression(itemExpr, isElementString));
 
@@ -2159,7 +2197,9 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                     var isStringType = IsStringType(unwrappedType);
 
                     var pair = new BinaryExpressionNode(
-                        left: new LiteralExpressionNode($"{queryParam.Name}=", LiteralKind.String),
+                        // Ключ в URL — исходное «проводное» имя параметра (Paging.Offset), не sanitized
+                        // идентификатор метода (Paging_Offset): иначе ASP.NET model binding не находит его.
+                        left: new LiteralExpressionNode($"{queryParam.OriginalName}=", LiteralKind.String),
                         @operator: BinaryOperator.Add,
                         right: BuildQueryValueExpression(paramExpr, isStringType));
 
@@ -2419,6 +2459,17 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Success branch: десериализуем в success type и помещаем в промежуточную переменную response
         if (successType != null)
         {
+            // Пустое тело на успешном статусе (напр. 204 No Content или 200 без body) — не пытаемся
+            // десериализовать (иначе JsonException «input does not contain any JSON tokens»); возвращаем
+            // null. Возвращаемый тип метода — nullable success type, поэтому default! корректен.
+            ifStatements.Add(new IfStatementNode(
+                condition: BuildResponseContentIsEmptyExpression(),
+                thenBlock: new BlockNode(new StatementNode[]
+                {
+                    new ReturnStatementNode(new LiteralExpressionNode("default!", LiteralKind.String))
+                }.ToImmutableList()),
+                elseBlock: null));
+
             var jsonSerializerExpr = new IdentifierExpressionNode(new IdentifierNode("JsonSerializer"));
             var deserializeAccess = new MemberAccessExpressionNode(
                 @object: jsonSerializerExpr,
@@ -2476,6 +2527,27 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             ifStatements.Add(nullReturn);
         }
         
+        // Пустое тело на не-2xx статусе (напр. незадекларированный в swagger 401 гейта с пустым body):
+        // десериализовать нечего — сразу кидаем ApiException с сырым (пустым) телом и статусом, а не
+        // JsonException из-за парсинга пустой строки в error type.
+        elseStatements.Add(new IfStatementNode(
+            condition: BuildResponseContentIsEmptyExpression(),
+            thenBlock: new BlockNode(new StatementNode[]
+            {
+                new ThrowStatementNode(BuildApiExceptionCall(
+                    requestUri: new IdentifierExpressionNode(new IdentifierNode("requestUri")),
+                    httpMethod: new IdentifierExpressionNode(new IdentifierNode("httpMethod")),
+                    statusCode: new CastExpressionNode(
+                        targetType: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
+                        expression: new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"))),
+                    reasonPhrase: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")),
+                    version: new IdentifierExpressionNode(new IdentifierNode("version")),
+                    content: new IdentifierExpressionNode(new IdentifierNode("responseContent")),
+                    message: new LiteralExpressionNode("Unexpected status code", LiteralKind.String),
+                    innerException: null))
+            }.ToImmutableList()),
+            elseBlock: null));
+
         // Error branch: десериализуем в error type и выбрасываем исключение
         if (errorTypes.Count > 0)
         {
@@ -2843,6 +2915,22 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         return (method, route, body, queryParams, headerParams);
     }
     
+    /// <summary>
+    /// Строит выражение <c>string.IsNullOrWhiteSpace(responseContent)</c> — общий guard пустого тела
+    /// ответа (см. success/error-ветки <see cref="BuildMethodBody"/>).
+    /// </summary>
+    private static ExpressionNode BuildResponseContentIsEmptyExpression()
+    {
+        return new CallExpressionNode(
+            target: new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("string")),
+                member: new IdentifierNode("IsNullOrWhiteSpace")),
+            arguments: new ExpressionNode[]
+            {
+                new IdentifierExpressionNode(new IdentifierNode("responseContent"))
+            }.ToImmutableList());
+    }
+
     private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
     {
         // Ищем первый успешный ответ (200-299)

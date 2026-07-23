@@ -1434,6 +1434,9 @@ public class IrBuilder
         return new IrParameter
         {
             Name = name,
+            // Сохраняем исходное «проводное» имя (напр. Paging.Offset) — sanitize мог превратить его в
+            // валидный идентификатор (Paging_Offset), но в URL/заголовке ключ должен остаться исходным.
+            OriginalName = parameter.Name ?? name,
             Type = type,
             IsRequired = isRequired,
             // Parameter-level description wins; otherwise fall back to the parameter's schema description
