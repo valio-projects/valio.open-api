@@ -25,8 +25,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     private readonly INamingConverter _namingConverter;
     private readonly HttpAstBuilder _httpBuilder;
     private readonly CSharpGenerationOptions _options;
-    private Dictionary<string, IrModel>? _modelsByName;
-    private static readonly IReadOnlyDictionary<string, IrModel> EmptyModelLookup = new Dictionary<string, IrModel>();
+
+    /// <summary>
+    /// Справочник моделей по имени — используется для резолва allOf-наследования (какие свойства
+    /// унаследованы от базового класса и не должны переобъявляться в потомке, иначе CS0108).
+    /// Пустой по умолчанию; вызывающий код (степ) должен заполнить его перед построением моделей
+    /// документа — см. <see cref="ValIO.Generators.CSharp.Steps.CSharpModelsStep"/>. При построении
+    /// через <see cref="BuildCompilationUnits"/> заполняется автоматически из <see cref="IrDocument.Models"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
 
     public CSharpAstBuilder(INamingConverter namingConverter, CSharpGenerationOptions? options = null)
     {
@@ -106,7 +113,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // При наследовании (class X : Base) не переобъявляем свойства базового класса — иначе скрытие/дубль
         // члена (тот же паттерн, что «incorrectly extends» в TS). Единый резолвер наследования для всех языков.
         var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(
-            model, model.Properties, _modelsByName ?? EmptyModelLookup);
+            model, model.Properties, ModelsByName);
         var properties = ownProperties.Select(p => BuildProperty(p, model)).ToList<DeclarationNode>();
 
         // Обрабатываем Composition для allOf (наследование)
@@ -208,7 +215,16 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // Определяем, нужно ли добавлять required keyword
         var isRequiredKeyword = _options.UseRequired && property.IsRequired;
-        
+
+        // Non-nullable ссылочные свойства без required и без явного default вызывают CS8618 в
+        // проектах с <Nullable>enable</Nullable> ("must contain a non-null value when exiting
+        // constructor"). Раз required не используется по умолчанию (UseRequired = false), глушим
+        // предупреждение стандартной идиомой `= default!;`.
+        if (defaultValue == null && !isRequiredKeyword && RequiresNonNullableReferenceInitializer(type))
+        {
+            defaultValue = new LiteralExpressionNode("default!", LiteralKind.String);
+        }
+
         return new PropertyDeclarationNode(
             name: name,
             type: type,
@@ -373,10 +389,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Добавляем свойства из родительских классов
         foreach (var baseType in baseTypes)
         {
-            if (baseType is SimpleTypeNode simpleBaseType && _modelsByName != null)
+            if (baseType is SimpleTypeNode simpleBaseType)
             {
                 var baseModelName = simpleBaseType.Name.Name;
-                if (_modelsByName.TryGetValue(baseModelName, out var baseModel))
+                if (ModelsByName.TryGetValue(baseModelName, out var baseModel))
                 {
                     // Рекурсивно получаем свойства базового класса (включая его базовые классы)
                     var baseBaseTypes = new List<TypeNode>();
@@ -791,13 +807,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     public CompilationUnitNode BuildCompilationUnit(IrEnum enumModel, string? @namespace = null)
     {
         var dependencies = new HashSet<string>();
-        
-        // Если enum имеет строковые значения, добавляем using для EnumMember
+
+        // Если enum имеет строковые значения, добавляем using для EnumMember и для JsonConverter/
+        // JsonStringEnumMemberName (System.Text.Json игнорирует [EnumMember] — см. BuildEnum)
         if (enumModel.BaseType == IrEnumBaseType.String)
         {
             dependencies.Add("System.Runtime.Serialization");
+            dependencies.Add("System.Text.Json.Serialization");
         }
-        
+
         var usings = BuildUsingDirectives(dependencies.ToList());
         var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { BuildEnum(enumModel) }.ToList<DeclarationNode>());
         
@@ -822,34 +840,43 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             : null;
         
         var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
-        
+
         var members = enumModel.Values.Select(v =>
         {
             ExpressionNode? value = null;
             IReadOnlyList<AttributeNode>? attributes = null;
-            
+
             if (isStringEnum)
             {
-                // Для строковых enum'ов используем атрибут [EnumMember(Value = "...")] вместо присваивания значения
+                var originalValue = v.Value?.ToString() ?? string.Empty;
+                var memberAttributes = new List<AttributeNode>();
+
+                // [EnumMember(Value = "...")] — для DataContract-совместимых сериализаторов
+                // (Newtonsoft.Json, WCF и т.п.)
                 var enumMemberAttributeName = new IdentifierNode("EnumMember");
-                var valueArg = new LiteralExpressionNode(
-                    v.Value?.ToString() ?? string.Empty,
-                    LiteralKind.String);
-                // В C# именованные аргументы атрибутов: [EnumMember(Value = "...")]
-                // Используем BinaryExpression с metadata для указания что это именованный аргумент
                 var namedArg = new BinaryExpressionNode(
                     left: new IdentifierExpressionNode(new IdentifierNode("Value")),
                     @operator: BinaryOperator.Add, // Временно, будет обработано в рендерере как именованный аргумент
-                    right: valueArg,
+                    right: new LiteralExpressionNode(originalValue, LiteralKind.String),
                     isNamedArgument: true);
-                attributes = new[] { new AttributeNode(enumMemberAttributeName, new[] { namedArg }.ToImmutableList()) }.ToImmutableList();
+                memberAttributes.Add(new AttributeNode(enumMemberAttributeName, new[] { (ExpressionNode)namedArg }.ToImmutableList()));
+
+                // [JsonStringEnumMemberName("...")] — System.Text.Json игнорирует [EnumMember], но
+                // (начиная с .NET 9, при [JsonConverter(typeof(JsonStringEnumConverter))] на самом
+                // enum'е — см. ниже) уважает этот атрибут, поэтому исходное строковое значение
+                // из схемы (даже если оно не совпадает с PascalCase-именем члена) сериализуется верно.
+                memberAttributes.Add(new AttributeNode(
+                    new IdentifierNode("JsonStringEnumMemberName"),
+                    new[] { (ExpressionNode)new LiteralExpressionNode(originalValue, LiteralKind.String) }.ToImmutableList()));
+
+                attributes = memberAttributes.ToImmutableList();
             }
             else
             {
                 // Для числовых enum'ов используем обычное присваивание значения
                 value = v.Value != null ? BuildLiteral(v.Value) : null;
             }
-            
+
             return new EnumMemberDeclarationNode(
                 name: new IdentifierNode(v.Name),
                 value: value,
@@ -858,13 +885,26 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                     : null,
                 attributes: attributes);
         }).ToList<DeclarationNode>();
-        
+
+        // [JsonConverter(typeof(JsonStringEnumConverter))] на самом типе — System.Text.Json по
+        // умолчанию сериализует enum как число; без этого атрибута строковые значения из API
+        // (например, "in_progress") не проходят round-trip через JsonSerializer.Serialize/Deserialize.
+        IReadOnlyList<AttributeNode>? enumAttributes = null;
+        if (isStringEnum)
+        {
+            var jsonConverterAttribute = new AttributeNode(
+                new IdentifierNode("JsonConverter"),
+                new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode("typeof(JsonStringEnumConverter)")) }.ToImmutableList());
+            enumAttributes = new[] { jsonConverterAttribute }.ToImmutableList();
+        }
+
         return new EnumDeclarationNode(
             name: name,
             accessModifier: AccessModifier.Public,
             underlyingType: underlyingType,
             members: members.ToImmutableList(),
-            documentation: comment);
+            documentation: comment,
+            attributes: enumAttributes);
     }
     
     // Приватные вспомогательные методы для IR
@@ -945,6 +985,33 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         };
     }
     
+    /// <summary>
+    /// Имена C#-типов, отображаемых на value-типы (struct/enum) — для них <c>= default!;</c> не
+    /// требуется по смыслу (default — валидное значение, а не null), но и не вредит.
+    /// </summary>
+    private static readonly HashSet<string> KnownValueTypeNames = new(StringComparer.Ordinal)
+    {
+        "int", "uint", "long", "ulong", "short", "ushort", "byte", "sbyte",
+        "double", "float", "decimal", "bool", "char",
+        "DateTime", "DateOnly", "TimeOnly", "TimeSpan", "Guid", "void"
+    };
+
+    /// <summary>
+    /// Определяет, нужно ли non-nullable свойству <c>= default!;</c>, чтобы не словить CS8618
+    /// ("non-nullable property must contain a non-null value...") в проектах с
+    /// <c>&lt;Nullable&gt;enable&lt;/Nullable&gt;</c>. Nullable-типы (<c>T?</c>) не нуждаются в
+    /// инициализаторе — предупреждение про них не возникает.
+    /// </summary>
+    private bool RequiresNonNullableReferenceInitializer(TypeNode type)
+    {
+        return type switch
+        {
+            NullableTypeNode => false,
+            SimpleTypeNode simple => !KnownValueTypeNames.Contains(simple.Name.Name),
+            _ => true // массивы, словари, generic-коллекции (List<T> и т.п.) — reference-типы
+        };
+    }
+
     /// <summary>
     /// Получает имя числового типа для констант Min/Max на основе типа свойства
     /// </summary>
@@ -1043,6 +1110,79 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 break;
         }
     }
+
+    /// <summary>
+    /// Разворачивает Nullable/Optional обёртки, чтобы добраться до содержательного IrType
+    /// (например, чтобы понять, что query-параметр — массив, даже если он объявлен как nullable-массив).
+    /// </summary>
+    private static IrType UnwrapNullableOrOptional(IrType type)
+    {
+        while (true)
+        {
+            switch (type)
+            {
+                case IrNullableType nullable:
+                    type = nullable.InnerType;
+                    continue;
+                case IrOptionalType optional:
+                    type = optional.InnerType;
+                    continue;
+                default:
+                    return type;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Проверяет, разворачивается ли тип (после снятия Nullable/Optional) в примитив string.
+    /// Используется, чтобы решить — экранировать значение через <c>Uri.EscapeDataString</c> или
+    /// вызвать <c>ToString()</c>.
+    /// </summary>
+    private bool IsStringType(IrType type)
+    {
+        var unwrapped = UnwrapNullableOrOptional(type);
+        return BuildType(unwrapped) is SimpleTypeNode simple && simple.Name.Name == "string";
+    }
+
+    /// <summary>
+    /// Строит выражение значения query-параметра: <c>Uri.EscapeDataString(value)</c> для строк,
+    /// иначе <c>value.ToString()</c>.
+    /// </summary>
+    private static ExpressionNode BuildQueryValueExpression(ExpressionNode valueExpr, bool isStringType)
+    {
+        if (isStringType)
+        {
+            var escapeDataString = new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("Uri")),
+                member: new IdentifierNode("EscapeDataString"));
+            return new CallExpressionNode(
+                target: escapeDataString,
+                arguments: new[] { valueExpr }.ToImmutableList());
+        }
+
+        var toStringMethod = new MemberAccessExpressionNode(
+            @object: valueExpr,
+            member: new IdentifierNode("ToString"));
+        return new CallExpressionNode(
+            target: toStringMethod,
+            arguments: ImmutableList<ExpressionNode>.Empty);
+    }
+
+    /// <summary>
+    /// Оборачивает statement в <c>if (paramName != null) { ... }</c> — чтобы опциональный
+    /// query-параметр не попадал в URL, когда вызывающий код его не передал.
+    /// </summary>
+    private static IfStatementNode BuildNotNullGuard(string paramName, StatementNode statement)
+    {
+        var notNullCheck = new BinaryExpressionNode(
+            left: new IdentifierExpressionNode(new IdentifierNode(paramName)),
+            @operator: BinaryOperator.NotEqual,
+            right: new LiteralExpressionNode("null", LiteralKind.Null));
+
+        return new IfStatementNode(
+            condition: notNullCheck,
+            thenBlock: new BlockNode(new[] { statement }.ToImmutableList()));
+    }
     
     private LiteralExpressionNode BuildLiteral(object value)
     {
@@ -1117,7 +1257,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     public IReadOnlyList<CompilationUnitNode> BuildCompilationUnits(IrDocument document, string? @namespace = null)
     {
         // Сохраняем модели по имени для доступа к родительским моделям в методах равенства
-        _modelsByName = document.Models.ToDictionary(m => m.Name, m => m);
+        ModelsByName = document.Models.ToDictionary(m => m.Name, m => m);
         
         return BuildCompilationUnitsInternal(document, @namespace);
     }
@@ -1813,62 +1953,104 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             }
         }
         
-        // Добавляем query parameters
+        // Добавляем query parameters — только непустые (null-safe: опциональные параметры не должны
+        // попадать в URL как "null"/бросать NRE), массивы разворачиваются в повторяющиеся пары
+        // key=v1&key=v2 (form/explode=true style, как ждёт ASP.NET model binding).
         if (operation.QueryParameters.Count > 0)
         {
-            var firstParam = operation.QueryParameters[0];
-            var appendQuerySeparator = new CallExpressionNode(
-                target: appendMethod,
-                arguments: new[] { new LiteralExpressionNode("?", LiteralKind.String) }.ToImmutableList());
-            statements.Add(new ExpressionStatementNode(appendQuerySeparator));
-            
-            for (int i = 0; i < operation.QueryParameters.Count; i++)
+            var queryPartsType = new GenericTypeNode(
+                new IdentifierNode("List"),
+                new TypeNode[] { new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true) }.ToImmutableList());
+            var queryPartsDecl = new VariableDeclarationStatementNode(
+                name: new IdentifierNode("queryParts"),
+                type: queryPartsType,
+                initializer: new CallExpressionNode(
+                    target: new IdentifierExpressionNode(new IdentifierNode("List")),
+                    arguments: ImmutableList<ExpressionNode>.Empty,
+                    isNewExpression: true,
+                    genericTypeArgument: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true)));
+            statements.Add(queryPartsDecl);
+
+            var queryPartsAdd = new MemberAccessExpressionNode(
+                @object: new IdentifierExpressionNode(new IdentifierNode("queryParts")),
+                member: new IdentifierNode("Add"));
+
+            foreach (var queryParam in operation.QueryParameters)
             {
-                var queryParam = operation.QueryParameters[i];
-                if (i > 0)
+                var unwrappedType = UnwrapNullableOrOptional(queryParam.Type);
+
+                if (unwrappedType is IrArrayType arrayType)
                 {
-                    var appendAnd = new CallExpressionNode(
-                        target: appendMethod,
-                        arguments: new[] { new LiteralExpressionNode("&", LiteralKind.String) }.ToImmutableList());
-                    statements.Add(new ExpressionStatementNode(appendAnd));
-                }
-                
-                var paramName = new LiteralExpressionNode($"{queryParam.Name}=", LiteralKind.String);
-                var appendName = new CallExpressionNode(
-                    target: appendMethod,
-                    arguments: new[] { paramName }.ToImmutableList());
-                statements.Add(new ExpressionStatementNode(appendName));
-                
-                var paramExpr = new IdentifierExpressionNode(new IdentifierNode(queryParam.Name));
-                var paramType = BuildType(queryParam.Type);
-                var isStringType = paramType is SimpleTypeNode simple && simple.Name.Name == "string";
-                
-                ExpressionNode paramValue;
-                if (isStringType)
-                {
-                    var uriType = new IdentifierExpressionNode(new IdentifierNode("Uri"));
-                    var escapeDataString = new MemberAccessExpressionNode(
-                        @object: uriType,
-                        member: new IdentifierNode("EscapeDataString"));
-                    paramValue = new CallExpressionNode(
-                        target: escapeDataString,
-                        arguments: new[] { paramExpr }.ToImmutableList());
+                    var isElementString = IsStringType(arrayType.ElementType);
+                    var itemVar = new IdentifierNode("item");
+                    var itemExpr = new IdentifierExpressionNode(itemVar);
+
+                    var itemPair = new BinaryExpressionNode(
+                        left: new LiteralExpressionNode($"{queryParam.Name}=", LiteralKind.String),
+                        @operator: BinaryOperator.Add,
+                        right: BuildQueryValueExpression(itemExpr, isElementString));
+
+                    var addItemStatement = new ExpressionStatementNode(new CallExpressionNode(
+                        target: queryPartsAdd,
+                        arguments: new[] { (ExpressionNode)itemPair }.ToImmutableList()));
+
+                    var foreachStatement = new ForEachStatementNode(
+                        variable: itemVar,
+                        collection: new IdentifierExpressionNode(new IdentifierNode(queryParam.Name)),
+                        body: new BlockNode(new StatementNode[] { addItemStatement }.ToImmutableList()));
+
+                    statements.Add(queryParam.IsRequired
+                        ? foreachStatement
+                        : BuildNotNullGuard(queryParam.Name, foreachStatement));
                 }
                 else
                 {
-                    var toStringMethod = new MemberAccessExpressionNode(
-                        @object: paramExpr,
-                        member: new IdentifierNode("ToString"));
-                    paramValue = new CallExpressionNode(
-                        target: toStringMethod,
-                        arguments: ImmutableList<ExpressionNode>.Empty);
+                    var paramExpr = new IdentifierExpressionNode(new IdentifierNode(queryParam.Name));
+                    var isStringType = IsStringType(unwrappedType);
+
+                    var pair = new BinaryExpressionNode(
+                        left: new LiteralExpressionNode($"{queryParam.Name}=", LiteralKind.String),
+                        @operator: BinaryOperator.Add,
+                        right: BuildQueryValueExpression(paramExpr, isStringType));
+
+                    var addStatement = new ExpressionStatementNode(new CallExpressionNode(
+                        target: queryPartsAdd,
+                        arguments: new[] { (ExpressionNode)pair }.ToImmutableList()));
+
+                    statements.Add(queryParam.IsRequired
+                        ? addStatement
+                        : BuildNotNullGuard(queryParam.Name, addStatement));
                 }
-                
-                var appendValue = new CallExpressionNode(
-                    target: appendMethod,
-                    arguments: new[] { paramValue }.ToImmutableList());
-                statements.Add(new ExpressionStatementNode(appendValue));
             }
+
+            var queryPartsCountCheck = new BinaryExpressionNode(
+                left: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(new IdentifierNode("queryParts")),
+                    member: new IdentifierNode("Count")),
+                @operator: BinaryOperator.GreaterThan,
+                right: new LiteralExpressionNode("0", LiteralKind.Number));
+
+            var appendQuestionMark = new ExpressionStatementNode(new CallExpressionNode(
+                target: appendMethod,
+                arguments: new ExpressionNode[] { new LiteralExpressionNode("?", LiteralKind.String) }.ToImmutableList()));
+
+            var joinCall = new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(new IdentifierNode("string")),
+                    member: new IdentifierNode("Join")),
+                arguments: new ExpressionNode[]
+                {
+                    new LiteralExpressionNode("&", LiteralKind.String),
+                    new IdentifierExpressionNode(new IdentifierNode("queryParts"))
+                }.ToImmutableList());
+
+            var appendJoined = new ExpressionStatementNode(new CallExpressionNode(
+                target: appendMethod,
+                arguments: new[] { (ExpressionNode)joinCall }.ToImmutableList()));
+
+            statements.Add(new IfStatementNode(
+                condition: queryPartsCountCheck,
+                thenBlock: new BlockNode(new StatementNode[] { appendQuestionMark, appendJoined }.ToImmutableList())));
         }
         
         // Получаем финальный URL: urlBuilder.ToString()
@@ -2691,7 +2873,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var statusCodeProperty = new PropertyDeclarationNode(
             name: new IdentifierNode("StatusCode"),
             type: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
-            isRequired: true,
+            // Не "required": оба конструктора ниже присваивают StatusCode в теле, а не через
+            // object-initializer/[SetsRequiredMembers] — с required-модификатором это CS9035.
+            // HttpStatusCode — enum (value type), поэтому и CS8618 без "required" не грозит.
+            isRequired: false,
             accessor: PropertyAccessorKind.GetSet,
             defaultValue: null,
             documentation: new CommentNode("HTTP статус код ответа", CommentKind.Xml));
@@ -2889,6 +3074,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Добавляем только необходимые системные using для HTTP клиентов
         // Модели (IrModelReference) не добавляются, так как они генерируются в том же namespace
         dependencies.Add("System");
+        dependencies.Add("System.Collections.Generic"); // List<string> queryParts (null-safe query-string builder)
         dependencies.Add("System.Net"); // HttpStatusCode
         dependencies.Add("System.Net.Http"); // HttpClient, HttpRequestMessage, HttpResponseMessage
         dependencies.Add("System.Net.Http.Headers"); // MediaTypeWithQualityHeaderValue
@@ -2896,10 +3082,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         dependencies.Add("System.Text.Json"); // JsonSerializer
         dependencies.Add("System.Threading"); // CancellationToken
         dependencies.Add("System.Threading.Tasks"); // Task, Task<T>
-        
+
         // Не извлекаем зависимости из типов параметров и response,
         // так как модели генерируются в том же namespace и using'и для них не нужны
-        
+
         return dependencies.ToList();
     }
     

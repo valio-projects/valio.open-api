@@ -810,6 +810,9 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             CodeFormatter.AppendEmptyLine(sb);
         }
         
+        // Атрибуты типа (например, [JsonConverter(typeof(JsonStringEnumConverter))])
+        RenderAttributes(sb, node.Attributes, indentLevel);
+
         // Модификаторы и объявление enum
         var modifiers = RenderModifiers(node.AccessModifier);
         var underlyingType = node.UnderlyingType != null ? $" : {RenderType(node.UnderlyingType)}" : "";
@@ -838,8 +841,9 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // Атрибуты
         RenderAttributes(sb, node.Attributes, indentLevel);
         
-        // Модификаторы и объявление свойства
-        var modifiers = RenderModifiers(AccessModifier.Public); // PropertyDeclarationNode не имеет AccessModifier, используем public по умолчанию
+        // Модификаторы (включая required) и объявление свойства
+        var extraModifiers = node.IsRequired ? new[] { "required" } : null;
+        var modifiers = RenderModifiers(AccessModifier.Public, extraModifiers); // PropertyDeclarationNode не имеет AccessModifier, используем public по умолчанию
         var type = RenderType(node.Type);
         var accessor = node.Accessor switch
         {
@@ -850,7 +854,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             PropertyAccessorKind.GetInit => " { get; init; }",
             _ => " { get; set; }"
         };
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{accessor}");
+        // Инициализатор (например, "= default!;" или значение из constraints.DefaultValue) —
+        // без него DefaultValue ранее молча терялся при рендеринге свойств.
+        var initializer = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
+        var terminator = node.DefaultValue != null ? ";" : "";
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{accessor}{initializer}{terminator}");
     }
 
     private void RenderMethod(StringBuilder sb, MethodDeclarationNode node, int indentLevel)
@@ -1196,10 +1204,13 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     private string RenderLiteral(LiteralExpressionNode node)
     {
-        // Специальная обработка для "default" значения (для CancellationToken и других value types)
-        if (node.Value?.ToString() == "default")
+        // Специальная обработка для "default"/"default!" значения — рендерятся как есть (raw-код),
+        // а не как строковый литерал в кавычках. "default" — CancellationToken и другие value types;
+        // "default!" — non-nullable ссылочные свойства без required (см. BuildProperty), чтобы
+        // подавить CS8618 в проектах с <Nullable>enable</Nullable>.
+        if (node.Value?.ToString() is "default" or "default!")
         {
-            return "default";
+            return node.Value.ToString()!;
         }
         
         return node.LiteralKind switch

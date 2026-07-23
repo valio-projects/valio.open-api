@@ -41,6 +41,15 @@ public sealed class CSharpClientStep : ICodeGenerationStep
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
         }
 
+        // Сгенерированные клиенты бросают ApiException — эмитим её ровно один раз на проект,
+        // иначе сборка не компилируется (тип не объявлен нигде).
+        if (context.IrDocument.Clients.Count > 0)
+        {
+            var apiExceptionUnit = builder.BuildCompilationUnitApiException(ns);
+            var apiExceptionContent = _renderer.Render(apiExceptionUnit);
+            context.GeneratedFiles.Add(new GeneratedFile("Api/ApiException.cs", apiExceptionContent));
+        }
+
         return Task.CompletedTask;
     }
 }

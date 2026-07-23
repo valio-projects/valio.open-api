@@ -34,6 +34,11 @@ public sealed class CSharpModelsStep : ICodeGenerationStep
 
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
         var byName = context.IrDocument.Models.ToDictionary(m => m.Name);
+
+        // Даём построителю справочник моделей — чтобы BuildClass резолвил allOf-наследование
+        // и не переобъявлял свойства базовых классов (иначе CS0108 hides inherited member).
+        builder.ModelsByName = byName;
+
         var processed = new HashSet<string>();
 
         foreach (var name in orderedNames)
