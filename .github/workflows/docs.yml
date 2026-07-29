@@ -34,7 +34,7 @@ jobs:
       # dependency tree the CI docs-site job validated.
       - run: npm ci
       - run: npm run build
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: docs-site/dist
 
