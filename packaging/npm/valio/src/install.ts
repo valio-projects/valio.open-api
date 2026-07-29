@@ -1,6 +1,6 @@
 // postinstall: makes the platform binary executable on Unix-like systems.
 //
-// npm installs only the @valio/cli-* optional dependency that matches the
+// npm installs only the per-platform optional dependency that matches the
 // host's os/cpu. After install, the file ships without the executable bit on
 // non-Windows hosts because npm strips perms during pack/unpack. We chmod 755
 // here so `valio` works without the user having to fix it themselves.
@@ -12,40 +12,28 @@
 // (e.g. CI caches, no-op installs) and there's no recoverable action they
 // can take from here.
 
-import { chmodSync, existsSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { chmodSync } from "node:fs";
+import { locateBinary, resolvePlatform } from "./platform.js";
 
-const require = createRequire(import.meta.url);
-
-interface PlatformInfo {
-  pkg: string;
-  exe: string;
-}
-
-function resolvePlatform(): PlatformInfo | null {
-  const platform = process.platform;
-  const arch = process.arch;
-  const exe = platform === "win32" ? "valio.exe" : "valio";
-
-  const table: Record<string, Record<string, string>> = {
-    win32:  { x64:   "@valio/cli-win32-x64" },
-    linux:  { x64:   "@valio/cli-linux-x64",
-              arm64: "@valio/cli-linux-arm64" },
-    darwin: { x64:   "@valio/cli-darwin-x64",
-              arm64: "@valio/cli-darwin-arm64" },
-  };
-
-  const pkg = table[platform]?.[arch];
-  return pkg ? { pkg, exe } : null;
-}
-
+/**
+ * Writes a diagnostic to stderr.
+ *
+ * Prefixed so it's obvious where the message comes from in `npm install`
+ * output, but stays on stderr and never changes the exit code.
+ *
+ * @param message Human-readable explanation of what could not be done.
+ * @returns Nothing.
+ */
 function warn(message: string): void {
-  // Prefix so it's obvious where the message comes from in `npm install`
-  // output, but stay on stderr and don't exit non-zero.
   process.stderr.write(`valio (postinstall): ${message}\n`);
 }
 
+/**
+ * Resolves the platform binary and makes it executable, degrading to a warning
+ * at every failure point.
+ *
+ * @returns Nothing.
+ */
 function main(): void {
   const info = resolvePlatform();
   if (!info) {
@@ -56,21 +44,19 @@ function main(): void {
     return;
   }
 
-  let manifestPath: string;
-  try {
-    manifestPath = require.resolve(`${info.pkg}/package.json`);
-  } catch {
+  const located = locateBinary(info);
+
+  if (located.status === "package-missing") {
     warn(
       `optional dependency '${info.pkg}' was not installed. ` +
-        "Re-run 'npm install valio' or pass --include=optional if you previously omitted optionals.",
+        "Re-run 'npm install @valio-projects/valio' or pass --include=optional if you previously omitted optionals.",
     );
     return;
   }
 
-  const binary = join(dirname(manifestPath), info.exe);
-  if (!existsSync(binary)) {
+  if (located.status === "binary-missing") {
     warn(
-      `expected binary '${binary}' is missing from '${info.pkg}'. ` +
+      `expected binary '${located.path}' is missing from '${info.pkg}'. ` +
         "The platform package may be corrupt — try reinstalling.",
     );
     return;
@@ -82,10 +68,10 @@ function main(): void {
   }
 
   try {
-    chmodSync(binary, 0o755);
+    chmodSync(located.path, 0o755);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    warn(`failed to chmod '${binary}': ${msg}`);
+    warn(`failed to chmod '${located.path}': ${msg}`);
   }
 }
 

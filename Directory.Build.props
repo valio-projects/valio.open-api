@@ -28,15 +28,25 @@
     <NoWarn>$(NoWarn);CS1591</NoWarn>
   </PropertyGroup>
 
+  <!--
+    Version. The repo-root VERSION file is the single source of truth so that a
+    local `dotnet pack` produces the same number the release pipeline would.
+    CI overrides it with `-p:Version=…` to append the channel's prerelease
+    suffix; see .github/scripts/compute-version.mjs.
+  -->
+  <PropertyGroup>
+    <VersionPrefix Condition="Exists('$(MSBuildThisFileDirectory)VERSION')">$([System.IO.File]::ReadAllText('$(MSBuildThisFileDirectory)VERSION').Trim())</VersionPrefix>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.1.0</VersionPrefix>
+  </PropertyGroup>
+
   <!-- Common package metadata (used when IsPackable=true) -->
   <PropertyGroup>
-    <Version>0.1.0</Version>
     <Authors>ValIO Contributors</Authors>
     <Company>ValIO</Company>
     <Copyright>Copyright (c) 2026 ValIO Contributors</Copyright>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <PackageProjectUrl>https://github.com/valio/valio</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/valio/valio.git</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/valio-projects/valio.open-api</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/valio-projects/valio.open-api.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IsPackable>false</IsPackable>

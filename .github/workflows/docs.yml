@@ -2,7 +2,7 @@ name: Docs site
 
 on:
   push:
-    branches: [master]
+    branches: [main]
     paths:
       - 'docs-site/**'
       - '.github/workflows/docs.yml'
@@ -30,7 +30,9 @@ jobs:
           node-version: '22'
           cache: 'npm'
           cache-dependency-path: docs-site/package-lock.json
-      - run: npm install
+      # `npm ci` (not `install`) so the deployed site is built from the same
+      # dependency tree the CI docs-site job validated.
+      - run: npm ci
       - run: npm run build
       - uses: actions/upload-pages-artifact@v3
         with:

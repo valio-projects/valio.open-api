@@ -2,9 +2,10 @@
 
 > ValIO — type-safe HTTP clients, models, and validation schemas for 12 languages, generated from any OpenAPI 3.x schema.
 
-[![CI](https://gitlab.com/valio/valio/badges/master/pipeline.svg)](https://gitlab.com/valio/valio/-/pipelines)
+[![CI](https://github.com/valio-projects/valio.open-api/actions/workflows/ci.yml/badge.svg)](https://github.com/valio-projects/valio.open-api/actions/workflows/ci.yml)
+[![Release](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml/badge.svg)](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml)
 [![NuGet](https://img.shields.io/nuget/v/ValIO.Cli.svg)](https://www.nuget.org/packages/ValIO.Cli)
-[![npm](https://img.shields.io/npm/v/valio.svg)](https://www.npmjs.com/package/valio)
+[![npm](https://img.shields.io/npm/v/@valio-projects/valio.svg)](https://www.npmjs.com/package/@valio-projects/valio)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-valio.dev-blue)](https://valio.dev)
 
@@ -20,7 +21,7 @@ valio generate -s ./openapi.yaml -o ./out -l typescript
 Install via npm:
 
 ```bash
-npm install -g valio
+npm install -g @valio-projects/valio
 valio generate -s ./openapi.yaml -o ./out -l typescript
 ```
 

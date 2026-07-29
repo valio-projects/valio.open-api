@@ -1,0 +1,521 @@
+# =============================================================================
+# ValIO — Release (build, test, publish)
+# =============================================================================
+# Owns every branch that produces artefacts. The pipeline is:
+#
+#   ci ──────────────┐
+#   version ─────────┼─▶ pack ─────▶ publish-nuget ──┐
+#                    └─▶ binaries ─▶ publish-npm ────┴─▶ github-release
+#
+# `ci` is the CI workflow invoked via workflow_call, so nothing is ever
+# published from code that has not compiled and passed the test suite on all
+# three host platforms.
+#
+# Channels (resolved by .github/scripts/compute-version.mjs):
+#
+#   main         stable   <VERSION>            nuget.org + npmjs.com  @latest
+#   release/**   rc       <x.y.z>-rc.<run>     GitHub Packages        @next
+#   develop      alpha    <VERSION>-alpha.<run> GitHub Packages       @dev
+#
+# Stable publishing is idempotent: main is built on every push, but the version
+# only changes when the VERSION file changes, and pushes of an already-published
+# version are skipped. Cutting a release therefore means bumping VERSION.
+# =============================================================================
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'release/**'
+  workflow_dispatch:
+
+# Never cancel a run that may be halfway through pushing packages — a partially
+# published release is far worse than a redundant build.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  NUGET_XMLDOC_MODE: 'skip'
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Gate: full build + test matrix. Reuses the CI workflow verbatim.
+  # ---------------------------------------------------------------------------
+  ci:
+    name: ci
+    uses: ./.github/workflows/ci.yml
+
+  # ---------------------------------------------------------------------------
+  # Resolve the version, channel and target registries for this ref.
+  # ---------------------------------------------------------------------------
+  version:
+    name: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.compute.outputs.version }}
+      channel: ${{ steps.compute.outputs.channel }}
+      publish: ${{ steps.compute.outputs.publish }}
+      registry: ${{ steps.compute.outputs.registry }}
+      npm-tag: ${{ steps.compute.outputs.npm-tag }}
+      npm-registry: ${{ steps.compute.outputs.npm-registry }}
+      npm-scope: ${{ steps.compute.outputs.npm-scope }}
+      npm-main-name: ${{ steps.compute.outputs.npm-main-name }}
+      nuget-source: ${{ steps.compute.outputs.nuget-source }}
+      is-stable: ${{ steps.compute.outputs.is-stable }}
+      tag: ${{ steps.compute.outputs.tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute version
+        id: compute
+        run: node .github/scripts/compute-version.mjs
+
+  # ---------------------------------------------------------------------------
+  # Produce the NuGet packages (the .NET tool plus every generator library).
+  # ---------------------------------------------------------------------------
+  pack:
+    name: pack nuget
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [ci, version]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Pack
+        run: >
+          dotnet pack ValIO.sln
+          -c Release
+          -o nupkgs
+          -p:Version=${{ needs.version.outputs.version }}
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs
+          path: nupkgs/
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Build the five self-contained single-file CLI binaries that back the npm
+  # packages. All five cross-compile from Linux; only the native one can be
+  # smoke-tested here, and the others are covered by the CLI smoke test in CI.
+  # ---------------------------------------------------------------------------
+  binaries:
+    name: binary (${{ matrix.platform }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [ci, version]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            platform: win32-x64
+            ext: '.exe'
+          - rid: linux-x64
+            platform: linux-x64
+            ext: ''
+          - rid: linux-arm64
+            platform: linux-arm64
+            ext: ''
+          - rid: osx-x64
+            platform: darwin-x64
+            ext: ''
+          - rid: osx-arm64
+            platform: darwin-arm64
+            ext: ''
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Publish ${{ matrix.rid }}
+        run: >
+          dotnet publish src/ValIO.Cli/ValIO.Cli.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained
+          -p:PublishSingleFile=true
+          -p:DebugType=embedded
+          -p:Version=${{ needs.version.outputs.version }}
+          -o publish/${{ matrix.platform }}
+
+      - name: Stage binary
+        run: |
+          set -euo pipefail
+          src="publish/${{ matrix.platform }}/valio${{ matrix.ext }}"
+          dest="packaging/npm/platforms/${{ matrix.platform }}/"
+          test -f "$src" || { echo "::error::expected binary '$src' was not produced"; exit 1; }
+          chmod +x "$src"
+          cp "$src" "$dest"
+          ls -lh "$dest"
+
+      - name: Smoke test
+        if: matrix.platform == 'linux-x64'
+        run: ./packaging/npm/platforms/linux-x64/valio --help
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform }}
+          path: packaging/npm/platforms/${{ matrix.platform }}/valio${{ matrix.ext }}
+          retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # Push the NuGet packages to the registry selected for this channel.
+  # ---------------------------------------------------------------------------
+  publish-nuget:
+    name: publish nuget (${{ needs.version.outputs.channel }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: [version, pack]
+    if: needs.version.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    environment:
+      name: ${{ needs.version.outputs.is-stable == 'true' && 'production' || 'preview' }}
+
+    steps:
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkgs
+          path: nupkgs
+
+      - name: Push
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          SOURCE: ${{ needs.version.outputs.nuget-source }}
+          REGISTRY: ${{ needs.version.outputs.registry }}
+          # nuget.org uses a long-lived API key; GitHub Packages accepts the
+          # workflow's own token, so no secret is needed for preview channels.
+          # Both are passed in and selected below so a missing NUGET_API_KEY
+          # fails loudly instead of silently authenticating with the wrong one.
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          # GitHub Packages rejects .snupkg symbol packages; nuget.org accepts
+          # them and picks them up automatically alongside each .nupkg.
+          extra=()
+          if [ "${REGISTRY}" = "public" ]; then
+            API_KEY="${NUGET_API_KEY}"
+            if [ -z "${API_KEY}" ]; then
+              echo "::error::Secret NUGET_API_KEY is not set, so the stable release cannot be pushed to nuget.org."
+              exit 1
+            fi
+          else
+            API_KEY="${PACKAGES_TOKEN}"
+            extra+=(--no-symbols)
+          fi
+
+          shopt -s nullglob
+          packages=(nupkgs/*.nupkg)
+          if [ ${#packages[@]} -eq 0 ]; then
+            echo "::error::No .nupkg files found to publish."
+            exit 1
+          fi
+
+          echo "Publishing ${#packages[@]} package(s) at ${VERSION} to ${SOURCE}"
+          for pkg in "${packages[@]}"; do
+            echo "::group::$(basename "$pkg")"
+            # --skip-duplicate keeps re-runs of an unchanged main green instead
+            # of failing on an already-published version.
+            dotnet nuget push "$pkg" \
+              --api-key "${API_KEY}" \
+              --source "${SOURCE}" \
+              --skip-duplicate \
+              "${extra[@]}"
+            echo "::endgroup::"
+          done
+
+      - name: Summary
+        run: |
+          {
+            echo "### NuGet published"
+            echo
+            echo "- Version: \`${{ needs.version.outputs.version }}\`"
+            echo "- Source: ${{ needs.version.outputs.nuget-source }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Publish the five per-platform binary packages, then the wrapper that depends
+  # on them. Order matters: the wrapper pins exact versions of its optional
+  # dependencies, so they have to exist in the registry first.
+  # ---------------------------------------------------------------------------
+  publish-npm:
+    name: publish npm (${{ needs.version.outputs.channel }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: [version, binaries]
+    if: needs.version.outputs.publish == 'true'
+    permissions:
+      contents: read
+      packages: write
+    environment:
+      name: ${{ needs.version.outputs.is-stable == 'true' && 'production' || 'preview' }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fail before anything is uploaded rather than halfway through the five
+      # platform packages, which would leave the channel in a partial state.
+      - name: Validate credentials
+        env:
+          REGISTRY: ${{ needs.version.outputs.registry }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${REGISTRY}" = "public" ] && [ -z "${NPM_TOKEN}" ]; then
+            echo "::error::Secret NPM_TOKEN is not set, so the stable release cannot be pushed to npmjs.com."
+            exit 1
+          fi
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: ${{ needs.version.outputs.npm-registry }}
+          scope: ${{ needs.version.outputs.npm-scope }}
+          cache: npm
+          cache-dependency-path: packaging/npm/valio/package-lock.json
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+
+      - name: Stage binaries into platform packages
+        run: |
+          set -euo pipefail
+          for dir in artifacts/binary-*; do
+            platform="${dir#artifacts/binary-}"
+            target="packaging/npm/platforms/${platform}"
+            test -d "$target" || { echo "::error::unknown platform directory '$target'"; exit 1; }
+            cp "$dir"/* "$target/"
+            # npm does not reliably preserve the executable bit through pack /
+            # unpack; the wrapper's postinstall re-applies it on the consumer
+            # side, but shipping it correctly avoids relying on that.
+            chmod +x "$target"/valio* || true
+            ls -lh "$target"
+          done
+
+      - name: Build wrapper
+        working-directory: packaging/npm/valio
+        run: |
+          npm ci --ignore-scripts
+          npm run build
+
+      - name: Stamp manifests for this channel
+        run: >
+          node .github/scripts/prepare-npm.mjs
+          --version '${{ needs.version.outputs.version }}'
+          --scope '${{ needs.version.outputs.npm-scope }}'
+          --main-name '${{ needs.version.outputs.npm-main-name }}'
+          --registry '${{ needs.version.outputs.npm-registry }}'
+
+      - name: Publish platform packages
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.version.outputs.registry == 'public' && secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+          DIST_TAG: ${{ needs.version.outputs.npm-tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          REGISTRY: ${{ needs.version.outputs.registry }}
+        run: |
+          set -euo pipefail
+
+          # --access is an npmjs.com concept; GitHub Packages derives visibility
+          # from the repository and rejects the flag.
+          access=()
+          if [ "${REGISTRY}" = "public" ]; then
+            access+=(--access public)
+          fi
+
+          for dir in packaging/npm/platforms/*/; do
+            name="$(node -p "require('./${dir}package.json').name")"
+            echo "::group::${name}@${VERSION}"
+            if npm view "${name}@${VERSION}" version >/dev/null 2>&1; then
+              echo "Already published — skipping."
+            else
+              npm publish "${dir}" --tag "${DIST_TAG}" "${access[@]}"
+            fi
+            echo "::endgroup::"
+          done
+
+      - name: Publish wrapper package
+        working-directory: packaging/npm/valio
+        env:
+          NODE_AUTH_TOKEN: ${{ needs.version.outputs.registry == 'public' && secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
+          DIST_TAG: ${{ needs.version.outputs.npm-tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+          NAME: ${{ needs.version.outputs.npm-main-name }}
+          REGISTRY: ${{ needs.version.outputs.registry }}
+        run: |
+          set -euo pipefail
+
+          access=()
+          if [ "${REGISTRY}" = "public" ]; then
+            access+=(--access public)
+          fi
+
+          if npm view "${NAME}@${VERSION}" version >/dev/null 2>&1; then
+            echo "${NAME}@${VERSION} is already published — skipping."
+          else
+            # prepublishOnly rebuilds dist/, so --ignore-scripts must not be used.
+            npm publish --tag "${DIST_TAG}" "${access[@]}"
+          fi
+
+      - name: Summary
+        run: |
+          {
+            echo "### npm published"
+            echo
+            echo "- Package: \`${{ needs.version.outputs.npm-main-name }}@${{ needs.version.outputs.version }}\`"
+            echo "- dist-tag: \`${{ needs.version.outputs.npm-tag }}\`"
+            echo "- Registry: ${{ needs.version.outputs.npm-registry }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------
+  # Stable releases only: tag the commit and open a GitHub Release carrying the
+  # packages and the platform binaries. Skipped when the tag already exists, so
+  # repeated pushes to main without a VERSION bump are no-ops.
+  # ---------------------------------------------------------------------------
+  github-release:
+    name: github release
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [version, publish-nuget, publish-npm]
+    if: needs.version.outputs.is-stable == 'true'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check whether the tag already exists
+        id: tag
+        env:
+          TAG: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Tag ${TAG} already exists — the release step will be skipped."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Download packages
+        if: steps.tag.outputs.exists == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: nupkgs
+          path: nupkgs
+
+      - name: Download binaries
+        if: steps.tag.outputs.exists == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binary-*
+          path: artifacts
+
+      - name: Build release archives
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          for dir in artifacts/binary-*; do
+            platform="${dir#artifacts/binary-}"
+            chmod +x "$dir"/valio* || true
+            if [ -f "$dir/valio.exe" ]; then
+              (cd "$dir" && zip -q -j "../../release-assets/valio-${VERSION}-${platform}.zip" valio.exe)
+            else
+              tar -czf "release-assets/valio-${VERSION}-${platform}.tar.gz" -C "$dir" valio
+            fi
+          done
+          # Only the CLI tool package is attached. The generator libraries are
+          # already on nuget.org, and attaching all ~17 of them plus their
+          # symbol packages would bury the binaries users actually come for.
+          cp nupkgs/ValIO.Cli.*.nupkg release-assets/
+          ls -lh release-assets
+
+      - name: Create tag and release
+        if: steps.tag.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "ValIO ${TAG}"
+          git push origin "${TAG}"
+
+          gh release create "${TAG}" \
+            --title "ValIO ${TAG}" \
+            --generate-notes \
+            release-assets/*
+
+      - name: Summary
+        if: steps.tag.outputs.exists == 'false'
+        run: |
+          {
+            echo "### Release ${{ needs.version.outputs.tag }} created"
+            echo
+            echo "https://github.com/${{ github.repository }}/releases/tag/${{ needs.version.outputs.tag }}"
+          } >> "$GITHUB_STEP_SUMMARY"

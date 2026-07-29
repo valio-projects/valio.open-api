@@ -22,7 +22,7 @@ to the same plugin (case-insensitive).
 | `rust`       | Rust         | `rs`, `rust-reqwest`          | Rust structs (`serde`) + `reqwest`.                                                |
 
 Registration lives in
-[`src/ValIO.Plugins.Bootstrap/PluginsBootstrapExtensions.cs`](https://github.com/valio/valio/blob/master/src/ValIO.Plugins.Bootstrap/PluginsBootstrapExtensions.cs).
+[`src/ValIO.Plugins.Bootstrap/PluginsBootstrapExtensions.cs`](https://github.com/valio-projects/valio.open-api/blob/main/src/ValIO.Plugins.Bootstrap/PluginsBootstrapExtensions.cs).
 Every front-end (CLI / Web / Desktop) calls `AddAllGeneratorPlugins()`
 to register the full list above.
 

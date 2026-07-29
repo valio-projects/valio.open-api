@@ -1,14 +1,38 @@
+# =============================================================================
+# ValIO — CI (build + test)
+# =============================================================================
+# Verifies that everything in the repository compiles and that the test suite
+# passes. This workflow makes no publishing decisions and needs no secrets.
+#
+# It runs directly for pull requests and for pushes to ordinary branches, and is
+# also invoked via `workflow_call` as the first stage of Release.yml so that the
+# publishing pipeline can never ship code that has not been built and tested.
+# Pushes to main / develop / release/** are therefore deliberately excluded from
+# the `push` trigger — Release.yml owns those refs and calls back into here.
+#
+# A legacy `master` branch is intentionally NOT a publishing ref: it is built and
+# tested here like any other branch, but never releases anything.
+# =============================================================================
+
 name: CI
 
 on:
   push:
-    branches: [master]
+    branches-ignore:
+      - main
+      - develop
+      - 'release/**'
   pull_request:
-    branches: [master]
+  workflow_call:
+  workflow_dispatch:
 
-# Cancel in-progress runs for the same ref (branch or PR) when a new commit lands.
+# Superseded pull-request runs are pointless, so they share a per-PR group and
+# cancel each other. Pushes and `workflow_call` invocations deliberately get a
+# run-scoped group instead: when Release.yml calls this workflow, a cancellation
+# here would fail the caller, and a Release run that is already publishing must
+# never be taken down by a newer commit landing behind it.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
 permissions:
@@ -18,69 +42,215 @@ env:
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: '1'
   DOTNET_NOLOGO: '1'
   DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  DOTNET_GENERATE_ASPNET_CERTIFICATE: 'false'
+  NUGET_XMLDOC_MODE: 'skip'
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Compile the solution and run the NUnit suite on all three host platforms.
+  # The generators emit platform-sensitive text (path separators, newlines), so
+  # a Linux-only run would not be representative.
+  # ---------------------------------------------------------------------------
   build-test:
-    name: build-test (${{ matrix.os }})
+    name: build & test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
       - name: Restore
         run: dotnet restore ValIO.sln
+
       - name: Build
         run: dotnet build ValIO.sln -c Release --no-restore
+
       - name: Test
-        run: dotnet test ValIO.sln -c Release --no-build --logger "trx"
+        run: >
+          dotnet test ValIO.sln
+          -c Release
+          --no-build
+          --logger trx
+          --logger "console;verbosity=minimal"
+          --collect:"XPlat Code Coverage"
+
+      - name: Summarise test results
+        if: always()
+        run: node .github/scripts/summarize-trx.mjs
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: test-results-${{ matrix.os }}
-          path: '**/TestResults/*.trx'
-          if-no-files-found: ignore
+          path: |
+            **/TestResults/*.trx
+            **/TestResults/**/coverage.cobertura.xml
+          if-no-files-found: warn
+          retention-days: 14
 
-  docs-site:
-    name: docs-site
+  # ---------------------------------------------------------------------------
+  # Prove the whole solution still packs. Every publishable project is packed
+  # with a throwaway version so a broken <PackageId>, missing README or invalid
+  # metadata surfaces on the pull request instead of during a release.
+  # ---------------------------------------------------------------------------
+  pack-check:
+    name: pack (validation)
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: docs-site
+    timeout-minutes: 30
+
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: docs-site/package-lock.json
-      - name: Install
-        run: npm ci
-      - name: Build
-        run: npm run build
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  npm-shim:
-    name: npm-shim
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Pack
+        run: >
+          dotnet pack ValIO.sln
+          -c Release
+          -o nupkgs
+          -p:Version=0.0.0-ci.${{ github.run_number }}
+
+      - name: List packages
+        run: ls -lh nupkgs
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: nupkgs-ci
+          path: nupkgs/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Publish a single-file linux-x64 CLI and invoke it. A solution that compiles
+  # can still fail at startup (DI wiring, plugin discovery, trimmed resources),
+  # and `--help` exercises the full composition root cheaply.
+  # ---------------------------------------------------------------------------
+  cli-smoke:
+    name: CLI smoke test
     runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Directory.Packages.props', 'global.json', '**/*.csproj') }}
+          restore-keys: |
+            nuget-${{ runner.os }}-
+
+      - name: Publish linux-x64 single file
+        run: >
+          dotnet publish src/ValIO.Cli/ValIO.Cli.csproj
+          -c Release
+          -r linux-x64
+          --self-contained
+          -p:PublishSingleFile=true
+          -p:DebugType=embedded
+          -o publish/linux-x64
+
+      - name: Run --help
+        run: |
+          chmod +x publish/linux-x64/valio
+          ./publish/linux-x64/valio --help
+
+  # ---------------------------------------------------------------------------
+  # Type-check and build the npm wrapper that resolves and spawns the binary.
+  # ---------------------------------------------------------------------------
+  npm-shim:
+    name: npm shim
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: packaging/npm/valio
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
+          cache: npm
           cache-dependency-path: packaging/npm/valio/package-lock.json
+
+      # --ignore-scripts: the postinstall chmods a platform binary that does not
+      # exist in a source checkout.
       - name: Install
         run: npm ci --ignore-scripts
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  # ---------------------------------------------------------------------------
+  # Build the Starlight docs site. Link validation runs as part of the Astro
+  # build, so a broken cross-reference fails here rather than after deploy.
+  # ---------------------------------------------------------------------------
+  docs-site:
+    name: docs site
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: docs-site
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+
+      - name: Install
+        run: npm ci
+
       - name: Build
         run: npm run build

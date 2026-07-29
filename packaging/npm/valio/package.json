@@ -1,8 +1,10 @@
 {
-  "name": "valio",
+  "name": "@valio-projects/valio",
   "version": "0.1.0",
   "description": "OpenAPI to type-safe HTTP clients for 12 languages — CLI wrapper.",
-  "bin": { "valio": "./dist/valio.js" },
+  "bin": {
+    "valio": "./dist/valio.js"
+  },
   "main": "./dist/valio.js",
   "type": "module",
   "scripts": {
@@ -11,25 +13,39 @@
     "prepublishOnly": "npm run clean && npm run build",
     "postinstall": "node ./dist/install.js"
   },
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "optionalDependencies": {
-    "@valio/cli-win32-x64":     "0.1.0",
-    "@valio/cli-linux-x64":     "0.1.0",
-    "@valio/cli-linux-arm64":   "0.1.0",
-    "@valio/cli-darwin-x64":    "0.1.0",
-    "@valio/cli-darwin-arm64":  "0.1.0"
+    "@valio-projects/cli-win32-x64": "0.1.0",
+    "@valio-projects/cli-linux-x64": "0.1.0",
+    "@valio-projects/cli-linux-arm64": "0.1.0",
+    "@valio-projects/cli-darwin-x64": "0.1.0",
+    "@valio-projects/cli-darwin-arm64": "0.1.0"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
     "@types/node": "^22.0.0"
   },
-  "files": ["dist/", "README.md", "LICENSE"],
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "license": "MIT",
   "homepage": "https://valio.dev",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/valio/valio.git",
+    "url": "git+https://github.com/valio-projects/valio.open-api.git",
     "directory": "packaging/npm/valio"
   },
-  "keywords": ["openapi", "swagger", "codegen", "typescript", "csharp", "rest", "client"]
+  "keywords": [
+    "openapi",
+    "swagger",
+    "codegen",
+    "typescript",
+    "csharp",
+    "rest",
+    "client"
+  ]
 }

@@ -1,65 +1,24 @@
 #!/usr/bin/env node
-// ValIO CLI npm shim — resolves the platform-specific binary from the
-// matching @valio/cli-<platform>-<arch> optional dependency and spawns it,
-// forwarding argv, stdio, and the exit code.
+// ValIO CLI npm shim — resolves the platform-specific binary from the matching
+// per-platform optional dependency and spawns it, forwarding argv, stdio, and
+// the exit code.
+//
+// The package name of that dependency is discovered at runtime rather than
+// hardcoded, because stable and preview builds are published under different
+// scopes. See ./platform.ts for the details.
 
 import { spawn } from "node:child_process";
-import { createRequire } from "node:module";
-import { existsSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-
-const require = createRequire(import.meta.url);
-
-interface PlatformInfo {
-  /** npm scoped package name, e.g. "@valio/cli-linux-x64". */
-  pkg: string;
-  /** File name of the executable inside the platform package. */
-  exe: string;
-}
+import { locateBinary, resolvePlatform, type PlatformInfo } from "./platform.js";
 
 /**
- * Maps Node's process.platform/arch to the matching @valio/cli-* package
- * and the executable file name shipped inside it.
- */
-function resolvePlatform(): PlatformInfo | null {
-  const platform = process.platform;
-  const arch = process.arch;
-  const exe = platform === "win32" ? "valio.exe" : "valio";
-
-  // Keep this table in sync with packaging/npm/platforms/* and the
-  // optionalDependencies in package.json.
-  const table: Record<string, Record<string, string>> = {
-    win32:  { x64:   "@valio/cli-win32-x64" },
-    linux:  { x64:   "@valio/cli-linux-x64",
-              arm64: "@valio/cli-linux-arm64" },
-    darwin: { x64:   "@valio/cli-darwin-x64",
-              arm64: "@valio/cli-darwin-arm64" },
-  };
-
-  const pkg = table[platform]?.[arch];
-  return pkg ? { pkg, exe } : null;
-}
-
-/**
- * Resolves the absolute path to the platform binary by locating the
- * package.json of the corresponding @valio/cli-* package and joining
- * the executable name to its directory.
+ * Prints an actionable diagnostic when the native binary cannot be found.
  *
- * Returns null if the package is not installed (e.g. user ran
- * `npm install --no-optional`) or if the binary file is missing.
+ * @param info Platform details, or null when ValIO ships nothing for this host.
+ * @param detail Optional extra line describing the specific failure, e.g. a
+ *   package that resolved but turned out not to contain the executable.
+ * @returns Nothing.
  */
-function resolveBinary(info: PlatformInfo): string | null {
-  try {
-    const manifestPath = require.resolve(`${info.pkg}/package.json`);
-    const binaryPath = join(dirname(manifestPath), info.exe);
-    return existsSync(binaryPath) ? binaryPath : null;
-  } catch {
-    return null;
-  }
-}
-
-function printMissingBinaryError(info: PlatformInfo | null): void {
+function printMissingBinaryError(info: PlatformInfo | null, detail?: string): void {
   const platform = `${process.platform}-${process.arch}`;
   process.stderr.write(
     [
@@ -68,6 +27,7 @@ function printMissingBinaryError(info: PlatformInfo | null): void {
       info
         ? `Expected to find it via the optional dependency '${info.pkg}'.`
         : `No prebuilt npm package exists for this platform (${platform}).`,
+      ...(detail ? [detail] : []),
       "",
       "Possible causes:",
       "  - npm was run with --no-optional or --omit=optional.",
@@ -75,26 +35,21 @@ function printMissingBinaryError(info: PlatformInfo | null): void {
       "  - You are on a platform we do not ship a prebuilt binary for.",
       "",
       "Fixes:",
-      "  - Reinstall:  npm install -g valio",
+      "  - Reinstall:  npm install -g @valio-projects/valio",
       "  - Or install via .NET:  dotnet tool install --global ValIO.Cli",
       "",
     ].join("\n"),
   );
 }
 
-function main(): void {
-  const info = resolvePlatform();
-  if (!info) {
-    printMissingBinaryError(null);
-    process.exit(1);
-  }
-
-  const binary = resolveBinary(info);
-  if (!binary) {
-    printMissingBinaryError(info);
-    process.exit(1);
-  }
-
+/**
+ * Spawns the native binary, mirroring its stdio, exit code, and termination
+ * signal so the shim is transparent to callers and to shell scripts.
+ *
+ * @param binary Absolute path to the executable.
+ * @returns Nothing; the process exits when the child does.
+ */
+function run(binary: string): void {
   const child = spawn(binary, process.argv.slice(2), {
     stdio: "inherit",
     // Don't use a shell — pass args verbatim to the native binary.
@@ -125,7 +80,29 @@ function main(): void {
   }
 }
 
-// Touch fileURLToPath to keep the import in case future logic needs __dirname.
-void fileURLToPath;
+/**
+ * Entry point: locates the binary for this host and hands control to it.
+ *
+ * @returns Nothing.
+ */
+function main(): void {
+  const info = resolvePlatform();
+  if (!info) {
+    printMissingBinaryError(null);
+    process.exit(1);
+  }
+
+  const located = locateBinary(info);
+  if (located.status === "package-missing") {
+    printMissingBinaryError(info);
+    process.exit(1);
+  }
+  if (located.status === "binary-missing") {
+    printMissingBinaryError(info, `The package is installed but '${located.path}' does not exist.`);
+    process.exit(1);
+  }
+
+  run(located.path);
+}
 
 main();

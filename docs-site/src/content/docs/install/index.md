@@ -43,9 +43,9 @@ For repos that already manage their toolchain with npm (frontend
 monorepos, GitHub Actions jobs that set up Node anyway):
 
 ```bash
-npm install -g valio
+npm install -g @valio-projects/valio
 # or as a dev dependency
-npm install --save-dev valio
+npm install --save-dev @valio-projects/valio
 ```
 
 The npm wrapper downloads the matching .NET 10 self-contained binary
@@ -55,7 +55,7 @@ for the current platform on first run and caches it under
 ## Via GitHub Releases
 
 Pre-built binaries are attached to every tagged release at
-<https://github.com/valio/valio/releases>. Pick the archive for your
+<https://github.com/valio-projects/valio.open-api/releases>. Pick the archive for your
 platform:
 
 | File                          | Platform                |
@@ -72,7 +72,7 @@ Extract anywhere on your `PATH`. The archives are self-contained — no
 
 ## Planned package managers
 
-These are not yet published; track <https://github.com/valio/valio/issues>
+These are not yet published; track <https://github.com/valio-projects/valio.open-api/issues>
 for progress.
 
 | Tool   | Status   | Command (when released)        |

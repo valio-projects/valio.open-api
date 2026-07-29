@@ -1,14 +1,20 @@
 {
-  "name": "@valio/cli-linux-x64",
+  "name": "@valio-projects/cli-linux-x64",
   "version": "0.1.0",
   "description": "ValIO CLI binary for linux-x64.",
-  "os": ["linux"],
-  "cpu": ["x64"],
-  "files": ["valio"],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "valio"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/valio/valio.git",
+    "url": "git+https://github.com/valio-projects/valio.open-api.git",
     "directory": "packaging/npm/platforms/linux-x64"
   }
 }

@@ -30,13 +30,13 @@ export default defineConfig({
         {
           icon: 'github',
           label: 'GitHub',
-          href: 'https://github.com/valio/valio',
+          href: 'https://github.com/valio-projects/valio.open-api',
         },
       ],
 
       // "Edit this page" links point at the master branch in the docs-site folder.
       editLink: {
-        baseUrl: 'https://github.com/valio/valio/edit/master/docs-site/',
+        baseUrl: 'https://github.com/valio-projects/valio.open-api/edit/main/docs-site/',
       },
 
       lastUpdated: true,

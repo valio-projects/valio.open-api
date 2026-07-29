@@ -5,7 +5,7 @@ Generate type-safe HTTP clients for 12 languages from any OpenAPI spec.
 ## Install
 
 ```sh
-npm install -g valio
+npm install -g @valio-projects/valio
 ```
 
 This pulls in a small prebuilt native binary for your platform (one of

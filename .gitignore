@@ -24,7 +24,11 @@ hs_err_pid*.log
 /nupkgs/
 /publish/
 /artifacts/
+/release-assets/
 *.snupkg
+
+# Test / coverage output (`dotnet test --logger trx --collect:"XPlat Code Coverage"`)
+TestResults/
 
 # Web frontend test artefacts
 *.User
@@ -46,3 +50,7 @@ packaging/npm/valio/dist/
 packaging/npm/valio/node_modules/
 packaging/npm/platforms/*/valio
 packaging/npm/platforms/*/valio.exe
+
+# LICENSE copies dropped into each npm package by .github/scripts/prepare-npm.mjs
+packaging/npm/valio/LICENSE
+packaging/npm/platforms/*/LICENSE

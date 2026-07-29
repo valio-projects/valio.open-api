@@ -1,14 +1,20 @@
 {
-  "name": "@valio/cli-linux-arm64",
+  "name": "@valio-projects/cli-linux-arm64",
   "version": "0.1.0",
   "description": "ValIO CLI binary for linux-arm64.",
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "files": ["valio"],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "valio"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/valio/valio.git",
+    "url": "git+https://github.com/valio-projects/valio.open-api.git",
     "directory": "packaging/npm/platforms/linux-arm64"
   }
 }
