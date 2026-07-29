@@ -122,29 +122,72 @@ dotnet nuget add source https://nuget.pkg.github.com/valio-projects/index.json \
 Reading from GitHub Packages requires authentication even for public
 repositories — that is a GitHub limitation, not a ValIO one.
 
-## Secrets
+## Credentials
 
-| Secret           | Needed for                        | Notes                                          |
-| ---------------- | --------------------------------- | ---------------------------------------------- |
-| `NUGET_API_KEY`  | Stable NuGet pushes to nuget.org  | Repository secret; rotate annually             |
-| `NPM_TOKEN`      | Stable npm pushes to npmjs.com    | Automation token with publish rights           |
-| `GITHUB_TOKEN`   | All GitHub Packages pushes, tags  | Provided automatically; no setup required      |
+| Name             | Needed for                        | Notes                                     |
+| ---------------- | --------------------------------- | ----------------------------------------- |
+| `NUGET_USER`     | Trusted Publishing to nuget.org   | nuget.org **profile name**, not an email  |
+| `NUGET_API_KEY`  | Fallback if Trusted Publishing is unavailable | Long-lived; rotate annually   |
+| `NPM_TOKEN`      | Stable npm pushes to npmjs.com    | Automation token with publish rights      |
+| `GITHUB_TOKEN`   | All GitHub Packages pushes, tags  | Provided automatically; no setup required |
 
-Preview channels need no configured secrets at all. Both publish jobs validate
-their credentials before uploading anything, so a missing secret fails fast with
-an explicit message instead of a mid-publish `401`.
+Preview channels need nothing configured — they authenticate with the workflow's
+own token. Both publish jobs validate credentials before uploading anything, so
+a missing one fails fast with an explicit message instead of a mid-publish `401`.
 
 The publish jobs run in the `production` (stable) and `preview` (prerelease)
 environments, so approval gates or environment-scoped secrets can be added later
 without touching the workflow.
 
+### Trusted Publishing (nuget.org)
+
+Preferred over `NUGET_API_KEY`: the workflow mints a GitHub OIDC token, nuget.org
+verifies it against a policy you register and returns an API key valid for **one
+hour**. Nothing long-lived is stored in the repository, and there is no key to
+rotate or leak.
+
+Set it up once:
+
+1. Sign in to nuget.org → your username → **Trusted Publishing** → add a policy.
+   If the menu entry is missing, the feature has not reached your account yet —
+   keep using `NUGET_API_KEY` until it does.
+2. Fill in (case-insensitive):
+   - **Repository Owner:** `valio-projects`
+   - **Repository:** `valio.open-api`
+   - **Workflow File:** `release.yml` — file name only, no `.github/workflows/`
+   - **Environment:** `production` — this is the environment the `publish-nuget`
+     job uses for stable releases, so the policy cannot be exercised by a
+     preview build
+3. Choose the policy **owner** — the user or organisation that owns the packages.
+   The policy covers every package owned by that owner.
+4. Add a repository secret `NUGET_USER` with your nuget.org profile name.
+
+Two behaviours worth knowing:
+
+- A new policy may start **temporarily active for 7 days**. nuget.org needs the
+  GitHub repository and owner IDs — which only arrive with the first successful
+  publish — to pin the policy and block resurrection attacks. Publish once inside
+  that window and it becomes permanent; the window can be restarted at any time.
+- A policy owned by an organisation goes inactive if its creator leaves that
+  organisation, and becomes active again when they are added back.
+
+The workflow picks its credential in this order: the Trusted Publishing key, then
+`NUGET_API_KEY` (with a warning), then it fails. So you can add Trusted
+Publishing without removing the old secret, confirm a green run, and delete the
+secret afterwards.
+
+Trusted Publishing covers nuget.org only. npm has an equivalent, but it does not
+apply here because the stable npm packages are scoped and the preview channels
+already run keyless on `GITHUB_TOKEN`.
+
 ## First-time repository setup
 
 One-off steps that live in GitHub's UI rather than in this repository:
 
-1. **Secrets** — Settings → Secrets and variables → Actions:
-   `NUGET_API_KEY` and `NPM_TOKEN`. Only needed before the first push to `main`;
-   preview channels work without them.
+1. **nuget.org credentials** — set up Trusted Publishing and add the `NUGET_USER`
+   secret (see above), or fall back to a `NUGET_API_KEY` secret. Plus `NPM_TOKEN`
+   under Settings → Secrets and variables → Actions. Only needed before the first
+   push to `main`; preview channels work without any of them.
 2. **Workflow permissions** — Settings → Actions → General → Workflow
    permissions must allow read *and* write, otherwise `github-release` cannot
    push the `vX.Y.Z` tag and the publish jobs cannot write to GitHub Packages.

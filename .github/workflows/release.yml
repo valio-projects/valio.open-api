@@ -214,8 +214,17 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Lets the job mint a GitHub OIDC token, which nuget.org exchanges for a
+      # short-lived API key under Trusted Publishing. Without it the request
+      # fails silently and the login step yields no key.
+      id-token: write
     environment:
       name: ${{ needs.version.outputs.is-stable == 'true' && 'production' || 'preview' }}
+    env:
+      # Lifted to the job so the step below can branch on whether Trusted
+      # Publishing is configured — the `secrets` context is not available in a
+      # step-level `if`, but `env` is.
+      NUGET_USER: ${{ secrets.NUGET_USER }}
 
     steps:
       - name: Setup .NET
@@ -229,15 +238,34 @@ jobs:
           name: nupkgs
           path: nupkgs
 
+      # Trusted Publishing: exchange the workflow's OIDC token for an API key
+      # that expires in an hour, so no long-lived nuget.org key has to exist as
+      # a repository secret. Runs immediately before the push because the key is
+      # short-lived and single-use.
+      #
+      # Requires a policy at https://www.nuget.org/account/trustedpublishing
+      # matching this repository, `release.yml`, and the `production`
+      # environment. Skipped when NUGET_USER is unset, which falls the push back
+      # to the classic NUGET_API_KEY secret — Trusted Publishing is still being
+      # rolled out and may not be enabled on every nuget.org account yet.
+      - name: NuGet login (OIDC, short-lived key)
+        id: nuget-login
+        if: needs.version.outputs.registry == 'public' && env.NUGET_USER != ''
+        uses: NuGet/login@v1
+        with:
+          # nuget.org profile name, not an email address.
+          user: ${{ secrets.NUGET_USER }}
+
       - name: Push
         env:
           VERSION: ${{ needs.version.outputs.version }}
           SOURCE: ${{ needs.version.outputs.nuget-source }}
           REGISTRY: ${{ needs.version.outputs.registry }}
-          # nuget.org uses a long-lived API key; GitHub Packages accepts the
-          # workflow's own token, so no secret is needed for preview channels.
-          # Both are passed in and selected below so a missing NUGET_API_KEY
-          # fails loudly instead of silently authenticating with the wrong one.
+          # Three credential sources, in order of preference for nuget.org:
+          # the short-lived Trusted Publishing key, then the classic long-lived
+          # secret. GitHub Packages always uses the workflow's own token, so
+          # preview channels need nothing configured.
+          OIDC_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
           PACKAGES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -247,9 +275,14 @@ jobs:
           # them and picks them up automatically alongside each .nupkg.
           extra=()
           if [ "${REGISTRY}" = "public" ]; then
-            API_KEY="${NUGET_API_KEY}"
-            if [ -z "${API_KEY}" ]; then
-              echo "::error::Secret NUGET_API_KEY is not set, so the stable release cannot be pushed to nuget.org."
+            if [ -n "${OIDC_KEY}" ]; then
+              echo "Authenticating with a Trusted Publishing key (expires in 1 hour)."
+              API_KEY="${OIDC_KEY}"
+            elif [ -n "${NUGET_API_KEY}" ]; then
+              echo "::warning::Falling back to the long-lived NUGET_API_KEY secret. Consider Trusted Publishing — see docs/CI_CD.md."
+              API_KEY="${NUGET_API_KEY}"
+            else
+              echo "::error::No nuget.org credentials. Configure Trusted Publishing and set NUGET_USER, or set the NUGET_API_KEY secret. See docs/CI_CD.md."
               exit 1
             fi
           else
