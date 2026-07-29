@@ -98,7 +98,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: test-results-${{ matrix.os }}
           path: |
@@ -145,7 +145,7 @@ jobs:
         run: ls -lh nupkgs
 
       - name: Upload packages
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nupkgs-ci
           path: nupkgs/
