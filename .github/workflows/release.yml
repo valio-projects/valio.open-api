@@ -224,7 +224,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nupkgs
           path: nupkgs
@@ -330,7 +330,7 @@ jobs:
           cache-dependency-path: packaging/npm/valio/package-lock.json
 
       - name: Download binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: binary-*
           path: artifacts
@@ -459,14 +459,14 @@ jobs:
 
       - name: Download packages
         if: steps.tag.outputs.exists == 'false'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: nupkgs
           path: nupkgs
 
       - name: Download binaries
         if: steps.tag.outputs.exists == 'false'
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: binary-*
           path: artifacts
