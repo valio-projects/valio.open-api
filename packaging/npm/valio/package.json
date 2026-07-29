@@ -32,7 +32,7 @@
     "README.md",
     "LICENSE"
   ],
-  "license": "MIT",
+  "license": "LGPL-2.1-only",
   "homepage": "https://valio.dev",
   "repository": {
     "type": "git",

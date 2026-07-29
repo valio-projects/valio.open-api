@@ -44,7 +44,7 @@
     <Authors>ValIO Contributors</Authors>
     <Company>ValIO</Company>
     <Copyright>Copyright (c) 2026 ValIO Contributors</Copyright>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>LGPL-2.1-only</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/valio-projects/valio.open-api</PackageProjectUrl>
     <RepositoryUrl>https://github.com/valio-projects/valio.open-api.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>

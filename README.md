@@ -6,7 +6,7 @@
 [![Release](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml/badge.svg)](https://github.com/valio-projects/valio.open-api/actions/workflows/release.yml)
 [![NuGet](https://img.shields.io/nuget/v/ValIO.Cli.svg)](https://www.nuget.org/packages/ValIO.Cli)
 [![npm](https://img.shields.io/npm/v/@valio-projects/valio.svg)](https://www.npmjs.com/package/@valio-projects/valio)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![License: LGPL v2.1](https://img.shields.io/badge/License-LGPL_v2.1-blue.svg)](./LICENSE)
 [![Docs](https://img.shields.io/badge/docs-valio.dev-blue)](https://valio.dev)
 
 ## Quick start
@@ -160,4 +160,4 @@ how to add a new option, transport, validation library, stack or language — re
 
 ## License
 
-ValIO is released under the [MIT License](./LICENSE).
+ValIO is released under the [GNU Lesser General Public License v2.1](./LICENSE).

@@ -223,4 +223,4 @@ Please report vulnerabilities privately — see [SECURITY.md](./SECURITY.md).
 
 ## License
 
-By contributing you agree that your contributions will be licensed under the [MIT License](./LICENSE).
+By contributing you agree that your contributions will be licensed under the [GNU Lesser General Public License v2.1](./LICENSE).

@@ -94,7 +94,7 @@ function writeJson(path, value) {
 /**
  * Copies the repository's LICENSE next to a package manifest.
  *
- * Every manifest declares `"license": "MIT"`, but npm only ships the licence
+ * Every manifest declares `"license": "LGPL-2.1-only"`, but npm only ships the licence
  * text when the file is inside the package directory — and it is kept at the
  * repository root, not duplicated into six subfolders. npm always includes a
  * file named LICENSE regardless of the `files` allowlist, so copying it here is
