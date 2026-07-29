@@ -21,7 +21,7 @@
     "i18n:report": "node scripts/check-translations.mjs"
   },
   "dependencies": {
-    "@astrojs/starlight": "^0.36.0",
+    "@astrojs/starlight": "^0.41.5",
     "astro": "^5.16.0",
     "sharp": "^0.34.0",
     "starlight-image-zoom": "^0.13.0",
