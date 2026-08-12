@@ -273,10 +273,12 @@ public sealed class AngularServiceAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("String")),
                 ImmutableList.Create<ExpressionNode>(access));
 
+            // Ключ — «проводное» имя (Paging.Offset), значение читается по sanitized-свойству
+            // (Paging_Offset): ASP.NET биндит вложенную модель по точечному имени.
             var setCall = new CallExpressionNode(
                 new MemberAccessExpressionNode(chain, new IdentifierNode("set")),
                 ImmutableList.Create<ExpressionNode>(
-                    new LiteralExpressionNode(parameter.Name, LiteralKind.String),
+                    new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String),
                     coerced));
 
             if (!parameter.IsRequired)
@@ -314,10 +316,12 @@ public sealed class AngularServiceAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("String")),
                 ImmutableList.Create<ExpressionNode>(access));
 
+            // Ключ — «проводное» имя заголовка (X-Request-Id), значение читается по sanitized-свойству
+            // (X_Request_Id): в HTTP уходит исходное имя, дефисы в идентификатор не помещаются.
             var setCall = new CallExpressionNode(
                 new MemberAccessExpressionNode(chain, new IdentifierNode("set")),
                 ImmutableList.Create<ExpressionNode>(
-                    new LiteralExpressionNode(parameter.Name, LiteralKind.String),
+                    new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String),
                     coerced));
 
             if (!parameter.IsRequired)

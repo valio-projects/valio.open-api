@@ -74,9 +74,11 @@ public static class TypeScriptQueryString
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(querySource, parameter.Name, queryMayBeUndefined);
             // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
+            // The key is the wire name (Paging.Offset), not the sanitized TS property (Paging_Offset):
+            // ASP.NET binds a nested model by its dotted name and finds nothing under the underscore.
             var setCall = new ExpressionStatementNode(new CallExpressionNode(
                 Member(Id("query"), "set"),
-                ImmutableList.Create<ExpressionNode>(Str(parameter.Name),
+                ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
                     new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
             if (parameter.IsRequired)
                 statements.Add(setCall);
