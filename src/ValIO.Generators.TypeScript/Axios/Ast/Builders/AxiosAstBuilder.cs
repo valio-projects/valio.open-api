@@ -104,7 +104,7 @@ public class AxiosAstBuilder
         {
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("params"),
-                paramsSource.QueryParamsSource));
+                BuildWireQueryParamsObject(operation.QueryParameters, paramsSource.QueryParamsSource)));
         }
 
         if (paramsSource.HeadersSource != null && operation.HeaderParameters.Count > 0)
@@ -288,6 +288,26 @@ public class AxiosAstBuilder
     /// </summary>
     /// <param name="queryParameters">Список query параметров</param>
     /// <returns>AST узел объектного литерала</returns>
+    /// <summary>
+    /// Строит объект axios <c>params</c> вида <c>{ 'Paging.Offset': parsedQuery.Paging_Offset, … }</c>:
+    /// ключ — «проводное» имя параметра (<see cref="IrParameter.OriginalName"/>), значение — доступ к
+    /// sanitized-полю распарсенного query-объекта (<see cref="IrParameter.Name"/>). Без этого точечные
+    /// query-имена (напр. вложенная модель <c>Paging.Offset</c>) уходили бы как <c>Paging_Offset</c> и
+    /// сервер их не биндил. Сериализация «в лоб» <c>params: parsedQuery</c> теряла бы этот ремап.
+    /// </summary>
+    private static ObjectLiteralExpressionNode BuildWireQueryParamsObject(
+        IReadOnlyList<IrParameter> queryParameters,
+        ExpressionNode source)
+    {
+        var props = queryParameters
+            .Select(p => new PropertyAssignmentNode(
+                new IdentifierNode(p.OriginalName),
+                new MemberAccessExpressionNode((ExpressionNode)source.Clone(), new IdentifierNode(p.Name))))
+            .ToImmutableList();
+
+        return new ObjectLiteralExpressionNode(props, preferMultilineFormat: true);
+    }
+
     private ObjectLiteralExpressionNode BuildQueryParamsObject(IReadOnlyList<QueryParameterNode> queryParameters)
     {
         var properties = queryParameters.Select(qp =>

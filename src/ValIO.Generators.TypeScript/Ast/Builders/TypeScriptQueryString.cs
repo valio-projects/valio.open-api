@@ -74,9 +74,11 @@ public static class TypeScriptQueryString
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(querySource, parameter.Name, queryMayBeUndefined);
             // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
+            // Ключ query-string — «проводное» имя (Paging.Offset), а не sanitized-идентификатор (Paging_Offset):
+            // значение всё так же читаем по sanitized-полю распарсенного объекта.
             var setCall = new ExpressionStatementNode(new CallExpressionNode(
                 Member(Id("query"), "set"),
-                ImmutableList.Create<ExpressionNode>(Str(parameter.Name),
+                ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
                     new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
             if (parameter.IsRequired)
                 statements.Add(setCall);

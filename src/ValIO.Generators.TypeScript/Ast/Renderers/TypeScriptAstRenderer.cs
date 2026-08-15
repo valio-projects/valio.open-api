@@ -597,8 +597,14 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         {
             return key; // Shorthand: { name } вместо { name: name }
         }
-        return $"{key}: {value}";
+        // Ключ, не являющийся валидным JS-идентификатором (напр. точечное «проводное» имя
+        // query-параметра Paging.Offset), печатаем в кавычках — иначе получится невалидный TS.
+        var safeKey = IsSafeObjectKey(key) ? key : $"'{key}'";
+        return $"{safeKey}: {value}";
     }
+
+    private static bool IsSafeObjectKey(string name) =>
+        System.Text.RegularExpressions.Regex.IsMatch(name, "^[A-Za-z_$][A-Za-z0-9_$]*$");
 
     // C# специфичные методы (не используются для TypeScript, но требуются интерфейсом)
     public override string VisitTypeDeclaration(TypeDeclarationNode node)
