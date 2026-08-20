@@ -9,6 +9,7 @@ using ValIO.Core.Ast.Visitors;
 using ValIO.Core.Utilities;
 using ValIO.Generators.CSharp.Ast.Nodes;
 using ValIO.Generators.CSharp.Ast.Visitors;
+using ValIO.Generators.CSharp.Services;
 
 namespace ValIO.Generators.CSharp.Ast.Renderers;
 
@@ -402,7 +403,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
         var target = Visit(node.Object);
-        return $"{target}.{node.Member.Name}";
+        return $"{target}.{CSharpIdentifier.Escape(node.Member.Name)}";
     }
 
     public override string VisitReturnStatement(ReturnStatementNode node)
@@ -425,7 +426,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     {
         var type = node.Type != null ? $"{RenderType(node.Type)} " : "var ";
         var initializer = node.Initializer != null ? $" = {Visit(node.Initializer)}" : "";
-        return $"{type}{node.Name.Name}{initializer};";
+        return $"{type}{CSharpIdentifier.Escape(node.Name.Name)}{initializer};";
     }
     
     public override string VisitThrowStatement(ThrowStatementNode node)
@@ -858,7 +859,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         // без него DefaultValue ранее молча терялся при рендеринге свойств.
         var initializer = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
         var terminator = node.DefaultValue != null ? ";" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {node.Name.Name}{accessor}{initializer}{terminator}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{type} {CSharpIdentifier.Escape(node.Name.Name)}{accessor}{initializer}{terminator}");
     }
 
     private void RenderMethod(StringBuilder sb, MethodDeclarationNode node, int indentLevel)
@@ -981,7 +982,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         
         var type = RenderType(node.Type);
         var initializer = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{constKeyword}{readonlyKeyword}{type} {node.Name.Name}{initializer};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{constKeyword}{readonlyKeyword}{type} {CSharpIdentifier.Escape(node.Name.Name)}{initializer};");
     }
 
     private void RenderConstructor(StringBuilder sb, ConstructorDeclarationNode node, int indentLevel)
@@ -1065,7 +1066,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         };
         var type = RenderType(node.Type);
         var defaultValue = node.DefaultValue != null ? $" = {Visit(node.DefaultValue)}" : "";
-        sb.Append($"{modifiers}{type} {node.Name.Name}{defaultValue}");
+        sb.Append($"{modifiers}{type} {CSharpIdentifier.Escape(node.Name.Name)}{defaultValue}");
     }
 
     private void RenderEnumMember(StringBuilder sb, EnumMemberDeclarationNode node, int indentLevel, string? comma = null)
@@ -1247,17 +1248,17 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     public override string VisitPathParameter(PathParameterNode node)
     {
-        return $"{RenderType(node.Type)} {node.Name.Name}";
+        return $"{RenderType(node.Type)} {CSharpIdentifier.Escape(node.Name.Name)}";
     }
 
     public override string VisitQueryParameter(QueryParameterNode node)
     {
-        return $"{RenderType(node.Type)} {node.Name.Name}";
+        return $"{RenderType(node.Type)} {CSharpIdentifier.Escape(node.Name.Name)}";
     }
 
     public override string VisitHeaderParameter(HeaderParameterNode node)
     {
-        return $"{RenderType(node.Type)} {node.Name.Name}";
+        return $"{RenderType(node.Type)} {CSharpIdentifier.Escape(node.Name.Name)}";
     }
 
     public override string VisitRequestBody(RequestBodyNode node)

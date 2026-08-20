@@ -89,4 +89,46 @@ public class UnionResponseValidationTests
         client.Should().MatchRegex(@"Value\.Parse\(\s*GetThingResult400Schema");
         client.Should().NotContain("Type.Union(");
     }
+
+    [Test]
+    public async Task Zod_BinaryResponse_UsesBlobSchemaAndAxiosBlobResponseType()
+    {
+        const string json = """
+        {
+          "openapi": "3.0.1",
+          "info": { "title": "Binary", "version": "1" },
+          "paths": {
+            "/export": {
+              "get": {
+                "operationId": "GetBinary",
+                "responses": {
+                  "200": {
+                    "description": "OK",
+                    "content": {
+                      "application/octet-stream": {
+                        "schema": { "type": "string", "format": "binary" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """;
+
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(json);
+        var context = await _harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = ["axios"],
+            ValidationLibrary = "zod4",
+        });
+
+        var schemas = context.GeneratedFiles.Single(f => f.RelativePath.Replace('\\', '/').EndsWith("getBinary.results.schemas.ts", StringComparison.Ordinal)).Content;
+        var client = context.GeneratedFiles.Single(f => f.RelativePath.Replace('\\', '/').EndsWith("getBinary.axios.ts", StringComparison.Ordinal)).Content;
+
+        schemas.Should().Contain("z.instanceof(Blob)");
+        client.Should().Contain("responseType: \"blob\"");
+        client.Should().Contain("GetBinaryResult200Schema.parse(response.data)");
+    }
 }

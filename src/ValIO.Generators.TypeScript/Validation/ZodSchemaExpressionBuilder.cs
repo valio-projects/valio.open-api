@@ -213,6 +213,10 @@ internal sealed class ZodSchemaExpressionBuilder
                     Id(TypeScriptOptionIds.UuidFormat.RegexConstName)),
                 _ => Call(Member(Call(Member(Id("z"), "string")), "uuid"))
             },
+            IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray =>
+                Call(Member(Id("z"), "instanceof"), Id("Blob")),
+            IrPrimitiveKind.File =>
+                Call(Member(Id("z"), "instanceof"), Id("File")),
             IrPrimitiveKind.Void => Call(Member(Id("z"), "void")),
             IrPrimitiveKind.Null => Call(Member(Id("z"), "null")),
             _ => Call(Member(Id("z"), "unknown"))

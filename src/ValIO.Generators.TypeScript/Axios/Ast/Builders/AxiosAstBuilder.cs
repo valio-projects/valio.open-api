@@ -131,6 +131,13 @@ public class AxiosAstBuilder
                 paramsSource.BodySource));
         }
 
+        if (operation.Responses.Any(IsBinarySuccessResponse))
+        {
+            properties.Add(new PropertyAssignmentNode(
+                new IdentifierNode("responseType"),
+                new LiteralExpressionNode("blob", LiteralKind.String)));
+        }
+
         return new AxiosConfigNode(
             method: method,
             url: url,
@@ -138,6 +145,27 @@ public class AxiosAstBuilder
             headers: headers,
             body: body,
             properties: properties.ToImmutableList());
+    }
+
+    private static bool IsBinarySuccessResponse(IrResponse response)
+    {
+        if (!int.TryParse(response.StatusCode, out var statusCode) || statusCode is < 200 or >= 300)
+            return false;
+
+        return Unwrap(response.Type) is ValIO.Core.IR.Types.IrPrimitiveType
+        {
+            PrimitiveKind: ValIO.Core.IR.Enums.IrPrimitiveKind.Binary or ValIO.Core.IR.Enums.IrPrimitiveKind.ByteArray
+        };
+    }
+
+    private static ValIO.Core.IR.Types.IrType? Unwrap(ValIO.Core.IR.Types.IrType? type)
+    {
+        return type switch
+        {
+            ValIO.Core.IR.Types.IrNullableType nullable => Unwrap(nullable.InnerType),
+            ValIO.Core.IR.Types.IrOptionalType optional => Unwrap(optional.InnerType),
+            _ => type
+        };
     }
 
     /// <summary>

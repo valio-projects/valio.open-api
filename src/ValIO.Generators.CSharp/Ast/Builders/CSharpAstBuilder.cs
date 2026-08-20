@@ -1519,8 +1519,40 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// <summary>
     /// Строит CompilationUnit из IrClient
     /// </summary>
+    /// <summary>
+    /// Разводит имена операции и клиента: в C# член не может называться так же, как содержащий его
+    /// тип (CS0542), а такое совпадение возникает всякий раз, когда operationId повторяет имя
+    /// группы. Совпавшая операция получает префикс HTTP-метода — он есть у каждой операции, поэтому
+    /// имя остаётся однозначным и предсказуемым.
+    /// </summary>
+    /// <param name="client">Клиент из промежуточного представления.</param>
+    /// <returns>Тот же клиент либо его копия с переименованной операцией.</returns>
+    private static IrClient ResolveMemberNameCollisions(IrClient client)
+    {
+        if (!client.Operations.Any(operation => string.Equals(operation.MethodName, client.Name, StringComparison.Ordinal)))
+        {
+            return client;
+        }
+
+        var operations = client.Operations
+            .Select(operation => string.Equals(operation.MethodName, client.Name, StringComparison.Ordinal)
+                ? operation with { MethodName = ToPascalCase(operation.HttpMethod) + operation.MethodName }
+                : operation)
+            .ToList();
+
+        return client with { Operations = operations };
+    }
+
+    /// <summary>Приводит слово к PascalCase: <c>post</c> -> <c>Post</c>.</summary>
+    /// <param name="value">Исходное слово.</param>
+    /// <returns>Слово с заглавной первой буквой.</returns>
+    private static string ToPascalCase(string value)
+        => string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..].ToLowerInvariant();
+
     public CompilationUnitNode BuildCompilationUnit(IrClient client, string? @namespace = null)
     {
+        client = ResolveMemberNameCollisions(client);
+
         var usings = BuildUsingDirectives(ExtractDependencies(client));
         var declarations = new List<DeclarationNode>();
         
@@ -1547,6 +1579,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// </summary>
     public CompilationUnitNode BuildCompilationUnitForInterface(IrClient client, string? @namespace = null)
     {
+        client = ResolveMemberNameCollisions(client);
+
         var usings = BuildUsingDirectives(ExtractDependencies(client));
         var interfaceNode = BuildClientInterface(client);
         var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)interfaceNode }.ToList());
@@ -1594,6 +1628,8 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// </summary>
     public CompilationUnitNode BuildCompilationUnitForDecorator(IrClient client, string? @namespace = null)
     {
+        client = ResolveMemberNameCollisions(client);
+
         var dependencies = ExtractDependencies(client).ToList();
         // Добавляем зависимости для OpenTelemetry
         dependencies.Add("System.Diagnostics");
@@ -2005,6 +2041,17 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     
     private BlockNode? BuildMethodBody(IrOperation operation)
     {
+        // Служебные переменные тела запроса именуются генератором, а параметры приходят из схемы,
+        // и они сталкиваются: операция с параметром url давала "string url = urlBuilder.ToString()"
+        // рядом с параметром того же имени. Совпавшее служебное имя получает подчёркивание.
+        var parameterNames = operation.PathParameters
+            .Concat(operation.QueryParameters)
+            .Concat(operation.HeaderParameters)
+            .Select(parameter => parameter.Name)
+            .ToHashSet(StringComparer.Ordinal);
+
+        string Local(string name) => parameterNames.Contains(name) ? name + "_" : name;
+
         var statements = new List<StatementNode>();
         
         // Находим success и error response types
@@ -2031,7 +2078,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // 1. Строим URL через StringBuilder с предварительно рассчитанной capacity
         var capacityLiteral = new LiteralExpressionNode(estimatedCapacity.ToString(), LiteralKind.Number);
         var urlBuilderVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("urlBuilder"),
+            name: new IdentifierNode(Local("urlBuilder")),
             type: new SimpleTypeNode(new IdentifierNode("StringBuilder"), isPrimitive: false),
             initializer: new CallExpressionNode(
                 target: new IdentifierExpressionNode(new IdentifierNode("StringBuilder")),
@@ -2042,7 +2089,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Строим URL по частям, заменяя {param} на значения
         var basePath = operation.Path;
         var appendMethod = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("urlBuilder")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("urlBuilder"))),
             member: new IdentifierNode("Append"));
         
         // Парсим путь и добавляем части в StringBuilder
@@ -2245,10 +2292,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // Получаем финальный URL: urlBuilder.ToString()
         var urlBuilderToString = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("urlBuilder")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("urlBuilder"))),
             member: new IdentifierNode("ToString"));
         var urlStringVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("url"),
+            name: new IdentifierNode(Local("url")),
             type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
             initializer: new CallExpressionNode(
                 target: urlBuilderToString,
@@ -2263,7 +2310,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             member: new IdentifierNode(httpMethodName));
         
         var requestMessageType = new IdentifierExpressionNode(new IdentifierNode("HttpRequestMessage"));
-        var urlExpr = new IdentifierExpressionNode(new IdentifierNode("url"));
+        var urlExpr = new IdentifierExpressionNode(new IdentifierNode(Local("url")));
         var requestMessageCtorArgs = new ExpressionNode[] { httpMethodStaticProperty, urlExpr };
         var requestMessageCtor = new CallExpressionNode(
             target: requestMessageType,
@@ -2271,7 +2318,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             isNewExpression: true);
         
         var requestMessageVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("requestMessage"),
+            name: new IdentifierNode(Local("requestMessage")),
             type: new SimpleTypeNode(new IdentifierNode("HttpRequestMessage"), isPrimitive: false),
             initializer: requestMessageCtor);
         
@@ -2280,7 +2327,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // 3. Устанавливаем Headers (Accept: application/json)
         var requestMessageHeaders = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
             member: new IdentifierNode("Headers"));
         var acceptHeader = new MemberAccessExpressionNode(
             @object: requestMessageHeaders,
@@ -2332,7 +2379,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 isNewExpression: true);
             
             var requestMessageContent = new MemberAccessExpressionNode(
-                @object: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
+                @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
                 member: new IdentifierNode("Content"));
             var contentAssign = new BinaryExpressionNode(
                 left: requestMessageContent,
@@ -2343,19 +2390,19 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // Извлекаем данные из requestMessage для ApiException (до отправки запроса, чтобы были доступны в блоках обработки ошибок)
         var requestUriAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
             member: new IdentifierNode("RequestUri"));
         var requestUriVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("requestUri"),
+            name: new IdentifierNode(Local("requestUri")),
             type: new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("Uri"), isPrimitive: false)),
             initializer: requestUriAccess);
         requestMessageUsingBodyStatements.Add(requestUriVar);
         
         var requestMethodAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
             member: new IdentifierNode("Method"));
         var requestMethodVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("httpMethod"),
+            name: new IdentifierNode(Local("httpMethod")),
             type: new SimpleTypeNode(new IdentifierNode("HttpMethod"), isPrimitive: false),
             initializer: requestMethodAccess);
         requestMessageUsingBodyStatements.Add(requestMethodVar);
@@ -2366,7 +2413,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             @object: httpClientField,
             member: new IdentifierNode("SendAsync"));
         var cancellationTokenParam = new IdentifierExpressionNode(new IdentifierNode("cancellationToken"));
-        var requestMessageExpr = new IdentifierExpressionNode(new IdentifierNode("requestMessage"));
+        var requestMessageExpr = new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage")));
         var sendAsyncCall = new CallExpressionNode(
             target: sendAsyncMethod,
             arguments: new[] { requestMessageExpr, cancellationTokenParam }.ToImmutableList());
@@ -2375,7 +2422,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Создаем блок для вложенного using statement (responseMessage внутри requestMessage)
         // Сначала создаем переменную responseMessage
         var responseMessageVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("responseMessage"),
+            name: new IdentifierNode(Local("responseMessage")),
             type: new SimpleTypeNode(new IdentifierNode("HttpResponseMessage"), isPrimitive: false),
             initializer: awaitSend);
         
@@ -2383,7 +2430,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         // ReadAsStringAsync (переименовано content -> responseContent)
         var responseMessageContentAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("responseMessage"))),
             member: new IdentifierNode("Content"));
         var readAsString = new MemberAccessExpressionNode(
             @object: responseMessageContentAccess,
@@ -2395,41 +2442,41 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var awaitRead = new AwaitExpressionNode(readAsStringCall);
         
         var responseContentVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("responseContent"),
+            name: new IdentifierNode(Local("responseContent")),
             type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
             initializer: awaitRead);
         responseMessageUsingBodyStatements.Add(responseContentVar);
         
         // Извлекаем данные из responseMessage для ApiException
         var statusCodeAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("responseMessage"))),
             member: new IdentifierNode("StatusCode"));
         var statusCodeVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("statusCode"),
+            name: new IdentifierNode(Local("statusCode")),
             type: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
             initializer: statusCodeAccess);
         responseMessageUsingBodyStatements.Add(statusCodeVar);
         
         var reasonPhraseAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("responseMessage"))),
             member: new IdentifierNode("ReasonPhrase"));
         var reasonPhraseVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("reasonPhrase"),
+            name: new IdentifierNode(Local("reasonPhrase")),
             type: new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true)),
             initializer: reasonPhraseAccess);
         responseMessageUsingBodyStatements.Add(reasonPhraseVar);
         
         var versionAccess = new MemberAccessExpressionNode(
-            @object: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
+            @object: new IdentifierExpressionNode(new IdentifierNode(Local("responseMessage"))),
             member: new IdentifierNode("Version"));
         var versionVar = new VariableDeclarationStatementNode(
-            name: new IdentifierNode("version"),
+            name: new IdentifierNode(Local("version")),
             type: new SimpleTypeNode(new IdentifierNode("Version"), isPrimitive: false),
             initializer: versionAccess);
         responseMessageUsingBodyStatements.Add(versionVar);
         
         // Используем CastExpressionNode вместо metadata
-        var statusCodeExpr = new IdentifierExpressionNode(new IdentifierNode("statusCode"));
+        var statusCodeExpr = new IdentifierExpressionNode(new IdentifierNode(Local("statusCode")));
         var intType = new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true);
         var castExpr = new CastExpressionNode(
             targetType: intType,
@@ -2474,7 +2521,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             var deserializeAccess = new MemberAccessExpressionNode(
                 @object: jsonSerializerExpr,
                 member: new IdentifierNode("Deserialize"));
-            var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode("responseContent"));
+            var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode(Local("responseContent")));
             var deserializeCall = new CallExpressionNode(
                 target: deserializeAccess,
                 arguments: new ExpressionNode[] { responseContentExpr }.ToImmutableList(),
@@ -2499,14 +2546,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             
             var throwIfNullStatements = new List<StatementNode>();
             var apiExceptionForNullCtor = BuildApiExceptionCall(
-                requestUri: new IdentifierExpressionNode(new IdentifierNode("requestUri")),
-                httpMethod: new IdentifierExpressionNode(new IdentifierNode("httpMethod")),
+                requestUri: new IdentifierExpressionNode(new IdentifierNode(Local("requestUri"))),
+                httpMethod: new IdentifierExpressionNode(new IdentifierNode(Local("httpMethod"))),
                 statusCode: new CastExpressionNode(
                     targetType: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
                     expression: new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"))),
-                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")),
-                version: new IdentifierExpressionNode(new IdentifierNode("version")),
-                content: new IdentifierExpressionNode(new IdentifierNode("responseContent")),
+                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode(Local("reasonPhrase"))),
+                version: new IdentifierExpressionNode(new IdentifierNode(Local("version"))),
+                content: new IdentifierExpressionNode(new IdentifierNode(Local("responseContent"))),
                 message: new LiteralExpressionNode("Response deserialization returned null", LiteralKind.String),
                 innerException: null);
             throwIfNullStatements.Add(new ThrowStatementNode(apiExceptionForNullCtor));
@@ -2535,14 +2582,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             thenBlock: new BlockNode(new StatementNode[]
             {
                 new ThrowStatementNode(BuildApiExceptionCall(
-                    requestUri: new IdentifierExpressionNode(new IdentifierNode("requestUri")),
-                    httpMethod: new IdentifierExpressionNode(new IdentifierNode("httpMethod")),
+                    requestUri: new IdentifierExpressionNode(new IdentifierNode(Local("requestUri"))),
+                    httpMethod: new IdentifierExpressionNode(new IdentifierNode(Local("httpMethod"))),
                     statusCode: new CastExpressionNode(
                         targetType: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
                         expression: new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"))),
-                    reasonPhrase: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")),
-                    version: new IdentifierExpressionNode(new IdentifierNode("version")),
-                    content: new IdentifierExpressionNode(new IdentifierNode("responseContent")),
+                    reasonPhrase: new IdentifierExpressionNode(new IdentifierNode(Local("reasonPhrase"))),
+                    version: new IdentifierExpressionNode(new IdentifierNode(Local("version"))),
+                    content: new IdentifierExpressionNode(new IdentifierNode(Local("responseContent"))),
                     message: new LiteralExpressionNode("Unexpected status code", LiteralKind.String),
                     innerException: null))
             }.ToImmutableList()),
@@ -2557,7 +2604,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             var deserializeAccess = new MemberAccessExpressionNode(
                 @object: jsonSerializerExpr,
                 member: new IdentifierNode("Deserialize"));
-            var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode("responseContent"));
+            var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode(Local("responseContent")));
             var deserializeErrorCall = new CallExpressionNode(
                 target: deserializeAccess,
                 arguments: new ExpressionNode[] { responseContentExpr }.ToImmutableList(),
@@ -2581,14 +2628,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             
             var throwIfNullStatements = new List<StatementNode>();
             var apiExceptionForNullCtor = BuildApiExceptionCall(
-                requestUri: new IdentifierExpressionNode(new IdentifierNode("requestUri")),
-                httpMethod: new IdentifierExpressionNode(new IdentifierNode("httpMethod")),
+                requestUri: new IdentifierExpressionNode(new IdentifierNode(Local("requestUri"))),
+                httpMethod: new IdentifierExpressionNode(new IdentifierNode(Local("httpMethod"))),
                 statusCode: new CastExpressionNode(
                     targetType: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
                     expression: new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"))),
-                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")),
-                version: new IdentifierExpressionNode(new IdentifierNode("version")),
-                content: new IdentifierExpressionNode(new IdentifierNode("responseContent")),
+                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode(Local("reasonPhrase"))),
+                version: new IdentifierExpressionNode(new IdentifierNode(Local("version"))),
+                content: new IdentifierExpressionNode(new IdentifierNode(Local("responseContent"))),
                 message: new LiteralExpressionNode("Error deserialization returned null", LiteralKind.String),
                 innerException: null);
             throwIfNullStatements.Add(new ThrowStatementNode(apiExceptionForNullCtor));
@@ -2608,14 +2655,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 target: errorMessage,
                 arguments: ImmutableList<ExpressionNode>.Empty);
             var apiExceptionCtor = BuildApiExceptionCall(
-                requestUri: new IdentifierExpressionNode(new IdentifierNode("requestUri")),
-                httpMethod: new IdentifierExpressionNode(new IdentifierNode("httpMethod")),
+                requestUri: new IdentifierExpressionNode(new IdentifierNode(Local("requestUri"))),
+                httpMethod: new IdentifierExpressionNode(new IdentifierNode(Local("httpMethod"))),
                 statusCode: new CastExpressionNode(
                     targetType: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
                     expression: new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"))),
-                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")),
-                version: new IdentifierExpressionNode(new IdentifierNode("version")),
-                content: new IdentifierExpressionNode(new IdentifierNode("responseContent")),
+                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode(Local("reasonPhrase"))),
+                version: new IdentifierExpressionNode(new IdentifierNode(Local("version"))),
+                content: new IdentifierExpressionNode(new IdentifierNode(Local("responseContent"))),
                 message: errorMessageCall,
                 innerException: null);
             var throwStatement = new ThrowStatementNode(apiExceptionCtor);
@@ -2625,14 +2672,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         {
             // Если нет error type, просто выбрасываем общее исключение
             var apiExceptionCtor = BuildApiExceptionCall(
-                requestUri: new IdentifierExpressionNode(new IdentifierNode("requestUri")),
-                httpMethod: new IdentifierExpressionNode(new IdentifierNode("httpMethod")),
+                requestUri: new IdentifierExpressionNode(new IdentifierNode(Local("requestUri"))),
+                httpMethod: new IdentifierExpressionNode(new IdentifierNode(Local("httpMethod"))),
                 statusCode: new CastExpressionNode(
                     targetType: new SimpleTypeNode(new IdentifierNode("HttpStatusCode"), isPrimitive: false),
                     expression: new IdentifierExpressionNode(new IdentifierNode("statusCodeInt"))),
-                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode("reasonPhrase")),
-                version: new IdentifierExpressionNode(new IdentifierNode("version")),
-                content: new IdentifierExpressionNode(new IdentifierNode("responseContent")),
+                reasonPhrase: new IdentifierExpressionNode(new IdentifierNode(Local("reasonPhrase"))),
+                version: new IdentifierExpressionNode(new IdentifierNode(Local("version"))),
+                content: new IdentifierExpressionNode(new IdentifierNode(Local("responseContent"))),
                 message: new LiteralExpressionNode("Unexpected status code", LiteralKind.String),
                 innerException: null);
             var throwStatement = new ThrowStatementNode(apiExceptionCtor);
@@ -2651,7 +2698,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var responseMessageUsingBlock = new BlockNode(responseMessageUsingBodyStatements.ToImmutableList());
         // Используем metadata для указания, что это using с переменной
         var responseMessageUsingResource = new CallExpressionNode(
-            target: new IdentifierExpressionNode(new IdentifierNode("responseMessage")),
+            target: new IdentifierExpressionNode(new IdentifierNode(Local("responseMessage"))),
             arguments: ImmutableList<ExpressionNode>.Empty,
             isUsingVariable: true,
             variableDeclaration: responseMessageVar);
@@ -2665,7 +2712,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         // Создаем using statement для requestMessage, который содержит объявления переменных и using для responseMessage
         var requestMessageUsingBlock = new BlockNode(requestMessageUsingBodyStatements.ToImmutableList());
         var requestMessageUsingResource = new CallExpressionNode(
-            target: new IdentifierExpressionNode(new IdentifierNode("requestMessage")),
+            target: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
             arguments: ImmutableList<ExpressionNode>.Empty,
             isUsingVariable: true,
             variableDeclaration: requestMessageVar);
