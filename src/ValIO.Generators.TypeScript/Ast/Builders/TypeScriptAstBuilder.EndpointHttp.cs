@@ -15,7 +15,7 @@ using ValIO.Generators.TypeScript.Validation;
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
 /// <summary>
-/// HTTP endpoint: общая подготовка params/Zod и реализация fetch-тела.
+/// Builds HTTP endpoint parameter validation and the plain fetch transport implementation.
 /// </summary>
 public partial class TypeScriptAstBuilder
 {
@@ -149,6 +149,9 @@ public partial class TypeScriptAstBuilder
             useAsOperator: true);
     }
 
+    /// <summary>Builds the plain fetch client function body for an operation.</summary>
+    /// <param name="operation">The operation whose request and response flow is generated.</param>
+    /// <returns>The generated function body.</returns>
     private BlockNode BuildFetchFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
@@ -157,8 +160,7 @@ public partial class TypeScriptAstBuilder
 
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
         var pathUrlExpr = axiosBuilder.BuildUrlWithSource(operation, ctx.RouteSource);
-        // Explicit URLSearchParams build (shared with the Next.js transport): skips absent optional params
-        // (no `name=undefined`) and lets URLSearchParams handle encoding.
+        // The URLSearchParams builder shared with Next.js skips absent optional params and handles encoding.
         var requestUrlExpr = TypeScriptQueryString.AppendQueryToUrl(
             operation, pathUrlExpr, ctx.QuerySource, ctx.QueryMayBeUndefined, statements);
 
@@ -172,7 +174,15 @@ public partial class TypeScriptAstBuilder
         var methodLiteral = new LiteralExpressionNode(methodUpper, LiteralKind.String);
 
         var hasJsonBody = operation.RequestBody != null && operation.RequestBody.IsJson && ctx.BodySource != null;
-        var headersExpr = BuildFetchHeadersObject(ctx.HeadersSource, hasJsonBody);
+        var parameterModel = TypeScriptParameterModel.Create(operation);
+        var wireHeadersSource = ctx.HeadersSource == null
+            ? null
+            : TypeScriptWireParameterObject.BuildFromSource(
+                operation.HeaderParameters,
+                ctx.HeadersSource,
+                parameterModel.HeadersMayBeUndefined,
+                omitUndefinedValues: true);
+        var headersExpr = BuildFetchHeadersObject(wireHeadersSource, hasJsonBody);
 
         var initProps = new List<PropertyAssignmentNode>
         {
@@ -193,10 +203,8 @@ public partial class TypeScriptAstBuilder
         }
         else if (operation.RequestBody != null && ctx.BodySource != null)
         {
-            // Не-JSON тело: form-data / url-encoded (params.form) или иной content-type,
-            // напр. application/octet-stream (params.body). Типизированный источник (узкий
-            // интерфейс) не совпадает с BodyInit — кастуем через unknown, runtime строит
-            // FormData/Blob/stream сам.
+            // A typed non-JSON body source does not implement BodyInit directly. Cast through unknown because the
+            // runtime caller supplies the concrete FormData, Blob, stream, or url-encoded body.
             var bodyCast = new CastExpressionNode(
                 new SimpleTypeNode(new IdentifierNode("BodyInit"), isPrimitive: false),
                 new CastExpressionNode(

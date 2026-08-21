@@ -416,6 +416,12 @@ public sealed class NextjsClientAstBuilder
     /// then <c>method</c>, merged <c>headers</c>, JSON <c>body</c>, the Next <c>next</c> config (GET only,
     /// caller-overridable per field), and the optional <c>signal</c>.
     /// </summary>
+    /// <param name="operation">The operation whose fetch initialization object is generated.</param>
+    /// <param name="sources">The validated parameter sources used to populate headers and the request body.</param>
+    /// <param name="hasParameters">Whether the generated operation accepts a parameter object.</param>
+    /// <param name="isCacheable">Whether the operation supports Next.js cache configuration.</param>
+    /// <param name="cacheTagsFnName">The generated helper that derives cache tags for the operation.</param>
+    /// <returns>The generated <c>RequestInit</c> object literal.</returns>
     private ObjectLiteralExpressionNode BuildFetchInit(IrOperation operation, TypeScriptParameterSources sources, bool hasParameters, bool isCacheable, string cacheTagsFnName)
     {
         var props = new List<PropertyAssignmentNode>
@@ -428,9 +434,14 @@ public sealed class NextjsClientAstBuilder
         if (operation.HeaderParameters.Count > 0 && sources.HeadersSource != null)
         {
             // headers: { ...(paramHeaders ?? {}), ...((options?.headers as Record<string,string>) ?? {}) }
+            var wireHeaders = TypeScriptWireParameterObject.BuildFromSource(
+                operation.HeaderParameters,
+                sources.HeadersSource,
+                sources.HeadersSourceMayBeUndefined,
+                omitUndefinedValues: true);
             var paramHeaders = new BinaryExpressionNode(
                 new CastExpressionNode(RecordStringString(),
-                    new CastExpressionNode(Simple("unknown", isPrimitive: true), sources.HeadersSource, useAsOperator: true), useAsOperator: true),
+                    new CastExpressionNode(Simple("unknown", isPrimitive: true), wireHeaders, useAsOperator: true), useAsOperator: true),
                 BinaryOperator.NullishCoalescing, EmptyObject());
             var callerHeaders = new BinaryExpressionNode(
                 new CastExpressionNode(

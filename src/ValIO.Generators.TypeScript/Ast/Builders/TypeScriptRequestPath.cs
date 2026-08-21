@@ -14,8 +14,9 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// This is the single implementation of the path-templating that was previously copy-pasted across every
 /// transport client builder (fetch/nextjs/ky/got/ofetch/undici/angular/axios). The output is a plain string
 /// literal when the path has no parameters, or a template literal such as <c>`/api/apartments/${params.route.id}`</c>
-/// otherwise. Placeholder matching is case-insensitive because a spec may write the placeholder
-/// (<c>{dictionaryId}</c>) with different casing than the sanitized parameter name (<c>DictionaryId</c>).
+/// otherwise. Placeholder matching uses <see cref="IrParameter.OriginalName"/> because sanitizing characters such
+/// as dots or hyphens changes the TypeScript member name, while the path template remains an OpenAPI wire value.
+/// Matching is case-insensitive to tolerate casing differences between the template and parameter declaration.
 /// </remarks>
 /// <seealso cref="TypeScriptParameterModel"/>
 public static class TypeScriptRequestPath
@@ -42,7 +43,7 @@ public static class TypeScriptRequestPath
         var cursor = 0;
         foreach (var parameter in operation.PathParameters)
         {
-            var token = $"{{{parameter.Name}}}";
+            var token = $"{{{parameter.OriginalName}}}";
             var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
             if (index < 0)
                 continue;
@@ -87,7 +88,7 @@ public static class TypeScriptRequestPath
         var cursor = 0;
         foreach (var parameter in operation.PathParameters)
         {
-            var token = $"{{{parameter.Name}}}";
+            var token = $"{{{parameter.OriginalName}}}";
             var index = operation.Path.IndexOf(token, cursor, StringComparison.OrdinalIgnoreCase);
             if (index < 0)
                 continue;

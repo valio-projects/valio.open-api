@@ -16,8 +16,7 @@ using ValIO.Generators.TypeScript.Axios.Models;
 namespace ValIO.Generators.TypeScript.Axios.Ast.Builders;
 
 /// <summary>
-/// Построитель AST для Axios специфичных узлов
-/// Использует IR для построения AST узлов
+/// Builds Axios-specific TypeScript AST nodes from transport-independent operation IR.
 /// </summary>
 public class AxiosAstBuilder
 {
@@ -69,8 +68,11 @@ public class AxiosAstBuilder
     }
     
     /// <summary>
-    /// Строит AxiosConfigNode с использованием params source
+    /// Builds an Axios request configuration from grouped or validated parameter sources.
     /// </summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="paramsSource">The expressions that provide route, query, body, and header values.</param>
+    /// <returns>An Axios configuration AST node preserving OpenAPI wire names.</returns>
     public AxiosConfigNode BuildAxiosConfigWithParams(
         IrOperation operation,
         AxiosConfigParamsSource paramsSource)
@@ -100,24 +102,34 @@ public class AxiosAstBuilder
             new IdentifierNode("url"),
             url));
 
+        var parameterModel = TypeScriptParameterModel.Create(operation);
+
         if (paramsSource.QueryParamsSource != null && operation.QueryParameters.Count > 0)
         {
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("params"),
-                paramsSource.QueryParamsSource));
+                TypeScriptWireParameterObject.BuildFromSource(
+                    operation.QueryParameters,
+                    paramsSource.QueryParamsSource,
+                    parameterModel.QueryMayBeUndefined,
+                    omitUndefinedValues: true)));
         }
 
         if (paramsSource.HeadersSource != null && operation.HeaderParameters.Count > 0)
         {
-            // Axios.headers ожидает Record<string, AxiosHeaderValue> | AxiosHeaders.
-            // Узкоспециализированный *HeaderParams интерфейс не имеет index‑signature,
-            // поэтому приводим через `as AxiosRequestConfig["headers"]`.
+            // Axios expects Record<string, AxiosHeaderValue> or AxiosHeaders. The generated narrow header params
+            // interface has no index signature, so cast the remapped wire object to the Axios header type.
             var headersAsAxiosType = new SimpleTypeNode(
                 new IdentifierNode("AxiosRequestConfig[\"headers\"]"),
                 isPrimitive: false);
+            var wireHeaders = TypeScriptWireParameterObject.BuildFromSource(
+                operation.HeaderParameters,
+                paramsSource.HeadersSource,
+                parameterModel.HeadersMayBeUndefined,
+                omitUndefinedValues: true);
             var headersCast = new CastExpressionNode(
                 headersAsAxiosType,
-                paramsSource.HeadersSource,
+                wireHeaders,
                 useAsOperator: true);
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("headers"),
@@ -169,10 +181,10 @@ public class AxiosAstBuilder
     }
 
     /// <summary>
-    /// Строит AxiosConfigNode из IrOperation
+    /// Builds an Axios request configuration for a legacy flat operation function.
     /// </summary>
-    /// <param name="operation">IR операция</param>
-    /// <returns>AST узел конфигурации Axios</returns>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>An Axios configuration AST node preserving OpenAPI wire names.</returns>
     public AxiosConfigNode BuildAxiosConfig(IrOperation operation)
     {
         var method = _httpBuilder.BuildHttpMethod(operation.HttpMethod);
@@ -190,38 +202,42 @@ public class AxiosAstBuilder
             ? _httpBuilder.BuildRequestBody(operation.RequestBody, _typeBuilder)
             : null;
         
-        // Строим properties для AxiosConfigNode
+        // Build the properties consumed by AxiosConfigNode.
         var properties = new List<PropertyAssignmentNode>();
         
-        // method
+        // HTTP method.
         properties.Add(new PropertyAssignmentNode(
             new IdentifierNode("method"),
             new LiteralExpressionNode(method.Method.ToString().ToUpperInvariant(), LiteralKind.String)));
         
-        // url
+        // Request URL.
         properties.Add(new PropertyAssignmentNode(
             new IdentifierNode("url"),
             url));
         
-        // params (query parameters)
+        // Query parameters.
         if (queryParameters.Count > 0)
         {
-            var paramsObject = BuildQueryParamsObject(queryParameters);
+            var paramsObject = TypeScriptWireParameterObject.BuildFromIdentifiers(
+                operation.QueryParameters,
+                omitUndefinedValues: true);
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("params"),
                 paramsObject));
         }
         
-        // headers
+        // Request headers.
         if (headers.Count > 0)
         {
-            var headersObject = BuildHeadersObject(headers);
+            var headersObject = TypeScriptWireParameterObject.BuildFromIdentifiers(
+                operation.HeaderParameters,
+                omitUndefinedValues: true);
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("headers"),
                 headersObject));
         }
         
-        // data (body)
+        // Request body.
         if (body != null && operation.RequestBody != null)
         {
             var bodyParam = new IdentifierExpressionNode(new IdentifierNode("request"));
@@ -252,10 +268,11 @@ public class AxiosAstBuilder
         => TypeScriptRequestPath.BuildUrl(operation, routeParamsSource);
 
     /// <summary>
-    /// Строит URL выражение из IrOperation (может быть template literal)
+    /// Builds a legacy flat URL expression, matching path placeholders by their original OpenAPI names and reading
+    /// values from sanitized TypeScript identifiers.
     /// </summary>
-    /// <param name="operation">IR операция</param>
-    /// <returns>AST узел выражения URL</returns>
+    /// <param name="operation">The operation whose path is templated.</param>
+    /// <returns>A string literal or template literal URL expression.</returns>
     private ExpressionNode BuildUrl(IrOperation operation)
     {
         var path = operation.Path;
@@ -263,46 +280,45 @@ public class AxiosAstBuilder
         
         if (pathParams.Count == 0)
         {
-            // Простой строковый литерал
+            // No path parameters require interpolation.
             return new LiteralExpressionNode(path, LiteralKind.String);
         }
         
-        // Template literal с подстановкой параметров
+        // Build a template literal with path-parameter substitutions.
         var parts = new List<TemplateLiteralPart>();
         var currentPath = path;
         
         foreach (var param in pathParams)
         {
-            // Path parameters в OpenAPI имеют формат {paramName}, в TypeScript template literal - ${variableName}
-            var paramPlaceholder = $"{{{param.Name}}}";
-            // Спецификация может задавать casing плейсхолдера в пути (`{dictionaryId}`)
-            // иначе, чем имя параметра (`DictionaryId`); сопоставляем без учёта регистра.
+            // OpenAPI path parameters use {wire-name}; TypeScript reads their sanitized identifier values.
+            var paramPlaceholder = $"{{{param.OriginalName}}}";
+            // Specifications sometimes vary placeholder casing, so match without regard to case.
             var index = currentPath.IndexOf(paramPlaceholder, StringComparison.OrdinalIgnoreCase);
             
             if (index >= 0)
             {
-                // Добавляем текст до параметра
+                // Preserve the literal path segment before the placeholder.
                 if (index > 0)
                 {
                     parts.Add(new TemplateLiteralPart(currentPath.Substring(0, index)));
                 }
                 
-                // Добавляем выражение параметра
+                // Insert the sanitized TypeScript value expression.
                 parts.Add(new TemplateLiteralPart(
                     new IdentifierExpressionNode(new IdentifierNode(param.Name))));
                 
-                // Обновляем путь
+                // Continue after the consumed wire placeholder.
                 currentPath = currentPath.Substring(index + paramPlaceholder.Length);
             }
         }
         
-        // Добавляем оставшийся текст
+        // Append the remaining literal path segment.
         if (currentPath.Length > 0)
         {
             parts.Add(new TemplateLiteralPart(currentPath));
         }
         
-        // Если не было найдено ни одного параметра, возвращаем простой литерал
+        // Fall back to the original literal when no declared placeholder was matched.
         if (parts.Count == 0)
         {
             return new LiteralExpressionNode(path, LiteralKind.String);
@@ -311,33 +327,4 @@ public class AxiosAstBuilder
         return new TemplateLiteralExpressionNode(parts.ToImmutableList());
     }
     
-    /// <summary>
-    /// Строит объект для query parameters
-    /// </summary>
-    /// <param name="queryParameters">Список query параметров</param>
-    /// <returns>AST узел объектного литерала</returns>
-    private ObjectLiteralExpressionNode BuildQueryParamsObject(IReadOnlyList<QueryParameterNode> queryParameters)
-    {
-        var properties = queryParameters.Select(qp =>
-            new PropertyAssignmentNode(
-                qp.Name,
-                new IdentifierExpressionNode(qp.Name))).ToImmutableList();
-        
-        return new ObjectLiteralExpressionNode(properties);
-    }
-    
-    /// <summary>
-    /// Строит объект для headers
-    /// </summary>
-    /// <param name="headers">Список header параметров</param>
-    /// <returns>AST узел объектного литерала</returns>
-    private ObjectLiteralExpressionNode BuildHeadersObject(IReadOnlyList<HeaderParameterNode> headers)
-    {
-        var properties = headers.Select(h =>
-            new PropertyAssignmentNode(
-                h.Name,
-                new IdentifierExpressionNode(h.Name))).ToImmutableList();
-        
-        return new ObjectLiteralExpressionNode(properties);
-    }
 }
