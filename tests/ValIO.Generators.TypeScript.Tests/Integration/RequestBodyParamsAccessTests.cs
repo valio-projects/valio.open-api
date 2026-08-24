@@ -113,5 +113,10 @@ public class RequestBodyParamsAccessTests
         f.Should().Contain("params.form");
         f.Should().NotContain("parse(params)");
         f.Should().NotContain("params.body");
+        f.Should().Contain("const formData = new FormData();");
+        f.Should().MatchRegex("formData\\.append\\(\\s+\\\"file\\\",\\s+parsedBody\\.file\\s+\\);");
+        f.Should().MatchRegex("formData\\.append\\(\\s+\\\"caption\\\",\\s+String\\(parsedBody\\.caption\\)\\s+\\);");
+        f.Should().Contain("data: formData");
+        f.Should().NotContain("data: parsedBody");
     }
 }

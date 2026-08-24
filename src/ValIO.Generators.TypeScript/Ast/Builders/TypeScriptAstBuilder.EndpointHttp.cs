@@ -5,6 +5,7 @@ using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.Nodes;
@@ -101,6 +102,12 @@ public partial class TypeScriptAstBuilder
                 ctx.LeadingStatements.Add(CreateBlankLineStatement());
         }
 
+        if (rb is { IsMultipartFormData: true } && bodySource != null)
+        {
+            bodySource = BuildMultipartFormData(rb, bodySource, ctx.LeadingStatements);
+            ctx.LeadingStatements.Add(CreateBlankLineStatement());
+        }
+
         ctx.RouteSource = routeSource;
         ctx.QuerySource = querySource;
         ctx.BodySource = bodySource;
@@ -108,6 +115,178 @@ public partial class TypeScriptAstBuilder
         ctx.QueryMayBeUndefined = queryMayBeUndefined;
         return ctx;
     }
+
+    /// <summary>
+    /// Materializes a multipart request model into browser <see cref="FormData"/> instead of passing the parsed
+    /// model object to the transport, which Axios would serialize as JSON.
+    /// </summary>
+    /// <param name="requestBody">The multipart request body whose model properties define the wire fields.</param>
+    /// <param name="bodySource">The validated or raw TypeScript request model expression.</param>
+    /// <param name="statements">The endpoint statements that receive the <c>FormData</c> construction.</param>
+    /// <returns>The <c>formData</c> expression, or <paramref name="bodySource"/> when the multipart model is unavailable.</returns>
+    private ExpressionNode BuildMultipartFormData(
+        IrRequestBody requestBody,
+        ExpressionNode bodySource,
+        List<StatementNode> statements)
+    {
+        if (requestBody.Type is not IrModelReference modelReference
+            || !ModelsByName.TryGetValue(modelReference.ModelName, out var model))
+        {
+            return bodySource;
+        }
+
+        var formData = Id("formData");
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("formData"),
+            type: null,
+            initializer: new CallExpressionNode(
+                Id("FormData"),
+                ImmutableList<ExpressionNode>.Empty,
+                isNewExpression: true)));
+
+        foreach (var property in model.Properties)
+        {
+            var value = Member(bodySource, property.Name);
+            var append = BuildMultipartAppendStatement(
+                formData,
+                property.OriginalName,
+                value,
+                property.Type);
+            var isPresent = new BinaryExpressionNode(
+                new BinaryExpressionNode(value, BinaryOperator.NotEqual, Id("undefined")),
+                BinaryOperator.LogicalAnd,
+                new BinaryExpressionNode(value, BinaryOperator.NotEqual, Id("null")));
+            statements.Add(new IfStatementNode(
+                isPresent,
+                new BlockNode(ImmutableList.Create<StatementNode>(append))));
+        }
+
+        return formData;
+    }
+
+    /// <summary>
+    /// Builds one multipart append statement, preserving repeated wire fields for array-valued properties.
+    /// </summary>
+    /// <param name="formData">The <c>FormData</c> local receiving the value.</param>
+    /// <param name="wireName">The original OpenAPI form field name.</param>
+    /// <param name="value">The property value expression.</param>
+    /// <param name="type">The property type that controls scalar/binary conversion.</param>
+    /// <returns>A scalar append or a <c>for...of</c> statement for arrays.</returns>
+    private static StatementNode BuildMultipartAppendStatement(
+        IdentifierExpressionNode formData,
+        string wireName,
+        MemberAccessExpressionNode value,
+        IrType type)
+    {
+        if (TryGetMultipartArrayElementType(type, out var elementType))
+        {
+            var item = Id("item");
+            var appendItem = BuildMultipartAppendCall(formData, wireName, item, elementType);
+            return new ForEachStatementNode(
+                new IdentifierNode("item"),
+                value,
+                new BlockNode(ImmutableList.Create<StatementNode>(appendItem)));
+        }
+
+        return BuildMultipartAppendCall(formData, wireName, value, type);
+    }
+
+    /// <summary>
+    /// Builds the <c>FormData.append</c> call for one non-null scalar or binary multipart value.
+    /// </summary>
+    /// <param name="formData">The destination <c>FormData</c> local.</param>
+    /// <param name="wireName">The original OpenAPI form field name.</param>
+    /// <param name="value">The value expression to append.</param>
+    /// <param name="type">The value type that determines binary versus text encoding.</param>
+    /// <returns>The append expression statement.</returns>
+    private static ExpressionStatementNode BuildMultipartAppendCall(
+        IdentifierExpressionNode formData,
+        string wireName,
+        ExpressionNode value,
+        IrType type)
+    {
+        ExpressionNode appendValue = IsMultipartBinary(type)
+            ? value
+            : new CallExpressionNode(Id("String"), ImmutableList.Create(value));
+        return new ExpressionStatementNode(new CallExpressionNode(
+            Member(formData, "append"),
+            ImmutableList.Create<ExpressionNode>(Str(wireName), appendValue)));
+    }
+
+    /// <summary>
+    /// Determines whether the supplied multipart property must be appended as a binary value rather than converted
+    /// to text.
+    /// </summary>
+    /// <param name="type">The property type from the operation model.</param>
+    /// <returns><see langword="true"/> for binary/file values; otherwise <see langword="false"/>.</returns>
+    private static bool IsMultipartBinary(IrType type)
+    {
+        while (type is IrNullableType { InnerType: var nullableType })
+        {
+            type = nullableType;
+        }
+
+        while (type is IrOptionalType { InnerType: var optionalType })
+        {
+            type = optionalType;
+        }
+
+        return type is IrPrimitiveType
+        {
+            PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
+        };
+    }
+
+    /// <summary>
+    /// Resolves the element type of a nullable/optional multipart array.
+    /// </summary>
+    /// <param name="type">The property type to inspect.</param>
+    /// <param name="elementType">The array element type when the property is an array.</param>
+    /// <returns><see langword="true"/> when <paramref name="type"/> is an array; otherwise <see langword="false"/>.</returns>
+    private static bool TryGetMultipartArrayElementType(IrType type, out IrType elementType)
+    {
+        while (type is IrNullableType { InnerType: var nullableType })
+        {
+            type = nullableType;
+        }
+
+        while (type is IrOptionalType { InnerType: var optionalType })
+        {
+            type = optionalType;
+        }
+
+        if (type is IrArrayType array)
+        {
+            elementType = array.ElementType;
+            return true;
+        }
+
+        elementType = type;
+        return false;
+    }
+
+    /// <summary>
+    /// Builds an identifier expression for TypeScript runtime globals and generated locals.
+    /// </summary>
+    /// <param name="name">The identifier name.</param>
+    /// <returns>The identifier expression.</returns>
+    private static IdentifierExpressionNode Id(string name) => new(new IdentifierNode(name));
+
+    /// <summary>
+    /// Builds a member access expression for a generated TypeScript value.
+    /// </summary>
+    /// <param name="source">The object expression.</param>
+    /// <param name="member">The member name.</param>
+    /// <returns>The member access expression.</returns>
+    private static MemberAccessExpressionNode Member(ExpressionNode source, string member) =>
+        new(source, new IdentifierNode(member));
+
+    /// <summary>
+    /// Builds a TypeScript string literal expression.
+    /// </summary>
+    /// <param name="value">The literal value.</param>
+    /// <returns>The string literal expression.</returns>
+    private static LiteralExpressionNode Str(string value) => new(value, LiteralKind.String);
 
     private static ExpressionNode? BuildFetchHeadersObject(
         ExpressionNode? headersSource,
