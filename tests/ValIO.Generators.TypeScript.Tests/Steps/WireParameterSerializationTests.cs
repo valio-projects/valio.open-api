@@ -40,15 +40,17 @@ public sealed class WireParameterSerializationTests
         var parameterSchema = context.GeneratedFiles.Single(file =>
             file.RelativePath.EndsWith("getWidget.params.schema.ts", StringComparison.Ordinal));
 
-        endpoint.Content.Should().Contain("\"Paging.Offset\"");
         endpoint.Content.Should().Contain("parsedQuery.Paging_Offset");
-        endpoint.Content.Should().Contain("\"X-Request-ID\"");
         endpoint.Content.Should().Contain("X_Request_ID");
-        endpoint.Content.Should().Contain("\"Filter.By\"");
         endpoint.Content.Should().Contain("Filter_By");
-        endpoint.Content.Should().Contain("\"X-Trace-ID\"");
         endpoint.Content.Should().Contain("X_Trace_ID");
         endpoint.Content.Should().Contain("parsedRoute.item_id");
+        // The AST supplies raw names; the renderer applies exactly one layer of TypeScript string quoting.
+        // A pre-quoted key would serialize the literal quotes, e.g. '"Paging.Offset"', instead.
+        endpoint.Content.Should().NotContain("'\"Paging.Offset\"':");
+        endpoint.Content.Should().NotContain("'\"Filter.By\"':");
+        endpoint.Content.Should().NotContain("'\"X-Request-ID\"':");
+        endpoint.Content.Should().NotContain("'\"X-Trace-ID\"':");
         endpoint.Content.Should().NotContain("\"Paging_Offset\":");
         endpoint.Content.Should().NotContain("\"X_Request_ID\":");
         endpoint.Content.Should().NotContain("{item-id}");
@@ -57,9 +59,25 @@ public sealed class WireParameterSerializationTests
         endpoint.Content.Should().NotContain("\"X-Trace-ID\": undefined");
 
         if (transport == "axios")
+        {
             endpoint.Content.Should().NotContain("_: ");
+            endpoint.Content.Should().Contain("'Paging.Offset': parsedQuery.Paging_Offset");
+            endpoint.Content.Should().Contain("'Filter.By': parsedQuery.Filter_By");
+            endpoint.Content.Should().Contain("'X-Request-ID': params.headers?.X_Request_ID");
+            endpoint.Content.Should().Contain("'X-Trace-ID': params.headers?.X_Trace_ID");
+            endpoint.Content.Should().Contain("UserId: parsedQuery.UserId");
+            endpoint.Content.Should().NotContain("\"UserId\": parsedQuery.UserId");
+        }
         else
+        {
             endpoint.Content.Should().Contain("!== undefined");
+            endpoint.Content.Should().Contain("\"Paging.Offset\",");
+            endpoint.Content.Should().Contain("\"Filter.By\",");
+            endpoint.Content.Should().Contain("\"UserId\",");
+            endpoint.Content.Should().Contain("String(parsedQuery.UserId)");
+            endpoint.Content.Should().Contain("'X-Request-ID': params.headers?.X_Request_ID");
+            endpoint.Content.Should().Contain("'X-Trace-ID': params.headers?.X_Trace_ID");
+        }
 
         if (validationLibrary == "zod4")
             parameterSchema.Content.Should().Contain("from \"zod/v4\"");
@@ -92,6 +110,12 @@ public sealed class WireParameterSerializationTests
                     "in": "query",
                     "required": true,
                     "schema": { "type": "integer", "format": "int32" }
+                  },
+                  {
+                    "name": "UserId",
+                    "in": "query",
+                    "required": true,
+                    "schema": { "type": "string", "format": "uuid" }
                   },
                   {
                     "name": "Filter.By",

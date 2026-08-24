@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Text.Json;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -113,10 +112,14 @@ public static class TypeScriptWireParameterObject
         return new ObjectLiteralExpressionNode(properties.ToImmutable(), preferMultilineFormat: true);
     }
 
-    /// <summary>Creates a quoted TypeScript property key from an arbitrary OpenAPI wire name.</summary>
+    /// <summary>Creates a raw TypeScript property key from an arbitrary OpenAPI wire name.</summary>
     /// <param name="wireName">The unmodified OpenAPI parameter name.</param>
-    /// <returns>An identifier node containing a JSON-escaped string literal.</returns>
-    private static IdentifierNode WireKey(string wireName) => new(JsonSerializer.Serialize(wireName));
+    /// <returns>An identifier node containing the unescaped OpenAPI wire name.</returns>
+    /// <remarks>
+    /// The TypeScript renderer owns object-key quoting. Passing a pre-quoted JSON literal here makes the renderer
+    /// quote it a second time, which produces an actual key such as <c>'"Paging.Offset"'</c> on the wire.
+    /// </remarks>
+    private static IdentifierNode WireKey(string wireName) => new(wireName);
 
     /// <summary>Creates an identifier expression.</summary>
     /// <param name="name">The identifier name.</param>
