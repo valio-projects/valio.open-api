@@ -129,4 +129,28 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
             .Count.Should().BeGreaterThanOrEqualTo(2);
         code.Should().Contain("throw new ApiException");
     }
+
+    /// <summary>
+    /// Verifies that multipart operations delegate to the multipart content factory instead of emitting JSON.
+    /// </summary>
+    [Test]
+    public void MultipartBody_UsesMultipartFactoryInsteadOfJsonSerialization()
+    {
+        var operation = OperationWith(new IrResponse { StatusCode = "204" }) with
+        {
+            HttpMethod = "POST",
+            RequestBody = new IrRequestBody
+            {
+                Type = new IrModelReference { ModelName = "ReplaceLogoForm" },
+                IsRequired = true,
+                ContentType = "multipart/form-data",
+            },
+        };
+
+        var code = _renderer.Render(_builder.BuildMethod(operation));
+
+        code.Should().Contain("MultipartFormDataContentFactory.Create(request)");
+        code.Should().NotContain("JsonSerializer.Serialize(request)");
+        code.Should().NotContain("new StringContent(requestJsonContent");
+    }
 }
