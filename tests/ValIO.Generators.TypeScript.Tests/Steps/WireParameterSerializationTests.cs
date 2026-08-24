@@ -77,6 +77,9 @@ public sealed class WireParameterSerializationTests
             endpoint.Content.Should().Contain("String(parsedQuery.UserId)");
             endpoint.Content.Should().Contain("'X-Request-ID': params.headers?.X_Request_ID");
             endpoint.Content.Should().Contain("'X-Trace-ID': params.headers?.X_Trace_ID");
+
+            if (transport == "nextjs")
+                endpoint.Content.Should().NotContain("as Record<string, string>) ?? {}");
         }
 
         if (validationLibrary == "zod4")

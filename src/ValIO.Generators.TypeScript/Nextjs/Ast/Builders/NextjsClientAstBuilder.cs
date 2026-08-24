@@ -433,16 +433,16 @@ public sealed class NextjsClientAstBuilder
 
         if (operation.HeaderParameters.Count > 0 && sources.HeadersSource != null)
         {
-            // headers: { ...(paramHeaders ?? {}), ...((options?.headers as Record<string,string>) ?? {}) }
+            // headers: { ...paramHeaders, ...((options?.headers as Record<string,string>) ?? {}) }
+            // BuildFromSource always returns an object literal (optional values are represented by conditional
+            // spreads), so nullish-coalescing the cast is both redundant and rejected by TypeScript as TS2869.
             var wireHeaders = TypeScriptWireParameterObject.BuildFromSource(
                 operation.HeaderParameters,
                 sources.HeadersSource,
                 sources.HeadersSourceMayBeUndefined,
                 omitUndefinedValues: true);
-            var paramHeaders = new BinaryExpressionNode(
-                new CastExpressionNode(RecordStringString(),
-                    new CastExpressionNode(Simple("unknown", isPrimitive: true), wireHeaders, useAsOperator: true), useAsOperator: true),
-                BinaryOperator.NullishCoalescing, EmptyObject());
+            var paramHeaders = new CastExpressionNode(RecordStringString(),
+                new CastExpressionNode(Simple("unknown", isPrimitive: true), wireHeaders, useAsOperator: true), useAsOperator: true);
             var callerHeaders = new BinaryExpressionNode(
                 new CastExpressionNode(
                     new UnionTypeNode(ImmutableList.Create<TypeNode>(RecordStringString(), Simple("undefined", isPrimitive: true))),
