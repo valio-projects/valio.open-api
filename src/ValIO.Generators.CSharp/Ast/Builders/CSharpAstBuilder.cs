@@ -1386,16 +1386,22 @@ public class CSharpAstBuilder : ICSharpAstBuilder
 
 
     /// <summary>
-    /// Строит MethodDeclarationNode из IrOperation
+    /// Builds a complete client method for an HTTP operation.
     /// </summary>
+    /// <param name="operation">The normalized operation contract.</param>
+    /// <returns>A method declaration containing documentation and an executable body.</returns>
     public MethodDeclarationNode BuildMethod(IrOperation operation)
     {
         return BuildMethod(operation, includeBody: true, includeDocumentation: true);
     }
     
     /// <summary>
-    /// Строит MethodDeclarationNode из IrOperation с опциями
+    /// Builds a client method while allowing interface and implementation projections to share one path.
     /// </summary>
+    /// <param name="operation">The normalized operation contract.</param>
+    /// <param name="includeBody">Whether to emit the executable HTTP body.</param>
+    /// <param name="includeDocumentation">Whether to emit operation documentation.</param>
+    /// <returns>The projected method declaration.</returns>
     private MethodDeclarationNode BuildMethod(IrOperation operation, bool includeBody, bool includeDocumentation)
     {
         var name = new IdentifierNode(operation.MethodName);
@@ -2344,50 +2350,67 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             target: acceptAdd,
             arguments: new[] { mediaTypeJsonCtor }.ToImmutableList());
         requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(acceptAddCall));
-        
-        // 4. Добавляем request body если есть
+
+        // Add the request content using the media type declared by the operation.
         if (operation.RequestBody != null)
         {
-            var requestBodyParam = new IdentifierExpressionNode(new IdentifierNode("request")); // Параметр метода request body
-            var jsonSerializerForSerialize = new IdentifierExpressionNode(new IdentifierNode("JsonSerializer"));
-            var serializeMethod = new MemberAccessExpressionNode(
-                @object: jsonSerializerForSerialize,
-                member: new IdentifierNode("Serialize"));
-            var serializeCall = new CallExpressionNode(
-                target: serializeMethod,
-                arguments: new[] { requestBodyParam }.ToImmutableList());
-            
-            // Помещаем JsonSerializer.Serialize(request) в промежуточную переменную requestJsonContent
-            var requestJsonContentVar = new VariableDeclarationStatementNode(
-                name: new IdentifierNode("requestJsonContent"),
-                type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
-                initializer: serializeCall);
-            requestMessageUsingBodyStatements.Add(requestJsonContentVar);
-            
-            var stringContentTypeExpr = new IdentifierExpressionNode(new IdentifierNode("StringContent"));
-            var encodingExpr = new IdentifierExpressionNode(new IdentifierNode("Encoding"));
-            var encodingUtf8 = new MemberAccessExpressionNode(
-                @object: encodingExpr,
-                member: new IdentifierNode("UTF8"));
-            var mediaTypeHeader = new LiteralExpressionNode("application/json", LiteralKind.String);
-            
-            var requestJsonContentExpr = new IdentifierExpressionNode(new IdentifierNode("requestJsonContent"));
-            var stringContentCtorArgs = new ExpressionNode[] { requestJsonContentExpr, encodingUtf8, mediaTypeHeader };
-            var stringContentCtor = new CallExpressionNode(
-                target: stringContentTypeExpr,
-                arguments: stringContentCtorArgs.ToImmutableList(),
-                isNewExpression: true);
-            
+            var requestBodyParam = new IdentifierExpressionNode(new IdentifierNode("request"));
             var requestMessageContent = new MemberAccessExpressionNode(
                 @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
                 member: new IdentifierNode("Content"));
-            var contentAssign = new BinaryExpressionNode(
-                left: requestMessageContent,
-                @operator: BinaryOperator.Assign,
-                right: stringContentCtor);
-            requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(contentAssign));
+
+            if (operation.RequestBody.IsMultipartFormData)
+            {
+                var multipartFactory = new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(new IdentifierNode("MultipartFormDataContentFactory")),
+                    member: new IdentifierNode("Create"));
+                var multipartContent = new CallExpressionNode(
+                    target: multipartFactory,
+                    arguments: new[] { requestBodyParam }.ToImmutableList());
+                var multipartAssign = new BinaryExpressionNode(
+                    left: requestMessageContent,
+                    @operator: BinaryOperator.Assign,
+                    right: multipartContent);
+                requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(multipartAssign));
+            }
+            else
+            {
+                var jsonSerializerForSerialize = new IdentifierExpressionNode(new IdentifierNode("JsonSerializer"));
+                var serializeMethod = new MemberAccessExpressionNode(
+                    @object: jsonSerializerForSerialize,
+                    member: new IdentifierNode("Serialize"));
+                var serializeCall = new CallExpressionNode(
+                    target: serializeMethod,
+                    arguments: new[] { requestBodyParam }.ToImmutableList());
+
+                var requestJsonContentVar = new VariableDeclarationStatementNode(
+                    name: new IdentifierNode("requestJsonContent"),
+                    type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                    initializer: serializeCall);
+                requestMessageUsingBodyStatements.Add(requestJsonContentVar);
+
+                var stringContentTypeExpr = new IdentifierExpressionNode(new IdentifierNode("StringContent"));
+                var encodingExpr = new IdentifierExpressionNode(new IdentifierNode("Encoding"));
+                var encodingUtf8 = new MemberAccessExpressionNode(
+                    @object: encodingExpr,
+                    member: new IdentifierNode("UTF8"));
+                var mediaTypeHeader = new LiteralExpressionNode("application/json", LiteralKind.String);
+
+                var requestJsonContentExpr = new IdentifierExpressionNode(new IdentifierNode("requestJsonContent"));
+                var stringContentCtorArgs = new ExpressionNode[] { requestJsonContentExpr, encodingUtf8, mediaTypeHeader };
+                var stringContentCtor = new CallExpressionNode(
+                    target: stringContentTypeExpr,
+                    arguments: stringContentCtorArgs.ToImmutableList(),
+                    isNewExpression: true);
+
+                var contentAssign = new BinaryExpressionNode(
+                    left: requestMessageContent,
+                    @operator: BinaryOperator.Assign,
+                    right: stringContentCtor);
+                requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(contentAssign));
+            }
         }
-        
+
         // Извлекаем данные из requestMessage для ApiException (до отправки запроса, чтобы были доступны в блоках обработки ошибок)
         var requestUriAccess = new MemberAccessExpressionNode(
             @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
