@@ -27,6 +27,7 @@ public sealed class AxiosClientStep : TypeScriptClientStepBase
         IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
         var builder = new TypeScriptAstBuilder(NamingConverter, options);
+        builder.ModelsByName = ModelsByName;
         return builder.BuildSourceFileForOperation(operation, fileOrganization: fileOrg, transport: "axios");
     }
 }
