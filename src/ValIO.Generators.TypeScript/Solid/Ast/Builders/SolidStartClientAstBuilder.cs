@@ -30,6 +30,16 @@ public sealed class SolidStartClientAstBuilder
     }
 
     /// <summary>
+    /// Models from the active IR document, keyed by generated name. The delegated fetch builder needs these to
+    /// materialize multipart form fields instead of passing the request model object through unchanged.
+    /// </summary>
+    public IReadOnlyDictionary<string, IrModel> ModelsByName
+    {
+        get => _innerBuilder.ModelsByName;
+        set => _innerBuilder.ModelsByName = value;
+    }
+
+    /// <summary>
     /// Build a <see cref="SourceFileNode"/> whose body is a fetch-based async function
     /// (delegated to <see cref="TypeScriptAstBuilder.BuildSourceFileForOperation"/>) and
     /// whose metadata carries <c>directive = "use server"</c> so the renderer emits the

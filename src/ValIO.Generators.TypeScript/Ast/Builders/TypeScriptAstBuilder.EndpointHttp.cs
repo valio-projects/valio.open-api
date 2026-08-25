@@ -207,7 +207,9 @@ public partial class TypeScriptAstBuilder
     {
         ExpressionNode appendValue = IsMultipartBinary(type)
             ? value
-            : new CallExpressionNode(Id("String"), ImmutableList.Create(value));
+            : IsMultipartStructured(type)
+                ? ExpressionBuilders.BuildJsonStringify(value)
+                : new CallExpressionNode(Id("String"), ImmutableList.Create(value));
         return new ExpressionStatementNode(new CallExpressionNode(
             Member(formData, "append"),
             ImmutableList.Create<ExpressionNode>(Str(wireName), appendValue)));
@@ -235,6 +237,26 @@ public partial class TypeScriptAstBuilder
         {
             PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
         };
+    }
+
+    /// <summary>
+    /// Determines whether a multipart field has structured JSON semantics rather than scalar text semantics.
+    /// </summary>
+    /// <param name="type">The property or array-element type to inspect.</param>
+    /// <returns><see langword="true"/> when the field must be serialized with <c>JSON.stringify</c>.</returns>
+    private static bool IsMultipartStructured(IrType type)
+    {
+        while (type is IrNullableType { InnerType: var nullableType })
+        {
+            type = nullableType;
+        }
+
+        while (type is IrOptionalType { InnerType: var optionalType })
+        {
+            type = optionalType;
+        }
+
+        return type is IrModelReference or IrDictionaryType or IrUnionType or IrIntersectionType;
     }
 
     /// <summary>

@@ -33,6 +33,7 @@ public sealed class SolidStartClientStep : TypeScriptClientStepBase
         IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
         var builder = new SolidStartClientAstBuilder(NamingConverter, options);
+        builder.ModelsByName = ModelsByName;
         return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }
