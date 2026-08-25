@@ -61,7 +61,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             }
         }
         
-        return _sb.ToString();
+        return NormalizeEndOfFile(_sb);
     }
 
     /// <summary>
@@ -82,8 +82,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             CodeFormatter.AppendEmptyLine(_sb);
         }
         
-        return _sb.ToString();
+        return NormalizeEndOfFile(_sb);
     }
+
+    private static string NormalizeEndOfFile(StringBuilder builder) =>
+        builder.ToString().TrimEnd('\r', '\n') + Environment.NewLine;
     
     /// <summary>
     /// Рендерит содержимое Namespace без очистки StringBuilder (для использования в CompilationUnit)
