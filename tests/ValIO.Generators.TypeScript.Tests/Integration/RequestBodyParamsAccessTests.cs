@@ -39,7 +39,7 @@ public class RequestBodyParamsAccessTests
         "/employees/upload":{
           "post":{
             "operationId":"UploadEmployeePhoto",
-            "requestBody":{"required":true,"content":{"multipart/form-data":{"schema":{"type":"object","properties":{"file":{"type":"string","format":"binary"},"caption":{"type":"string"}}}}}},
+            "requestBody":{"required":true,"content":{"multipart/form-data":{"schema":{"type":"object","properties":{"file":{"type":"string","format":"binary"},"caption":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"metadata":{"type":"object","properties":{"published":{"type":"boolean"}}},"metadataList":{"type":"array","items":{"type":"object","properties":{"order":{"type":"integer"}}}}}}}}},
             "responses":{"204":{"description":"ok"}}
           }
         }
@@ -116,7 +116,23 @@ public class RequestBodyParamsAccessTests
         f.Should().Contain("const formData = new FormData();");
         f.Should().MatchRegex("formData\\.append\\(\\s+\\\"file\\\",\\s+parsedBody\\.file\\s+\\);");
         f.Should().MatchRegex("formData\\.append\\(\\s+\\\"caption\\\",\\s+String\\(parsedBody\\.caption\\)\\s+\\);");
+        f.Should().MatchRegex("formData\\.append\\(\\s+\\\"metadata\\\",\\s+JSON\\.stringify\\(parsedBody\\.metadata\\)\\s+\\);");
+        f.Should().MatchRegex("for \\(const item of parsedBody\\.metadataList\\)[\\s\\S]*formData\\.append\\(\\s+\\\"metadataList\\\",\\s+JSON\\.stringify\\(item\\)\\s+\\);");
+        f.Should().MatchRegex("for \\(const item of parsedBody\\.tags\\)[\\s\\S]*formData\\.append\\(\\s+\\\"tags\\\",\\s+String\\(item\\)\\s+\\);");
         f.Should().Contain("data: formData");
         f.Should().NotContain("data: parsedBody");
+    }
+
+    [Test]
+    public async Task SolidStart_FlatFormBody_MaterializesMultipartFormData()
+    {
+        using var harness = new PipelineTestHarness();
+        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(Doc);
+        var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["solid"], ValidationLibrary = "zod4" });
+
+        var f = ctx.GeneratedFiles.Single(x => Norm(x.RelativePath) == "api/uploadEmployeePhoto/uploadEmployeePhoto.solid.ts").Content;
+        f.Should().Contain("const formData = new FormData();");
+        f.Should().Contain("formData as unknown");
+        f.Should().MatchRegex("formData\\.append\\(\\s+\\\"metadata\\\",\\s+JSON\\.stringify\\(parsedBody\\.metadata\\)\\s+\\);");
     }
 }
