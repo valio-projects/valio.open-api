@@ -31,7 +31,12 @@ public sealed class CppGeneratorPlugin : IGeneratorPlugin
             new CppUeEnumsStep(renderer),
             new CppUeEndpointsStep(renderer),
 
-            // std runtime profile (cpp-httplib + nlohmann_json) — шаги подключаются волной W5.
+            // std runtime profile (cpp-httplib + nlohmann_json) — активны при Runtime == Std.
+            new CppStdEnumsStep(renderer),
+            new CppStdModelsStep(renderer),
+            new CppStdSerializersStep(renderer),
+            new CppStdRuntimeStep(renderer),
+            new CppStdClientStep(renderer),
         };
         return new CodeGenerationPipeline(steps);
     }

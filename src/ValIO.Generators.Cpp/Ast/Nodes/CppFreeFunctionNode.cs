@@ -32,6 +32,11 @@ public sealed class CppFreeFunctionNode : DeclarationNode
     /// </summary>
     public bool IsDeclarationOnly { get; }
 
+    /// <summary>
+    /// Является ли функция константной (const member function определения метода класса)
+    /// </summary>
+    public bool IsConst { get; }
+
 
     public override IReadOnlyList<AstNode> Children
     {
@@ -55,13 +60,15 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         BlockNode? body = null,
         bool isDeclarationOnly = false,
         CommentNode? documentation = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        bool isConst = false)
         : base(name, documentation, metadata: metadata)
     {
         ReturnType = returnType ?? throw new ArgumentNullException(nameof(returnType));
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<CppParameterNode>.Empty;
         Body = body;
         IsDeclarationOnly = isDeclarationOnly;
+        IsConst = isConst;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -80,7 +87,8 @@ public sealed class CppFreeFunctionNode : DeclarationNode
             Body != null ? (BlockNode)Body.Clone() : null,
             IsDeclarationOnly,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            IsConst);
     }
 
     public override string ToString()

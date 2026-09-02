@@ -297,15 +297,18 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         if (node.Documentation != null)
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
         var returnStr = RenderType(node.ReturnType);
+        var constSuffix = node.IsConst ? " const" : "";
         if (node.IsDeclarationOnly)
         {
             var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
-            sb.AppendLine($"{Indent()}{returnStr} {node.Name.Name}({inlineParams});");
+            sb.AppendLine($"{Indent()}{returnStr} {node.Name.Name}({inlineParams}){constSuffix};");
         }
         else if (node.Body != null)
         {
             var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
-            sb.Append($"{Indent()}{returnStr} {node.Name.Name}({inlineParams})").AppendLine();
+            var isConstructor = node.Metadata.ContainsKey("cpp.constructor");
+            var returnPrefix = isConstructor ? string.Empty : RenderType(node.ReturnType) + " ";
+            sb.Append($"{Indent()}{returnPrefix}{node.Name.Name}({inlineParams}){constSuffix}").AppendLine();
             sb.Append(Visit(node.Body));
         }
         sb.AppendLine();
@@ -770,6 +773,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         if (node.Documentation != null && !node.UseInheritDoc)
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
 
+        var isConstructor = node.Metadata.ContainsKey(ConstructorMetadataKey);
         var isPureVirtual = node.IsAbstract || node.IsInterfaceMethod;
         var prefixParts = new List<string>();
         if (node.IsStatic)
@@ -778,16 +782,19 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
             prefixParts.Add("virtual");
         var prefix = prefixParts.Count > 0 ? string.Join(" ", prefixParts) + " " : "";
 
-        var returnType = node.ReturnType != null ? RenderType(node.ReturnType) : "void";
+        var returnType = isConstructor ? string.Empty : (node.ReturnType != null ? RenderType(node.ReturnType) : "void");
         var parameters = string.Join(", ", node.Parameters.Select(RenderCoreParameterInline));
         var constStr = node.IsConst ? " const" : "";
         var noexceptStr = node.Noexcept ? " noexcept" : "";
         var overrideStr = node.IsOverride ? " override" : "";
         var pureStr = isPureVirtual ? " = 0" : "";
+        var separator = isConstructor ? string.Empty : " ";
 
-        sb.AppendLine($"{Indent()}{prefix}{returnType} {node.Name.Name}({parameters}){constStr}{noexceptStr}{overrideStr}{pureStr};");
+        sb.AppendLine($"{Indent()}{prefix}{returnType}{separator}{node.Name.Name}({parameters}){constStr}{noexceptStr}{overrideStr}{pureStr};");
         return sb.ToString();
     }
+
+    private const string ConstructorMetadataKey = "cpp.constructor";
 
     public override string VisitEnumDeclaration(EnumDeclarationNode node)
     {

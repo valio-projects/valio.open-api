@@ -156,7 +156,9 @@ public class CppUePipelineTests
         var pipeline = await RenderViaPipeline(
             document, new CppGenerationOptions { Runtime = CppRuntimeProfile.Std });
 
-        pipeline.Should().BeEmpty("std-профиль отключает все UE-шаги (std-шаги подключаются волной W5)");
+        // UE-шаги отключены (Public//Private — раскладка UE-профиля);
+        // std-шаги (Models/Enums/Runtime/Clients) работают начиная с W5.
+        pipeline.Keys.Should().NotContain(path => path.StartsWith("Public/") || path.StartsWith("Private/"));
     }
 
     [TestCase(false)]
