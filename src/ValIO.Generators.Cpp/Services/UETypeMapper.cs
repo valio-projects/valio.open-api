@@ -2,6 +2,7 @@ using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 
 namespace ValIO.Generators.Cpp.Services;
 
@@ -207,22 +208,9 @@ public sealed class UETypeMapper
     /// <summary>
     /// Является ли IR тип файловым/бинарным (TArray&lt;uint8&gt; в UE).
     /// Используется для генерации AddFile в multipart/form-data.
+    /// Делегирует общей реализации Core (IrTypeQueries.IsFileOrBinary).
     /// </summary>
-    public static bool IsFileOrBinaryType(IrType irType)
-    {
-        var unwrapped = irType;
-        while (unwrapped is IrNullableType n)
-            unwrapped = n.InnerType;
-        while (unwrapped is IrOptionalType o)
-            unwrapped = o.InnerType;
-
-        return unwrapped switch
-        {
-            IrPrimitiveType p => p.PrimitiveKind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
-            IrArrayType a when a.ElementType is IrPrimitiveType ep => ep.PrimitiveKind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
-            _ => false
-        };
-    }
+    public static bool IsFileOrBinaryType(IrType irType) => IrTypeQueries.IsFileOrBinary(irType);
 
     /// <summary>
     /// Является ли тип FGuid (требует промежуточную переменную с DigitsWithHyphens).
