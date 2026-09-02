@@ -12,11 +12,10 @@ public interface ICSharpAstVisitor<TResult> : IAstVisitor<TResult>
 {
     // C# специфичные узлы
     TResult VisitCompilationUnit(CompilationUnitNode node);
-    TResult VisitNamespaceDeclaration(NamespaceDeclarationNode node);
     TResult VisitUsingDirective(UsingDirectiveNode node);
-    TResult VisitClassDeclaration(ClassDeclarationNode node);
     TResult VisitRecordDeclaration(RecordDeclarationNode node);
-    TResult VisitStructDeclaration(StructDeclarationNode node);
-    TResult VisitFieldDeclaration(FieldDeclarationNode node);
     TResult VisitConstructorDeclaration(ConstructorDeclarationNode node);
+
+    // Namespace/Class/Struct/Field — универсальные узлы Core
+    // (ValIO.Core.Ast.Nodes), их Visit-методы наследуются из IAstVisitor.
 }

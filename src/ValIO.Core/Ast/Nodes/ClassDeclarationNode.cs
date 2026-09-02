@@ -1,13 +1,13 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
-using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
-using ValIO.Generators.CSharp.Ast.Visitors;
 
-namespace ValIO.Generators.CSharp.Ast.Nodes;
+namespace ValIO.Core.Ast.Nodes;
 
 /// <summary>
-/// Узел объявления класса (C#)
+/// Узел объявления класса (универсальный: C#, C++ и др.).
+/// Промоучен из C#-генератора; C++ std-профиль использует тот же узел
+/// (IsSealed/IsStatic/IsPartial — C#-модификаторы, C++-рендер игнорирует их).
 /// </summary>
 public sealed class ClassDeclarationNode : TypeDeclarationNode
 {
@@ -15,18 +15,18 @@ public sealed class ClassDeclarationNode : TypeDeclarationNode
     /// Является ли класс sealed
     /// </summary>
     public bool IsSealed { get; }
-    
+
     /// <summary>
     /// Является ли класс static
     /// </summary>
     public bool IsStatic { get; }
-    
+
     /// <summary>
     /// Является ли класс partial
     /// </summary>
     public bool IsPartial { get; }
-    
-    
+
+
     /// <summary>
     /// Конструктор
     /// </summary>
@@ -47,16 +47,12 @@ public sealed class ClassDeclarationNode : TypeDeclarationNode
         IsStatic = isStatic;
         IsPartial = isPartial;
     }
-    
+
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
-        {
-            return csharpVisitor.VisitClassDeclaration(this);
-        }
-        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit ClassDeclarationNode");
+        return visitor.VisitClassDeclaration(this);
     }
-    
+
     public override AstNode Clone()
     {
         return new ClassDeclarationNode(
@@ -71,4 +67,7 @@ public sealed class ClassDeclarationNode : TypeDeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+
+    public override string ToString()
+        => $"class {Name.Name} [{Members.Count} members]";
 }

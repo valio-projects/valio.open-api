@@ -1,12 +1,11 @@
 using System.Collections.Immutable;
-using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
-using ValIO.Generators.CSharp.Ast.Visitors;
 
-namespace ValIO.Generators.CSharp.Ast.Nodes;
+namespace ValIO.Core.Ast.Nodes;
 
 /// <summary>
-/// Узел объявления namespace (C#)
+/// Узел объявления namespace (универсальный: C#, C++ и др.).
+/// Промоучен из C#-генератора: C++ std-профиль использует тот же узел.
 /// </summary>
 public sealed class NamespaceDeclarationNode : DeclarationNode
 {
@@ -14,8 +13,8 @@ public sealed class NamespaceDeclarationNode : DeclarationNode
     /// Объявления в namespace
     /// </summary>
     public IReadOnlyList<DeclarationNode> Declarations { get; }
-    
-    
+
+
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -28,7 +27,7 @@ public sealed class NamespaceDeclarationNode : DeclarationNode
             return children;
         }
     }
-    
+
     /// <summary>
     /// Конструктор
     /// </summary>
@@ -42,16 +41,12 @@ public sealed class NamespaceDeclarationNode : DeclarationNode
     {
         Declarations = declarations?.ToImmutableList() ?? ImmutableList<DeclarationNode>.Empty;
     }
-    
+
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
-        {
-            return csharpVisitor.VisitNamespaceDeclaration(this);
-        }
-        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit NamespaceDeclarationNode");
+        return visitor.VisitNamespaceDeclaration(this);
     }
-    
+
     public override AstNode Clone()
     {
         return new NamespaceDeclarationNode(
@@ -61,4 +56,7 @@ public sealed class NamespaceDeclarationNode : DeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+
+    public override string ToString()
+        => $"namespace {Name.Name} [{Declarations.Count} declarations]";
 }

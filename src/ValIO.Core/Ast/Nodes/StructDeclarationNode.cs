@@ -1,22 +1,22 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
-using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Visitors;
-using ValIO.Generators.CSharp.Ast.Visitors;
 
-namespace ValIO.Generators.CSharp.Ast.Nodes;
+namespace ValIO.Core.Ast.Nodes;
 
 /// <summary>
-/// Узел объявления struct (C#)
+/// Узел объявления struct (универсальный: C#, C++ и др.).
+/// Промоучен из C#-генератора. В отличие от C#, C++-структуры поддерживают
+/// наследование — C++-рендер использует BaseTypes, C#-рендер их отвергает.
 /// </summary>
 public sealed class StructDeclarationNode : TypeDeclarationNode
 {
     /// <summary>
-    /// Является ли struct readonly
+    /// Является ли struct readonly (C#)
     /// </summary>
     public bool IsReadOnly { get; }
-    
-    
+
+
     /// <summary>
     /// Конструктор
     /// </summary>
@@ -33,16 +33,12 @@ public sealed class StructDeclarationNode : TypeDeclarationNode
     {
         IsReadOnly = isReadOnly;
     }
-    
+
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
-        {
-            return csharpVisitor.VisitStructDeclaration(this);
-        }
-        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit StructDeclarationNode");
+        return visitor.VisitStructDeclaration(this);
     }
-    
+
     public override AstNode Clone()
     {
         return new StructDeclarationNode(
@@ -55,4 +51,7 @@ public sealed class StructDeclarationNode : TypeDeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+
+    public override string ToString()
+        => $"struct {Name.Name} [{Members.Count} members]";
 }

@@ -1,14 +1,14 @@
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
-using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Visitors;
-using ValIO.Generators.CSharp.Ast.Visitors;
 
-namespace ValIO.Generators.CSharp.Ast.Nodes;
+namespace ValIO.Core.Ast.Nodes;
 
 /// <summary>
-/// Узел объявления поля (C#)
+/// Узел объявления поля (универсальный: C#, C++ и др.).
+/// Промоучен из C#-генератора; C++ std-профиль использует тот же узел
+/// (Type + Name + DefaultValue — default member initializer в C++).
 /// </summary>
 public sealed class FieldDeclarationNode : DeclarationNode
 {
@@ -16,28 +16,28 @@ public sealed class FieldDeclarationNode : DeclarationNode
     /// Тип поля
     /// </summary>
     public TypeNode Type { get; }
-    
+
     /// <summary>
-    /// Значение по умолчанию
+    /// Значение по умолчанию (в C++ — default member initializer)
     /// </summary>
     public ExpressionNode? DefaultValue { get; }
-    
+
     /// <summary>
     /// Модификатор доступа
     /// </summary>
     public AccessModifier AccessModifier { get; }
-    
+
     /// <summary>
     /// Является ли поле readonly
     /// </summary>
     public bool IsReadOnly { get; }
-    
+
     /// <summary>
     /// Является ли поле static
     /// </summary>
     public bool IsStatic { get; }
-    
-    
+
+
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -51,7 +51,7 @@ public sealed class FieldDeclarationNode : DeclarationNode
             return children;
         }
     }
-    
+
     /// <summary>
     /// Конструктор
     /// </summary>
@@ -73,16 +73,12 @@ public sealed class FieldDeclarationNode : DeclarationNode
         IsStatic = isStatic;
         DefaultValue = defaultValue;
     }
-    
+
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
     {
-        if (visitor is ICSharpAstVisitor<TResult> csharpVisitor)
-        {
-            return csharpVisitor.VisitFieldDeclaration(this);
-        }
-        throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit FieldDeclarationNode");
+        return visitor.VisitFieldDeclaration(this);
     }
-    
+
     public override AstNode Clone()
     {
         return new FieldDeclarationNode(
@@ -96,4 +92,7 @@ public sealed class FieldDeclarationNode : DeclarationNode
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
             Metadata.ToImmutableDictionary());
     }
+
+    public override string ToString()
+        => $"field {Type} {Name.Name}";
 }
