@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using ValIO.Application.DependencyInjection;
+using ValIO.Generators.Cpp;
 using ValIO.Generators.CSharp;
 using ValIO.Generators.CSharp.Ast.Renderers;
 using ValIO.Generators.Dart;
@@ -37,6 +38,7 @@ public static class PluginsBootstrapExtensions
         services.AddGeneratorPlugin<FSharpGeneratorPlugin>();
         services.AddGeneratorPlugin<RubyGeneratorPlugin>();
         services.AddGeneratorPlugin<RustGeneratorPlugin>();
+        services.AddGeneratorPlugin<CppGeneratorPlugin>();
         return services;
     }
 }

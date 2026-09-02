@@ -1,10 +1,70 @@
 namespace ValIO.Generators.Cpp.Models;
 
 /// <summary>
-/// Настройки генерации C++ кода для Unreal Engine.
+/// Настройки генерации C++ кода. Общие поля описывают UE-профиль (по умолчанию);
+/// поля ниже маркера «std-профиль» управляют standalone-профилем
+/// (cpp-httplib + nlohmann_json).
 /// </summary>
 public sealed class CppGenerationOptions
 {
+    /// <summary>
+    /// Runtime-профиль: UE (USTRUCT/UCLASS + внешний UE-runtime) или std
+    /// (cpp-httplib + nlohmann_json + сгенерированный runtime). По умолчанию UE.
+    /// </summary>
+    public CppRuntimeProfile Runtime { get; set; } = CppRuntimeProfile.Ue;
+
+    // ======== std-профиль (cpp-httplib + nlohmann_json) ========
+
+    /// <summary>
+    /// Целевой стандарт C++ для сгенерированного кода: 17, 20 или 23.
+    /// Сгенерированный код пишется на C++17; ValIO::Expected выбирает std::expected
+    /// компайл-тайм при наличии (иначе бандловый polyfill), поэтому AST не зависит
+    /// от этой опции — она влияет на CMake-сниппет и документацию.
+    /// </summary>
+    public int CxxStandard { get; set; } = 17;
+
+    /// <summary>
+    /// Стиль API: sync (ValIO::Expected), async (std::future) или оба.
+    /// </summary>
+    public CppApiStyle ApiStyle { get; set; } = CppApiStyle.Sync;
+
+    /// <summary>
+    /// Форма клиента: один класс или интерфейс I{Client} + реализация.
+    /// </summary>
+    public CppClientShape ClientShape { get; set; } = CppClientShape.Class;
+
+    /// <summary>
+    /// Корневой namespace сгенерированных моделей/enum'ов/клиентов std-профиля.
+    /// null → берётся Namespace конфигурации проекта, иначе PascalCase имени проекта.
+    /// </summary>
+    public string? Namespace { get; set; }
+
+    /// <summary>
+    /// Include http-библиотеки (переопределяется потребителями с врапперами).
+    /// </summary>
+    public string HttpInclude { get; set; } = "httplib.h";
+
+    /// <summary>
+    /// Include полного nlohmann/json (используется только в .cpp-файлах).
+    /// </summary>
+    public string JsonInclude { get; set; } = "nlohmann/json.hpp";
+
+    /// <summary>
+    /// Include forward-declaration nlohmann/json_fwd (используется в сериализаторных хедерах).
+    /// </summary>
+    public string JsonFwdInclude { get; set; } = "nlohmann/json_fwd.hpp";
+
+    /// <summary>
+    /// Имя модели ошибки бэкенда для разбора не-2xx ответов; если схемы с таким
+    /// именем нет, эмитится минимальная модель + кодек.
+    /// </summary>
+    public string ErrorModelName { get; set; } = "RestApiErrorResponse";
+
+    /// <summary>
+    /// Эмитить CMakeLists-сниппет (file-list + find_package(httplib)/find_package(nlohmann_json)).
+    /// </summary>
+    public bool EmitCmake { get; set; }
+
     /// <summary>
     /// Макрос API модуля, вставляемый в UCLASS (например WIREFRAME_API, MYPROJECT_API).
     /// </summary>

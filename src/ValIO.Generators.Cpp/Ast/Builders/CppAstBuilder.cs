@@ -52,23 +52,22 @@ public sealed class CppAstBuilder
     public BuildResult Build(IrDocument document)
     {
         var result = new BuildResult();
-        var enumNames = document.Enums.Select(e => e.Name).ToHashSet();
+        var (enumNames, modelLookup) = PrepareInputs(document);
         _typeMapper.SetEnumNamesForDocument(enumNames);
 
         var naming = new UENamingConvention();
-        var modelLookup = document.Models.ToDictionary(m => m.Name);
 
         // 1. Модели → Public/Models/{StructName}.h
         foreach (var model in document.Models)
         {
-            var headerNode = _modelBuilder.Build(model, enumNames, modelLookup, result.Warnings);
+            var headerNode = BuildModelHeader(model, enumNames, modelLookup, result.Warnings);
             result.Files[naming.ModelFullPath(model.OriginalName)] = headerNode;
         }
 
         // 2. Enums → Public/Enums/{EnumName}.h
         foreach (var irEnum in document.Enums)
         {
-            var headerNode = _enumBuilder.Build(irEnum);
+            var headerNode = BuildEnumHeader(irEnum);
             result.Files[naming.EnumFullPath(irEnum.OriginalName)] = headerNode;
         }
 
@@ -79,13 +78,10 @@ public sealed class CppAstBuilder
             {
                 var opId = operation.OriginalMethodName;
                 // Params, Result, endpoint header → Public/Endpoints/{OpId}/ (use ORIGINAL name so file paths don't change with affixes)
-                var paramsNode = _paramsBuilder.Build(operation, enumNames, client.Name);
-                result.Files[naming.ParamsFullPath(opId)] = paramsNode;
+                result.Files[naming.ParamsFullPath(opId)] = BuildParamsHeader(operation, enumNames, client.Name);
+                result.Files[naming.ResultFullPath(opId)] = BuildResultHeader(operation, enumNames, client.Name);
 
-                var resultNode = _resultBuilder.Build(operation, enumNames, client.Name);
-                result.Files[naming.ResultFullPath(opId)] = resultNode;
-
-                var (header, source) = _apiBuilder.BuildEndpoint(client, operation, modelLookup);
+                var (header, source) = BuildEndpointFiles(client, operation, modelLookup);
                 result.Files[naming.EndpointHeaderFullPath(opId)] = header;
                 result.Files[naming.EndpointSourceFullPath(opId)] = source;
             }
@@ -93,4 +89,43 @@ public sealed class CppAstBuilder
 
         return result;
     }
+
+    // ===================================================================
+    // Гранулярные методы: по одному файлу/сущности — используются
+    // pipeline-шагами (CppUe*Step) и монолитным Build() выше,
+    // поэтому оба пути дают идентичный вывод.
+    // ===================================================================
+
+    /// <summary>
+    /// Общие входы для генерации: имена enum'ов (чтобы отличать ссылки на enum
+    /// от ссылок на struct) и словарь моделей по имени (для раскрытия allOf).
+    /// </summary>
+    public static (IReadOnlySet<string> EnumNames, IReadOnlyDictionary<string, IrModel> ModelLookup) PrepareInputs(IrDocument document)
+        => (document.Enums.Select(e => e.Name).ToHashSet(), document.Models.ToDictionary(m => m.Name));
+
+    /// <summary>
+    /// Прокидывает множество имён enum'ов в type mapper — обязан быть вызван
+    /// до BuildModelHeader/BuildParamsHeader/BuildResultHeader/BuildEndpointFiles,
+    /// если конструктор фасада создан вручную (Build() делает это сам).
+    /// </summary>
+    public void SetEnumNamesForDocument(IReadOnlySet<string> enumNames) => _typeMapper.SetEnumNamesForDocument(enumNames);
+
+    /// <summary>Хедер модели: Public/Models/{Model}.h (USTRUCT).</summary>
+    public CppHeaderFileNode BuildModelHeader(IrModel model, IReadOnlySet<string> enumNames, IReadOnlyDictionary<string, IrModel> modelLookup, ICollection<string>? warnings = null)
+        => _modelBuilder.Build(model, enumNames, modelLookup, warnings);
+
+    /// <summary>Хедер enum'а: Public/Enums/{Enum}.h (UENUM).</summary>
+    public CppHeaderFileNode BuildEnumHeader(IrEnum irEnum) => _enumBuilder.Build(irEnum);
+
+    /// <summary>Хедер Params-структуры операции.</summary>
+    public CppHeaderFileNode BuildParamsHeader(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
+        => _paramsBuilder.Build(operation, enumNames, clientName);
+
+    /// <summary>Хедер Result-структуры операции.</summary>
+    public CppHeaderFileNode BuildResultHeader(IrOperation operation, IReadOnlySet<string> enumNames, string clientName)
+        => _resultBuilder.Build(operation, enumNames, clientName);
+
+    /// <summary>Endpoint-файлы операции (.h + .cpp).</summary>
+    public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildEndpointFiles(IrClient client, IrOperation operation, IReadOnlyDictionary<string, IrModel> modelLookup)
+        => _apiBuilder.BuildEndpoint(client, operation, modelLookup);
 }

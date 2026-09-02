@@ -17,7 +17,7 @@ namespace ValIO.Generators.Cpp.Ast.Renderers;
 /// Рендерер C++/UE AST в строковый код.
 /// Visitor Pattern — каждый узел рендерится через свойства, без Metadata.
 /// </summary>
-public sealed class CppAstRenderer : CppAstVisitorBase<string>
+public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
 {
     private int _indentLevel;
     private const string IndentChar = "\t";
