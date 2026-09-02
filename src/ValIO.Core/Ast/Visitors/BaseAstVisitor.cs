@@ -46,6 +46,12 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     /// <returns>The visitor result for <paramref name="node"/>.</returns>
     public virtual TResult VisitTypeLiteral(TypeLiteralNode node) => DefaultVisit(node);
 
+    /// <summary>
+    /// Индексация obj[index]. Virtual-default (прецедент VisitTypeLiteral): генераторы,
+    /// которые этот узел не строят, ничего не замечают; C++ переопределяет.
+    /// </summary>
+    public virtual TResult VisitIndexAccessExpression(IndexAccessExpressionNode node) => DefaultVisit(node);
+
     // Универсальные декларации (промоучены из C#; см. IAstVisitor). Virtual-default по
     // прецеденту VisitTypeLiteral: генераторы, которые эти узлы не строят (TypeScript и др.),
     // ничего не замечают; C# и C++ переопределяют.

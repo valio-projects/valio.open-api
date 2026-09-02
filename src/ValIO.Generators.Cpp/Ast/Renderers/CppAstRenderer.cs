@@ -297,7 +297,6 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         if (node.Documentation != null)
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
         var returnStr = RenderType(node.ReturnType);
-        var paramsStr = string.Join(",\n" + Indent() + "\t", node.Parameters.Select(RenderParameterInline));
         if (node.IsDeclarationOnly)
         {
             var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
@@ -305,10 +304,9 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         }
         else if (node.Body != null)
         {
-            sb.AppendLine($"{Indent()}{returnStr} {node.Name.Name}({string.Join(", ", node.Parameters.Select(RenderParameterInline))})");
-            sb.AppendLine($"{Indent()}{{");
-            sb.AppendLine($"{Indent()}\t// TODO: implement");
-            sb.AppendLine($"{Indent()}}}");
+            var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
+            sb.Append($"{Indent()}{returnStr} {node.Name.Name}({inlineParams})").AppendLine();
+            sb.Append(Visit(node.Body));
         }
         sb.AppendLine();
         return sb.ToString();
@@ -583,6 +581,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         return node.LiteralKind switch
         {
             LiteralKind.String => $"TEXT(\"{EscapeCppString(node.Value?.ToString() ?? "")}\")",
+            LiteralKind.QuotedString => $"\"{EscapeCppString(node.Value?.ToString() ?? "")}\"",
             LiteralKind.Number => node.Value?.ToString() ?? "0",
             LiteralKind.Boolean => (node.Value?.ToString() ?? "false").ToLowerInvariant(),
             LiteralKind.Null => "{}",
@@ -620,10 +619,16 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         $"TMap<{RenderType(node.KeyType)}, {RenderType(node.ValueType)}>";
     public override string VisitConditionalExpression(ConditionalExpressionNode node) => "";
     public override string VisitAwaitExpression(AwaitExpressionNode node) => "";
-    public override string VisitCastExpression(CastExpressionNode node) => "";
+
+    public override string VisitCastExpression(CastExpressionNode node)
+        => $"static_cast<{RenderType(node.TargetType)}>({Visit(node.Expression)})";
+
+    public override string VisitIndexAccessExpression(IndexAccessExpressionNode node)
+        => $"{Visit(node.Object)}[{Visit(node.Index)}]";
 
     public override string VisitForEachStatement(ForEachStatementNode node) => "";
-    public override string VisitThrowStatement(ThrowStatementNode node) => "";
+    public override string VisitThrowStatement(ThrowStatementNode node)
+        => $"throw {Visit(node.Expression)};";
     public override string VisitUsingStatement(UsingStatementNode node) => "";
     public override string VisitTryCatchStatement(TryCatchStatementNode node) => "";
     public override string VisitCatchClause(CatchClauseNode node) => "";

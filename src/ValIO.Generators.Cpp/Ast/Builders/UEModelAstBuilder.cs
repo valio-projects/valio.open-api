@@ -77,27 +77,15 @@ public sealed class UEModelAstBuilder
 
     /// <summary>
     /// Определяет, использовать ли наследование C++ для allOf, и возвращает свойства для полей.
-    /// При единственном $ref-базисе — наследование (только собственные свойства).
-    /// Иначе — flatten (объединённые свойства из всех allOf).
+    /// Делегирует общей реализации Core (IrInheritancePlan): одиночный $ref-базис → наследование
+    /// (только собственные свойства), иначе — flatten.
     /// </summary>
     private (IdentifierNode? BaseStruct, string? BaseModelName, IReadOnlyList<IrProperty> Properties) GetPropertiesAndBase(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
     {
-        if (model.Composition?.Kind != IrCompositionKind.AllOf || model.Composition.Types.Count == 0)
-            return (null, null, model.Properties);
-
-        // Проверяем, можно ли использовать наследование: ровно один IrModelReference
-        var refBases = model.Composition.Types.OfType<IrModelReference>().ToList();
-        if (refBases.Count == 1 && model.Composition.Types.Count == 1 &&
-            modelLookup.TryGetValue(refBases[0].ModelName, out var baseModel))
-        {
-            var baseStructName = _naming.StructName(baseModel.Name);
-            // Наследование: только собственные поля, без переобъявления унаследованных от базы
-            // (единый резолвер наследования для всех генераторов).
-            var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, modelLookup);
-            return (new IdentifierNode(baseStructName), baseModel.Name, ownProperties);
-        }
-
-        return (null, null, GetEffectiveProperties(model, modelLookup));
+        var plan = IrInheritancePlan.Resolve(model, modelLookup);
+        if (plan.UseInheritance)
+            return (new IdentifierNode(_naming.StructName(plan.BaseModelName!)), plan.BaseModelName, plan.EffectiveProperties);
+        return (null, null, plan.EffectiveProperties);
     }
 
     /// <summary>
