@@ -78,7 +78,7 @@ public sealed class StdModelAstBuilder
         var isOptional = !property.IsRequired || isWrapped;
         var defaultValueStr = isOptional ? null : _typeMapper.GetDefaultValue(property.Type);
         var defaultValue = defaultValueStr != null
-            ? new LiteralExpressionNode(defaultValueStr, LiteralKind.String)
+            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
             : null;
 
         return new FieldDeclarationNode(

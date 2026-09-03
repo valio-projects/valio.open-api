@@ -264,7 +264,7 @@ public sealed class UEParamsAstBuilder
         var type = _typeMapper.MapType(param.Type);
         var defaultValueStr = _typeMapper.GetDefaultValue(param.Type);
         ExpressionNode? defaultValue = defaultValueStr != null
-            ? new LiteralExpressionNode(defaultValueStr, LiteralKind.String)
+            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
             : null;
 
         return new UPropertyFieldNode(

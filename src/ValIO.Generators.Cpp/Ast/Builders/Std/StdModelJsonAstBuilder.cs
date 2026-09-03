@@ -222,17 +222,17 @@ public sealed class StdModelJsonAstBuilder
     private static IndexAccessExpressionNode JsonKey(string wire)
         => new(
             Ident("j"),
-            new LiteralExpressionNode(wire, LiteralKind.QuotedString));
+            new LiteralExpressionNode(wire, LiteralKind.String));
 
     private static CallExpressionNode BuildAtCall(string wire)
         => new(
             new MemberAccessExpressionNode(Ident("j"), new IdentifierNode("at")),
-            [new LiteralExpressionNode(wire, LiteralKind.QuotedString)]);
+            [new LiteralExpressionNode(wire, LiteralKind.String)]);
 
     private static CallExpressionNode BuildContainsCall(string wire)
         => new(
             new MemberAccessExpressionNode(Ident("j"), new IdentifierNode("contains")),
-            [new LiteralExpressionNode(wire, LiteralKind.QuotedString)]);
+            [new LiteralExpressionNode(wire, LiteralKind.String)]);
 
     private static CallExpressionNode BuildGetToCall(string wire, ExpressionNode target)
         => new(

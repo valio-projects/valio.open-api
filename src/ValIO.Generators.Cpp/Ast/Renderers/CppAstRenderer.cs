@@ -584,8 +584,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     {
         return node.LiteralKind switch
         {
-            LiteralKind.String => $"TEXT(\"{EscapeCppString(node.Value?.ToString() ?? "")}\")",
-            LiteralKind.QuotedString => $"\"{EscapeCppString(node.Value?.ToString() ?? "")}\"",
+            LiteralKind.String => $"\"{EscapeCppString(node.Value?.ToString() ?? "")}\"",
             LiteralKind.Number => node.Value?.ToString() ?? "0",
             LiteralKind.Boolean => (node.Value?.ToString() ?? "false").ToLowerInvariant(),
             LiteralKind.Null => "{}",
@@ -899,11 +898,17 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
 
     private static string RenderDefaultValue(ExpressionNode expr)
     {
+        // Сырой C++-токен дефолта (std::nullopt, {}) представляется Identifier-выражением —
+        // рендерится дословно; литералы остаются литералами (String = кавыченная строка).
+        if (expr is IdentifierExpressionNode identifier)
+        {
+            return identifier.Identifier.Name;
+        }
         if (expr is LiteralExpressionNode lit)
         {
             return lit.LiteralKind switch
             {
-                LiteralKind.String => lit.Value?.ToString() ?? "",
+                LiteralKind.String => $"\"{EscapeCppString(lit.Value?.ToString() ?? "")}\"",
                 LiteralKind.Number => lit.Value?.ToString() ?? "0",
                 LiteralKind.Boolean => lit.Value?.ToString()?.ToLowerInvariant() ?? "false",
                 LiteralKind.Null => "{}",

@@ -164,7 +164,7 @@ public sealed class StdEnumAstBuilder
                         BuildNlohmannOutOfRangeCreate($"unknown {enumName} wire value"),
                         [
                             new LiteralExpressionNode("1701", LiteralKind.Number),
-                            new LiteralExpressionNode($"unknown {enumName} wire value", LiteralKind.QuotedString),
+                            new LiteralExpressionNode($"unknown {enumName} wire value", LiteralKind.String),
                             Ident("nullptr"),
                         ])),
                 ])),
@@ -224,14 +224,14 @@ public sealed class StdEnumAstBuilder
                         ? new ReturnStatementNode(new CastExpressionNode(
                             new SimpleTypeNode(new IdentifierNode("std::int32_t"), isPrimitive: true),
                             Ident("v")))
-                        : new ReturnStatementNode(new LiteralExpressionNode(wire, LiteralKind.QuotedString)),
+                        : new ReturnStatementNode(new LiteralExpressionNode(wire, LiteralKind.String)),
                 ])));
         }
 
         statements.Add(new ReturnStatementNode(
             isInteger
                 ? new LiteralExpressionNode("0", LiteralKind.Number)
-                : new LiteralExpressionNode(string.Empty, LiteralKind.QuotedString)));
+                : new LiteralExpressionNode(string.Empty, LiteralKind.String)));
         return statements;
     }
 
@@ -249,7 +249,7 @@ public sealed class StdEnumAstBuilder
                     BinaryOperator.Equal,
                     isInteger
                         ? new LiteralExpressionNode(ParseIntegerWire(wire, i).ToString(), LiteralKind.Number)
-                        : new LiteralExpressionNode(wire, LiteralKind.QuotedString)),
+                        : new LiteralExpressionNode(wire, LiteralKind.String)),
                 new BlockNode([new ReturnStatementNode(BuildScopedMember(enumName, memberName))])));
         }
 

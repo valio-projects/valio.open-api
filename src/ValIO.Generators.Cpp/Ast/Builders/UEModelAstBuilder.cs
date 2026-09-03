@@ -131,7 +131,7 @@ public sealed class UEModelAstBuilder
         var type = _typeMapper.MapType(property.Type);
         var defaultValueStr = _typeMapper.GetDefaultValue(property.Type);
         ExpressionNode? defaultValue = defaultValueStr != null
-            ? new LiteralExpressionNode(defaultValueStr, LiteralKind.String)
+            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
             : null;
 
         return new UPropertyFieldNode(

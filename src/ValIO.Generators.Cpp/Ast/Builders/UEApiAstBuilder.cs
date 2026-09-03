@@ -144,6 +144,15 @@ public sealed class UEApiAstBuilder
         return includes;
     }
 
+    /// <summary>
+    /// UE-макрос TEXT("...") — явная обёртка вызовом макроса: литерал String рендерится
+    /// как обычная кавыченная строка, без платформенных обёрток рендера.
+    /// </summary>
+    private static ExpressionNode UeText(string value) =>
+        new CallExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode("TEXT")),
+            [new LiteralExpressionNode(value, LiteralKind.String)]);
+
     private List<CppForwardDeclarationNode> BuildForwardDeclarations()
     {
         return new List<CppForwardDeclarationNode>
@@ -358,7 +367,7 @@ public sealed class UEApiAstBuilder
                 new ExpressionNode[]
                 {
                     new IdentifierExpressionNode(worldContextVar),
-                    new LiteralExpressionNode("Invalid WorldContext", LiteralKind.String)
+                    UeText("Invalid WorldContext")
                 }.ToImmutableList())),
             new ReturnStatementNode(new IdentifierExpressionNode(worldContextVar))
         });
@@ -487,7 +496,7 @@ public sealed class UEApiAstBuilder
         }
         var formatStr = pathParamSpecs.Aggregate(operation.Path, (acc, p) =>
             acc.Replace($"{{{p.OriginalName}}}", p.PrintfSpecifier));
-        var printfArgs = new List<ExpressionNode> { new LiteralExpressionNode(formatStr, LiteralKind.String) };
+        var printfArgs = new List<ExpressionNode> { UeText(formatStr) };
         printfArgs.AddRange(pathParamSpecs.Select(p =>
         {
             var needsDeref = p.PrintfArgExpression.StartsWith("*");
@@ -594,7 +603,7 @@ public sealed class UEApiAstBuilder
                     new IdentifierNode(methodName)),
                 new ExpressionNode[]
                 {
-                    new LiteralExpressionNode(qp.Name, LiteralKind.String),
+                    UeText(qp.Name),
                     valueExpr
                 }.ToImmutableList());
             statements.Add(new ExpressionStatementNode(addQueryCall));
@@ -608,7 +617,7 @@ public sealed class UEApiAstBuilder
             new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
                 new IdentifierNode("SetRequestName")),
-            new ExpressionNode[] { new LiteralExpressionNode(operation.MethodName, LiteralKind.String) }.ToImmutableList());
+            new ExpressionNode[] { UeText(operation.MethodName) }.ToImmutableList());
         statements.Add(new ExpressionStatementNode(setRequestNameCall));
 
         statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("RequestBuilder"))));
@@ -683,7 +692,7 @@ public sealed class UEApiAstBuilder
                             new IdentifierNode("AddFile")),
                         new ExpressionNode[]
                         {
-                            new LiteralExpressionNode(fieldName, LiteralKind.String),
+                            UeText(fieldName),
                             GetFormFileFileNameExpression(formModel, prop, formDataPath),
                             new CallExpressionNode(
                                 new IdentifierExpressionNode(new IdentifierNode("MoveTemp")),
@@ -701,7 +710,7 @@ public sealed class UEApiAstBuilder
                             new IdentifierNode("AddField")),
                         new ExpressionNode[]
                         {
-                            new LiteralExpressionNode(fieldName, LiteralKind.String),
+                            UeText(fieldName),
                             valueExpr
                         }.ToImmutableList());
                     statements.Add(new ExpressionStatementNode(addFieldCall));
@@ -733,7 +742,7 @@ public sealed class UEApiAstBuilder
                         new IdentifierNode("Add")),
                     new ExpressionNode[]
                     {
-                        new LiteralExpressionNode(fieldName, LiteralKind.String),
+                        UeText(fieldName),
                         valueExpr
                     }.ToImmutableList());
                 statements.Add(new ExpressionStatementNode(addCall));
@@ -763,7 +772,7 @@ public sealed class UEApiAstBuilder
         var hasFileName = formModel.Properties.Any(p => _naming.PropertyName(p.Name).Equals("FileName", StringComparison.Ordinal));
         if (hasFileName)
             return BuildExpressionFromPath($"{formDataPath}.FileName");
-        return new LiteralExpressionNode("upload.dat", LiteralKind.String);
+        return UeText("upload.dat");
     }
 
     /// <summary>
@@ -779,7 +788,7 @@ public sealed class UEApiAstBuilder
         var hasMimeType = formModel.Properties.Any(p => _naming.PropertyName(p.Name).Equals("MimeType", StringComparison.Ordinal));
         if (hasMimeType)
             return BuildExpressionFromPath($"{formDataPath}.MimeType");
-        return new LiteralExpressionNode("application/octet-stream", LiteralKind.String);
+        return UeText("application/octet-stream");
     }
 
     /// <summary>

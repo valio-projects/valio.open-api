@@ -232,7 +232,7 @@ public sealed class StdClientAstBuilder
             new IdentifierNode(name),
             optionalType,
             isRequired: false,
-            defaultValue: new LiteralExpressionNode("std::nullopt", LiteralKind.String));
+            defaultValue: new IdentifierExpressionNode(new IdentifierNode("std::nullopt")));
     }
 
     // ===== Тела =====
@@ -440,7 +440,7 @@ public sealed class StdClientAstBuilder
 
             if (literalPart.Length > 0)
             {
-                var literal = new LiteralExpressionNode(literalPart, LiteralKind.QuotedString);
+                var literal = new LiteralExpressionNode(literalPart, LiteralKind.String);
                 path = path == null ? literal : new BinaryExpressionNode(path, BinaryOperator.Add, literal);
             }
 
@@ -452,11 +452,11 @@ public sealed class StdClientAstBuilder
 
         if (template.Length > 0)
         {
-            var tail = new LiteralExpressionNode(template, LiteralKind.QuotedString);
+            var tail = new LiteralExpressionNode(template, LiteralKind.String);
             path = path == null ? tail : new BinaryExpressionNode(path, BinaryOperator.Add, tail);
         }
 
-        return path ?? new LiteralExpressionNode(operation.Path, LiteralKind.QuotedString);
+        return path ?? new LiteralExpressionNode(operation.Path, LiteralKind.String);
     }
 
     private void AppendParameterCall(List<StatementNode> statements, IrParameter parameter, string addMethod, IReadOnlySet<string> enumNames)
@@ -467,7 +467,7 @@ public sealed class StdClientAstBuilder
         var call = new ExpressionStatementNode(new CallExpressionNode(
             new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode(addMethod)),
             [
-                new LiteralExpressionNode(parameter.OriginalName, LiteralKind.QuotedString),
+                new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String),
                 Ident(value),
             ]));
 
@@ -484,7 +484,7 @@ public sealed class StdClientAstBuilder
                     new ExpressionStatementNode(new CallExpressionNode(
                         new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode(addMethod)),
                         [
-                            new LiteralExpressionNode(parameter.OriginalName, LiteralKind.QuotedString),
+                            new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String),
                             Ident(_typeMapper.FormatQueryLiteral(parameter.Type, $"*{name}")),
                         ])),
                 ])));
@@ -520,7 +520,7 @@ public sealed class StdClientAstBuilder
                 statements.Add(new ExpressionStatementNode(new CallExpressionNode(
                     new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("AddFormField")),
                     [
-                        new LiteralExpressionNode(property.OriginalName, LiteralKind.QuotedString),
+                        new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
                         Ident(literal),
                     ])));
             }
@@ -535,10 +535,10 @@ public sealed class StdClientAstBuilder
                     statements.Add(new ExpressionStatementNode(new CallExpressionNode(
                         new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("AddFilePart")),
                         [
-                            new LiteralExpressionNode(property.OriginalName, LiteralKind.QuotedString),
-                            new LiteralExpressionNode(property.OriginalName, LiteralKind.QuotedString),
+                            new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
+                            new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
                             Ident(fieldName),
-                            new LiteralExpressionNode("application/octet-stream", LiteralKind.QuotedString),
+                            new LiteralExpressionNode("application/octet-stream", LiteralKind.String),
                         ])));
                 }
                 else
@@ -547,7 +547,7 @@ public sealed class StdClientAstBuilder
                     statements.Add(new ExpressionStatementNode(new CallExpressionNode(
                         new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("AddFormField")),
                         [
-                            new LiteralExpressionNode(property.OriginalName, LiteralKind.QuotedString),
+                            new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
                             Ident(literal),
                         ])));
                 }

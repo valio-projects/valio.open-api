@@ -221,6 +221,8 @@ public class CppAstRendererCoreDeclarationTests
     [Test]
     public void Method_ParameterDefaultValue_RendersInline()
     {
+        // Сырой C++-токен дефолта — Identifier-выражение (литерал String теперь
+        // всегда кавыченная строка, «std::nullopt» строкой быть не может).
         var node = new MethodDeclarationNode(
             new IdentifierNode("List"),
             parameters:
@@ -229,7 +231,7 @@ public class CppAstRendererCoreDeclarationTests
                     new IdentifierNode("include"),
                     Simple("std::optional<std::string>"),
                     isRequired: false,
-                    defaultValue: new LiteralExpressionNode("std::nullopt", LiteralKind.String)),
+                    defaultValue: new IdentifierExpressionNode(new IdentifierNode("std::nullopt"))),
             ]);
 
         Render(node).Should()
