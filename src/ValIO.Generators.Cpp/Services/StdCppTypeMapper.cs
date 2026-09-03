@@ -157,6 +157,8 @@ public sealed class StdCppTypeMapper
             },
             IrModelReference modelRef when IsEnumReference(modelRef.ModelName)
                 => $"std::string(ToWire({expression}))",
+            IrModelReference
+                => $"ValIO::Dump({expression})", // модель в query-параметре — JSON-строка (сериализатор включён в клиентском .cpp)
             IrNullableType n => FormatQueryLiteral(n.InnerType, expression),
             IrOptionalType o => FormatQueryLiteral(o.InnerType, expression),
             _ => expression,
@@ -165,7 +167,7 @@ public sealed class StdCppTypeMapper
 
     /// <summary>
     /// Стандартные include, необходимые модели с данным типом поля (без учёта ссылок
-    /// на другие модели — их добавляет StdTypeReferenceCollector).
+    /// на другие модели — их добавляет CppTypeReferenceCollector).
     /// </summary>
     public static IReadOnlyList<string> StdIncludesFor(IrType irType)
     {

@@ -42,7 +42,7 @@ public sealed class StdModelAstBuilder
         var skipped = new List<string>();
         foreach (var property in plan.EffectiveProperties)
         {
-            if (StdTypeReferenceCollector.ReferencesModel(property.Type, model.Name, enumNames))
+            if (CppTypeReferenceCollector.ReferencesModel(property.Type, model.Name, enumNames))
             {
                 skipped.Add(property.Name);
                 warnings?.Add($"Model {structName}: skipping recursive property '{property.OriginalName}' (std::shared_ptr support is backlog).");
@@ -98,16 +98,16 @@ public sealed class StdModelAstBuilder
         var stdIncludes = new SortedSet<string>(StringComparer.Ordinal);
         var referencedModels = new HashSet<string>();
         var referencedEnums = new HashSet<string>();
-        var orig = StdTypeReferenceCollector.BuildOriginalNameMap(model, plan.EffectiveProperties);
+        var orig = CppTypeReferenceCollector.BuildOriginalNameMap(model, plan.EffectiveProperties);
 
         if (plan.UseInheritance)
             referencedModels.Add(plan.BaseModelName!);
 
         foreach (var property in plan.EffectiveProperties)
         {
-            if (skipped.Contains(property.Name) && StdTypeReferenceCollector.ReferencesModel(property.Type, model.Name, enumNames))
+            if (skipped.Contains(property.Name) && CppTypeReferenceCollector.ReferencesModel(property.Type, model.Name, enumNames))
                 continue;
-            StdTypeReferenceCollector.Collect(property.Type, referencedModels, referencedEnums, enumNames);
+            CppTypeReferenceCollector.Collect(property.Type, referencedModels, referencedEnums, enumNames);
             foreach (var include in StdCppTypeMapper.StdIncludesFor(property.Type))
                 stdIncludes.Add(include);
             // std::optional для !IsRequired добавляет сам билдер (обёртка не видна StdIncludesFor).

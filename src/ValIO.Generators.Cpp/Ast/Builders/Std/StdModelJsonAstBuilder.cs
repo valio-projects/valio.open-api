@@ -41,7 +41,7 @@ public sealed class StdModelJsonAstBuilder
         var structName = _naming.StructName(model.Name);
         var plan = IrInheritancePlan.Resolve(model, modelLookup);
         var properties = plan.EffectiveProperties
-            .Where(p => !StdTypeReferenceCollector.ReferencesModel(p.Type, model.Name, enumNames))
+            .Where(p => !CppTypeReferenceCollector.ReferencesModel(p.Type, model.Name, enumNames))
             .ToList();
 
         var header = new CppHeaderFileNode(
@@ -114,12 +114,12 @@ public sealed class StdModelJsonAstBuilder
         if (plan.UseInheritance)
         {
             statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                Ident("to_json"),
+                StdExpressions.Ident("to_json"),
                 [
-                    Ident("j"),
+                    StdExpressions.Ident("j"),
                     new CastExpressionNode(
                         new RawTypeNode($"const {_naming.StructName(plan.BaseModelName!)}&"),
-                        Ident("value")),
+                        StdExpressions.Ident("value")),
                 ])));
         }
 
@@ -127,7 +127,7 @@ public sealed class StdModelJsonAstBuilder
         {
             var field = _naming.PropertyName(property.Name);
             var wire = property.OriginalName;
-            var fieldAccess = new MemberAccessExpressionNode(Ident("value"), new IdentifierNode(field));
+            var fieldAccess = new MemberAccessExpressionNode(StdExpressions.Ident("value"), new IdentifierNode(field));
 
             if (IsOptional(property))
             {
@@ -165,12 +165,12 @@ public sealed class StdModelJsonAstBuilder
         if (plan.UseInheritance)
         {
             statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                Ident("from_json"),
+                StdExpressions.Ident("from_json"),
                 [
-                    Ident("j"),
+                    StdExpressions.Ident("j"),
                     new CastExpressionNode(
                         new RawTypeNode($"{_naming.StructName(plan.BaseModelName!)}&"),
-                        Ident("value")),
+                        StdExpressions.Ident("value")),
                 ])));
         }
 
@@ -178,7 +178,7 @@ public sealed class StdModelJsonAstBuilder
         {
             var field = _naming.PropertyName(property.Name);
             var wire = property.OriginalName;
-            var fieldAccess = new MemberAccessExpressionNode(Ident("value"), new IdentifierNode(field));
+            var fieldAccess = new MemberAccessExpressionNode(StdExpressions.Ident("value"), new IdentifierNode(field));
 
             if (IsOptional(property))
             {
@@ -221,17 +221,17 @@ public sealed class StdModelJsonAstBuilder
 
     private static IndexAccessExpressionNode JsonKey(string wire)
         => new(
-            Ident("j"),
+            StdExpressions.Ident("j"),
             new LiteralExpressionNode(wire, LiteralKind.String));
 
     private static CallExpressionNode BuildAtCall(string wire)
         => new(
-            new MemberAccessExpressionNode(Ident("j"), new IdentifierNode("at")),
+            new MemberAccessExpressionNode(StdExpressions.Ident("j"), new IdentifierNode("at")),
             [new LiteralExpressionNode(wire, LiteralKind.String)]);
 
     private static CallExpressionNode BuildContainsCall(string wire)
         => new(
-            new MemberAccessExpressionNode(Ident("j"), new IdentifierNode("contains")),
+            new MemberAccessExpressionNode(StdExpressions.Ident("j"), new IdentifierNode("contains")),
             [new LiteralExpressionNode(wire, LiteralKind.String)]);
 
     private static CallExpressionNode BuildGetToCall(string wire, ExpressionNode target)
@@ -252,13 +252,13 @@ public sealed class StdModelJsonAstBuilder
     {
         var referencedModels = new HashSet<string>();
         var referencedEnums = new HashSet<string>();
-        var orig = StdTypeReferenceCollector.BuildOriginalNameMap(model, plan.EffectiveProperties);
+        var orig = CppTypeReferenceCollector.BuildOriginalNameMap(model, plan.EffectiveProperties);
 
         if (plan.UseInheritance)
             referencedModels.Add(plan.BaseModelName!);
 
         foreach (var property in properties)
-            StdTypeReferenceCollector.Collect(property.Type, referencedModels, referencedEnums, enumNames);
+            CppTypeReferenceCollector.Collect(property.Type, referencedModels, referencedEnums, enumNames);
 
         var includes = new List<CppIncludeDirectiveNode>
         {
@@ -274,6 +274,4 @@ public sealed class StdModelJsonAstBuilder
 
         return includes;
     }
-	private static IdentifierExpressionNode Ident(string name) => new(new IdentifierNode(name));
-
-}
+	}

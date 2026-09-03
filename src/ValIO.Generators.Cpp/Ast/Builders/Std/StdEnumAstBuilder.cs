@@ -131,9 +131,9 @@ public sealed class StdEnumAstBuilder
         var toJsonBody = new BlockNode(
         [
             new ExpressionStatementNode(new BinaryExpressionNode(
-                Ident("j"),
+                StdExpressions.Ident("j"),
                 BinaryOperator.Assign,
-                new CallExpressionNode(Ident("ToWire"), [Ident("value")]),
+                new CallExpressionNode(StdExpressions.Ident("ToWire"), [StdExpressions.Ident("value")]),
                 isAssignment: true)),
         ]);
 
@@ -143,19 +143,19 @@ public sealed class StdEnumAstBuilder
                 new IdentifierNode("parsed"),
                 new GenericTypeNode(new IdentifierNode("std::optional"), [new SimpleTypeNode(new IdentifierNode(enumName))]),
                 new CallExpressionNode(
-                    Ident("FromWire"),
+                    StdExpressions.Ident("FromWire"),
                     [new CallExpressionNode(
-                        new MemberAccessExpressionNode(Ident("j"), new IdentifierNode("get")),
+                        new MemberAccessExpressionNode(StdExpressions.Ident("j"), new IdentifierNode("get")),
                         [],
                         genericTypeName: wireCppType)])),
             new IfStatementNode(
-                Ident("parsed"),
+                StdExpressions.Ident("parsed"),
                 new BlockNode(
                 [
                     new ExpressionStatementNode(new BinaryExpressionNode(
-                        Ident("value"),
+                        StdExpressions.Ident("value"),
                         BinaryOperator.Assign,
-                        new UnaryExpressionNode(UnaryOperator.Dereference, Ident("parsed")),
+                        new UnaryExpressionNode(UnaryOperator.Dereference, StdExpressions.Ident("parsed")),
                         isAssignment: true)),
                 ]),
                 new BlockNode(
@@ -165,7 +165,7 @@ public sealed class StdEnumAstBuilder
                         [
                             new LiteralExpressionNode("1701", LiteralKind.Number),
                             new LiteralExpressionNode($"unknown {enumName} wire value", LiteralKind.String),
-                            Ident("nullptr"),
+                            StdExpressions.Ident("nullptr"),
                         ])),
                 ])),
         ]);
@@ -215,7 +215,7 @@ public sealed class StdEnumAstBuilder
             var memberName = _naming.EnumMemberName(value.Name);
             statements.Add(new IfStatementNode(
                 new BinaryExpressionNode(
-                    Ident("v"),
+                    StdExpressions.Ident("v"),
                     BinaryOperator.Equal,
                     BuildScopedMember(enumName, memberName)),
                 new BlockNode(
@@ -223,7 +223,7 @@ public sealed class StdEnumAstBuilder
                     isInteger
                         ? new ReturnStatementNode(new CastExpressionNode(
                             new SimpleTypeNode(new IdentifierNode("std::int32_t"), isPrimitive: true),
-                            Ident("v")))
+                            StdExpressions.Ident("v")))
                         : new ReturnStatementNode(new LiteralExpressionNode(wire, LiteralKind.String)),
                 ])));
         }
@@ -245,7 +245,7 @@ public sealed class StdEnumAstBuilder
             var memberName = _naming.EnumMemberName(value.Name);
             statements.Add(new IfStatementNode(
                 new BinaryExpressionNode(
-                    Ident("w"),
+                    StdExpressions.Ident("w"),
                     BinaryOperator.Equal,
                     isInteger
                         ? new LiteralExpressionNode(ParseIntegerWire(wire, i).ToString(), LiteralKind.Number)
@@ -253,7 +253,7 @@ public sealed class StdEnumAstBuilder
                 new BlockNode([new ReturnStatementNode(BuildScopedMember(enumName, memberName))])));
         }
 
-        statements.Add(new ReturnStatementNode(Ident("std::nullopt")));
+        statements.Add(new ReturnStatementNode(StdExpressions.Ident("std::nullopt")));
         return statements;
     }
 
@@ -262,7 +262,7 @@ public sealed class StdEnumAstBuilder
     {
         return new MemberAccessExpressionNode(
             new MemberAccessExpressionNode(
-                new MemberAccessExpressionNode(Ident("nlohmann"), new IdentifierNode("json"), useScopeOperator: true),
+                new MemberAccessExpressionNode(StdExpressions.Ident("nlohmann"), new IdentifierNode("json"), useScopeOperator: true),
                 new IdentifierNode("out_of_range"),
                 useScopeOperator: true),
             new IdentifierNode("create"),
@@ -270,7 +270,7 @@ public sealed class StdEnumAstBuilder
     }
 
     private static MemberAccessExpressionNode BuildScopedMember(string enumName, string memberName)
-        => new(Ident(enumName), new IdentifierNode(memberName), useScopeOperator: true);
+        => new(StdExpressions.Ident(enumName), new IdentifierNode(memberName), useScopeOperator: true);
 
     private static int ParseIntegerWire(string wire, int ordinal)
     {
@@ -281,6 +281,4 @@ public sealed class StdEnumAstBuilder
         => !string.IsNullOrWhiteSpace(description)
             ? new CommentNode(description, CommentKind.MultiLine)
             : null;
-	private static IdentifierExpressionNode Ident(string name) => new(new IdentifierNode(name));
-
-}
+	}

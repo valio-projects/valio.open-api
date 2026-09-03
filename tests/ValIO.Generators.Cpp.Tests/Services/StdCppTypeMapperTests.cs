@@ -134,6 +134,16 @@ public class StdCppTypeMapperTests
     }
 
     [Test]
+    public void FormatQueryLiteral_ModelReference_SerializesToJsonDump()
+    {
+        _mapper.SetEnumNamesForDocument(new HashSet<string> { "OrderStatus" });
+
+        // Модель в query-параметре — компилируемое wire-представление: JSON-строка.
+        _mapper.FormatQueryLiteral(new IrModelReference { ModelName = "BuildingModel" }, "Filter")
+            .Should().Be("ValIO::Dump(Filter)");
+    }
+
+    [Test]
     public void StdIncludesFor_CollectsByUsage()
     {
         var type = new IrDictionaryType

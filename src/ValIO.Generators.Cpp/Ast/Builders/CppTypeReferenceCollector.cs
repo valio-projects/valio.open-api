@@ -1,14 +1,14 @@
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 
-namespace ValIO.Generators.Cpp.Ast.Builders.Std;
+namespace ValIO.Generators.Cpp.Ast.Builders;
 
 /// <summary>
 /// Сбор ссылок на модели/enum'ы из IrType + карта «affix-имя → OriginalName»
 /// (include-пути не должны меняться при affix-преобразованиях).
-/// Std-эквивалент приватных хелперов UEModelAstBuilder (UE хранит свои — паритет-замок W1).
+/// Единая реализация для UE- и std-билдеров (UEModelAstBuilder делегирует).
 /// </summary>
-public static class StdTypeReferenceCollector
+public static class CppTypeReferenceCollector
 {
     /// <summary>
     /// Рекурсивно раскладывает ссылки типа по множествам models/enums.
@@ -90,7 +90,7 @@ public static class StdTypeReferenceCollector
         }
     }
 
-    private static void CollectOriginalNames(IrType type, Dictionary<string, string> orig)
+    public static void CollectOriginalNames(IrType type, Dictionary<string, string> orig)
     {
         switch (type)
         {

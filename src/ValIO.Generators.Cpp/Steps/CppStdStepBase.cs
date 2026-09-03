@@ -60,7 +60,11 @@ public abstract class CppStdStepBase : ICodeGenerationStep
     /// <summary>Переносит warnings маппера (union/any/…) в диагностику прогона (с дедупом).</summary>
     protected static void DrainWarnings(GenerationContext context, StdCppTypeMapper mapper)
     {
+        // Шаги создают собственные мапперы с одинаковыми warnings — дедуп на уровне прогона.
         foreach (var warning in mapper.Warnings.Distinct())
-            context.Warnings.Add(warning);
+        {
+            if (!context.Warnings.Contains(warning))
+                context.Warnings.Add(warning);
+        }
     }
 }

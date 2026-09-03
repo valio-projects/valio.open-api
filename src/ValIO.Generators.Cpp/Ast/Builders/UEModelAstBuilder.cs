@@ -89,41 +89,6 @@ public sealed class UEModelAstBuilder
     }
 
     /// <summary>
-    /// Возвращает объединённый список свойств (flatten) при allOf с несколькими базами или inline-схемами.
-    /// </summary>
-    private static IReadOnlyList<IrProperty> GetEffectiveProperties(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
-    {
-        if (model.Composition?.Kind != IrCompositionKind.AllOf || model.Composition.Types.Count == 0)
-            return model.Properties;
-
-        var byName = new Dictionary<string, IrProperty>(StringComparer.Ordinal);
-        var order = new List<string>();
-
-        foreach (var compType in model.Composition.Types)
-        {
-            if (compType is IrModelReference modelRef && modelLookup.TryGetValue(modelRef.ModelName, out var baseModel))
-            {
-                var baseProps = GetEffectiveProperties(baseModel, modelLookup);
-                foreach (var p in baseProps)
-                {
-                    if (!byName.ContainsKey(p.Name))
-                        order.Add(p.Name);
-                    byName[p.Name] = p;
-                }
-            }
-        }
-
-        foreach (var p in model.Properties)
-        {
-            if (!byName.ContainsKey(p.Name))
-                order.Add(p.Name);
-            byName[p.Name] = p;
-        }
-
-        return order.Select(n => byName[n]).ToList();
-    }
-
-    /// <summary>
     /// Строит UPropertyFieldNode из IrProperty
     /// </summary>
     private UPropertyFieldNode BuildField(IrProperty property, string category)
@@ -181,28 +146,7 @@ public sealed class UEModelAstBuilder
     /// UE не поддерживает рекурсивные типы.
     /// </summary>
     private static bool TypeReferencesModel(IrType type, string modelName, IReadOnlySet<string> enumNames)
-    {
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                return !enumNames.Contains(modelRef.ModelName) && modelRef.ModelName == modelName;
-            case IrArrayType array:
-                return TypeReferencesModel(array.ElementType, modelName, enumNames);
-            case IrDictionaryType dict:
-                return TypeReferencesModel(dict.KeyType, modelName, enumNames)
-                    || TypeReferencesModel(dict.ValueType, modelName, enumNames);
-            case IrNullableType nullable:
-                return TypeReferencesModel(nullable.InnerType, modelName, enumNames);
-            case IrOptionalType optional:
-                return TypeReferencesModel(optional.InnerType, modelName, enumNames);
-            case IrUnionType union:
-                return union.Types.Any(t => TypeReferencesModel(t, modelName, enumNames));
-            case IrIntersectionType intersection:
-                return intersection.Types.Any(t => TypeReferencesModel(t, modelName, enumNames));
-            default:
-                return false;
-        }
-    }
+        => CppTypeReferenceCollector.ReferencesModel(type, modelName, enumNames);
 
     /// <summary>
     /// Строит карту «affix-имя ссылки → исходное имя» по типам модели (свойства + composition).
@@ -210,85 +154,19 @@ public sealed class UEModelAstBuilder
     /// При отсутствии affix исходное имя совпадает с affix-именем (карта работает как тождество).
     /// </summary>
     private static Dictionary<string, string> BuildOriginalNameMap(IrModel model, IReadOnlyList<IrProperty> propertiesToUse)
-    {
-        var orig = new Dictionary<string, string>(StringComparer.Ordinal)
-        {
-            [model.Name] = model.OriginalName
-        };
-        foreach (var property in propertiesToUse)
-            CollectOriginalNames(property.Type, orig);
-        if (model.Composition != null)
-            foreach (var t in model.Composition.Types)
-                CollectOriginalNames(t, orig);
-        return orig;
-    }
+        => CppTypeReferenceCollector.BuildOriginalNameMap(model, propertiesToUse);
 
     /// <summary>
     /// Рекурсивно собирает сопоставления «affix-имя ссылки → исходное имя» из IrType.
     /// </summary>
     private static void CollectOriginalNames(IrType type, Dictionary<string, string> orig)
-    {
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                orig[modelRef.ModelName] = modelRef.OriginalModelName;
-                break;
-            case IrArrayType array:
-                CollectOriginalNames(array.ElementType, orig);
-                break;
-            case IrDictionaryType dict:
-                CollectOriginalNames(dict.KeyType, orig);
-                CollectOriginalNames(dict.ValueType, orig);
-                break;
-            case IrNullableType nullable:
-                CollectOriginalNames(nullable.InnerType, orig);
-                break;
-            case IrOptionalType optional:
-                CollectOriginalNames(optional.InnerType, orig);
-                break;
-            case IrUnionType union:
-                foreach (var t in union.Types) CollectOriginalNames(t, orig);
-                break;
-            case IrIntersectionType intersection:
-                foreach (var t in intersection.Types) CollectOriginalNames(t, orig);
-                break;
-        }
-    }
+        => CppTypeReferenceCollector.CollectOriginalNames(type, orig);
 
     /// <summary>
     /// Рекурсивно собирает ссылки на модели и enum'ы из типа
     /// </summary>
     private static void CollectTypeReferences(IrType type, HashSet<string> models, HashSet<string> enums, IReadOnlySet<string> enumNames)
-    {
-        switch (type)
-        {
-            case IrModelReference modelRef:
-                if (enumNames.Contains(modelRef.ModelName))
-                    enums.Add(modelRef.ModelName);
-                else
-                    models.Add(modelRef.ModelName);
-                break;
-            case IrArrayType array:
-                CollectTypeReferences(array.ElementType, models, enums, enumNames);
-                break;
-            case IrDictionaryType dict:
-                CollectTypeReferences(dict.KeyType, models, enums, enumNames);
-                CollectTypeReferences(dict.ValueType, models, enums, enumNames);
-                break;
-            case IrNullableType nullable:
-                CollectTypeReferences(nullable.InnerType, models, enums, enumNames);
-                break;
-            case IrOptionalType optional:
-                CollectTypeReferences(optional.InnerType, models, enums, enumNames);
-                break;
-            case IrUnionType union:
-                foreach (var t in union.Types) CollectTypeReferences(t, models, enums, enumNames);
-                break;
-            case IrIntersectionType intersection:
-                foreach (var t in intersection.Types) CollectTypeReferences(t, models, enums, enumNames);
-                break;
-        }
-    }
+        => CppTypeReferenceCollector.Collect(type, models, enums, enumNames);
 
     private CommentNode? BuildDocumentation(string? description)
     {

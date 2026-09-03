@@ -247,11 +247,11 @@ public sealed class StdClientAstBuilder
             body: new BlockNode(
             [
                 new ExpressionStatementNode(new BinaryExpressionNode(
-                    Ident("_http"),
+                    StdExpressions.Ident("_http"),
                     BinaryOperator.Assign,
                     new CallExpressionNode(
-                        Scope("ValIO", "HttpClient"),
-                        [Ident("config")]),
+                        StdExpressions.Scope("ValIO", "HttpClient"),
+                        [StdExpressions.Ident("config")]),
                     isAssignment: true)),
             ]),
             metadata: metadata);
@@ -266,7 +266,6 @@ public sealed class StdClientAstBuilder
         var valueTypeName = successType == null
             ? "void"
             : StdTypeText.Render(_typeMapper.MapType(successType));
-        _ = modelLookup;
 
         if (isAsync)
         {
@@ -287,13 +286,13 @@ public sealed class StdClientAstBuilder
             {
                 if (!p.IsRequired && hasBody && !bodyInserted)
                 {
-                    callArguments.Add(Ident("request"));
+                    callArguments.Add(StdExpressions.Ident("request"));
                     bodyInserted = true;
                 }
-                callArguments.Add(Ident(_naming.PropertyName(p.Name)));
+                callArguments.Add(StdExpressions.Ident(_naming.PropertyName(p.Name)));
             }
             if (hasBody && !bodyInserted)
-                callArguments.Add(Ident("request"));
+                callArguments.Add(StdExpressions.Ident("request"));
 
             return new CppFreeFunctionNode(
                 new IdentifierNode($"{clientClassName}::{name}"),
@@ -306,13 +305,13 @@ public sealed class StdClientAstBuilder
                 body: new BlockNode(
                 [
                     new ReturnStatementNode(new CallExpressionNode(
-                        Scope("std", "async"),
+                        StdExpressions.Scope("std", "async"),
                         [
-                            Scope("std", "launch", "async"),
+                            StdExpressions.Scope("std", "launch", "async"),
                             new CppLambdaExpressionNode(
                                 captures,
                                 [],
-                                new BlockNode([new ReturnStatementNode(new CallExpressionNode(Ident(methodName), callArguments))])),
+                                new BlockNode([new ReturnStatementNode(new CallExpressionNode(StdExpressions.Ident(methodName), callArguments))])),
                         ])),
                 ]),
                 isConst: true);
@@ -335,7 +334,7 @@ public sealed class StdClientAstBuilder
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("path"),
             new SimpleTypeNode(new IdentifierNode("std::string")),
-            BuildPathExpression(operation, enumNames)));
+            BuildPathExpression(operation)));
 
         // 2. httpRequest
         statements.Add(new VariableDeclarationStatementNode(
@@ -344,16 +343,16 @@ public sealed class StdClientAstBuilder
 
         // 3. Verb
         statements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
-            new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("Verb")),
+            new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("Verb")),
             BinaryOperator.Assign,
-            Scope("ValIO", "HttpVerb", MapHttpVerb(operation.HttpMethod)),
+            StdExpressions.Scope("ValIO", "HttpVerb", MapHttpVerb(operation.HttpMethod)),
             isAssignment: true)));
 
         // 4. Path
         statements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
-            new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("Path")),
+            new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("Path")),
             BinaryOperator.Assign,
-            Ident("path"),
+            StdExpressions.Ident("path"),
             isAssignment: true)));
 
         // 5. query/header параметры (wire-имена — OriginalName)
@@ -370,61 +369,60 @@ public sealed class StdClientAstBuilder
             new IdentifierNode("sendResult"),
             new RawTypeNode("const ValIO::Expected<ValIO::Response, ValIO::Error>"),
             new CallExpressionNode(
-                new MemberAccessExpressionNode(Ident("_http"), new IdentifierNode("Send")),
-                [Ident("httpRequest")])));
+                new MemberAccessExpressionNode(StdExpressions.Ident("_http"), new IdentifierNode("Send")),
+                [StdExpressions.Ident("httpRequest")])));
 
         // 8. транспортная ошибка
         statements.Add(new IfStatementNode(
-            new UnaryExpressionNode(UnaryOperator.LogicalNot, Ident("sendResult")),
+            new UnaryExpressionNode(UnaryOperator.LogicalNot, StdExpressions.Ident("sendResult")),
             new BlockNode(
             [
                 new ReturnStatementNode(BuildMakeErrorCall(valueTypeName,
-                    new CallExpressionNode(new MemberAccessExpressionNode(Ident("sendResult"), new IdentifierNode("error"))))),
+                    new CallExpressionNode(new MemberAccessExpressionNode(StdExpressions.Ident("sendResult"), new IdentifierNode("error"))))),
             ])));
 
         // 9. response
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("response"),
             new RawTypeNode("const ValIO::Response&"),
-            new CallExpressionNode(new MemberAccessExpressionNode(Ident("sendResult"), new IdentifierNode("value")))));
+            new CallExpressionNode(new MemberAccessExpressionNode(StdExpressions.Ident("sendResult"), new IdentifierNode("value")))));
 
         // 10. не-2xx
         statements.Add(new IfStatementNode(
             new BinaryExpressionNode(
                 new BinaryExpressionNode(
-                    new MemberAccessExpressionNode(Ident("response"), new IdentifierNode("StatusCode")),
+                    new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("StatusCode")),
                     BinaryOperator.LessThan,
                     new LiteralExpressionNode("200", LiteralKind.Number)),
                 BinaryOperator.LogicalOr,
                 new BinaryExpressionNode(
-                    new MemberAccessExpressionNode(Ident("response"), new IdentifierNode("StatusCode")),
+                    new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("StatusCode")),
                     BinaryOperator.GreaterThanOrEqual,
                     new LiteralExpressionNode("300", LiteralKind.Number))),
             new BlockNode(
             [
                 new ReturnStatementNode(BuildMakeErrorCall(valueTypeName,
                     new CallExpressionNode(
-                        Scope("ValIO", "ErrorFromStatus"),
+                        StdExpressions.Scope("ValIO", "ErrorFromStatus"),
                         [
-                            new MemberAccessExpressionNode(Ident("response"), new IdentifierNode("StatusCode")),
-                            new MemberAccessExpressionNode(Ident("response"), new IdentifierNode("Body")),
+                            new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("StatusCode")),
+                            new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("Body")),
                         ]))),
             ])));
 
         // 11. успех
         statements.Add(valueTypeName == "void"
-            ? new ReturnStatementNode(Ident("{}"))
+            ? new ReturnStatementNode(StdExpressions.Ident("{}"))
             : new ReturnStatementNode(new CallExpressionNode(
-                Scope("ValIO", "Parse"),
-                [new MemberAccessExpressionNode(Ident("response"), new IdentifierNode("Body"))],
+                StdExpressions.Scope("ValIO", "Parse"),
+                [new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("Body"))],
                 genericTypeName: valueTypeName)));
 
         return statements;
     }
 
-    private ExpressionNode BuildPathExpression(IrOperation operation, IReadOnlySet<string> enumNames)
+    private ExpressionNode BuildPathExpression(IrOperation operation)
     {
-        _ = enumNames;
         var template = operation.Path;
         var parameters = operation.PathParameters.ToList();
         var parameterIndex = 0;
@@ -445,8 +443,8 @@ public sealed class StdClientAstBuilder
             }
 
             var encoded = new CallExpressionNode(
-                Scope("ValIO", "UrlEncode"),
-                [Ident(_typeMapper.FormatQueryLiteral(parameter.Type, _naming.PropertyName(parameter.Name)))]);
+                StdExpressions.Scope("ValIO", "UrlEncode"),
+                [StdExpressions.Ident(_typeMapper.FormatQueryLiteral(parameter.Type, _naming.PropertyName(parameter.Name)))]);
             path = path == null ? encoded : new BinaryExpressionNode(path, BinaryOperator.Add, encoded);
         }
 
@@ -465,10 +463,10 @@ public sealed class StdClientAstBuilder
         var value = _typeMapper.FormatQueryLiteral(parameter.Type, name);
 
         var call = new ExpressionStatementNode(new CallExpressionNode(
-            new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode(addMethod)),
+            new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode(addMethod)),
             [
                 new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String),
-                Ident(value),
+                StdExpressions.Ident(value),
             ]));
 
         if (parameter.IsRequired)
@@ -478,14 +476,14 @@ public sealed class StdClientAstBuilder
         else
         {
             statements.Add(new IfStatementNode(
-                Ident(name),
+                StdExpressions.Ident(name),
                 new BlockNode(
                 [
                     new ExpressionStatementNode(new CallExpressionNode(
-                        new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode(addMethod)),
+                        new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode(addMethod)),
                         [
                             new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String),
-                            Ident(_typeMapper.FormatQueryLiteral(parameter.Type, $"*{name}")),
+                            StdExpressions.Ident(_typeMapper.FormatQueryLiteral(parameter.Type, $"*{name}")),
                         ])),
                 ])));
         }
@@ -506,11 +504,11 @@ public sealed class StdClientAstBuilder
                 new IdentifierNode("body"),
                 new SimpleTypeNode(new IdentifierNode("std::string")),
                 new CallExpressionNode(
-                    Scope("ValIO", "Dump"),
-                    [Ident("request")])));
+                    StdExpressions.Scope("ValIO", "Dump"),
+                    [StdExpressions.Ident("request")])));
             statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("SetJsonBody")),
-                [Ident("body")])));
+                new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("SetJsonBody")),
+                [StdExpressions.Ident("body")])));
         }
         else if (body.IsFormUrlEncoded)
         {
@@ -518,10 +516,10 @@ public sealed class StdClientAstBuilder
             {
                 var literal = _typeMapper.FormatQueryLiteral(property.Type, $"request.{_naming.PropertyName(property.Name)}");
                 statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                    new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("AddFormField")),
+                    new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
                     [
                         new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                        Ident(literal),
+                        StdExpressions.Ident(literal),
                     ])));
             }
         }
@@ -533,11 +531,11 @@ public sealed class StdClientAstBuilder
                 if (IrTypeQueries.IsFileOrBinary(property.Type))
                 {
                     statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                        new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("AddFilePart")),
+                        new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFilePart")),
                         [
                             new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
                             new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                            Ident(fieldName),
+                            StdExpressions.Ident(fieldName),
                             new LiteralExpressionNode("application/octet-stream", LiteralKind.String),
                         ])));
                 }
@@ -545,10 +543,10 @@ public sealed class StdClientAstBuilder
                 {
                     var literal = _typeMapper.FormatQueryLiteral(property.Type, fieldName);
                     statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                        new MemberAccessExpressionNode(Ident("httpRequest"), new IdentifierNode("AddFormField")),
+                        new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
                         [
                             new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                            Ident(literal),
+                            StdExpressions.Ident(literal),
                         ])));
                 }
             }
@@ -564,7 +562,7 @@ public sealed class StdClientAstBuilder
 
     private static CallExpressionNode BuildMakeErrorCall(string valueTypeName, ExpressionNode errorExpression)
         => new(
-            Scope("ValIO", "MakeError"),
+            StdExpressions.Scope("ValIO", "MakeError"),
             [errorExpression],
             genericTypeName: valueTypeName);
 
@@ -595,13 +593,13 @@ public sealed class StdClientAstBuilder
     private void CollectOperationReferences(IrOperation operation, ISet<string> models, ISet<string> enums, IReadOnlySet<string> enumNames)
     {
         foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
-            StdTypeReferenceCollector.Collect(parameter.Type, models, enums, enumNames);
+            CppTypeReferenceCollector.Collect(parameter.Type, models, enums, enumNames);
         if (operation.RequestBody != null && !IrTypeQueries.IsFileOrBinary(operation.RequestBody.Type))
-            StdTypeReferenceCollector.Collect(operation.RequestBody.Type, models, enums, enumNames);
+            CppTypeReferenceCollector.Collect(operation.RequestBody.Type, models, enums, enumNames);
         foreach (var response in operation.Responses)
         {
             if (response.Type != null)
-                StdTypeReferenceCollector.Collect(response.Type, models, enums, enumNames);
+                CppTypeReferenceCollector.Collect(response.Type, models, enums, enumNames);
         }
     }
 
@@ -655,14 +653,4 @@ public sealed class StdClientAstBuilder
             yield return new CppIncludeDirectiveNode(_naming.EnumHeaderPath(refEnum));
     }
 
-    private static IdentifierExpressionNode Ident(string name) => new(new IdentifierNode(name));
-
-    /// <summary>A::B::C — цепочка scope-доступа.</summary>
-    private static ExpressionNode Scope(params string[] parts)
-    {
-        ExpressionNode current = Ident(parts[0]);
-        for (var i = 1; i < parts.Length; i++)
-            current = new MemberAccessExpressionNode(current, new IdentifierNode(parts[i]), useScopeOperator: true);
-        return current;
     }
-}
