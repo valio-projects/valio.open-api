@@ -57,7 +57,8 @@ public sealed class StdEnumAstBuilder
                 : new SimpleTypeNode(new IdentifierNode("std::string_view")),
             [new CppParameterNode(new IdentifierNode("v"), new SimpleTypeNode(new IdentifierNode(enumName)))],
             body: new BlockNode(BuildToWireStatements(irEnum, enumName, isInteger)),
-            documentation: new CommentNode("Wire-представление значения (исходное OpenAPI-значение).", CommentKind.MultiLine));
+            documentation: new CommentNode("Wire-представление значения (исходное OpenAPI-значение).", CommentKind.MultiLine),
+            isConstexpr: true);
 
         var fromWire = new CppFreeFunctionNode(
             new IdentifierNode("FromWire"),
@@ -68,7 +69,8 @@ public sealed class StdEnumAstBuilder
                     ? new SimpleTypeNode(new IdentifierNode("std::int32_t"), isPrimitive: true)
                     : new SimpleTypeNode(new IdentifierNode("std::string_view")))],
             body: new BlockNode(BuildFromWireStatements(irEnum, enumName, isInteger)),
-            documentation: new CommentNode("Обратный wire-маппинг; неизвестное значение → std::nullopt.", CommentKind.MultiLine));
+            documentation: new CommentNode("Обратный wire-маппинг; неизвестное значение → std::nullopt.", CommentKind.MultiLine),
+            isConstexpr: true);
 
         var includes = new List<CppIncludeDirectiveNode>
         {
@@ -163,6 +165,7 @@ public sealed class StdEnumAstBuilder
                         [
                             new LiteralExpressionNode("1701", LiteralKind.Number),
                             new LiteralExpressionNode($"unknown {enumName} wire value", LiteralKind.QuotedString),
+                            Ident("nullptr"),
                         ])),
                 ])),
         ]);

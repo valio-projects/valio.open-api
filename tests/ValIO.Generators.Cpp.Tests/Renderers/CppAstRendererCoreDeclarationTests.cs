@@ -79,7 +79,7 @@ public class CppAstRendererCoreDeclarationTests
     }
 
     [Test]
-    public void Class_SealedAndAccessSections_RendersFinalAfterBases()
+    public void Class_SealedAndAccessSections_RendersFinalBeforeBases()
     {
         var node = new ClassDeclarationNode(
             new IdentifierNode("StoreClient"),
@@ -95,7 +95,7 @@ public class CppAstRendererCoreDeclarationTests
             ]);
 
         var expected =
-            "class StoreClient : public IStoreClient final\n" +
+            "class StoreClient final : public IStoreClient\n" +
             "{\n" +
             "\tpublic:\n" +
             "\tvoid PlaceOrder();\n" +

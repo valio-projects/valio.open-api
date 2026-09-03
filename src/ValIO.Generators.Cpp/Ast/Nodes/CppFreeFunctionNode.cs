@@ -37,6 +37,11 @@ public sealed class CppFreeFunctionNode : DeclarationNode
     /// </summary>
     public bool IsConst { get; }
 
+    /// <summary>
+    /// constexpr-функция (неявно inline — обязательна для свободных функций в общих хедерах)
+    /// </summary>
+    public bool IsConstexpr { get; }
+
 
     public override IReadOnlyList<AstNode> Children
     {
@@ -61,7 +66,8 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         bool isDeclarationOnly = false,
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null,
-        bool isConst = false)
+        bool isConst = false,
+        bool isConstexpr = false)
         : base(name, documentation, metadata: metadata)
     {
         ReturnType = returnType ?? throw new ArgumentNullException(nameof(returnType));
@@ -69,6 +75,7 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         Body = body;
         IsDeclarationOnly = isDeclarationOnly;
         IsConst = isConst;
+        IsConstexpr = isConstexpr;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -88,7 +95,8 @@ public sealed class CppFreeFunctionNode : DeclarationNode
             IsDeclarationOnly,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary(),
-            IsConst);
+            IsConst,
+            IsConstexpr);
     }
 
     public override string ToString()

@@ -88,6 +88,7 @@ jobs:
           dotnet test ValIO.sln
           -c Release
           --no-build
+          --filter "Category!=CompileFixture"
           --logger trx
           --logger "console;verbosity=minimal"
           --collect:"XPlat Code Coverage"
@@ -106,6 +107,41 @@ jobs:
             **/TestResults/**/coverage.cobertura.xml
           if-no-files-found: warn
           retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # C++ compile fixture for the cpp std profile: generates a client in-proc,
+  # builds it with CMake against EXACT pins cpp-httplib v0.18.3 +
+  # nlohmann_json v3.12.0 (the gta-sa-rw conan graph), and runs an httplib
+  # smoke-server round-trip. The test cases cover C++17/20/23 (Expected
+  # polyfill and std::expected) on MSVC and GCC.
+  # ---------------------------------------------------------------------------
+  cpp-compile-fixture:
+    name: cpp compile fixture (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore tests/ValIO.Generators.Cpp.CompileTests/ValIO.Generators.Cpp.CompileTests.csproj
+
+      - name: Run compile fixture (C++17/20/23)
+        run: >
+          dotnet test tests/ValIO.Generators.Cpp.CompileTests/ValIO.Generators.Cpp.CompileTests.csproj
+          -c Release
+          --no-restore
+          --filter "Category=CompileFixture"
 
   # ---------------------------------------------------------------------------
   # Prove the whole solution still packs. Every publishable project is packed

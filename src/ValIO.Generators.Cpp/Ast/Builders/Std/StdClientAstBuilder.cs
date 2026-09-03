@@ -183,53 +183,56 @@ public sealed class StdClientAstBuilder
             : expected;
     }
 
+    /// <summary>
+    /// Параметры метода: обязательные вперёд (path → query/header required → body),
+    /// optional — в хвост с default = std::nullopt (C++ требует trailing-дефолты).
+    /// </summary>
     private List<ParameterDeclarationNode> BuildMethodParameters(IrOperation operation)
     {
-        var parameters = new List<ParameterDeclarationNode>();
+        var required = new List<ParameterDeclarationNode>();
+        var optional = new List<ParameterDeclarationNode>();
 
         foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
         {
-            var name = _naming.PropertyName(parameter.Name);
-            var type = _typeMapper.MapType(parameter.Type);
-            var isModelRef = parameter.Type is IrModelReference && !_typeMapper.IsEnumReference(((IrModelReference)parameter.Type).ModelName);
-            ParameterDeclarationNode declaration;
-            if (isModelRef)
-            {
-                // модели — по const&; binary — по значению/const&
-                declaration = new ParameterDeclarationNode(new IdentifierNode(name), new RawTypeNode($"const {RenderTypeName(type)}&"));
-            }
-            else
-            {
-                declaration = new ParameterDeclarationNode(new IdentifierNode(name), type);
-            }
-
-            if (!parameter.IsRequired)
-            {
-                var optionalType = new GenericTypeNode(new IdentifierNode("std::optional"), [type]);
-                declaration = new ParameterDeclarationNode(
-                    new IdentifierNode(name),
-                    optionalType,
-                    isRequired: false,
-                    defaultValue: new LiteralExpressionNode("std::nullopt", LiteralKind.String));
-            }
-            parameters.Add(declaration);
+            var declaration = BuildParameter(parameter);
+            (parameter.IsRequired ? required : optional).Add(declaration);
         }
 
         if (operation.RequestBody != null)
         {
-            var bodyName = new IdentifierNode("request");
-            if (IrTypeQueries.IsFileOrBinary(operation.RequestBody.Type))
-            {
-                parameters.Add(new ParameterDeclarationNode(bodyName, new RawTypeNode("const std::vector<unsigned char>&")));
-            }
-            else
-            {
-                var mapped = _typeMapper.MapType(operation.RequestBody.Type);
-                parameters.Add(new ParameterDeclarationNode(bodyName, new RawTypeNode($"const {RenderTypeName(mapped)}&")));
-            }
+            required.Add(new ParameterDeclarationNode(
+                new IdentifierNode("request"),
+                IrTypeQueries.IsFileOrBinary(operation.RequestBody.Type)
+                    ? new RawTypeNode("const std::vector<unsigned char>&")
+                    : new RawTypeNode($"const {StdTypeText.Render(_typeMapper.MapType(operation.RequestBody.Type))}&")));
         }
 
-        return parameters;
+        required.AddRange(optional);
+        return required;
+    }
+
+    private ParameterDeclarationNode BuildParameter(IrParameter parameter)
+    {
+        var name = _naming.PropertyName(parameter.Name);
+        var type = _typeMapper.MapType(parameter.Type);
+        var isStructReference = parameter.Type is IrModelReference && !_typeMapper.IsEnumReference(((IrModelReference)parameter.Type).ModelName);
+
+        if (parameter.IsRequired)
+        {
+            return isStructReference
+                ? new ParameterDeclarationNode(new IdentifierNode(name), new RawTypeNode($"const {StdTypeText.Render(type)}&"))
+                : new ParameterDeclarationNode(new IdentifierNode(name), type);
+        }
+
+        // Optional: std::optional + trailing default.
+        TypeNode optionalType = isStructReference
+            ? new RawTypeNode($"std::optional<{StdTypeText.Render(type)}>")
+            : new GenericTypeNode(new IdentifierNode("std::optional"), [type]);
+        return new ParameterDeclarationNode(
+            new IdentifierNode(name),
+            optionalType,
+            isRequired: false,
+            defaultValue: new LiteralExpressionNode("std::nullopt", LiteralKind.String));
     }
 
     // ===== Тела =====
@@ -262,7 +265,7 @@ public sealed class StdClientAstBuilder
         var successType = GetSuccessType(operation);
         var valueTypeName = successType == null
             ? "void"
-            : RenderTypeName(_typeMapper.MapType(successType));
+            : StdTypeText.Render(_typeMapper.MapType(successType));
         _ = modelLookup;
 
         if (isAsync)
@@ -273,10 +276,23 @@ public sealed class StdClientAstBuilder
             if (hasBody)
                 captures.Add("request");
 
+            // Порядок аргументов повторяет переупорядоченную сигнатуру:
+            // обязательные (path + required query/header + body) вперёд, optional — в хвост.
+            var orderedParameters = operation.PathParameters
+                .Concat(operation.QueryParameters).Concat(operation.HeaderParameters)
+                .OrderBy(p => p.IsRequired ? 0 : 1).ToList();
             var callArguments = new List<ExpressionNode>();
-            foreach (var p in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+            var bodyInserted = false;
+            foreach (var p in orderedParameters)
+            {
+                if (!p.IsRequired && hasBody && !bodyInserted)
+                {
+                    callArguments.Add(Ident("request"));
+                    bodyInserted = true;
+                }
                 callArguments.Add(Ident(_naming.PropertyName(p.Name)));
-            if (hasBody)
+            }
+            if (hasBody && !bodyInserted)
                 callArguments.Add(Ident("request"));
 
             return new CppFreeFunctionNode(
@@ -638,14 +654,6 @@ public sealed class StdClientAstBuilder
         foreach (var refEnum in referencedEnums.OrderBy(x => x, StringComparer.Ordinal))
             yield return new CppIncludeDirectiveNode(_naming.EnumHeaderPath(refEnum));
     }
-
-    private static string RenderTypeName(TypeNode type) => type switch
-    {
-        SimpleTypeNode simple => simple.Name.Name,
-        GenericTypeNode generic => $"{generic.Name.Name}<{string.Join(", ", generic.TypeArguments.Select(RenderTypeName))}>",
-        RawTypeNode raw => raw.RawTypeString,
-        _ => type.ToString() ?? "std::string",
-    };
 
     private static IdentifierExpressionNode Ident(string name) => new(new IdentifierNode(name));
 

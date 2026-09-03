@@ -296,19 +296,20 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         var sb = new StringBuilder();
         if (node.Documentation != null)
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
+        var constexprPrefix = node.IsConstexpr ? "constexpr " : "";
         var returnStr = RenderType(node.ReturnType);
         var constSuffix = node.IsConst ? " const" : "";
         if (node.IsDeclarationOnly)
         {
             var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
-            sb.AppendLine($"{Indent()}{returnStr} {node.Name.Name}({inlineParams}){constSuffix};");
+            sb.AppendLine($"{Indent()}{constexprPrefix}{returnStr} {node.Name.Name}({inlineParams}){constSuffix};");
         }
         else if (node.Body != null)
         {
             var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
             var isConstructor = node.Metadata.ContainsKey("cpp.constructor");
             var returnPrefix = isConstructor ? string.Empty : RenderType(node.ReturnType) + " ";
-            sb.Append($"{Indent()}{returnPrefix}{node.Name.Name}({inlineParams}){constSuffix}").AppendLine();
+            sb.Append($"{Indent()}{constexprPrefix}{returnPrefix}{node.Name.Name}({inlineParams}){constSuffix}").AppendLine();
             sb.Append(Visit(node.Body));
         }
         sb.AppendLine();
@@ -701,9 +702,9 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         var bases = node.BaseTypes.Count > 0
             ? " : " + string.Join(", ", node.BaseTypes.Select(t => $"public {RenderType(t)}"))
             : "";
-        // C# sealed → C++ final (спецификатор после списка баз).
+        // C# sealed → C++ final (по грамматике — ДО списка баз).
         var finalStr = node.IsSealed ? " final" : "";
-        sb.AppendLine($"class {node.Name.Name}{bases}{finalStr}");
+        sb.AppendLine($"class {node.Name.Name}{finalStr}{bases}");
         sb.AppendLine("{");
         _indentLevel++;
         // Класс: секции доступа всегда явные (default-доступ C++ — private).

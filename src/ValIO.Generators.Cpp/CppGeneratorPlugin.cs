@@ -37,6 +37,7 @@ public sealed class CppGeneratorPlugin : IGeneratorPlugin
             new CppStdSerializersStep(renderer),
             new CppStdRuntimeStep(renderer),
             new CppStdClientStep(renderer),
+            new CppStdCmakeStep(renderer),
         };
         return new CodeGenerationPipeline(steps);
     }

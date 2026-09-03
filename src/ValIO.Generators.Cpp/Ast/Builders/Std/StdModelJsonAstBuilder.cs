@@ -22,9 +22,11 @@ namespace ValIO.Generators.Cpp.Ast.Builders.Std;
 public sealed class StdModelJsonAstBuilder
 {
     private readonly StdNamingConvention _naming;
+    private readonly StdCppTypeMapper _typeMapper;
 
-    public StdModelJsonAstBuilder(StdNamingConvention naming)
+    public StdModelJsonAstBuilder(StdCppTypeMapper typeMapper, StdNamingConvention naming)
     {
+        _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
     }
 
@@ -180,6 +182,11 @@ public sealed class StdModelJsonAstBuilder
 
             if (IsOptional(property))
             {
+                // В дефолтной сборке nlohmann from_json(std::optional) отсутствует
+                // (JSON_USE_IMPLICIT_CONVERSIONS=1), поэтому optional-поле заполняется
+                // присваиванием внутреннего значения: value.Field = j.at("wire").get<Inner>();
+                var innerRendered = StdTypeText.Render(_typeMapper.MapType(
+                    IrTypeQueries.UnwrapNullableOptional(property.Type)));
                 statements.Add(new IfStatementNode(
                     new BinaryExpressionNode(
                         BuildContainsCall(wire),
@@ -188,7 +195,17 @@ public sealed class StdModelJsonAstBuilder
                             UnaryOperator.LogicalNot,
                             new CallExpressionNode(
                                 new MemberAccessExpressionNode(BuildAtCall(wire), new IdentifierNode("is_null"))))),
-                    new BlockNode([new ExpressionStatementNode(BuildGetToCall(wire, fieldAccess))])));
+                    new BlockNode(
+                    [
+                        new ExpressionStatementNode(new BinaryExpressionNode(
+                            fieldAccess,
+                            BinaryOperator.Assign,
+                            new CallExpressionNode(
+                                new MemberAccessExpressionNode(BuildAtCall(wire), new IdentifierNode("get")),
+                                [],
+                                genericTypeName: innerRendered),
+                            isAssignment: true)),
+                    ])));
             }
             else
             {

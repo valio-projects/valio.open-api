@@ -25,7 +25,7 @@ public sealed class CppStdSerializersStep(ICppAstRenderer renderer) : CppStdStep
         DrainWarnings(context, mapper);
         var options = EffectiveOptions(context);
         var enumBuilder = new StdEnumAstBuilder(naming);
-        var modelBuilder = new StdModelJsonAstBuilder(naming);
+        var modelBuilder = new StdModelJsonAstBuilder(mapper, naming);
         var (_, modelLookup) = CppAstBuilder.PrepareInputs(context.IrDocument);
         var enumNames = context.IrDocument.Enums.Select(e => e.Name).ToHashSet();
         var rootNamespace = ResolveRootNamespace(context);

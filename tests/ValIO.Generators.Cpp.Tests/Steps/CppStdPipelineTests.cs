@@ -237,4 +237,32 @@ public class CppStdPipelineTests
 
         files.Keys.Should().NotContain(f => f.StartsWith("Public/") || f.StartsWith("Private/"));
     }
+
+    [Test]
+    public async Task EmitCmake_AddsRootCMakeLists_WithTargetStandard()
+    {
+        var withoutCmake = await GenerateAsync(BuildDocument(), new CppGenerationOptions
+        {
+            Runtime = CppRuntimeProfile.Std,
+            Namespace = "Petstore",
+            EmitCmake = false,
+        });
+        withoutCmake.Keys.Should().NotContain("CMakeLists.txt");
+
+        var withCmake = await GenerateAsync(BuildDocument(), new CppGenerationOptions
+        {
+            Runtime = CppRuntimeProfile.Std,
+            Namespace = "Petstore",
+            EmitCmake = true,
+            CxxStandard = 20,
+        });
+        withCmake.Keys.Should().Contain("CMakeLists.txt");
+        withCmake["CMakeLists.txt"].Should()
+            .Contain("set(CMAKE_CXX_STANDARD 20)")
+            .And.Contain("target_compile_features(valio_generated PUBLIC cxx_std_20)")
+            .And.Contain("find_package(httplib REQUIRED)")
+            .And.Contain("find_package(nlohmann_json REQUIRED)")
+            .And.Contain("${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+            .And.Contain("project(ValIO_Petstore LANGUAGES CXX)");
+    }
 }

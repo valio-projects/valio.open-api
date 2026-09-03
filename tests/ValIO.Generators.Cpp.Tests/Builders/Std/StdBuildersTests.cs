@@ -185,7 +185,7 @@ public class StdBuildersTests
             ],
         };
 
-        var builder = new StdModelJsonAstBuilder(_naming);
+        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming), _naming);
         var (header, source) = builder.Build(
             model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Petstore", _options);
 
@@ -202,7 +202,7 @@ public class StdBuildersTests
         sourceContent.Should().Contain("if (value.DisplayName)");
         sourceContent.Should().Contain("j[\"displayName\"] = *value.DisplayName;");
         sourceContent.Should().Contain("if (j.contains(\"displayName\") && !j.at(\"displayName\").is_null())");
-        sourceContent.Should().Contain("j.at(\"displayName\").get_to(value.DisplayName);");
+        sourceContent.Should().Contain("value.DisplayName = j.at(\"displayName\").get<std::string>();");
         // полный nlohmann — только в исходнике
         sourceContent.Should().Contain($"#include <{_options.JsonInclude}>");
     }
@@ -223,7 +223,7 @@ public class StdBuildersTests
         };
         var lookup = new Dictionary<string, IrModel> { ["Animal"] = baseModel };
 
-        var builder = new StdModelJsonAstBuilder(_naming);
+        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming), _naming);
         var (_, source) = builder.Build(derived, new HashSet<string>(), lookup, "Petstore", _options);
         var content = Render(source);
 
@@ -257,7 +257,7 @@ public class StdBuildersTests
         var lookup = new Dictionary<string, IrModel> { ["Customer"] = new() { Name = "Customer", Properties = [] } };
         var enumNames = new HashSet<string> { "OrderStatus" };
 
-        var builder = new StdModelJsonAstBuilder(_naming);
+        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming), _naming);
         var (_, source) = builder.Build(order, enumNames, lookup, "Petstore", _options);
         var content = Render(source);
 
@@ -288,10 +288,10 @@ public class StdBuildersTests
         content.Should().Contain("enum class OrderStatus : std::int32_t");
         content.Should().Contain("Placed = 0,");
         content.Should().Contain("Approved = 1");
-        content.Should().Contain("std::string_view ToWire(OrderStatus v)");
+        content.Should().Contain("constexpr std::string_view ToWire(OrderStatus v)");
         content.Should().Contain("if (v == OrderStatus::Placed)");
         content.Should().Contain("return \"placed\";");
-        content.Should().Contain("std::optional<OrderStatus> FromWire(std::string_view w)");
+        content.Should().Contain("constexpr std::optional<OrderStatus> FromWire(std::string_view w)");
         content.Should().Contain("if (w == \"approved\")");
         content.Should().Contain("return OrderStatus::Approved;");
         content.Should().Contain("return std::nullopt;");
@@ -319,8 +319,8 @@ public class StdBuildersTests
 
         content.Should().Contain("Low = 1,");
         content.Should().Contain("High = 2");
-        content.Should().Contain("std::int32_t ToWire(Level v)");
-        content.Should().Contain("std::optional<Level> FromWire(std::int32_t w)");
+        content.Should().Contain("constexpr std::int32_t ToWire(Level v)");
+        content.Should().Contain("constexpr std::optional<Level> FromWire(std::int32_t w)");
         content.Should().Contain("if (w == 2)");
     }
 
@@ -348,6 +348,6 @@ public class StdBuildersTests
         sourceContent.Should().Contain("FromWire(j.get<std::string>())");
         sourceContent.Should().Contain("if (parsed)");
         sourceContent.Should().Contain("value = *parsed;");
-        sourceContent.Should().Contain("throw nlohmann::json::out_of_range::create(1701, \"unknown OrderStatus wire value\");");
+        sourceContent.Should().Contain("throw nlohmann::json::out_of_range::create(1701, \"unknown OrderStatus wire value\", nullptr);");
     }
 }

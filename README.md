@@ -50,7 +50,7 @@ dotnet run --project src/ValIO.Cli -- generate -s ./openapi.yaml -o ./out -l typ
 | Kotlin     | OkHttp                                                                    | None                          | Kotlinx.Serialization                |
 | Python     | httpx                                                                     | Pydantic                      | async/sync                           |
 | PHP        | Guzzle                                                                    | None                          | PSR-7                                |
-| C++        | Unreal HTTP                                                               | None                          | UE plugin shape                      |
+| C++        | Unreal HTTP / cpp-httplib                                                 | None                          | `runtime: ue` (default) \| `std`: nlohmann_json, JSON-free model headers, C++17/20/23 |
 | Swift      | URLSession                                                                | Codable                       | iOS/macOS                            |
 | Rust       | Reqwest                                                                   | Serde                         | tokio                                |
 | Ruby       | Faraday                                                                   | None                          | Ruby 3+                              |
