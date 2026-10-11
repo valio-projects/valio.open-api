@@ -637,10 +637,7 @@ public class IrBuilder
         if (IsSingleNonNullPrimitive(resolvedSchema))
         {
             var core = resolvedSchema.Type!.Value & ~JsonSchemaType.Null;
-            return new IrPrimitiveType
-            {
-                PrimitiveKind = MapPrimitive(core, resolvedSchema.Format)
-            };
+            return BuildPrimitiveType(core, resolvedSchema.Format);
         }
 
         // OpenAPI 3.1 «только null» ({"type":"null"}) как самостоятельный тип — например конверт
@@ -768,9 +765,9 @@ public class IrBuilder
                prim == JsonSchemaType.Boolean;
     }
     
-    /// <summary>
-    /// Несколько примитивных типов в одном type, и/или null + примитив(ы).
-    /// </summary>
+    /// <summary>Builds primitive type arrays while retaining nullability and member-specific format metadata.</summary>
+    /// <param name="schema">The scalar schema with one or more JSON Schema type flags.</param>
+    /// <returns>The scalar or composed type, or null when a different structural branch should handle the schema.</returns>
     private IrType? TryBuildCompositePrimitiveType(IOpenApiSchema schema)
     {
         if (!schema.Type.HasValue)
@@ -807,23 +804,21 @@ public class IrBuilder
             if (!hasNull)
                 return null;
             
-            var kind = MapPrimitive(flags[0], ResolveFormatForUnionMember(schema, flags[0]));
-            return new IrNullableType { InnerType = new IrPrimitiveType { PrimitiveKind = kind } };
+            return new IrNullableType { InnerType = BuildPrimitiveType(flags[0], ResolveFormatForUnionMember(schema, flags[0])) };
         }
         
         // string + другие примитивы: строка как сериализация (число, bool, дата…). Сначала format, затем нес-string типы.
         if (IsStringCoercionPrimitiveUnion(flags))
         {
             var kind = ResolveStringCoercionUnionPrimitiveKind(schema, flags);
-            IrType inner = new IrPrimitiveType { PrimitiveKind = kind };
+            IrType inner = new IrPrimitiveType { PrimitiveKind = kind, Format = NormalizePrimitiveFormat(schema.Format) };
             return hasNull ? new IrNullableType { InnerType = inner } : inner;
         }
         
         var unionMembers = new List<IrType>(flags.Count);
         foreach (var flag in flags)
         {
-            var kind = MapPrimitive(flag, ResolveFormatForUnionMember(schema, flag));
-            unionMembers.Add(new IrPrimitiveType { PrimitiveKind = kind });
+            unionMembers.Add(BuildPrimitiveType(flag, ResolveFormatForUnionMember(schema, flag)));
         }
         
         IrType result = new IrUnionType { Types = unionMembers };
@@ -1002,38 +997,33 @@ public class IrBuilder
         return parent.Format;
     }
     
-    /// <summary>
-    /// Проверяет, есть ли в схеме хотя бы одно required свойство
-    /// </summary>
-    private bool HasRequiredPropertiesInSchema(IOpenApiSchema schema, OpenApiDocument document)
+    /// <summary>Builds a scalar type without losing its format annotation during kind selection.</summary>
+    /// <param name="type">The scalar JSON Schema type.</param>
+    /// <param name="format">The optional scalar format annotation.</param>
+    /// <returns>The primitive kind together with its retained normalized format.</returns>
+    private IrPrimitiveType BuildPrimitiveType(JsonSchemaType type, string? format) => new()
     {
-        var resolvedSchema = _schemaResolver.ResolveSchema(schema);
-        
-        // Если в схеме есть Required и в нем есть хотя бы одно свойство
-        if (resolvedSchema.Required != null && resolvedSchema.Required.Count > 0)
-        {
-            return true;
-        }
-        
-        // Также проверяем allOf - если в какой-то из базовых схем есть required свойства
-        if (resolvedSchema.AllOf != null && resolvedSchema.AllOf.Count > 0)
-        {
-            foreach (var allOfSchema in resolvedSchema.AllOf)
-            {
-                var resolvedAllOfSchema = _schemaResolver.ResolveSchema(allOfSchema);
-                if (resolvedAllOfSchema.Required != null && resolvedAllOfSchema.Required.Count > 0)
-                {
-                    return true;
-                }
-            }
-        }
-        
-        return false;
+        PrimitiveKind = MapPrimitive(type, format),
+        Format = NormalizePrimitiveFormat(format),
+    };
+
+    /// <summary>Normalizes recognized formats while preserving case-sensitive custom identifiers.</summary>
+    /// <param name="format">The original schema format annotation.</param>
+    /// <returns>The normalized known format, verbatim custom format, or null for an empty annotation.</returns>
+    private static string? NormalizePrimitiveFormat(string? format)
+    {
+        if (string.IsNullOrWhiteSpace(format))
+            return null;
+        var normalized = format.Trim().ToLowerInvariant();
+        return TryMapSchemaFormatToPrimitiveKind(normalized, out _) || normalized is "duration" or "time-span" or "timespan"
+            ? normalized
+            : format;
     }
-    
-    /// <summary>
-    /// Маппит примитивный тип OpenAPI в IrPrimitiveKind
-    /// </summary>
+
+    /// <summary>Maps a scalar schema representation and compatible format to its language-independent kind.</summary>
+    /// <param name="type">The scalar JSON Schema type, or an unspecified type.</param>
+    /// <param name="format">The optional source format used for scalar representation selection.</param>
+    /// <returns>The primitive IR representation without applying a language backend.</returns>
     private IrPrimitiveKind MapPrimitive(JsonSchemaType? type, string? format)
     {
         if (!type.HasValue)
@@ -1497,8 +1487,12 @@ public class IrBuilder
     }
 
     /// <summary>
-    /// Строит IrParameter из OpenAPI параметра
+    /// Builds a parameter contract preserving its wire identity, schema constraints, and normalized serialization metadata.
     /// </summary>
+    /// <param name="parameter">The source parameter, including location-specific style and explode defaults.</param>
+    /// <param name="document">The document used to resolve referenced parameter schemas.</param>
+    /// <returns>The language-independent parameter contract.</returns>
+    /// <exception cref="InvalidOperationException">The reader supplies an unrecognized serialization style.</exception>
     private IrParameter BuildParameter(IOpenApiParameter parameter, OpenApiDocument document)
     {
         var name = _namingConverter.SanitizeIdentifier(parameter.Name ?? "param");
@@ -1510,8 +1504,7 @@ public class IrBuilder
         return new IrParameter
         {
             Name = name,
-            // Сохраняем исходное «проводное» имя (напр. Paging.Offset) — sanitize мог превратить его в
-            // валидный идентификатор (Paging_Offset), но в URL/заголовке ключ должен остаться исходным.
+            // Keep the wire name even when source identifier sanitization changes punctuation.
             OriginalName = parameter.Name ?? name,
             Type = type,
             IsRequired = isRequired,
@@ -1520,13 +1513,40 @@ public class IrBuilder
             Description = !string.IsNullOrWhiteSpace(parameter.Description) ? parameter.Description : schema.Description,
             DefaultValue = ExtractDefaultValue(schema.Default),
             // Reuse the same constraint extraction as model properties so params carry lengths/ranges/patterns.
-            Constraints = ExtractConstraints(schema)
+            Constraints = ExtractConstraints(schema),
+            Style = NormalizeParameterStyle(parameter),
+            Explode = parameter.Explode,
+        };
+    }
+
+    /// <summary>Maps the reader's effective parameter style into the SDK-independent IR vocabulary.</summary>
+    /// <param name="parameter">The source parameter whose location supplies an omitted style's default.</param>
+    /// <returns>The normalized serialization style.</returns>
+    /// <exception cref="InvalidOperationException">The reader supplies a style absent from the shared IR vocabulary.</exception>
+    private static IrParameterStyle NormalizeParameterStyle(IOpenApiParameter parameter)
+    {
+        var style = parameter.Style ?? (parameter.In is ParameterLocation.Query or ParameterLocation.Cookie
+            ? ParameterStyle.Form
+            : ParameterStyle.Simple);
+        return style switch
+        {
+            ParameterStyle.Matrix => IrParameterStyle.Matrix,
+            ParameterStyle.Label => IrParameterStyle.Label,
+            ParameterStyle.Form => IrParameterStyle.Form,
+            ParameterStyle.Simple => IrParameterStyle.Simple,
+            ParameterStyle.SpaceDelimited => IrParameterStyle.SpaceDelimited,
+            ParameterStyle.PipeDelimited => IrParameterStyle.PipeDelimited,
+            ParameterStyle.DeepObject => IrParameterStyle.DeepObject,
+            ParameterStyle.Cookie => IrParameterStyle.Cookie,
+            _ => throw new InvalidOperationException($"Parameter '{parameter.Name}' has unsupported serialization style '{style}'."),
         };
     }
     
-    /// <summary>
-    /// Строит IrRequestBody из OpenAPI request body
-    /// </summary>
+    /// <summary>Builds a request-body contract with presence controlled only by requestBody.required.</summary>
+    /// <param name="requestBody">The request-body presence and media-type contract.</param>
+    /// <param name="document">The OpenAPI document used to resolve referenced schemas.</param>
+    /// <param name="operationId">The optional operation identity used to name inline form models.</param>
+    /// <returns>The body contract whose required flag is independent of its model's required properties.</returns>
     private IrRequestBody BuildRequestBody(IOpenApiRequestBody requestBody, OpenApiDocument document, string? operationId = null)
     {
         // Берем первый content type (обычно application/json)
@@ -1552,15 +1572,10 @@ public class IrBuilder
                     : null))
             : new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         
-        // Проверяем, есть ли в схеме хотя бы одно required свойство
-        // Если есть, то request body должен быть required, даже если requestBody.Required = false
-        var hasRequiredProperties = schema != null && HasRequiredPropertiesInSchema(schema, document);
-        var isRequired = requestBody.Required || hasRequiredProperties;
-        
         return new IrRequestBody
         {
             Type = type,
-            IsRequired = isRequired,
+            IsRequired = requestBody.Required,
             ContentType = contentType,
             Description = requestBody.Description
         };

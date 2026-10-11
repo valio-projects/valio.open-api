@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
@@ -20,9 +21,9 @@ using ValIO.Generators.TypeScript.Validation;
 namespace ValIO.Generators.TypeScript.Zod;
 
 /// <summary>
-/// Рендерер для генерации Zod схем валидации через IR и AST
+/// Renders Zod validation schemas using the shared IR document and schema AST.
 /// </summary>
-public class ZodSchemaRenderer
+public class ZodSchemaRenderer : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, ValIO.Core.Ast.Nodes.TypeNode> _typeBuilder;
@@ -31,23 +32,24 @@ public class ZodSchemaRenderer
     private readonly string _modelsPath;
     private readonly string _uuidFormat;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
-
-    /// <summary>
-    /// Справочник моделей документа (по <see cref="ValIO.Core.IR.IrModel.Name"/>) для резолва наследования
-    /// allOf в собираемых z-схемах. Устанавливается шагом; по умолчанию пуст.
-    /// </summary>
-    public IReadOnlyDictionary<string, ValIO.Core.IR.IrModel> ModelsByName { get; set; }
-        = new Dictionary<string, ValIO.Core.IR.IrModel>();
-
+    /// <summary>Creates a renderer bound to one finalized document context.</summary>
+    /// <param name="documentContext">The shared immutable declaration indexes.</param>
+    /// <param name="namingConverter">The naming rules for declaration file stems.</param>
+    /// <param name="typeBuilder">The conversion from IR types to TypeScript type nodes.</param>
+    /// <param name="useBigInt">Whether int64 values use bigint schemas.</param>
+    /// <param name="zodVersion">The selected Zod major version.</param>
+    /// <param name="modelsPath">The configured model output directory.</param>
+    /// <param name="uuidFormat">The selected UUID validation mode.</param>
+    /// <exception cref="ArgumentNullException">A required dependency is null.</exception>
     public ZodSchemaRenderer(
+        IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
         bool useBigInt = false,
         string zodVersion = "zod3",
         string modelsPath = "models",
         string? uuidFormat = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
@@ -86,19 +88,18 @@ public class ZodSchemaRenderer
     /// interface) preserves documentation while the <c>ZodSchema&lt;X&gt;</c> annotation still guarantees the
     /// schema's output type matches the interface at compile time.
     /// </remarks>
-    /// <param name="model">IR модель.</param>
-    /// <param name="importPath">Путь для импортов (опционально).</param>
-    /// <param name="currentFileName">Имя текущего файла (для вычисления относительных путей).</param>
-    /// <param name="schemasPath">Путь к папке со схемами (для вычисления относительных путей).</param>
-    /// <returns>TypeScript код Zod схемы.</returns>
+    /// <param name="model">The model whose schema is rendered.</param>
+    /// <param name="importPath">An optional explicit model import base path.</param>
+    /// <param name="currentFileName">The current file stem used to calculate dependency paths.</param>
+    /// <param name="schemasPath">The schema directory used to calculate dependency paths.</param>
+    /// <returns>The TypeScript source for the model's Zod schema.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="model"/> is null.</exception>
     public string RenderFromIr(IrModel model, string? importPath = null, string? currentFileName = null, string? schemasPath = null)
     {
         if (model == null)
             throw new ArgumentNullException(nameof(model));
         
         var sb = new StringBuilder(4096);
-
-        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddModel(_orig, model);
 
         var schemaName = $"{model.Name}Schema";
         var modelFileName = _namingConverter.ToCamelCase(model.OriginalName);
@@ -145,10 +146,7 @@ public class ZodSchemaRenderer
             CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
         }
         
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt, _uuidFormat)
-        {
-            ModelsByName = ModelsByName
-        };
+        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
         var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
         
         var zodRenderer = new ZodAstRenderer();
@@ -162,17 +160,18 @@ public class ZodSchemaRenderer
     /// <summary>
     /// Renders an enum schema with a checked output type and unknown external input.
     /// </summary>
-    /// <param name="enumModel">IR enum</param>
-    /// <param name="importPath">Путь для импортов (опционально)</param>
-    /// <returns>TypeScript код Zod enum схемы</returns>
+    /// <param name="enumModel">The enum whose schema is rendered.</param>
+    /// <param name="importPath">An optional explicit enum import base path.</param>
+    /// <param name="currentFileName">The current file stem used to calculate dependency paths.</param>
+    /// <param name="schemasPath">The schema directory used to calculate dependency paths.</param>
+    /// <returns>The TypeScript source for the enum's Zod schema.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="enumModel"/> is null.</exception>
     public string RenderEnumFromIr(IrEnum enumModel, string? importPath = null, string? currentFileName = null, string? schemasPath = null)
     {
         if (enumModel == null)
             throw new ArgumentNullException(nameof(enumModel));
         
         var sb = new StringBuilder();
-
-        ValIO.Generators.TypeScript.Ast.Builders.OriginalNameMap.AddEnum(_orig, enumModel);
 
         var schemaName = $"{enumModel.Name}Schema";
         var typeName = enumModel.Name;
@@ -215,7 +214,7 @@ public class ZodSchemaRenderer
             CommentGenerator.GenerateJSDocComment(sb, 0, enumModel.Description);
         }
 
-        var zodBuilder = new ZodAstBuilder(_namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
+        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
         var zodEnum = zodBuilder.BuildZodEnum(enumModel);
         var zodRenderer = new ZodAstRenderer();
         var zodEnumCode = zodRenderer.VisitZodEnum(zodEnum);
@@ -301,6 +300,9 @@ public class ZodSchemaRenderer
         }
     }
     
+    /// <summary>Resolves a referenced declaration's original file stem independently of build order.</summary>
+    /// <param name="schemaName">The generated schema export name.</param>
+    /// <returns>The original declaration's camel-case file stem.</returns>
     private string SchemaNameToFileName(string schemaName)
     {
         var typeName = schemaName.EndsWith("Schema", StringComparison.OrdinalIgnoreCase)
@@ -310,8 +312,7 @@ public class ZodSchemaRenderer
         if (string.IsNullOrEmpty(typeName))
             return schemaName.ToLowerInvariant();
 
-        // Имя файла — от исходного (до affix) имени, чтобы путь не менялся.
-        return _namingConverter.ToCamelCase(_orig.GetValueOrDefault(typeName, typeName));
+        return _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, typeName));
     }
     
     /// <summary>

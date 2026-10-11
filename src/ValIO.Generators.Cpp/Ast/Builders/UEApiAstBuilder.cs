@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -15,39 +16,50 @@ using ValIO.Generators.Cpp.Services;
 
 namespace ValIO.Generators.Cpp.Ast.Builders;
 
-/// <summary>
-/// Строитель AST для API файлов (.h + .cpp) из IrClient.
-/// Генерирует: делегаты, OperationLibrary (Path, Parse, Build, Send), Blueprint Async Actions.
-/// </summary>
-public sealed class UEApiAstBuilder
+/// <summary>Builds Unreal endpoint artifacts with shared document declaration indexes.</summary>
+public sealed class UEApiAstBuilder : AstBuilderBase
 {
+    /// <summary>Maps types using the shared document context.</summary>
     private readonly UETypeMapper _typeMapper;
+    /// <summary>Supplies Unreal identifier and path naming.</summary>
     private readonly UENamingConvention _naming;
+    /// <summary>Supplies the selected Unreal generation options.</summary>
     private readonly CppGenerationOptions _options;
+    /// <summary>Classifies typed operation response contracts.</summary>
     private readonly UEResultAstBuilder _resultBuilder;
 
+    /// <summary>Requires one document context shared with the type mapper.</summary>
+    /// <param name="typeMapper">The document-aware Unreal type mapper.</param>
+    /// <param name="naming">The Unreal identifier and file naming rules.</param>
+    /// <param name="options">The Unreal generation options.</param>
+    /// <param name="resultBuilder">The result builder used for response classification.</param>
+    /// <param name="documentContext">The mandatory finalized document indexes.</param>
+    /// <exception cref="ArgumentNullException">A dependency is null.</exception>
+    /// <exception cref="ArgumentException">The mapper belongs to a different document context.</exception>
     public UEApiAstBuilder(
         UETypeMapper typeMapper,
         UENamingConvention naming,
         CppGenerationOptions options,
-        UEResultAstBuilder resultBuilder)
+        UEResultAstBuilder resultBuilder,
+        IrDocumentContext documentContext) : base(documentContext)
     {
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
+        if (!ReferenceEquals(typeMapper.DocumentContext, documentContext))
+            throw new ArgumentException("The mapper and builder must share a document context.", nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _resultBuilder = resultBuilder ?? throw new ArgumentNullException(nameof(resultBuilder));
     }
 
-    /// <summary>
-    /// Строит пару (header, source) файлов для одного endpoint (одна операция).
-    /// Файлы помещаются в папку Endpoints/.
-    /// </summary>
-    /// <param name="modelLookup">Словарь моделей по имени (для разрешения form model при multipart).</param>
+    /// <summary>Builds an endpoint header and source using the shared model lookup.</summary>
+    /// <param name="client">The owning client contract.</param>
+    /// <param name="operation">The endpoint operation contract.</param>
+    /// <returns>The endpoint declaration and implementation ASTs.</returns>
     public (CppHeaderFileNode Header, CppSourceFileNode Source) BuildEndpoint(
         IrClient client,
-        IrOperation operation,
-        IReadOnlyDictionary<string, IrModel> modelLookup)
+        IrOperation operation)
     {
+        var modelLookup = ModelsByName;
         var header = BuildEndpointHeader(client, operation);
         var source = BuildEndpointSource(client, operation, modelLookup);
         return (header, source);

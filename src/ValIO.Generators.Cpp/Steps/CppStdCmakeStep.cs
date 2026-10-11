@@ -24,7 +24,7 @@ public sealed class CppStdCmakeStep(ICppAstRenderer renderer) : CppStdStepBase(r
     {
         ct.ThrowIfCancellationRequested();
         var options = EffectiveOptions(context);
-        var content = StdRuntimeTemplates.CmakeLists(options.CxxStandard, ResolveRootNamespace(context));
+        var content = StdRuntimeTemplates.CmakeLists(options.CxxStandard, ResolveRootNamespace(context), options.TemporalBackend, options.UuidBackend);
         context.GeneratedFiles.Add(new GeneratedFile(StdRuntimeTemplates.CmakeListsFileName, content));
         return Task.CompletedTask;
     }

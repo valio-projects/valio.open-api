@@ -57,7 +57,7 @@ public sealed class DartModelsStep : ICodeGenerationStep
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var builder = new DartModelAstBuilder(_namingConverter, _typeMapper);
-        var modelLookup = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal);
+        var modelLookup = context.DocumentContext.ModelsByName;
         foreach (var model in context.IrDocument.Models)
         {
             var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };

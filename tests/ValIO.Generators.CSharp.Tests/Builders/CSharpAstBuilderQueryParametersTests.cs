@@ -29,7 +29,7 @@ public class CSharpAstBuilderQueryParametersTests
     [SetUp]
     public void Setup()
     {
-        _builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        _builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
         _renderer = new CSharpAstRenderer();
     }
 

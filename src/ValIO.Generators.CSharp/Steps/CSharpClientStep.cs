@@ -41,7 +41,7 @@ public sealed class CSharpClientStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as CSharpGenerationOptions;
         var ns = opts?.Namespace ?? context.Configuration.Namespace ?? "Generated";
-        var builder = new CSharpAstBuilder(_namingConverter, opts);
+        var builder = new CSharpAstBuilder(_namingConverter, context.DocumentContext, opts);
 
         if (opts?.GenerateMetrics == true && context.IrDocument.Clients.Count > 0)
         {

@@ -12,11 +12,16 @@ namespace ValIO.Generators.Cpp.Steps;
 /// </summary>
 public abstract class CppStdStepBase : ICodeGenerationStep
 {
+    /// <summary>Creates a generation step using the renderer owned by its pipeline.</summary>
+    /// <param name="renderer">The pipeline's independent AST renderer.</param>
+    /// <exception cref="ArgumentNullException">The renderer is null.</exception>
     protected CppStdStepBase(ICppAstRenderer renderer)
     {
         Renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
     }
 
+    /// <summary>Gets the renderer shared only by this request's sequential pipeline steps.</summary>
+    /// <value>The renderer supplied at construction.</value>
     protected ICppAstRenderer Renderer { get; }
 
     /// <inheritdoc />
@@ -35,6 +40,9 @@ public abstract class CppStdStepBase : ICodeGenerationStep
     /// <inheritdoc />
     public abstract Task ExecuteAsync(GenerationContext context, CancellationToken ct = default);
 
+    /// <summary>Resolves standalone options when plugin-specific settings are absent.</summary>
+    /// <param name="context">The current request context.</param>
+    /// <returns>The effective standalone generation options.</returns>
     protected static CppGenerationOptions EffectiveOptions(GenerationContext context)
         => context.PluginOptions as CppGenerationOptions ?? new CppGenerationOptions { Runtime = CppRuntimeProfile.Std };
 
@@ -48,12 +56,13 @@ public abstract class CppStdStepBase : ICodeGenerationStep
         return string.IsNullOrWhiteSpace(opts.Namespace) ? "Api" : new StdNamingConvention().Namespace(opts.Namespace);
     }
 
-    /// <summary>Связка нейминга и маппера, сконфигурированная под документ.</summary>
+    /// <summary>Creates step-owned mapping services with the request's shared document indexes.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <returns>The naming rules and document-aware mapper.</returns>
     protected static (StdNamingConvention Naming, StdCppTypeMapper Mapper) CreateServices(GenerationContext context)
     {
         var naming = new StdNamingConvention();
-        var mapper = new StdCppTypeMapper(naming);
-        mapper.SetEnumNamesForDocument(context.IrDocument.Enums.Select(e => e.Name).ToHashSet());
+        var mapper = new StdCppTypeMapper(naming, context.DocumentContext, EffectiveOptions(context));
         return (naming, mapper);
     }
 

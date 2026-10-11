@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -21,9 +22,9 @@ using ValIO.Generators.CSharp.Options;
 namespace ValIO.Generators.CSharp.Ast.Builders;
 
 /// <summary>
-/// Построитель AST для C# (Builder Pattern)
+/// Builds C# declarations using one required, immutable document context.
 /// </summary>
-public class CSharpAstBuilder : ICSharpAstBuilder
+public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
 {
     /// <summary>Converts external names to valid C# identifiers.</summary>
     private readonly INamingConverter _namingConverter;
@@ -34,35 +35,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     /// <summary>Identifies the namespace used to qualify enum defaults that can shadow property names.</summary>
     private string? _modelNamespace;
 
-    /// <summary>
-    /// Справочник моделей по имени — используется для резолва allOf-наследования (какие свойства
-    /// унаследованы от базового класса и не должны переобъявляться в потомке, иначе CS0108).
-    /// Пустой по умолчанию; вызывающий код (степ) должен заполнить его перед построением моделей
-    /// документа — см. <see cref="ValIO.Generators.CSharp.Steps.CSharpModelsStep"/>. При построении
-    /// через <see cref="BuildCompilationUnits"/> заполняется автоматически из <see cref="IrDocument.Models"/>.
-    /// </summary>
-    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
-
-    /// <summary>
-    /// Имена enum-типов документа (sanitized, как в <see cref="IrEnum.Name"/> и в
-    /// <see cref="IrModelReference.ModelName"/>). Нужны, чтобы отличать <c>$ref</c> на enum (value-type
-    /// в C#) от <c>$ref</c> на модель (reference-type): необязательное свойство-enum обязано быть
-    /// nullable (<c>T?</c>), иначе пришедший с сервера <c>null</c> роняет <c>System.Text.Json</c>
-    /// (OpenAPI 3.0 не умеет ставить <c>nullable</c> рядом с <c>$ref</c>, поэтому признак теряется).
-    /// Пустой по умолчанию; заполняется степом — см. <see cref="ValIO.Generators.CSharp.Steps.CSharpModelsStep"/>.
-    /// </summary>
-    public IReadOnlySet<string> EnumNames { get; set; } = new HashSet<string>(StringComparer.Ordinal);
-
-    /// <summary>Gets or sets enum declarations used to resolve schema defaults to typed members.</summary>
-    /// <value>The normalized enum lookup for the current document.</value>
-    public IReadOnlyDictionary<string, IrEnum> EnumsByName { get; set; } = new Dictionary<string, IrEnum>();
-
     /// <summary>Initializes a builder with validated language options and shared naming rules.</summary>
     /// <param name="namingConverter">The C# identifier converter.</param>
+    /// <param name="documentContext">The immutable indexes shared by this document's generation steps.</param>
     /// <param name="options">The canonical generator options, or default settings.</param>
-    /// <exception cref="ArgumentNullException">The naming converter is null.</exception>
+    /// <exception cref="ArgumentNullException">The naming converter or document context is null.</exception>
     /// <exception cref="ArgumentException">A requested generation mode is not implemented.</exception>
-    public CSharpAstBuilder(INamingConverter namingConverter, CSharpGenerationOptions? options = null)
+    public CSharpAstBuilder(INamingConverter namingConverter, IrDocumentContext documentContext, CSharpGenerationOptions? options = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _options = options ?? new CSharpGenerationOptions();
@@ -92,6 +72,18 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     {
         return new SimpleTypeNode(new IdentifierNode(typeName), isPrimitive: false);
     }
+
+    /// <summary>Places declarations in a named namespace or directly in the global compilation unit.</summary>
+    /// <param name="usings">The imports required by the declarations.</param>
+    /// <param name="declarations">The declarations emitted by this file.</param>
+    /// <param name="namespace">The namespace name, or null/empty to use the global namespace.</param>
+    /// <returns>A unit that never represents the global namespace as an empty identifier.</returns>
+    private CompilationUnitNode CreateCompilationUnit(
+        IReadOnlyList<UsingDirectiveNode> usings, IReadOnlyList<DeclarationNode> declarations, string? @namespace) =>
+        string.IsNullOrEmpty(@namespace)
+            ? new CompilationUnitNode(usings: usings, declarations: declarations.ToImmutableList())
+            : new CompilationUnitNode(usings: usings,
+                namespaces: new[] { BuildNamespace(@namespace, declarations) }.ToImmutableList());
     
     // IR → AST методы
     
@@ -109,12 +101,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         _modelNamespace = @namespace;
         var usings = BuildUsingDirectives(ExtractDependencies(model));
         var classNode = BuildClass(model);
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { classNode }.ToList<DeclarationNode>());
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, [classNode], @namespace);
     }
     
     /// <summary>Builds a class using the shared inheritance or flattening plan.</summary>
@@ -843,9 +830,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     }
     
     
-    /// <summary>
-    /// Строит CompilationUnit из IrEnum
-    /// </summary>
+    /// <summary>Builds an enum source file with its required JSON and serialization imports.</summary>
+    /// <param name="enumModel">The normalized enum declaration.</param>
+    /// <param name="namespace">The namespace name, or null/empty for the global namespace.</param>
+    /// <returns>The enum compilation unit.</returns>
     public CompilationUnitNode BuildCompilationUnit(IrEnum enumModel, string? @namespace = null)
     {
         var dependencies = new HashSet<string>();
@@ -859,12 +847,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         }
 
         var usings = BuildUsingDirectives(dependencies.ToList());
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { BuildEnum(enumModel) }.ToList<DeclarationNode>());
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, [BuildEnum(enumModel)], @namespace);
     }
     
     /// <summary>Builds wire-aware enums without truncating numeric values to 32 bits.</summary>
@@ -1379,48 +1362,30 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         return BuildMethod(operation, includeBody: false, includeDocumentation: true);
     }
     
-    /// <summary>Builds document source after loading all model and enum references.</summary>
+    /// <summary>Builds source for the document whose indexes were supplied at construction.</summary>
     /// <param name="document">The normalized document to generate.</param>
     /// <param name="namespace">The optional generated namespace.</param>
     /// <returns>The generated source compilation units.</returns>
+    /// <exception cref="ArgumentException">The document differs from the constructor context.</exception>
     public IReadOnlyList<CompilationUnitNode> BuildCompilationUnits(IrDocument document, string? @namespace = null)
     {
-        // Keep all document entry points consistent for inheritance and enum nullability.
-        ModelsByName = document.Models.ToDictionary(m => m.Name, m => m);
-        EnumNames = document.Enums.Select(enumModel => enumModel.Name).ToHashSet(StringComparer.Ordinal);
-        EnumsByName = document.Enums.ToDictionary(enumModel => enumModel.Name, StringComparer.Ordinal);
-        
+        if (!ReferenceEquals(document, DocumentContext.Document))
+            throw new ArgumentException("The document must match the context supplied to this builder.", nameof(document));
+
         return BuildCompilationUnitsInternal(document, @namespace);
     }
     
-    /// <summary>
-    /// Внутренний метод построения CompilationUnit
-    /// </summary>
+    /// <summary>Builds each model once in the shared dependency order before enums and clients.</summary>
+    /// <param name="document">The document already checked against the constructor context.</param>
+    /// <param name="namespace">The namespace of generated declarations.</param>
+    /// <returns>The complete ordered compilation units.</returns>
     private IReadOnlyList<CompilationUnitNode> BuildCompilationUnitsInternal(IrDocument document, string? @namespace = null)
     {
         var compilationUnits = new List<CompilationUnitNode>();
         
-        // Генерируем модели в топологическом порядке
-        var orderedModelNames = document.TypeDependencies.TopologicalOrder;
-        var modelsByName = document.Models.ToDictionary(m => m.Name);
-        
-        foreach (var modelName in orderedModelNames)
-        {
-            if (modelsByName.TryGetValue(modelName, out var model))
-            {
-                compilationUnits.Add(BuildCompilationUnit(model, @namespace));
-            }
-        }
-        
-        // Добавляем модели, которые не были в топологическом порядке
-        foreach (var model in document.Models)
-        {
-            if (!orderedModelNames.Contains(model.Name))
-            {
-                compilationUnits.Add(BuildCompilationUnit(model, @namespace));
-            }
-        }
-        
+        foreach (var model in DocumentContext.ModelsInDependencyOrder)
+            compilationUnits.Add(BuildCompilationUnit(model, @namespace));
+
         // Генерируем enum'ы
         foreach (var enumModel in document.Enums)
         {
@@ -1494,6 +1459,10 @@ public class CSharpAstBuilder : ICSharpAstBuilder
     private static string ToPascalCase(string value)
         => string.IsNullOrEmpty(value) ? value : char.ToUpperInvariant(value[0]) + value[1..].ToLowerInvariant();
 
+    /// <summary>Builds an injectable HTTP client and its optional colocated interface.</summary>
+    /// <param name="client">The normalized client operations.</param>
+    /// <param name="namespace">The namespace name, or null/empty for the global namespace.</param>
+    /// <returns>The client compilation unit.</returns>
     public CompilationUnitNode BuildCompilationUnit(IrClient client, string? @namespace = null)
     {
         client = ResolveMemberNameCollisions(client);
@@ -1511,29 +1480,20 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var classNode = BuildClientClass(client);
         declarations.Add(classNode);
         
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, declarations);
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, declarations, @namespace);
     }
     
-    /// <summary>
-    /// Строит CompilationUnit для интерфейса клиента (для отдельного файла)
-    /// </summary>
+    /// <summary>Builds a standalone interface for the generated HTTP client.</summary>
+    /// <param name="client">The normalized client operations.</param>
+    /// <param name="namespace">The namespace name, or null/empty for the global namespace.</param>
+    /// <returns>The interface compilation unit.</returns>
     public CompilationUnitNode BuildCompilationUnitForInterface(IrClient client, string? @namespace = null)
     {
         client = ResolveMemberNameCollisions(client);
 
         var usings = BuildUsingDirectives(ExtractDependencies(client));
         var interfaceNode = BuildClientInterface(client);
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)interfaceNode }.ToList());
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, [interfaceNode], @namespace);
     }
     
     /// <summary>Builds the shared asynchronous metrics contract.</summary>
@@ -1544,12 +1504,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var dependencies = new HashSet<string> { "System", "System.Threading.Tasks" };
         var usings = BuildUsingDirectives(dependencies.ToList());
         var metricsInterface = BuildIHttpClientMetricsInterface();
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)metricsInterface }.ToList());
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, [metricsInterface], @namespace);
     }
     
     /// <summary>Builds shared metrics with the namespaces required by Meter and its instruments.</summary>
@@ -1560,17 +1515,13 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         var dependencies = new HashSet<string> { "System", "System.Collections.Generic", "System.Diagnostics.Metrics", "System.Threading.Tasks" };
         var usings = BuildUsingDirectives(dependencies.ToList());
         var metricsClass = BuildHttpClientMetricsClass();
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)metricsClass }.ToList());
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, [metricsClass], @namespace);
     }
     
-    /// <summary>
-    /// Строит CompilationUnit для декоратора OpenTelemetry
-    /// </summary>
+    /// <summary>Builds the tracing and metrics decorator for a generated client.</summary>
+    /// <param name="client">The operations wrapped by the decorator.</param>
+    /// <param name="namespace">The namespace name, or null/empty for the global namespace.</param>
+    /// <returns>The telemetry decorator compilation unit.</returns>
     public CompilationUnitNode BuildCompilationUnitForDecorator(IrClient client, string? @namespace = null)
     {
         client = ResolveMemberNameCollisions(client);
@@ -1581,12 +1532,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         
         var usings = BuildUsingDirectives(dependencies);
         var decoratorNode = BuildOpenTelemetryDecorator(client);
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)decoratorNode }.ToList());
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, [decoratorNode], @namespace);
     }
     
     /// <summary>Builds a decorator whose metrics dependency uses the public metrics contract.</summary>
@@ -1907,8 +1853,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             return candidate;
         }
 
-        var statements = new List<StatementNode>();
-        
+        var statements = new List<StatementNode>
+        {
+            new ExpressionStatementNode(new CallExpressionNode(
+                target: new MemberAccessExpressionNode(
+                    @object: new IdentifierExpressionNode(new IdentifierNode("cancellationToken")),
+                    member: new IdentifierNode("ThrowIfCancellationRequested"))))
+        };
+
         var successResponse = SelectSuccessResponse(operation.Responses);
         var successType = successResponse?.Type is { } responseType ? BuildType(responseType) : null;
 
@@ -2197,38 +2149,25 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             }
             else
             {
-                var jsonSerializerForSerialize = new IdentifierExpressionNode(new IdentifierNode("JsonSerializer"));
-                var serializeMethod = new MemberAccessExpressionNode(
-                    @object: jsonSerializerForSerialize,
-                    member: new IdentifierNode("Serialize"));
-                var serializeCall = new CallExpressionNode(
-                    target: serializeMethod,
-                    arguments: new[] { requestBodyParam }.ToImmutableList());
-
-                var requestJsonContentVar = new VariableDeclarationStatementNode(
-                    name: new IdentifierNode(Local("requestJsonContent")),
-                    type: new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
-                    initializer: serializeCall);
-                requestContentStatements.Add(requestJsonContentVar);
-
-                var stringContentTypeExpr = new IdentifierExpressionNode(new IdentifierNode("StringContent"));
-                var encodingExpr = new IdentifierExpressionNode(new IdentifierNode("Encoding"));
-                var encodingUtf8 = new MemberAccessExpressionNode(
-                    @object: encodingExpr,
-                    member: new IdentifierNode("UTF8"));
-                var mediaTypeHeader = new LiteralExpressionNode("application/json", LiteralKind.String);
-
-                var requestJsonContentExpr = new IdentifierExpressionNode(new IdentifierNode(Local("requestJsonContent")));
-                var stringContentCtorArgs = new ExpressionNode[] { requestJsonContentExpr, encodingUtf8, mediaTypeHeader };
-                var stringContentCtor = new CallExpressionNode(
-                    target: stringContentTypeExpr,
-                    arguments: stringContentCtorArgs.ToImmutableList(),
-                    isNewExpression: true);
-
+                // JsonContent defers serialization until the token-aware HTTP content write.
+                var jsonContent = new CallExpressionNode(
+                    target: new MemberAccessExpressionNode(
+                        @object: new IdentifierExpressionNode(new IdentifierNode("JsonContent")),
+                        member: new IdentifierNode("Create")),
+                    arguments: new ExpressionNode[]
+                    {
+                        requestBodyParam,
+                        new CastExpressionNode(
+                            new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("MediaTypeHeaderValue"), isPrimitive: false)),
+                            new LiteralExpressionNode(null, LiteralKind.Null)),
+                        new MemberAccessExpressionNode(
+                            new IdentifierExpressionNode(new IdentifierNode("JsonSerializerOptions")),
+                            new IdentifierNode("Default"))
+                    }.ToImmutableList());
                 var contentAssign = new BinaryExpressionNode(
                     left: requestMessageContent,
                     @operator: BinaryOperator.Assign,
-                    right: stringContentCtor);
+                    right: jsonContent);
                 requestContentStatements.Add(new ExpressionStatementNode(contentAssign));
             }
             if (operation.RequestBody.IsRequired)
@@ -2370,14 +2309,15 @@ public class CSharpAstBuilder : ICSharpAstBuilder
                 }.ToImmutableList()),
                 elseBlock: null));
 
-            var jsonSerializerExpr = new IdentifierExpressionNode(new IdentifierNode("JsonSerializer"));
             var deserializeAccess = new MemberAccessExpressionNode(
-                @object: jsonSerializerExpr,
-                member: new IdentifierNode("Deserialize"));
-            var responseContentExpr = new IdentifierExpressionNode(new IdentifierNode(Local("responseContent")));
+                @object: responseMessageContentAccess,
+                member: new IdentifierNode("ReadFromJsonAsync"));
+            var serializerOptions = new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("JsonSerializerOptions")),
+                new IdentifierNode("Default"));
             var deserializeCall = new CallExpressionNode(
                 target: deserializeAccess,
-                arguments: new ExpressionNode[] { responseContentExpr }.ToImmutableList(),
+                arguments: new ExpressionNode[] { serializerOptions, cancellationTokenParam }.ToImmutableList(),
                 genericTypeArgument: successType);
             
             // Десериализуем в nullable тип
@@ -2387,7 +2327,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             var responseVar = new VariableDeclarationStatementNode(
                 name: new IdentifierNode(Local("response")),
                 type: nullableSuccessType,
-                initializer: deserializeCall);
+                initializer: new AwaitExpressionNode(deserializeCall));
             ifStatements.Add(responseVar);
             
             // Проверяем response на null
@@ -2746,19 +2686,14 @@ public class CSharpAstBuilder : ICSharpAstBuilder
             members: members.ToImmutableList());
     }
     
-    /// <summary>
-    /// Строит CompilationUnit для ApiException
-    /// </summary>
+    /// <summary>Builds the shared exception retaining HTTP status and raw response content.</summary>
+    /// <param name="namespace">The namespace name, or null/empty for the global namespace.</param>
+    /// <returns>The API exception compilation unit.</returns>
     public CompilationUnitNode BuildCompilationUnitApiException(string? @namespace = null)
     {
         var usings = BuildUsingDirectives(new[] { "System", "System.Net", "System.Net.Http" });
         var classNode = BuildApiExceptionClass();
-        var namespaceNode = BuildNamespace(@namespace ?? string.Empty, new[] { (DeclarationNode)classNode }.ToList());
-        
-        return new CompilationUnitNode(
-            usings: usings,
-            namespaces: new[] { namespaceNode }.ToImmutableList(),
-            declarations: ImmutableList<DeclarationNode>.Empty);
+        return CreateCompilationUnit(usings, [classNode], @namespace);
     }
     
     /// <summary>
@@ -3000,6 +2935,7 @@ public class CSharpAstBuilder : ICSharpAstBuilder
         dependencies.Add("System.Collections.Generic"); // List<string> queryParts (null-safe query-string builder)
         dependencies.Add("System.Net"); // HttpStatusCode
         dependencies.Add("System.Net.Http"); // HttpClient, HttpRequestMessage, HttpResponseMessage
+        dependencies.Add("System.Net.Http.Json"); // JsonContent and charset-aware asynchronous JSON reads
         dependencies.Add("System.Net.Http.Headers"); // MediaTypeWithQualityHeaderValue
         dependencies.Add("System.Text"); // StringBuilder, Encoding
         dependencies.Add("System.Text.Json"); // JsonSerializer

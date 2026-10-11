@@ -86,7 +86,7 @@ public sealed class CSharpOptionsTests
     [Test]
     public void DirectBuilder_RejectsUnsupportedModelKinds()
     {
-        var construct = () => new CSharpAstBuilder(new CSharpNamingConverter(),
+        var construct = () => new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []),
             new CSharpGenerationOptions { ModelType = ModelType.Record });
 
         construct.Should().Throw<ArgumentException>().WithMessage("*modelType=Class*");

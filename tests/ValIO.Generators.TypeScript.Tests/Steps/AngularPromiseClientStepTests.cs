@@ -46,7 +46,7 @@ public sealed class AngularPromiseClientStepTests
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["angular-promise"], ValidationLibrary = validation });
         var service = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(".service.ts", StringComparison.Ordinal)).Content;
 
-        service.Should().Contain("import { firstValueFrom } from \"rxjs\"")
+        service.Should().Contain("import { firstValueFrom, Observable, race } from \"rxjs\"")
             .And.Contain("Promise<MixedResults>").And.Contain("new FormData()").And.Contain("new URLSearchParams()")
             .And.Contain("body: undefined").And.Contain("isSuccessful: true").And.Contain(".then(() => undefined)");
         if (validation != null)

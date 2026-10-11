@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -22,35 +23,36 @@ namespace ValIO.Generators.TypeScript.OFetch.Ast.Builders;
 /// to expose status for the discriminated-union result; <c>ignoreResponseError:true</c>
 /// disables the default throw-on-non-2xx behaviour.
 /// </summary>
-public sealed class OFetchClientAstBuilder
+public sealed class OFetchClientAstBuilder : AstBuilderBase
 {
-    /// <summary>Gets or sets models from the active IR document for multipart field serialization.</summary>
-    /// <value>The models indexed by their generated names.</value>
-    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } =
-        new Dictionary<string, IrModel>(StringComparer.Ordinal);
 
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly Validation.IClientValidationStrategy _validation;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public OFetchClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+    /// <summary>Creates a OFetchClientAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="options">The TypeScript generation settings.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public OFetchClientAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = Validation.ClientValidationStrategyFactory.Create(options);
 
-        var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
-        _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
+        var typeBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
+        _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
     }
 
     public SourceFileNode BuildOperationClientSourceFile(IrOperation operation, FileOrganization fileOrganization)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         var hasParameters = _paramsBuilder.HasParameters(operation);
@@ -68,6 +70,13 @@ public sealed class OFetchClientAstBuilder
                 $"ofetch HTTP client for the {operation.MethodName} operation."));
     }
 
+    /// <summary>Imports the native transport types and operation-specific models and validation schemas.</summary>
+    /// <param name="operation">The operation whose imports are generated.</param>
+    /// <param name="operationFileName">The original operation file name.</param>
+    /// <param name="fileOrganization">The configured output layout.</param>
+    /// <param name="hasParameters">Whether a generated parameter type is needed.</param>
+    /// <param name="hasResultType">Whether a generated result union is needed.</param>
+    /// <returns>The imports required by the native client operation.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
         IrOperation operation,
         string operationFileName,
@@ -80,6 +89,12 @@ public sealed class OFetchClientAstBuilder
             items: ImmutableList.Create(new IdentifierNode("$fetch")),
             from: "ofetch",
             kind: ImportKind.Named));
+
+        imports.Add(new ImportNode(
+            items: ImmutableList.Create(new IdentifierNode("$Fetch")),
+            from: "ofetch",
+            kind: ImportKind.Named,
+            isTypeOnly: true));
 
         // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
         imports.AddRange(_validation.RuntimeImports(
@@ -154,6 +169,11 @@ public sealed class OFetchClientAstBuilder
             ? new[] { operation.RequestBody.Type }
             : Array.Empty<IrType>();
 
+    /// <summary>Builds a native operation with compatible options, cancellation, and optional configured client injection.</summary>
+    /// <param name="operation">The operation whose callable API is generated.</param>
+    /// <param name="hasParameters">Whether the operation accepts a parameter object.</param>
+    /// <param name="hasResultType">Whether the operation returns a response union.</param>
+    /// <returns>The generated operation declaration.</returns>
     private FunctionDeclarationNode BuildOperationFunction(
         IrOperation operation,
         bool hasParameters,
@@ -177,6 +197,8 @@ public sealed class OFetchClientAstBuilder
             type: Simple("AbortSignal"),
             isRequired: false));
 
+        parameters.Add(TypeScriptHttpClientInjection.Parameter(Simple("$Fetch")));
+
         return new FunctionDeclarationNode(
             name: new IdentifierNode(operation.MethodName),
             returnType: new GenericTypeNode(new IdentifierNode("Promise"), ImmutableList.Create(returnType)),
@@ -194,6 +216,7 @@ public sealed class OFetchClientAstBuilder
     private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasResultType)
     {
         var statements = new List<StatementNode>();
+        statements.Add(TypeScriptHttpClientInjection.Declaration("$fetch"));
         var sources = TypeScriptParameterSources.Create(operation);
 
         if (_validation.IsEnabled)
@@ -212,7 +235,7 @@ public sealed class OFetchClientAstBuilder
         statements.Add(new BlankLineStatementNode());
 
         var rawCall = new CallExpressionNode(
-            Member(Id("$fetch"), "raw"),
+            Member(Id("httpClient"), "raw"),
             ImmutableList.Create<ExpressionNode>(
                 Id("requestUrl"),
                 BuildOFetchOptionsExpression(operation, sources, hasResultType)));
@@ -452,7 +475,7 @@ public sealed class OFetchClientAstBuilder
     {
         // Model schemas are co-located with their models under modelsPath.
         var modelsPath = fileOrganization.ModelsPath ?? "models";
-        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+        var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
         return fileOrganization.SeparateModels
             ? $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{modelsPath}/{modelFileName}.schema";

@@ -1,38 +1,43 @@
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.IR.Utilities;
+using ValIO.Generators.Cpp.Models;
+using ValIO.Generators.Cpp.Runtime;
 
 namespace ValIO.Generators.Cpp.Services;
 
 /// <summary>
-/// Маппер IR типов в std-C++ TypeNode (std-профиль). Зеркало UETypeMapper по структуре
-/// (включая SetEnumNamesForDocument), но цели: std::string/std::vector/std::optional
-/// вместо FString/TArray; Nullable/Optional сохраняются как std::optional (в UE нельзя).
-/// Union/Intersection маппятся в std::string с warning «raw JSON» (v1; backlog — typed variant).
+/// Maps IR types to standalone C++ types using the finalized document's declaration indexes.
 /// </summary>
 public sealed class StdCppTypeMapper
 {
+    /// <summary>Converts generated declaration names to standalone C++ identifiers.</summary>
     private readonly StdNamingConvention _naming;
-    private IReadOnlySet<string>? _enumNames;
+    /// <summary>The explicitly selected application scalar representations for this generation.</summary>
+    private readonly CppGenerationOptions _options;
 
-    /// <summary>Предупреждения маппинга (union/intersection/any) — дренажируются шагом в context.Warnings.</summary>
+    /// <summary>Gets diagnostics produced by this mapper's generation step.</summary>
+    /// <value>The step-owned mutable diagnostic collection.</value>
     public ICollection<string> Warnings { get; } = new List<string>();
 
-    public StdCppTypeMapper(StdNamingConvention naming)
+    /// <summary>Requires naming rules and document indexes before any type can be mapped.</summary>
+    /// <param name="naming">The standalone C++ naming rules.</param>
+    /// <param name="documentContext">The indexes used to classify declaration references.</param>
+    /// <param name="options">The selected scalar providers, or default string representations.</param>
+    /// <exception cref="ArgumentNullException">Either dependency is null.</exception>
+    public StdCppTypeMapper(StdNamingConvention naming, IrDocumentContext documentContext, CppGenerationOptions? options = null)
     {
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
+        DocumentContext = documentContext ?? throw new ArgumentNullException(nameof(documentContext));
+        _options = options ?? new CppGenerationOptions();
     }
 
-    /// <summary>
-    /// Устанавливает множество имён enum'ов текущего документа — отличает
-    /// IrModelReference на enum от ссылки на структуру.
-    /// </summary>
-    public void SetEnumNamesForDocument(IReadOnlySet<string> enumNames)
-    {
-        _enumNames = enumNames;
-    }
+    /// <summary>Gets the document context used throughout this mapper's lifetime.</summary>
+    /// <value>The mandatory immutable declaration indexes.</value>
+    public IrDocumentContext DocumentContext { get; }
 
     /// <summary>
     /// Маппит IR тип в std-C++ TypeNode.
@@ -53,14 +58,15 @@ public sealed class StdCppTypeMapper
         };
     }
 
-    /// <summary>
-    /// Примитивы: String→std::string, Integer/Long→int32_t/int64_t, Number→double,
-    /// Boolean→bool, DateTime/Date/Time/Uuid→std::string (ISO 8601 / текст — round-trip fidelity),
-    /// Binary/ByteArray/File→std::vector&lt;std::uint8_t&gt;, Any→std::string + warning,
-    /// Void→void.
-    /// </summary>
+    /// <summary>Maps scalar contracts to standard-library types, including explicit JSON null.</summary>
+    /// <param name="primitive">The primitive schema contract.</param>
+    /// <returns>The standalone C++ type preserving its scalar representation.</returns>
     public TypeNode MapPrimitiveType(IrPrimitiveType primitive)
     {
+        if (_options.UuidBackend != CppUuidBackend.String && primitive.PrimitiveKind == IrPrimitiveKind.Uuid)
+            return SimpleType("ValIO::Uuid");
+        if (_options.TemporalBackend != CppTemporalBackend.String && TemporalTypeName(primitive) is { } temporal)
+            return SimpleType(temporal);
         return primitive.PrimitiveKind switch
         {
             IrPrimitiveKind.String => SimpleType("std::string"),
@@ -76,22 +82,26 @@ public sealed class StdCppTypeMapper
                 => GenericType("std::vector", SimpleType("std::uint8_t", isPrimitive: true)),
             IrPrimitiveKind.Any => WarnedString(primitive, "Any"),
             IrPrimitiveKind.Void => SimpleType("void", isPrimitive: true),
+            IrPrimitiveKind.Null => SimpleType("std::nullptr_t", isPrimitive: true),
             _ => SimpleType("std::string"),
         };
     }
 
-    /// <summary>
-    /// Ссылка на модель/enum: имя без префиксов (PascalCase).
-    /// </summary>
+    /// <summary>Maps a reference using the document's enum classification and C++ naming rules.</summary>
+    /// <param name="modelRef">The generated declaration reference.</param>
+    /// <returns>The model or enum type node.</returns>
     public TypeNode MapModelReference(IrModelReference modelRef)
     {
-        var isEnum = _enumNames != null && _enumNames.Contains(modelRef.ModelName);
+        var isEnum = DocumentContext.EnumNames.Contains(modelRef.ModelName);
         var typeName = isEnum ? _naming.EnumName(modelRef.ModelName) : _naming.StructName(modelRef.ModelName);
         return SimpleType(typeName);
     }
 
+    /// <summary>Determines whether a generated declaration name identifies an enum.</summary>
+    /// <param name="modelName">The exact generated declaration name.</param>
+    /// <returns>True when the document declares an enum with this ordinal name.</returns>
     public bool IsEnumReference(string modelName)
-        => _enumNames != null && _enumNames.Contains(modelName);
+        => DocumentContext.EnumNames.Contains(modelName);
 
     public TypeNode MapArrayType(IrArrayType array)
         => GenericType("std::vector", MapType(array.ElementType));
@@ -124,11 +134,12 @@ public sealed class StdCppTypeMapper
         return SimpleType("std::string");
     }
 
-    /// <summary>
-    /// Default member initializer: числам/bool — литерал, остальным — «{}» (заполняет билдер).
-    /// </summary>
+    /// <summary>Provides explicit scalar initializers while leaving value initialization to the model builder.</summary>
+    /// <param name="irType">The field's scalar or wrapped type.</param>
+    /// <returns>The initializer expression, or null when the builder should use value initialization.</returns>
     public string? GetDefaultValue(IrType irType)
     {
+        if (IsNativeStringValue(irType)) return "{}";
         return irType switch
         {
             IrPrimitiveType p => p.PrimitiveKind switch
@@ -136,6 +147,7 @@ public sealed class StdCppTypeMapper
                 IrPrimitiveKind.Number => "0.0",
                 IrPrimitiveKind.Integer or IrPrimitiveKind.Long => "0",
                 IrPrimitiveKind.Boolean => "false",
+                IrPrimitiveKind.Null => "nullptr",
                 _ => null,
             },
             IrNullableType n => GetDefaultValue(n.InnerType),
@@ -152,6 +164,8 @@ public sealed class StdCppTypeMapper
     /// <returns>A C++ expression yielding the wire text.</returns>
     public string FormatQueryLiteral(IrType irType, string expression)
     {
+        if (IsNativeStringValue(irType))
+            return $"ValIO::ToWireText({expression}, ValIO::JsonStringFormat::{StdJsonWireFormat.Name(irType)})";
         return irType switch
         {
             IrPrimitiveType p => p.PrimitiveKind switch
@@ -170,6 +184,60 @@ public sealed class StdCppTypeMapper
         };
     }
 
+    /// <summary>Checks whether a wire string has an explicitly selected native application representation.</summary>
+    /// <param name="type">The schema type, optionally wrapped in presence metadata.</param>
+    /// <returns>Whether textual boundaries require the selected provider's checked formatter.</returns>
+    public bool IsNativeStringValue(IrType type) => type switch
+    {
+        IrNullableType nullable => IsNativeStringValue(nullable.InnerType),
+        IrOptionalType optional => IsNativeStringValue(optional.InnerType),
+        IrPrimitiveType primitive => (_options.UuidBackend != CppUuidBackend.String && primitive.PrimitiveKind == IrPrimitiveKind.Uuid)
+            || (_options.TemporalBackend != CppTemporalBackend.String && TemporalTypeName(primitive) != null),
+        _ => false,
+    };
+
+    /// <summary>Collects only pure provider headers needed by a type and its nested container values.</summary>
+    /// <param name="type">The schema type whose application representation is being declared.</param>
+    /// <returns>Deduplicated provider header paths without JSON or HTTP imports.</returns>
+    public IReadOnlyList<string> ProviderIncludesFor(IrType type)
+    {
+        var includes = new SortedSet<string>(StringComparer.Ordinal);
+        CollectProviderIncludes(type, includes);
+        return [.. includes];
+    }
+
+    /// <summary>Visits nested schema wrappers and collects their explicitly selected application provider declarations.</summary>
+    /// <param name="type">The schema type to inspect.</param>
+    /// <param name="includes">The canonical output header paths.</param>
+    private void CollectProviderIncludes(IrType type, ISet<string> includes)
+    {
+        switch (type)
+        {
+            case IrPrimitiveType primitive:
+                if (_options.UuidBackend != CppUuidBackend.String && primitive.PrimitiveKind == IrPrimitiveKind.Uuid)
+                    includes.Add(UuidRuntimeTemplates.TypesHeaderFileName);
+                if (_options.TemporalBackend != CppTemporalBackend.String && TemporalTypeName(primitive) != null)
+                    includes.Add(TemporalRuntimeTemplates.TypesHeaderFileName);
+                break;
+            case IrNullableType nullable: CollectProviderIncludes(nullable.InnerType, includes); break;
+            case IrOptionalType optional: CollectProviderIncludes(optional.InnerType, includes); break;
+            case IrArrayType array: CollectProviderIncludes(array.ElementType, includes); break;
+            case IrDictionaryType dictionary: CollectProviderIncludes(dictionary.ValueType, includes); break;
+        }
+    }
+
+    /// <summary>Classifies normalized schema temporal metadata without inspecting rendered C++ type names.</summary>
+    /// <param name="primitive">The primitive schema contract.</param>
+    /// <returns>The selected application type name, or no temporal representation.</returns>
+    private static string? TemporalTypeName(IrPrimitiveType primitive) => primitive.PrimitiveKind switch
+    {
+        IrPrimitiveKind.Date => "ValIO::Date",
+        IrPrimitiveKind.Time => "ValIO::Time",
+        IrPrimitiveKind.DateTime => "ValIO::DateTime",
+        IrPrimitiveKind.String when primitive.Format is "duration" or "time-span" or "timespan" => "ValIO::Duration",
+        _ => null,
+    };
+
     /// <summary>
     /// Стандартные include, необходимые модели с данным типом поля (без учёта ссылок
     /// на другие модели — их добавляет CppTypeReferenceCollector).
@@ -181,6 +249,9 @@ public sealed class StdCppTypeMapper
         return [.. includes];
     }
 
+    /// <summary>Collects standard-library headers required by the complete nested type.</summary>
+    /// <param name="irType">The type whose headers are collected.</param>
+    /// <param name="includes">The destination set preserving deterministic header order.</param>
     private static void CollectStdIncludes(IrType irType, ISet<string> includes)
     {
         switch (irType)
@@ -194,6 +265,9 @@ public sealed class StdCppTypeMapper
                         break;
                     case IrPrimitiveKind.Integer or IrPrimitiveKind.Long:
                         includes.Add("<cstdint>");
+                        break;
+                    case IrPrimitiveKind.Null:
+                        includes.Add("<cstddef>");
                         break;
                     case IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File:
                         includes.Add("<vector>");

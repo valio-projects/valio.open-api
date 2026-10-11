@@ -11,6 +11,8 @@
         "runtime": "std",
         "namespace": "Integration",
         "cxxStandard": 17,
+        "temporalBackend": "string",
+        "uuidBackend": "string",
         "apiStyle": "both",
         "clientShape": "interface+impl",
         "emitSerializers": true,
@@ -28,6 +30,8 @@
         "runtime": "std",
         "namespace": "Integration",
         "cxxStandard": 17,
+        "temporalBackend": "string",
+        "uuidBackend": "string",
         "emitSerializers": false,
         "emitCmake": true
       }

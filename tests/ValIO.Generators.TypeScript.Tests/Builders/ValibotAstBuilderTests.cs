@@ -54,10 +54,10 @@ public class ValibotAstBuilderTests
     /// <summary>Verifies each string format uses the validator action matching its wire representation.</summary>
     /// <param name="kind">The formatted primitive kind.</param>
     /// <param name="expectedRefiner">The expected Valibot refinement action.</param>
-    [TestCase(IrPrimitiveKind.Uuid,     "v.uuid()")]
-    [TestCase(IrPrimitiveKind.DateTime, "v.isoTimestamp()")]
-    [TestCase(IrPrimitiveKind.Date,     "v.isoDate()")]
-    [TestCase(IrPrimitiveKind.Time,     "v.isoTime()")]
+    [TestCase(IrPrimitiveKind.Uuid,     "v.check(")]
+    [TestCase(IrPrimitiveKind.DateTime, "v.check(")]
+    [TestCase(IrPrimitiveKind.Date,     "v.check(")]
+    [TestCase(IrPrimitiveKind.Time,     "v.check(")]
     public void StringRefinements_PipeStringWithRefiner(IrPrimitiveKind kind, string expectedRefiner)
     {
         var rendered = Render(Prim(kind));
@@ -69,11 +69,11 @@ public class ValibotAstBuilderTests
     public void DateTime_UsesTimestampAndCalendarOffsetPredicate()
     {
         var rendered = Render(Prim(IrPrimitiveKind.DateTime));
-        rendered.Should().Contain("v.isoTimestamp()")
-            .And.Contain("v.check(")
+        rendered.Should().Contain("v.check(")
             .And.Contain("Date.parse(value.slice(")
             .And.Contain(".toISOString().slice(")
-            .And.NotContain("v.isoDateTime()");
+            .And.NotContain("v.isoDateTime()")
+            .And.NotContain("v.isoTimestamp()");
     }
 
     [Test]

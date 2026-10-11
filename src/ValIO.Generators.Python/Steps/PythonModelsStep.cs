@@ -2,6 +2,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR.Utilities;
 using ValIO.Core.Plugins;
 using ValIO.Generators.Python.Ast.Builders;
+using ValIO.Generators.Python.Ast.Nodes;
 using ValIO.Generators.Python.Ast.Renderers;
 
 namespace ValIO.Generators.Python.Steps;
@@ -56,30 +57,25 @@ public sealed class PythonModelsStep : ICodeGenerationStep
     /// <returns>A completed task after the model files have been generated.</returns>
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
-        // Models and enums share .models/*; forward-reference imports must include both.
-        var modelModuleByName = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var kvp in PythonStepHelper.BuildModelModuleMap(context.IrDocument, _namingConverter))
-            modelModuleByName[kvp.Key] = kvp.Value;
-        foreach (var kvp in PythonStepHelper.BuildEnumModuleMap(context.IrDocument, _namingConverter))
-            modelModuleByName[kvp.Key] = kvp.Value;
-        var builder = new PydanticModelAstBuilder(_namingConverter, _typeMapper);
+        var documentContext = context.DocumentContext;
+        var builder = new PydanticModelAstBuilder(documentContext, _namingConverter, _typeMapper);
+        foreach (var model in documentContext.ModelsInDependencyOrder)
+            AddModelFile(context, builder, model, documentContext.ModelsByName);
 
-        var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
-        var byName = context.IrDocument.Models.ToDictionary(m => m.Name, StringComparer.Ordinal);
-        var processed = new HashSet<string>();
-
-        foreach (var name in orderedNames)
+        var imports = documentContext.ModelsInDependencyOrder
+            .Select(model => new PythonImportNode("." + _namingConverter.ToSnakeCase(model.OriginalName), new[] { model.Name }))
+            .ToList();
+        if (context.Configuration.GenerateEnums)
         {
-            if (!byName.TryGetValue(name, out var model)) continue;
-            AddModelFile(context, builder, model, byName, modelModuleByName);
-            processed.Add(name);
+            imports.AddRange(context.IrDocument.Enums.Select(
+                enumModel => new PythonImportNode("." + _namingConverter.ToSnakeCase(enumModel.OriginalName), new[] { enumModel.Name })));
         }
-
-        foreach (var model in context.IrDocument.Models)
-        {
-            if (!processed.Contains(model.Name))
-                AddModelFile(context, builder, model, byName, modelModuleByName);
-        }
+        var package = new PythonModuleNode(
+            imports: imports,
+            trailingStatements: documentContext.ModelsInDependencyOrder
+                .Select(model => $"{model.Name}.model_rebuild(_types_namespace=globals())")
+                .ToArray());
+        context.GeneratedFiles.Add(new GeneratedFile("models/__init__.py", _renderer.Render(package)));
 
         return Task.CompletedTask;
     }
@@ -91,16 +87,14 @@ public sealed class PythonModelsStep : ICodeGenerationStep
     /// <param name="builder">The language-specific model AST builder.</param>
     /// <param name="model">The source model whose declared properties remain unchanged.</param>
     /// <param name="modelLookup">All models available to resolve transitive allOf bases.</param>
-    /// <param name="modelModuleByName">Model and enum module names used to resolve Python imports.</param>
     private void AddModelFile(
         GenerationContext context,
         PydanticModelAstBuilder builder,
         ValIO.Core.IR.IrModel model,
-        IReadOnlyDictionary<string, ValIO.Core.IR.IrModel> modelLookup,
-        IReadOnlyDictionary<string, string> modelModuleByName)
+        IReadOnlyDictionary<string, ValIO.Core.IR.IrModel> modelLookup)
     {
         var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
-        var module = builder.BuildModule(effectiveModel, modelModuleByName);
+        var module = builder.BuildModule(effectiveModel);
         var content = _renderer.Render(module);
         var fileName = _namingConverter.ToSnakeCase(model.OriginalName);
         var relativePath = $"models/{fileName}.py";

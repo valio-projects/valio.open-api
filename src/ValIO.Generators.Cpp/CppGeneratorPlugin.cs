@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using ValIO.Core.Plugins;
 using ValIO.Generators.Cpp.Ast.Renderers;
 using ValIO.Generators.Cpp.Options;
@@ -44,6 +45,6 @@ public sealed class CppGeneratorPlugin : IGeneratorPlugin
     /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)
     {
-        services.AddSingleton<ICppAstRenderer, CppAstRenderer>();
+        services.TryAddTransient<ICppAstRenderer, CppAstRenderer>();
     }
 }

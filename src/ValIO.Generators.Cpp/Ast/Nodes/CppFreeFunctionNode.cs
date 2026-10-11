@@ -46,12 +46,18 @@ public sealed class CppFreeFunctionNode : DeclarationNode
     /// <value>True for non-constexpr function definitions shared by multiple translation units.</value>
     public bool IsInline { get; }
 
+    /// <summary>Gets structured member or delegating initializers for a constructor definition.</summary>
+    /// <value>The ordered initialization expressions, empty for ordinary functions.</value>
+    public IReadOnlyList<ExpressionNode> Initializers { get; }
+
+    /// <inheritdoc />
     public override IReadOnlyList<AstNode> Children
     {
         get
         {
             var children = new List<AstNode> { Name, ReturnType };
             children.AddRange(Parameters);
+            children.AddRange(Initializers);
             if (Body != null)
                 children.Add(Body);
             return children;
@@ -71,6 +77,7 @@ public sealed class CppFreeFunctionNode : DeclarationNode
     /// <param name="isConst">Whether the out-of-class member definition is const-qualified.</param>
     /// <param name="isConstexpr">Whether the function permits constant evaluation.</param>
     /// <param name="isInline">Whether the definition has inline linkage.</param>
+    /// <param name="initializers">The constructor's structured initialization expressions.</param>
     /// <exception cref="ArgumentNullException">The return type is missing.</exception>
     public CppFreeFunctionNode(
         IdentifierNode name,
@@ -82,7 +89,8 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         IReadOnlyDictionary<string, object>? metadata = null,
         bool isConst = false,
         bool isConstexpr = false,
-        bool isInline = false)
+        bool isInline = false,
+        IReadOnlyList<ExpressionNode>? initializers = null)
         : base(name, documentation, metadata: metadata)
     {
         ReturnType = returnType ?? throw new ArgumentNullException(nameof(returnType));
@@ -92,6 +100,7 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         IsConst = isConst;
         IsConstexpr = isConstexpr;
         IsInline = isInline;
+        Initializers = initializers?.ToImmutableList() ?? ImmutableList<ExpressionNode>.Empty;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -114,7 +123,8 @@ public sealed class CppFreeFunctionNode : DeclarationNode
             Metadata.ToImmutableDictionary(),
             IsConst,
             IsConstexpr,
-            IsInline);
+            IsInline,
+            Initializers.Select(initializer => (ExpressionNode)initializer.Clone()).ToImmutableList());
     }
 
     public override string ToString()

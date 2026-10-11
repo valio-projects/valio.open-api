@@ -12,6 +12,9 @@ namespace ValIO.Generators.Cpp.Steps;
 /// </summary>
 public abstract class CppUeStepBase : ICodeGenerationStep
 {
+    /// <summary>Creates a generation step using the renderer owned by its pipeline.</summary>
+    /// <param name="renderer">The pipeline's independent AST renderer.</param>
+    /// <exception cref="ArgumentNullException">The renderer is null.</exception>
     protected CppUeStepBase(ICppAstRenderer renderer)
     {
         Renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
@@ -42,13 +45,11 @@ public abstract class CppUeStepBase : ICodeGenerationStep
     protected static CppGenerationOptions EffectiveOptions(GenerationContext context)
         => context.PluginOptions as CppGenerationOptions ?? new CppGenerationOptions();
 
-    /// <summary>
-    /// Фасадный билдер с прокинутыми именами enum'ов документа.
-    /// </summary>
+    /// <summary>Creates a facade using the request's mandatory shared document indexes.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <returns>A new facade bound to the request's finalized IR document.</returns>
     protected static CppAstBuilder CreateBuilder(GenerationContext context)
     {
-        var builder = new CppAstBuilder(EffectiveOptions(context));
-        builder.SetEnumNamesForDocument(context.IrDocument.Enums.Select(e => e.Name).ToHashSet());
-        return builder;
+        return new CppAstBuilder(EffectiveOptions(context), context.DocumentContext);
     }
 }

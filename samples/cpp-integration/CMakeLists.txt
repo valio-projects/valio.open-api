@@ -42,4 +42,8 @@ if(VALIO_EXAMPLE_FULL)
     add_executable(codec_consumer codec_consumer.cpp)
     target_link_libraries(codec_consumer PRIVATE valio_generated)
     add_test(NAME codec_consumer COMMAND codec_consumer)
+
+    add_executable(http_consumer http_consumer.cpp)
+    target_link_libraries(http_consumer PRIVATE valio_clients httplib::httplib)
+    add_test(NAME http_consumer COMMAND http_consumer)
 endif()

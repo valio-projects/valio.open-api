@@ -1,6 +1,7 @@
 using ValIO.Core.Plugins;
 using ValIO.Generators.Cpp.Ast.Renderers;
 using ValIO.Generators.Cpp.Runtime;
+using ValIO.Generators.Cpp.Models;
 
 namespace ValIO.Generators.Cpp.Steps;
 
@@ -17,7 +18,11 @@ public sealed class CppStdRuntimeStep(ICppAstRenderer renderer) : CppStdStepBase
     /// <inheritdoc />
     public override bool ShouldExecute(GenerationContext context)
         => base.ShouldExecute(context)
-           && ((EffectiveOptions(context).EmitSerializers && context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0)
+           && (EffectiveOptions(context).TemporalBackend != CppTemporalBackend.String
+               || EffectiveOptions(context).UuidBackend != CppUuidBackend.String
+               || (EffectiveOptions(context).EmitSerializers
+                && ((context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0)
+                    || (context.Configuration.GenerateEnums && context.IrDocument.Enums.Count > 0)))
                || (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0));
 
     /// <inheritdoc />
@@ -27,12 +32,28 @@ public sealed class CppStdRuntimeStep(ICppAstRenderer renderer) : CppStdStepBase
         ct.ThrowIfCancellationRequested();
         if (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0 && !options.EmitSerializers)
             throw new InvalidOperationException("Standalone C++ clients require emitSerializers=true; disable client generation for pure DTO output.");
-        AddRuntimeFile(context, StdRuntimeTemplates.JsonTypesHeaderFileName, StdRuntimeTemplates.JsonTypesHeader(options.JsonInclude));
+        if (options.TemporalBackend != CppTemporalBackend.String)
+            AddRuntimeFile(context, TemporalRuntimeTemplates.TypesHeaderFileName, TemporalRuntimeTemplates.TypesHeader(options.TemporalBackend));
+        if (options.UuidBackend != CppUuidBackend.String)
+            AddRuntimeFile(context, UuidRuntimeTemplates.TypesHeaderFileName, UuidRuntimeTemplates.TypesHeader(options.UuidBackend));
+        var hasCodecs = (options.EmitSerializers && ((context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0)
+                || (context.Configuration.GenerateEnums && context.IrDocument.Enums.Count > 0)))
+            || (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0);
+        if (!hasCodecs) return Task.CompletedTask;
+        if (options.TemporalBackend != CppTemporalBackend.String)
+            AddRuntimeFile(context, TemporalRuntimeTemplates.JsonHeaderFileName, TemporalRuntimeTemplates.JsonHeader(options.TemporalBackend));
+        if (options.UuidBackend != CppUuidBackend.String)
+            AddRuntimeFile(context, UuidRuntimeTemplates.JsonHeaderFileName, UuidRuntimeTemplates.JsonHeader(options.UuidBackend));
+        AddRuntimeFile(context, StdRuntimeTemplates.JsonTypesHeaderFileName,
+            StdRuntimeTemplates.JsonTypesHeader(options.JsonInclude, options.TemporalBackend, options.UuidBackend));
+        AddRuntimeFile(context, JsonValidationTemplates.HeaderFileName, JsonValidationTemplates.Header(options.JsonInclude));
         if (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0)
         {
+            AddRuntimeFile(context, StdRuntimeTemplates.CancellationHeaderFileName, StdRuntimeTemplates.CancellationHeader());
             AddRuntimeFile(context, StdRuntimeTemplates.ExpectedHeaderFileName, StdRuntimeTemplates.ExpectedHeader());
             AddRuntimeFile(context, StdRuntimeTemplates.ErrorHeaderFileName, StdRuntimeTemplates.ErrorHeader());
             AddRuntimeFile(context, StdRuntimeTemplates.HttpHeaderFileName, StdRuntimeTemplates.HttpHeader());
+            AddRuntimeFile(context, RequestParameterRuntimeTemplates.HeaderFileName, RequestParameterRuntimeTemplates.Header());
             AddRuntimeFile(context, StdRuntimeTemplates.HttpSourceFileName, StdRuntimeTemplates.HttpSource(options.HttpInclude));
             AddRuntimeFile(context, StdRuntimeTemplates.JsonHeaderFileName, StdRuntimeTemplates.JsonHeader(options.JsonInclude));
         }

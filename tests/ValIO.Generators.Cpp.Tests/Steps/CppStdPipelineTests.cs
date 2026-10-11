@@ -138,13 +138,16 @@ public class CppStdPipelineTests
             "Runtime/ValIOHttp.cpp",
             "Runtime/ValIOJson.h",
             "Runtime/ValIOJsonTypes.h",
-            "Clients/IStore.h",
+            "Runtime/ValIOJsonValidation.h",
+            "Runtime/ValIOCancellation.h",
+            "Runtime/Impl/ValIORequest.inl",
+            "Interfaces/IStore.h",
             "Clients/StoreClient.h",
-            "Clients/StoreClient.cpp",
+            "Clients/Impl/StoreClient.cpp",
         });
 
         // Each runtime layer has one canonical output file.
-        files.Keys.Count(f => f.StartsWith("Runtime/")).Should().Be(6);
+        files.Keys.Count(f => f.StartsWith("Runtime/")).Should().Be(9);
     }
 
     [Test]
@@ -158,7 +161,7 @@ public class CppStdPipelineTests
             Namespace = "Petstore",
         });
 
-        files.Keys.Should().NotContain("Clients/IStore.h");
+        files.Keys.Should().NotContain("Interfaces/IStore.h");
         files["Clients/StoreClient.h"].Should().NotContain("Async");
         files["Clients/StoreClient.h"].Should().Contain("class StoreClient final");
     }
@@ -173,32 +176,33 @@ public class CppStdPipelineTests
             ApiStyle = CppApiStyle.Both,
             Namespace = "Petstore",
         });
-        var impl = files["Clients/StoreClient.cpp"].Replace("\r\n", "\n");
+        var impl = files["Clients/Impl/StoreClient.cpp"].Replace("\r\n", "\n");
 
         // Именованные локали — безусловный стиль тел (требование W5).
-        impl.Should().Contain("std::string path = \"/v2/store/order/\" + ValIO::UrlEncode(std::to_string(OrderId));");
+        impl.Should().Contain("std::string path = std::string(GetOrderByIdPath);");
+        impl.Should().Contain("ValIO::ReplacePathParameter(path, \"{orderId}\", ValIO::UrlEncode(std::to_string(OrderId)));");
         impl.Should().Contain("ValIO::Request httpRequest;");
-        impl.Should().Contain("const ValIO::Expected<ValIO::Response, ValIO::Error> sendResult = _http.Send(httpRequest);");
+        impl.Should().Contain("const ValIO::Expected<ValIO::Response, ValIO::Error> sendResult = _http->Send(httpRequest, cancellationToken);");
         impl.Should().Contain("const ValIO::Response& response = sendResult.value();");
-        impl.Should().Contain("return ValIO::Parse<Order>(response.Body);");
+        impl.Should().Contain("return ValIO::Parse<Order>(response.Body, ValIO::JsonStringFormat::Plain);");
 
         // wire-имя query-параметра — OriginalName (Paging.Offset), не sanitized.
-        impl.Should().Contain("httpRequest.AddQuery(\"Paging.Offset\", std::to_string(*PagingOffset));");
+        impl.Should().Contain("httpRequest.AddQuery(\"Paging.Offset\", PagingOffset);");
 
         // Определение константное и без повторных default-аргументов.
-        impl.Should().Contain("StoreClient::GetOrderById(std::int64_t OrderId, std::optional<std::int32_t> PagingOffset) const");
+        impl.Should().Contain("StoreClient::GetOrderById(std::int64_t OrderId, std::optional<std::int32_t> PagingOffset, ValIO::CancellationToken cancellationToken) const");
         impl.Should().NotContain("= std::nullopt) const");
 
         // Интерфейс — чистый: методы pure virtual + виртуальный деструктор.
-        var interfaceHeader = files["Clients/IStore.h"].Replace("\r\n", "\n");
+        var interfaceHeader = files["Interfaces/IStore.h"].Replace("\r\n", "\n");
         interfaceHeader.Should().Contain("virtual ~IStore() = default;");
-        interfaceHeader.Should().Contain("virtual ValIO::Expected<Order, ValIO::Error> GetOrderById(std::int64_t OrderId, std::optional<std::int32_t> PagingOffset = std::nullopt) const = 0;");
+        interfaceHeader.Should().Contain("virtual ValIO::Expected<Order, ValIO::Error> GetOrderById(std::int64_t OrderId, std::optional<std::int32_t> PagingOffset = std::nullopt, ValIO::CancellationToken cancellationToken = {}) const = 0;");
         interfaceHeader.Should().Contain("std::future<ValIO::Expected<Order, ValIO::Error>> GetOrderByIdAsync");
         interfaceHeader.Should().NotContainAny(["ValIO::HttpClient", "httplib", "ValIOJson", "nlohmann"]);
 
         // Клиентский хедер не тянет полный nlohmann (только сериализаторные .cpp).
         files["Clients/StoreClient.h"].Should().NotContain("nlohmann");
-        files["Clients/StoreClient.cpp"].Should().Contain("Runtime/ValIOJson.h");
+        files["Clients/Impl/StoreClient.cpp"].Should().Contain("Runtime/ValIOJson.h");
     }
 
     [Test]

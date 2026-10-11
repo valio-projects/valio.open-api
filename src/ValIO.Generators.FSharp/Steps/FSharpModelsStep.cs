@@ -60,8 +60,8 @@ public sealed class FSharpModelsStep : ICodeGenerationStep
         var opts = context.PluginOptions as FSharpGenerationOptions ?? new FSharpGenerationOptions();
         var builder = new FSharpModelAstBuilder(_namingConverter, _typeMapper);
 
-        var modelLookup = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal);
-        foreach (var model in context.IrDocument.Models)
+        var modelLookup = context.DocumentContext.ModelsByName;
+        foreach (var model in context.DocumentContext.ModelsInDependencyOrder)
         {
             // Emitted module/type identifiers keep the affixed name; the file name
             // derives from the pre-affix original so generated paths don't change.

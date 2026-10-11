@@ -1,12 +1,17 @@
 using System.Diagnostics;
+using System.Text;
+using Microsoft.OpenApi;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Builders;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Core.Plugins;
+using ValIO.Core.Services;
+using ValIO.Tests.Fixtures;
 using ValIO.Generators.Cpp;
 using ValIO.Generators.Cpp.Ast.Renderers;
 using ValIO.Generators.Cpp.Models;
@@ -137,6 +142,47 @@ public class CppCompileFixtureTests
             Responses = [new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }],
         };
 
+        IrParameter BrowseParameter(string name, string wireName, IrType type) => new()
+        {
+            Name = name, OriginalName = wireName, Type = type, IsRequired = false,
+        };
+        var integerType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer };
+        var booleanType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean };
+        var stringType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+        var integerArray = new IrArrayType { ElementType = integerType };
+        var statusArray = new IrArrayType { ElementType = new IrModelReference { ModelName = "OrderStatus" } };
+        var browse = new IrOperation
+        {
+            MethodName = "Browse", HttpMethod = "GET", Path = "/browse",
+            PathParameters = [],
+            QueryParameters =
+            [
+                BrowseParameter("Mode", "mode", integerType) with { IsRequired = true },
+                BrowseParameter("RequiredNullable", "required", new IrNullableType { InnerType = integerType }) with { IsRequired = true },
+                BrowseParameter("Enabled", "enabled", booleanType),
+                BrowseParameter("Count", "count", integerType),
+                BrowseParameter("Ratio", "ratio", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Number }),
+                BrowseParameter("Text", "text", stringType),
+                BrowseParameter("Values", "values", integerArray),
+                BrowseParameter("Switches", "switches", new IrArrayType { ElementType = booleanType }),
+                BrowseParameter("States", "states", statusArray),
+                BrowseParameter("Csv", "csv", integerArray) with { Style = IrParameterStyle.Form, Explode = false },
+                BrowseParameter("Spaces", "spaces", integerArray) with { Style = IrParameterStyle.SpaceDelimited, Explode = false },
+                BrowseParameter("Pipes", "pipes", integerArray) with { Style = IrParameterStyle.PipeDelimited, Explode = false },
+                BrowseParameter("Filter", "filter", new IrModelReference { ModelName = "Order" }),
+                BrowseParameter("MaybeText", "maybeText", new IrNullableType { InnerType = stringType }),
+            ],
+            HeaderParameters =
+            [
+                BrowseParameter("EnabledHeader", "X-Enabled", booleanType),
+                BrowseParameter("CountHeader", "X-Count", integerType),
+                BrowseParameter("TextHeader", "X-Text", stringType),
+                BrowseParameter("ValuesHeader", "X-Values", integerArray) with { Style = IrParameterStyle.Simple, Explode = false },
+                BrowseParameter("StatesHeader", "X-States", statusArray) with { Style = IrParameterStyle.Simple, Explode = false },
+            ],
+            Responses = [new IrResponse { StatusCode = "200", Type = booleanType }],
+        };
+
         // Builds a multipart endpoint with a conventional PascalCase operation name.
         IrOperation UploadOperation(string verb) => new()
         {
@@ -192,7 +238,7 @@ public class CppCompileFixtureTests
         return new IrDocument
         {
             Metadata = new IrDocumentMetadata(),
-            Models = [order, probe, upload, nameBase, idBase, singleBase, combined, new IrModel { Name = "Empty", Properties = [] }],
+            Models = [order, probe, upload, nameBase, idBase, singleBase, combined, CheckedCodecFixture.CreateModel(), new IrModel { Name = "Empty", Properties = [] }],
             Enums =
             [
                 status,
@@ -213,8 +259,25 @@ public class CppCompileFixtureTests
                     [
                         Operation("GET", "/store/order/{orderId}", "GetOrderById"),
                         Operation("POST", "/store/order", "PlaceOrder", body: "Order"),
+                        Operation("POST", "/store/formats", "PlaceFormats", body: "CodecFormats"),
                         Operation("DELETE", "/store/order/{orderId}", "DeleteOrder", successCode: "204", successBody: false),
+                        Operation("GET", "/store/maybe/{orderId}", "GetMaybeOrder") with
+                        {
+                            Responses = [new IrResponse { StatusCode = "200", Type = new IrModelReference { ModelName = "Order" } },
+                                new IrResponse { StatusCode = "204" }, new IrResponse { StatusCode = "205" }],
+                        },
+                        Operation("GET", "/store/status/{orderId}", "GetStatus") with
+                        {
+                            Responses = [new IrResponse { StatusCode = "2XX", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }],
+                        },
+                        Operation("GET", "/store/status/{orderId}", "GetRangeOverride") with
+                        {
+                            Responses = [new IrResponse { StatusCode = "2XX" },
+                                new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }],
+                        },
+                        Operation("HEAD", "/store/order/{orderId}", "HeadOrder"),
                         scalar,
+                        browse,
                         UploadOperation("POST"), UploadOperation("PUT"), UploadOperation("PATCH"),
                     ],
                 },
@@ -249,9 +312,20 @@ public class CppCompileFixtureTests
             .AddSingleton<ICppAstRenderer, CppAstRenderer>()
             .BuildServiceProvider();
         var pipeline = new CppGeneratorPlugin().CreatePipeline(services);
+        var document = BuildDocument();
+        var optionalBodies = await LoadOptionalBodiesAsync();
+        var models = document.Models.Concat(optionalBodies.Models).ToList();
+        var enums = document.Enums.Concat(optionalBodies.Enums).ToList();
+        document = document with
+        {
+            Models = models,
+            Enums = enums,
+            Clients = document.Clients.Concat(optionalBodies.Clients).ToList(),
+            TypeDependencies = new IrTypeDependencyGraphBuilder().Build(models, enums),
+        };
         var context = new GenerationContext
         {
-            IrDocument = BuildDocument(),
+            IrDocument = document,
             Configuration = new GenerationConfiguration { LanguageId = "cpp", PluginOptions = options },
             PluginOptions = options,
         };
@@ -264,6 +338,18 @@ public class CppCompileFixtureTests
             await File.WriteAllTextAsync(target, file.Content);
         }
         return outputDirectory;
+    }
+
+    /// <summary>Loads the explicit optional-body contract through the real OpenAPI reader and IR pipeline.</summary>
+    /// <returns>The JSON, nullable, form, multipart, and binary body contracts.</returns>
+    /// <exception cref="InvalidOperationException">The on-disk OpenAPI fixture contains diagnostics.</exception>
+    private static async Task<IrDocument> LoadOptionalBodiesAsync()
+    {
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("Cpp/optional-request-bodies-3.1.json")));
+        var parsed = await OpenApiDocument.LoadAsync(stream, "json");
+        if (parsed.Document is null || parsed.Diagnostic?.Errors.Count > 0)
+            throw new InvalidOperationException("Cannot parse the optional C++ request-body fixture.");
+        return new IrBuilder(new SchemaResolver(parsed.Document), new NamingConverter()).BuildFromOpenApi(parsed.Document);
     }
 
     private static string? FindCmake()

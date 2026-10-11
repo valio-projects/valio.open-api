@@ -31,7 +31,7 @@ public sealed class CSharpEnumsStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as CSharpGenerationOptions;
         var ns = opts?.Namespace ?? context.Configuration.Namespace ?? "Generated";
-        var builder = new CSharpAstBuilder(_namingConverter, opts);
+        var builder = new CSharpAstBuilder(_namingConverter, context.DocumentContext, opts);
 
         foreach (var irEnum in context.IrDocument.Enums)
         {

@@ -217,11 +217,10 @@ public sealed class ValibotAstBuilder
             IrPrimitiveKind.Integer => Pipe(Call("number"), Call("integer")),
             IrPrimitiveKind.Long => Pipe(Call("number"), Call("integer")),
             IrPrimitiveKind.Boolean => Call("boolean"),
-            IrPrimitiveKind.DateTime => Pipe(Call("string"), Call("isoTimestamp"),
+            IrPrimitiveKind.DateTime => Pipe(Call("string"),
                 Call("check", StandardStringFormatAst.Build("date-time"))),
-            IrPrimitiveKind.Date => Pipe(Call("string"), Call("isoDate"),
-                Call("check", StandardStringFormatAst.CalendarDatePredicate())),
-            IrPrimitiveKind.Time => Pipe(Call("string"), Call("isoTime")),
+            IrPrimitiveKind.Date => Pipe(Call("string"), Call("check", StandardStringFormatAst.Build("date"))),
+            IrPrimitiveKind.Time => Pipe(Call("string"), Call("check", StandardStringFormatAst.Build("time"))),
             IrPrimitiveKind.Uuid => BuildUuidSchema(),
             IrPrimitiveKind.Any => Call("unknown"),
             IrPrimitiveKind.Void => Call("undefined"),
@@ -236,16 +235,17 @@ public sealed class ValibotAstBuilder
     }
 
     /// <summary>
-    /// UUID schema per configured mode: guid → v.uuid(); string → v.string();
+    /// UUID schema per configured mode: guid uses the shared canonical text predicate; string uses v.string();
     /// regex → v.pipe(v.string(), v.regex(UUID_REGEX)).
     /// </summary>
+    /// <returns>The UUID schema following the selected validation policy.</returns>
     private ExpressionNode BuildUuidSchema()
     {
         return _uuidFormat switch
         {
             TypeScriptOptionIds.UuidFormat.String => Call("string"),
             TypeScriptOptionIds.UuidFormat.Regex => Pipe(Call("string"), Call("regex", Id(TypeScriptOptionIds.UuidFormat.RegexConstName))),
-            _ => Pipe(Call("string"), Call("uuid")),
+            _ => Pipe(Call("string"), Call("check", StandardStringFormatAst.Build("uuid"))),
         };
     }
 

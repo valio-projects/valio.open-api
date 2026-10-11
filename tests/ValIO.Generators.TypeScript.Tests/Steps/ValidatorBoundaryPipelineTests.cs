@@ -38,7 +38,7 @@ public sealed class ValidatorBoundaryPipelineTests
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validation });
         var schema = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("getDates.results.schemas.ts", StringComparison.Ordinal)).Content;
 
-        schema.Should().Contain("z.array(z.string().date())");
+        schema.Should().Contain("z.array(z.string().refine(");
     }
 
     /// <summary>Verifies nullable parameter constraints are applied before the nullable wrapper.</summary>

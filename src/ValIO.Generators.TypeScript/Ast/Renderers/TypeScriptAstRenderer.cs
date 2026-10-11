@@ -1355,8 +1355,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     /// renderer claims the node, falls back to the base behaviour
     /// (<see cref="NotSupportedException"/>).
     /// </summary>
+    /// <param name="node">The TypeScript type query or plugin-owned node to render.</param>
+    /// <returns>The structured node's rendered TypeScript syntax.</returns>
     public override string VisitDefault(AstNode node)
     {
+        if (node is TypeQueryTypeNode typeQuery)
+            return $"typeof {typeQuery.Expression.Accept(this)}";
+
         foreach (var renderer in _chain)
         {
             if (renderer.CanRender(node))

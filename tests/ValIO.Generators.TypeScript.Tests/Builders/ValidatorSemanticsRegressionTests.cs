@@ -9,6 +9,7 @@ using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Services;
 using ValIO.Generators.TypeScript.Ast.Renderers;
+using ValIO.Generators.TypeScript.Tests.TestHelpers;
 using ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 using ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 using ValIO.Generators.TypeScript.Zod.Ast.Builders;
@@ -165,9 +166,10 @@ public sealed class ValidatorSemanticsRegressionTests
     /// <returns>The IR primitive.</returns>
     private static IrPrimitiveType Primitive(IrPrimitiveKind kind) => new() { PrimitiveKind = kind };
 
-    /// <summary>Creates the schema builder with a neutral type projection.</summary>
+    /// <summary>Creates the schema builder with an explicit partial document and neutral type projection.</summary>
     /// <returns>The Zod builder under test.</returns>
-    private static ZodAstBuilder ZodBuilder() => new(new NamingConverter(), _ => new RawTypeNode("unknown"));
+    private static ZodAstBuilder ZodBuilder() => new(IrDocumentContexts.Create(), new NamingConverter(),
+        _ => new RawTypeNode("unknown"));
 
     /// <summary>Creates a model with the supplied properties.</summary>
     /// <param name="properties">The properties to validate.</param>

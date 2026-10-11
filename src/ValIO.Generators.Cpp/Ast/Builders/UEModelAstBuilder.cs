@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -13,19 +14,28 @@ using ValIO.Generators.Cpp.Services;
 
 namespace ValIO.Generators.Cpp.Ast.Builders;
 
-/// <summary>
-/// Строитель AST для UE модели (USTRUCT) из IR представления.
-/// Генерирует CppHeaderFileNode, содержащий один UStructDeclarationNode.
-/// </summary>
-public sealed class UEModelAstBuilder
+/// <summary>Builds Unreal model headers with shared document declaration indexes.</summary>
+public sealed class UEModelAstBuilder : AstBuilderBase
 {
+    /// <summary>Maps types using the shared document context.</summary>
     private readonly UETypeMapper _typeMapper;
+    /// <summary>Supplies Unreal identifier and path naming.</summary>
     private readonly UENamingConvention _naming;
+    /// <summary>Supplies the selected Unreal generation options.</summary>
     private readonly CppGenerationOptions _options;
 
-    public UEModelAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options)
+    /// <summary>Requires one document context shared with the type mapper.</summary>
+    /// <param name="typeMapper">The document-aware Unreal type mapper.</param>
+    /// <param name="naming">The Unreal identifier and file naming rules.</param>
+    /// <param name="options">The Unreal generation options.</param>
+    /// <param name="documentContext">The mandatory finalized document indexes.</param>
+    /// <exception cref="ArgumentNullException">A dependency is null.</exception>
+    /// <exception cref="ArgumentException">The mapper belongs to a different document context.</exception>
+    public UEModelAstBuilder(UETypeMapper typeMapper, UENamingConvention naming, CppGenerationOptions options, IrDocumentContext documentContext) : base(documentContext)
     {
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
+        if (!ReferenceEquals(typeMapper.DocumentContext, documentContext))
+            throw new ArgumentException("The mapper and builder must share a document context.", nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
         _options = options ?? throw new ArgumentNullException(nameof(options));
     }
@@ -34,13 +44,13 @@ public sealed class UEModelAstBuilder
     /// Builds an Unreal Engine model header without discarding unsupported recursive properties.
     /// </summary>
     /// <param name="model">The model contract.</param>
-    /// <param name="enumNames">The document's enum names.</param>
-    /// <param name="modelLookup">The models used to resolve inheritance.</param>
     /// <param name="warnings">The optional generation diagnostics.</param>
     /// <returns>The generated Unreal Engine header.</returns>
     /// <exception cref="NotSupportedException">The model requires unsupported recursive ownership or composition codecs.</exception>
-    public CppHeaderFileNode Build(IrModel model, IReadOnlySet<string> enumNames, IReadOnlyDictionary<string, IrModel> modelLookup, ICollection<string>? warnings = null)
+    public CppHeaderFileNode Build(IrModel model, ICollection<string>? warnings = null)
     {
+        var enumNames = EnumNames;
+        var modelLookup = ModelsByName;
         var structName = _naming.StructName(model.Name);
         // File name uses the ORIGINAL (pre-affix) name so the emitted file/include doesn't change with affixes.
         var fileName = _naming.ModelFileName(model.OriginalName);
@@ -59,7 +69,7 @@ public sealed class UEModelAstBuilder
             specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
             baseStruct: baseStruct,
-            documentation: BuildDocumentation(model.Description));
+            documentation: StdDocumentation.Create($"{model.Name} model.", model.Description));
 
         var includes = CollectIncludes(model, fileName, enumNames, propertiesToUse, baseModelName);
 
@@ -83,9 +93,10 @@ public sealed class UEModelAstBuilder
         return (null, null, plan.EffectiveProperties);
     }
 
-    /// <summary>
-    /// Строит UPropertyFieldNode из IrProperty
-    /// </summary>
+    /// <summary>Builds a documented Unreal field from the property's IR contract.</summary>
+    /// <param name="property">The field's property contract.</param>
+    /// <param name="category">The Unreal Blueprint category.</param>
+    /// <returns>The typed field with a useful Doxygen brief.</returns>
     private UPropertyFieldNode BuildField(IrProperty property, string category)
     {
         var type = _typeMapper.MapType(property.Type);
@@ -99,7 +110,7 @@ public sealed class UEModelAstBuilder
             type: type,
             specifiers: UPropertySpecifiers.ModelField(category),
             defaultValue: defaultValue,
-            documentation: BuildDocumentation(property.Description));
+            documentation: StdDocumentation.Create($"{property.Name} field.", property.Description));
     }
 
     /// <summary>
@@ -162,13 +173,6 @@ public sealed class UEModelAstBuilder
     /// </summary>
     private static void CollectTypeReferences(IrType type, HashSet<string> models, HashSet<string> enums, IReadOnlySet<string> enumNames)
         => CppTypeReferenceCollector.Collect(type, models, enums, enumNames);
-
-    private CommentNode? BuildDocumentation(string? description)
-    {
-        return !string.IsNullOrWhiteSpace(description)
-            ? new CommentNode(description, CommentKind.MultiLine)
-            : null;
-    }
 
     private CommentNode? BuildCopyrightComment()
     {

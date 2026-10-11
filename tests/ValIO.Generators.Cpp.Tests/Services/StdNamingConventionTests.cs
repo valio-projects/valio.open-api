@@ -46,8 +46,8 @@ public class StdNamingConventionTests
         _naming.SerializerHeaderPath("buildingModel").Should().Be("Serializers/BuildingModelJson.h");
         _naming.SerializerSourcePath("buildingModel").Should().Be("Serializers/BuildingModelJson.cpp");
         _naming.ClientHeaderPath("store").Should().Be("Clients/StoreClient.h");
-        _naming.ClientSourcePath("store").Should().Be("Clients/StoreClient.cpp");
-        _naming.InterfaceHeaderPath("store").Should().Be("Clients/IStore.h");
+        _naming.ClientSourcePath("store").Should().Be("Clients/Impl/StoreClient.cpp");
+        _naming.InterfaceHeaderPath("store").Should().Be("Interfaces/IStore.h");
     }
 
     [TestCase("std", "Std")]        // namespace-имена — PascalCase снимает коллизию

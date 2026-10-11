@@ -27,12 +27,14 @@ first-parent diff merge-коммитов и git patch-id --stable для обы�
 
 Первая поставка ограничена готовым локальным C++ std артефактом и его проверкой.
 После создания этого архива пользователь разрешил commit/push и продолжение работы;
-перед первым коммитом координатор выполнил общий межъязыковой gate, описанный ниже.
+первый commit e28998750cb31a0a2dbccc80307e8eecd3856562 отправлен в
+origin/codex/admin-e2e-multipart. Межъязыковые gates этого состояния описаны ниже.
 Его результаты не меняют состав и происхождение ранее собранного архива. Исходники
 именно этой C++ поставки зафиксированы в её артефакте:
 новая миграция ModelsByName/EnumNames и общего builder context в неё не входит.
-Её инвентаризация и план записаны в [builder-context-plan.ru.md](builder-context-plan.ru.md);
-общий контекст и базовый builder пока не реализованы.
+Её план и текущее выполнение записаны в [builder-context-plan.ru.md](builder-context-plan.ru.md).
+Core context и базовый builder добавлены в следующей рабочей волне; приёмка новых
+изменений ещё ожидается.
 
 ## Уточнённые требования и нормативная матрица
 
@@ -282,12 +284,12 @@ runtime-валидация каждой ветви. Эти ограничени�
 
 | Область | Порученная работа | Ограничение доказательств на момент подготовки раздела |
 | --- | --- | --- |
-| Core AST/IR | Целостность AST-потомков/родителей, IrUnionKind, локальные IrType.Constraints, общие резолверы и удаление повторов. | 108/108 passed, 0 skipped; включает добавленные Core presence/container проверки. |
-| C++ | Чистые DTO/enum headers, отдельные codecs .h/.cpp, model/serializer/client CMake targets; явный отказ для неподдержанной модельной композиции. | 161/161 unit и 4/4 native; generated example CTest 2/2, models-only CTest 1/1. Точная матрица ниже. |
-| C# | Nullable reference/enum/default/query и multipart, единые options, согласованность mapper/builders; явный отказ для неподдержанной модельной композиции и неоднородных success results. | Общий precommit gate: 122 passed, 0 failed, 0 skipped. Это отдельное доказательство от C++ архива. |
-| TypeScript | Общая multipart-сериализация, wire-параметры, validators/AST; Node runtime Zod 3/4, Valibot, TypeBox; строгая компиляция transport matrix. | Общий suite: 706 passed, 1 baseline skip; реальные tsc/Node проверки пока имеют 5 и 4 failures соответственно, исправления выполняются. |
+| Core AST/IR | Целостность AST-потомков/родителей, IrUnionKind, локальные IrType.Constraints, общие резолверы и удаление повторов; parameter Style/Explode. | Текущий общий gate: Core 149/149 passed, 0 skipped, включая 12 новых parameter serialization cases; архивный Core108 сохранён отдельно. |
+| C++ | Чистые DTO/enum headers, отдельные codecs .h/.cpp, model/serializer/client CMake targets; явный отказ для неподдержанной модельной композиции; typed Request и HTTP/cancellation работа. | Финальные source gates: unit 262/262, main native 4/4, scalar providers 7/7, regenerated preview CMake 3/3 и models-only 1/1, HTTP/TLS object compile. Везде 0 failures / 0 skips. HTTPS runtime не подтверждён. Package provenance см. BUILD-INFO.json готовой поставки. Первый архив ниже неизменен. |
+| C# | Nullable reference/enum/default/query и multipart, единые options, согласованность mapper/builders; явный отказ для неподдержанной модельной композиции и неоднородных success results. | Новый context/HTTP gate: 127 passed, 0 failed, 0 skipped, включая четыре native tracing режима. |
+| TypeScript | Общая multipart-сериализация, wire-параметры, validators/AST; Node runtime Zod 3/4, Valibot, TypeBox; строгая компиляция transport matrix. | Точный committed snapshot: 814 passed, 0 failed, 0 skipped; включает все 50 strict compile случаев, Node/runtime и прежний Angular тест с реальными зависимостями. Новая context-волна требует отдельного gate. |
 | Остальные языки | Совместное подключение flatten-резолвера и проверки allOf-полей. | Unit suites всех девяти генераторов пройдены в общем precommit gate; broad union mappings и отсутствующее полное native coverage остаются ограничениями. |
-| SocratiCode | Индексирование valio.open-api запущено по точному пути. | Последний статус: 10%, 480/4616 файлов, 0 points, batch 1/26, 2967 секунд; индекс работает, поиск не готов. |
+| SocratiCode | Индексирование valio.open-api запущено по точному пути. | Последний snapshot координатора: 42%, 1959/4616, batch 5/26, persisted 1575 points; watcher inactive, graph pending. Индекс ещё не готов, контрольный поиск не подтверждён. |
 
 ### Явные ошибки вместо потери неподдержанной модельной семантики
 
@@ -343,16 +345,17 @@ Production parser matrix уже использует точные 3.0.4/3.1.2. �
 набора доказательств. Обязательный запуск с установленными зависимостями, согласование
 runtime versions и отсутствие скрытых skips остаются условиями приёмки координатора.
 Перед первым коммитом координатор запустил отдельные реальные tsc/Node gates.
-Их текущие результаты и оставшиеся ошибки приведены в следующем разделе;
-полный TypeScript/runtime gate пока не принят.
+Промежуточные ошибки и последующий успешный запуск из точного committed snapshot
+приведены в следующем разделе. Этот результат не переносится на новую context-волну.
 
 ### Межъязыковая проверка перед первым коммитом
 
 После первой C++ поставки выполнен общий Release gate:
 [precommit-general-fixed.log](../artifacts/audit/precommit-general-fixed.log).
-Все 14 перечисленных suites завершились без failures. Единственный пропуск —
-baseline тест TypeScript GeneratedAngularOutput_CompilesUnderTscStrict;
-его нельзя считать пройденной компиляцией. Предупреждения анализаторов в логе
+Все 14 перечисленных suites завершились без failures: 1941 passed / 0 failed /
+1 environment skip. Единственный пропуск этого общего запуска — baseline тест
+TypeScript GeneratedAngularOutput_CompilesUnderTscStrict; позднее он выполнен
+с реальными зависимостями в committed-snapshot gate ниже. Предупреждения анализаторов в логе
 сохраняются; warning-clean сборка не заявляется.
 
 | Suite | Passed | Failed | Skipped |
@@ -376,15 +379,118 @@ baseline тест TypeScript GeneratedAngularOutput_CompilesUnderTscStrict;
 подключённые allOf регрессии. Это не означает native/runtime приёмку всех этих
 языков и не снимает перечисленные выше ограничения union mappings.
 
-Отдельные проверки с установленными реальными зависимостями ещё требуют исправлений:
+Промежуточные отдельные проверки выявили ошибки, исправленные до окончательного
+запуска TypeScript. Эти логи сохранены как история диагностики:
 
 | Gate | Текущий результат | Оставшаяся работа |
 | --- | --- | --- |
-| TypeScript strict compile | 45 passed / 5 failed / 0 skipped: [typescript-compile-precommit.log](../artifacts/audit/typescript-compile-precommit.log). | Пять случаев angular-promise: отсутствующий mode исправляется; требуется повторный запуск. |
-| Node validator/runtime | 66 passed / 4 failed / 0 skipped: [typescript-runtime-precommit.log](../artifacts/audit/typescript-runtime-precommit.log). | Четыре Valibot случая отклоняют RFC3339 date-time с Z; исправление выполняется, требуется повторный запуск. |
+| TypeScript strict compile, промежуточный запуск | 45 passed / 5 failed / 0 skipped: [typescript-compile-precommit.log](../artifacts/audit/typescript-compile-precommit.log). | Пять angular-promise mode случаев затем исправлены; все 50 compile случаев входят в успешный gate ниже. |
+| Node validator/runtime, промежуточный запуск | 66 passed / 4 failed / 0 skipped: [typescript-runtime-precommit.log](../artifacts/audit/typescript-runtime-precommit.log). | Четыре Valibot RFC3339 случая затем исправлены; полный Node/runtime входит в успешный gate ниже. |
 
-Пользователь разрешил commit/push, но до сообщения координатора с точным SHA
-документ не заявляет выполненный commit, push или успешный удалённый CI.
+Итоговый TypeScript gate выполнен из точного committed snapshot:
+**814 passed / 0 failed / 0 skipped**,
+[typescript-committed-snapshot.log](../artifacts/audit/typescript-committed-snapshot.log).
+Он включает 50 strict compile случаев, все Node/runtime проверки и прежний Angular
+тест с установленными реальными зависимостями. Это отдельный, более поздний запуск,
+а не изменение исторических счётчиков общего precommit лога.
+
+Опубликован commit
+[e28998750cb31a0a2dbccc80307e8eecd3856562](https://github.com/valio-projects/valio.open-api/commit/e28998750cb31a0a2dbccc80307e8eecd3856562)
+в origin/codex/admin-e2e-multipart. Успешный удалённый CI этим не подтверждается.
+
+### Новая рабочая волна после опубликованного коммита
+
+Эта волна следует за опубликованным historical baseline и не меняет первый C++ архив.
+Точный r2 source SHA и clean-source provenance фиксируются в BUILD-INFO.json поставки.
+Добавлены Core `IrDocumentContext`, request-local `GenerationContext.DocumentContext`
+и тонкий `AstBuilderBase`; 16 новых context-тестов вошли в Core checkpoint 124/124,
+а последующий formats/body gate дал 137/137.
+Девять вторичных генераторов переведены на общий контекст. Общий прогон 14 test projects
+дал 2134 passed / 0 failed / 0 skipped; native/Node категории исключены из этого
+прогона и принимаются отдельно по соответствующим логам ниже.
+Подробный статус сохранён в
+[builder-context-plan.ru.md](builder-context-plan.ru.md).
+
+Новый объём пользователя: Doxygen; injection общего HTTP-клиента; static route
+constants; ответы 204/205/HEAD; структура Interfaces/IStore.h,
+Clients/StoreClient.h и Clients/Impl/StoreClient.cpp; pre/post hooks, динамическая
+авторизация, ограниченный повтор после 401; cancellation C++17/C#/TypeScript и
+других native targets; строгие C++ scalar/date/enum/base64/collection parsers.
+Отдельные владельцы выполняют C++ API/runtime/codec изменения. Перечисление
+требований не означает, что все они уже реализованы или проверены.
+
+| Новый checkpoint | Результат и граница доказательства |
+| --- | --- |
+| Общий gate 14 проектов | 2134 passed / 0 failed / 0 skipped: [cpp-r2-general-final.log](../artifacts/audit/cpp-r2-general-final.log). Включает Core 149, Application 80, C++ 262, C# 127, TypeScript 738, Python 130, Kotlin 109 и остальные семь проектов. Native/Node категории этим прогоном не подтверждаются. Предыдущий общий checkpoint 2097 сохранён отдельно. |
+| Core context/formats/body/parameters | 149 passed / 0 failed / 0 skipped в cpp-r2-general-final.log. Добавлены 12 parameter Style/Explode cases. Предыдущие 137 context/formats/body tests приняты в [core-context-formats-body.log](../artifacts/audit/core-context-formats-body.log); Core context124 отдельно сохранён в document-context-core.log. |
+| C# context/HTTP | 127 passed / 0 failed / 0 skipped, включая четыре native tracing режима: [csharp-http-context-fixed.log](../artifacts/audit/csharp-http-context-fixed.log). |
+| C++ текущий unit | 262 passed / 0 failed / 0 skipped в cpp-r2-general-final.log и [targeted повторе](../artifacts/audit/cpp-r2-unit-final.log); включает последнюю form regression. Промежуточный direct unit 261 и scalar checkpoint [237/237](../artifacts/audit/cpp-scalar-unit-final.log) не заменяют эти прогоны. |
+| C++ финальный основной native | 4 passed / 0 failed / 0 skipped, EXIT0, 4m12s: [cpp-r2-main-native-final.log](../artifacts/audit/cpp-r2-main-native-final.log). Повтор после enum/typed Request/query-fix принят. Windows cancellation и optional-body regressions сохранены. |
+| C++ финальные scalar providers | 7 passed / 0 failed / 0 skipped, EXIT0, 5m29s: [cpp-r2-provider-native-final.log](../artifacts/audit/cpp-r2-provider-native-final.log). Семь точных combinations перечислены в scalar guide; это не весь декартов продукт providers/standards. |
+| C++ HTTP/TLS object gate | Passed: [cpp-r2-tls-syntax-final.log](../artifacts/audit/cpp-r2-tls-syntax-final.log), actual OpenSSL 3.6.1, MSVC 19.51, C++17 /W4 /WX. TLS использует composition с genuine final SSLClient и public stop/progress. Это object compilation, не HTTPS handshake/certificates/TLS cancellation runtime acceptance. |
+| C++ regenerated r2 preview CMake | 3/3 passed: model_consumer, codec_consumer и http_consumer; [cpp-r2-cmake-preview.log](../artifacts/audit/cpp-r2-cmake-preview.log). Отдельный models-only build/CTest: 1/1 passed, [cpp-r2-models-preview.log](../artifacts/audit/cpp-r2-models-preview.log). Повторно сгенерированный CLI sample после query-fix; package portable gate принимается отдельно. |
+| TypeScript context/HTTP | Прежний checkpoint819/0/1 сохранён в typescript-document-context.log. Новый полный запуск: 853 passed / 1 failed / 0 skipped, [typescript-http-formats-harness.log](../artifacts/audit/typescript-http-formats-harness.log); единственный Ky import snapshot исправлен без production-изменения, повтор ожидается. Committed snapshot814/0/0 остаётся отдельным историческим доказательством. |
+| Java native | 133 passed / 0 failed / 0 skipped: [java-native-fixed.log](../artifacts/audit/java-native-fixed.log). Client pre-abort regression исправлена. Последующая правка path segment a/b принята отдельным real native gate 1/1: [java-client-segment-native-final.log](../artifacts/audit/java-client-segment-native-final.log). |
+| F# native | Составное доказательство всех 80 tests: прежние 79 passed в [fsharp-native.log](../artifacts/audit/fsharp-native.log) плюс исправленный client native 1/1 в [fsharp-client-native-fixed.log](../artifacts/audit/fsharp-client-native-fixed.log). Новый полный 80-test запуск не заявляется. |
+| Python real Pydantic/httpx | Новый context/native gate130 passed / 0 failed / 0 skipped: [python-context-native-final.log](../artifacts/audit/python-context-native-final.log). Предшествующий optional-body fixed gate129/129 сохранён в python-native-fixed.log. |
+| Kotlin context | Предыдущий checkpoint 105/105 сохранён в [kotlin-context.log](../artifacts/audit/kotlin-context.log). Последний общий gate принял 109 passed / 0 failed / 0 skipped в cpp-delivery-general-green.log. Новый native gate пока ожидается. |
+| Application concurrency | Два физических JSON fixture и GenerationConcurrencyTests: 16 параллельных вызовов на C#/C++ с точным сравнением файлов, distinct renderer/pipeline checks. Application 80 passed / 0 failed / 0 skipped в cpp-delivery-general-green.log; это bounded C#/C++ model-only acceptance. |
+
+Правка enum initialization принята новым unit gate: required enum без schema default
+value-initialize, допустимый schema default использует типизированный enum member.
+Последующие typed Request/form regressions также вошли в 262-test C++ suite.
+Финальный native повтор изменённого source принят: main 4/4 и providers 7/7.
+
+Request ordinary methods и scalar overloads имеют определения в Runtime/ValIOHttp.cpp;
+C++17 optional/vector/formatter templates вынесены в подключаемый
+Runtime/Impl/ValIORequest.inl. Public HTTP contract не включает JSON/cpp-httplib types.
+AddQuery/AddHeader/AddFormField принимают typed values; false/zero/empty string
+сохраняют presence, absent optional пропускается, nonfinite float и не представимые
+wire null отклоняются. Клиенты вызывают общий runtime напрямую. Query form arrays
+учитывают Explode (repeated keys либо CSV), space/pipe styles — соответствующий
+separator, header simple arrays — CSV. Значения элементов кодируются отдельно от
+разделителей; nested arrays и неподдержанные object/style codecs отклоняются.
+Подробные границы и parser queue описаны в
+[builder-context-plan.ru.md](builder-context-plan.ru.md#текущая-pre-r2-доработка-typed-request-и-wire-metadata).
+
+Исправлена дополнительная query ошибка: cpp-httplib повторно URL-encoded structural
+comma, превращая delimiter в данные. Runtime применяет pinned path codec отдельно
+от query и отключает transport URL encoding через set_url_encode(false).
+Literal separators внутри element кодируются отдельно от collection separators.
+Исправлен newline при склейке generated source после namespace comment: все 12
+ordinary overload definitions теперь видны компилятору; regenerated native sample
+подтвердил link AddQuery/AddHeader/AddFormField для string/string_view/C string/bool.
+
+Pinned cpp-httplib объявляет SSLClient final. TLS использует composition и публичные
+stop/progress APIs; HTTP cancellation stream adapter остаётся отдельным механизмом.
+Active TLS read cancellation может ждать upstream SSL/OS read timeout; DNS/connect
+имеют отдельные ограничения. Гарантированный immediate TLS cancel не заявляется,
+HTTP/TLS object compile принят; HTTPS runtime этим не подтверждён.
+
+UUID и temporal scalar backends подключены к options, mapper и generated CMake
+отдельным изменением; provider-native matrix семи конкретных cases прошла. String остаётся
+default; modern-uuid использует реальный тип muuid::uuid и требует C++20,
+stduuid — C++17; предусмотрен Boost.Uuid. Temporal варианты: Chrono20, Howard17,
+Boost17 и ValIO17. Не представимые выбранным типом значения должны отклоняться,
+а JSON/HTTP зависимости остаются вне DTO headers. Точное состояние настроек и
+принятые backend cases и ограничения описаны в
+[cpp-scalar-settings.ru.md](cpp-scalar-settings.ru.md).
+
+Новая C++ consumer поставка готовится координатором в
+artifacts/releases/valio-cpp-win-x64-20261011-r2. Добавлен CMake http_consumer для
+shared transport, hooks, bounded 401 refresh и pre-abort; preview self-contained CLI
+повторно опубликован локально после query-fix, CMake examples приняты 3/3 и models-only 1/1.
+Точный source SHA, clean-source provenance и hashes новой поставки фиксируются
+в её BUILD-INFO.json. Portable gate готового exact-commit пакета принимается отдельно.
+Первая поставка и её hash ниже остаются неизменными.
+
+Статический аудит renderer construction всех 12 плагинов не выявил новой общей
+mutable renderer state: C#/C++ transient, Java/PHP new per pipeline,
+TypeScript mutable renderers per step и stateless singleton node handlers,
+остальные singleton renderers имеют constants и локальные StringBuilders.
+Подробная source table находится в [builder-context-plan.ru.md](builder-context-plan.ru.md).
+Это не concurrency runtime acceptance всех 12 языков; существующий bounded test
+проверяет C#/C++ model-only пути.
 
 ### Реализованные границы C++ DTO, codecs и CMake targets
 
@@ -431,8 +537,11 @@ CTest 2/2. Точные toolchain, варианты и логи приведен
   content/schema. Альтернативные media representations целиком не сохраняются.
 - IrResponse не содержит media type. Поэтому кодогенератор не может восстановить
   точную политику Content-Type/Accept/декодирования из одного response type.
-- IrParameter не сохраняет style, explode и allowReserved. Сохранённое OriginalName
-  решает имя wire-ключа, но не все правила сериализации массивов/объектов.
+- В исходной точке IrParameter не сохранял style/explode/allowReserved. Текущая волна
+  добавила Style/Explode и C++ query/header flat-array encodings; allowReserved,
+  OpenAPI object codecs и полная сериализация всех locations остаются ограничениями.
+  Microsoft.OpenApi 3.5.4 теряет distinction Swagger 2 query CSV/multi/default;
+  raw parser metadata и реальные end-to-end regressions поставлены в очередь.
 - Cookie-параметры не попадают в отдельную коллекцию IrOperation: switch в
   IrBuilder.cs:1209–1220 учитывает только path/query/header.
 - Security requirements/schemes не представлены в IR операции; универсальная
@@ -469,25 +578,28 @@ runtime-дефект.
 
 | Приоритет | Действие | Проверяемый критерий завершения |
 | --- | --- | --- |
-| Следующая фаза | Реализовать принятый builder/document context план отдельным изменением. | Один контекст lookup-наборов и явные зависимости builder после миграции всех callers; поведение и файлы генерации сохранены; новый C++ gate после изменения. Сейчас выполнена только инвентаризация. |
-| P0 текущей приёмки | Исправить пять angular-promise compile случаев и четыре Valibot runtime случая; повторить реальные gates. | 50/50 strict compile и 70/70 Node runtime без скрытых пропусков; обычный TypeScript unit suite не заменяет эти результаты. |
+| Текущая рабочая волна | Завершить C++ r2 package acceptance. | Общий gate 2134/2134 (Core 149, C++ 262), main native 4/4, providers 7/7, HTTP/TLS object и regenerated CMake 3/3 + DTO 1/1 приняты. Exact-commit portable package gate принимается отдельно; source provenance см. BUILD-INFO.json поставки. TypeScript полный native/Node повтор требует отдельного результата. |
+| P0 текущей приёмки | Принять новый C++ API/runtime/codec объём и native проверки других языков. | Проверены Doxygen/папки/HTTP injection/hooks/auth replay/cancellation/no-body responses/строгие codecs; новые compiler/runtime результаты записаны отдельно по каждому языку. |
 | P0 следующей приёмки | Распространить presence matrix на сгенерированные модели и валидаторы. | Собственные/унаследованные свойства покрывают required × nullable, absence/null/value и локальные ограничения; Core108 служит исходным IR-доказательством, не заменяя runtime. |
 | P0 следующей приёмки | Дополнить прошедшие unit suites девяти альтернативных генераторов доступными native/runtime проверками. | Точные охваченные плагины/сценарии, passed/failed/skipped и отсутствующие toolchains записаны отдельно. |
 | P0 следующей приёмки | Сделать обязательные интеграционные проверки воспроизводимыми. | Версии reader/runtime fixtures согласованы с 2.0/3.0.4/3.1.2/3.2.0; зависимости установлены; отсутствие требуемого toolchain не превращается в успех. |
 | P1 | Спроектировать typed composed values/codecs для C#/C++ с явной cardinality. | Heterogeneous/nested OneOf/AnyOf имеют сохраняющую контракт representation и accept/reject regressions; до этого остаётся явная NotSupportedException. |
 | P1 | Заменить broad union fallbacks в альтернативных языках по отдельным plugin slices. | Для каждой заявленной возможности есть целевой тип, codec/validator, compiler/runtime evidence и diagnostics для ещё неподдержанных случаев. allOf flatten не используется как доказательство union support. |
 | P1 | Ввести сохраняемые wire capabilities вместо потери media/style/security/cookie metadata. | IR хранит необходимые media alternatives/encoding/parameter metadata; каждый выбранный transport либо реализует их, либо выдаёт точную диагностику. Нужны version-specific fixtures. |
+| P1 parser slice | Сохранить Swagger 2 raw collectionFormat до нормализации reader. | Production JSON/YAML parsing сохраняет различия query CSV/multi/default для inline и referenced parameters; parser → IR → generated HTTP regressions подтверждают wire output. Regex-восстановление внутри IrBuilder не используется. |
+| Очередь, plan only | Спроектировать opt-in named C++ std request containers. | Route/query/body DTO переиспользуют IR/models, сохраняют presence/wire semantics и async ownership; cancellation остаётся request control. Default output и прежние сигнатуры совместимы. Конкретный план сохранён в builder-context-plan.ru.md; реализации пока нет. |
 | P1 | Отдельно определить поддерживаемый объём 3.2 streaming и иных протоколов. | Список поддержанных constructs и runtime scenarios принят явно; простое чтение openapi: 3.2.0 не считается поддержкой itemSchema/itemEncoding или WebSocket/RPC. |
 | P2 | Унифицировать полные IR traversal/import collections и расширить проверки имён. | Вложенные dictionary/union/intersection references собираются без потерь; совпадения wire имён отделены от symbol conflicts; нет независимых копий graph/flatten алгоритма. |
-| P2 | Дождаться готовности SocratiCode и подтвердить поиск. | Индекс именно C:\Work\valio\valio.open-api завершён, доступны ожидаемые файлы и контрольный запрос возвращает корректный путь/фрагмент. Текущие 10% и 0 points не являются search proof. |
+| P2 | Дождаться готовности SocratiCode и подтвердить поиск. | Индекс именно C:\Work\valio\valio.open-api завершён, доступны ожидаемые файлы и контрольный запрос возвращает корректный путь/фрагмент. Текущие 42%, 1959/4616, batch 5/26 и persisted 1575 points ещё не являются search proof; watcher inactive, graph pending. |
 
 ## Итоговые проверки первой C++ поставки
 
-Результаты относятся к локальной Windows x64 поставке C++ std из текущей рабочей
-копии на базе e2cdf3a с незакоммиченными изменениями. Исполнитель документа прочитал
+Результаты относятся к первой локальной Windows x64 поставке C++ std, собранной
+на базе e2cdf3a с локальными source изменениями на момент той сборки. Исполнитель документа прочитал
 указанные лог-файлы, но сам не запускал сборки и не менял production-код.
 Этот раздел фиксирует происхождение и проверки первого архива; более поздний общий
-precommit gate описан выше. Опубликованный commit и удалённый CI этим не подтверждены.
+precommit и committed-snapshot gates описаны выше. Сам архив не является доказательством
+приёмки более поздней context-волны или успешного удалённого CI.
 
 Артефакт: [artifacts/releases/valio-cpp-win-x64-20261011](../artifacts/releases/valio-cpp-win-x64-20261011).
 Внутри cli — self-contained win-x64 CLI на .NET 10, example — готовый пример и
@@ -514,12 +626,12 @@ build.ps1, validation — доказательства проверок, BUILD-I
 | Models-only CMake/example | Сборка и CTest 1/1 без JSON/HTTP dependency linkage: [cpp-example-model-build.log](../artifacts/audit/cpp-example-model-build.log), [cpp-example-model-ctest.log](../artifacts/audit/cpp-example-model-ctest.log). |
 | Готовый example/build.ps1 | Проверен исполнением: [cpp-example-script.log](../artifacts/audit/cpp-example-script.log). |
 | Переносимость готового архива | Координатор проверил hash, распаковку и CLI/codec из пути с пробелами; CLI generation подтверждён [cpp-archive-portable.log](../artifacts/audit/cpp-archive-portable.log). |
-| C#/TypeScript full gates | В первую C++ поставку не входили. Позднее C#122 и TypeScript706+1skip прошли общий precommit gate; strict compile45/50 и Node runtime66/70 требуют исправлений и повторного запуска. |
+| C#/TypeScript full gates | В первую C++ поставку не входили. Позднее C#122 прошёл общий precommit gate; TypeScript814/0failed/0skipped принят из точного committed snapshot, включая 50 strict compile и Node/runtime. Новая context-волна ожидает своего gate. |
 | Девять альтернативных генераторов | В первую C++ поставку не входили. Позднее unit suites всех девяти пройдены в precommit-general-fixed.log; полное native coverage не подтверждено. |
-| Общий builder/document context | Только инвентаризация и план; не реализован, следующая фаза. |
-| SocratiCode | Индексация запущена: последний статус координатора 10%, 480/4616, 0 points, batch 1/26, elapsed 2967 s. Индекс работает; поиск не готов. |
-| git diff --check | Пройден по результату координатора. Рабочая копия содержит незакоммиченные изменения. |
-| Commit/push/удалённый CI | Commit и push не выполнялись; публикация в remote и удалённый CI не заявляются. |
+| Общий builder/document context | В первый C++ архив не входил. Новая волна прошла общий gate 2134/2134; отдельные native/runtime результаты и их границы перечислены выше. |
+| SocratiCode | Последний snapshot координатора: 42%, 1959/4616, batch 5/26, persisted 1575 points; watcher inactive, graph pending. Индекс ещё не готов; контрольный поиск не подтверждён. |
+| git diff --check | Пройден по результату координатора для первой поставки; текущий release gate принимается отдельно. |
+| Commit/push/удалённый CI | Historical baseline e28998750cb31a0a2dbccc80307e8eecd3856562 отправлен в origin/codex/admin-e2e-multipart. Точный r2 source SHA и clean-source provenance см. BUILD-INFO.json готовой поставки; успешный удалённый CI не заявляется. |
 
 Native gate выполнен MSVC из Visual Studio 18 2026 Enterprise с CMake 4.4.3,
 с точными зависимостями Conan httplib 0.18.3 и nlohmann_json 3.12.0:

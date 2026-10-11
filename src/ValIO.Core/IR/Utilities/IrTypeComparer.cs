@@ -28,7 +28,8 @@ public static class IrTypeComparer
 
         return (coreA, coreB) switch
         {
-            (IrPrimitiveType pa, IrPrimitiveType pb) => pa.PrimitiveKind == pb.PrimitiveKind,
+            (IrPrimitiveType pa, IrPrimitiveType pb) => pa.PrimitiveKind == pb.PrimitiveKind &&
+                StringComparer.Ordinal.Equals(pa.Format, pb.Format),
             (IrModelReference ma, IrModelReference mb) => StringComparer.Ordinal.Equals(ma.ModelName, mb.ModelName),
             (IrArrayType aa, IrArrayType ab) => AreSemanticallyEqual(aa.ElementType, ab.ElementType, ignorePresence),
             (IrDictionaryType da, IrDictionaryType db) =>

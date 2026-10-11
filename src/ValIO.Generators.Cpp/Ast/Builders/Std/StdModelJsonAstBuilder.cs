@@ -1,4 +1,5 @@
 using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
@@ -15,7 +16,7 @@ namespace ValIO.Generators.Cpp.Ast.Builders.Std;
 /// <summary>
 /// Builds ADL JSON codecs that preserve required keys, nullable values, and optional presence.
 /// </summary>
-public sealed class StdModelJsonAstBuilder
+public sealed class StdModelJsonAstBuilder : AstBuilderBase
 {
     /// <summary>Names model fields and serializer files.</summary>
     private readonly StdNamingConvention _naming;
@@ -25,8 +26,10 @@ public sealed class StdModelJsonAstBuilder
     /// <summary>Creates a codec builder sharing the model's naming and type mapping.</summary>
     /// <param name="typeMapper">The standalone type mapper.</param>
     /// <param name="naming">The generated naming convention.</param>
+    /// <param name="documentContext">The document's shared immutable declaration indexes.</param>
     /// <exception cref="ArgumentNullException">A required service is missing.</exception>
-    public StdModelJsonAstBuilder(StdCppTypeMapper typeMapper, StdNamingConvention naming)
+    public StdModelJsonAstBuilder(StdCppTypeMapper typeMapper, StdNamingConvention naming, IrDocumentContext documentContext)
+        : base(documentContext)
     {
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
@@ -34,8 +37,6 @@ public sealed class StdModelJsonAstBuilder
 
     /// <summary>Builds declarations and definitions for one model's JSON conversion.</summary>
     /// <param name="model">The model contract.</param>
-    /// <param name="enumNames">The document's enum names.</param>
-    /// <param name="modelLookup">The models available for inheritance resolution.</param>
     /// <param name="rootNamespace">The generated namespace.</param>
     /// <param name="options">The configured JSON include paths.</param>
     /// <param name="warnings">The optional generation diagnostic sink.</param>
@@ -43,16 +44,14 @@ public sealed class StdModelJsonAstBuilder
     /// <exception cref="NotSupportedException">The model requires unsupported recursive ownership or composition codecs.</exception>
     public (CppHeaderFileNode Header, CppSourceFileNode Source) Build(
         IrModel model,
-        IReadOnlySet<string> enumNames,
-        IReadOnlyDictionary<string, IrModel> modelLookup,
         string rootNamespace,
         CppGenerationOptions options,
         ICollection<string>? warnings = null)
     {
         var structName = _naming.StructName(model.Name);
-        CppTypeReferenceCollector.EnsureSupportedComposition(model, modelLookup);
-        var plan = IrInheritancePlan.Resolve(model, modelLookup);
-        CppTypeReferenceCollector.EnsureNonRecursive(model, plan.EffectiveProperties, enumNames);
+        CppTypeReferenceCollector.EnsureSupportedComposition(model, ModelsByName);
+        var plan = IrInheritancePlan.Resolve(model, ModelsByName);
+        CppTypeReferenceCollector.EnsureNonRecursive(model, plan.EffectiveProperties, EnumNames);
         var properties = plan.EffectiveProperties;
 
         var header = new CppHeaderFileNode(
@@ -73,7 +72,7 @@ public sealed class StdModelJsonAstBuilder
 
         var source = new CppSourceFileNode(
             fileName: _naming.SerializerSourcePath(model.OriginalName),
-            includes: CollectSourceIncludes(model, plan, properties, enumNames, options),
+            includes: CollectSourceIncludes(model, plan, properties, EnumNames, options),
             sections:
             [
                 new CppSourceSection(members:
@@ -98,7 +97,8 @@ public sealed class StdModelJsonAstBuilder
             new IdentifierNode(isToJson ? "to_json" : "from_json"),
             new RawTypeNode("void"),
             BuildParameters(structName, isToJson),
-            isDeclarationOnly: true);
+            isDeclarationOnly: true,
+            documentation: BuildDocumentation(structName, isToJson));
 
     /// <summary>Defines one ADL conversion function.</summary>
     /// <param name="structName">The generated model name.</param>
@@ -110,7 +110,22 @@ public sealed class StdModelJsonAstBuilder
             new IdentifierNode(isToJson ? "to_json" : "from_json"),
             new RawTypeNode("void"),
             BuildParameters(structName, isToJson),
-            body: body);
+            body: body,
+            documentation: BuildDocumentation(structName, isToJson));
+
+    /// <summary>Documents the JSON boundary contract and its validation failures.</summary>
+    /// <param name="structName">The generated DTO type.</param>
+    /// <param name="isToJson">Whether the function writes rather than reads JSON.</param>
+    /// <returns>The generated Doxygen documentation.</returns>
+    private static CommentNode BuildDocumentation(string structName, bool isToJson)
+        => StdDocumentation.Create(
+            isToJson ? $"Serializes {structName} using its declared OpenAPI wire formats." : $"Parses and validates the JSON representation of {structName}.",
+            details:
+            [
+                isToJson ? "@param j Receives the serialized JSON object." : "@param j The JSON object to decode.",
+                isToJson ? "@param value The DTO to serialize." : "@param value Receives the decoded DTO.",
+                "@throws nlohmann::json::exception A required key, value type, number range, enum, or string format is invalid.",
+            ]);
 
     /// <summary>Builds the JSON and model reference parameters for ADL conversions.</summary>
     /// <param name="structName">The generated model name.</param>
@@ -169,7 +184,7 @@ public sealed class StdModelJsonAstBuilder
                         new ExpressionStatementNode(new BinaryExpressionNode(
                             JsonKey(wire),
                             BinaryOperator.Assign,
-                            new UnaryExpressionNode(UnaryOperator.Dereference, fieldAccess),
+                            BuildWriteCall(property.Type, new UnaryExpressionNode(UnaryOperator.Dereference, fieldAccess)),
                             isAssignment: true)),
                     ])));
             }
@@ -178,7 +193,7 @@ public sealed class StdModelJsonAstBuilder
                 statements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
                     JsonKey(wire),
                     BinaryOperator.Assign,
-                    fieldAccess,
+                    BuildWriteCall(property.Type, fieldAccess),
                     isAssignment: true)));
             }
         }
@@ -228,10 +243,7 @@ public sealed class StdModelJsonAstBuilder
                         new ExpressionStatementNode(new CallExpressionNode(
                             new MemberAccessExpressionNode(fieldAccess, new IdentifierNode("emplace")),
                             [
-                            new CallExpressionNode(
-                                new MemberAccessExpressionNode(BuildAtCall(wire), new IdentifierNode("get")),
-                                [],
-                                genericTypeName: innerRendered),
+                            BuildReadCall(wire, innerRendered, property.Type),
                             ])),
                     ]),
                     new BlockNode(
@@ -242,7 +254,10 @@ public sealed class StdModelJsonAstBuilder
             }
             else
             {
-                statements.Add(new ExpressionStatementNode(BuildGetToCall(wire, fieldAccess)));
+                statements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
+                    fieldAccess, BinaryOperator.Assign,
+                    BuildReadCall(wire, StdTypeText.Render(_typeMapper.MapType(StdPropertyTypes.ValueType(property))), property.Type),
+                    isAssignment: true)));
             }
         }
 
@@ -273,14 +288,23 @@ public sealed class StdModelJsonAstBuilder
             new MemberAccessExpressionNode(StdExpressions.Ident("j"), new IdentifierNode("contains")),
             [new LiteralExpressionNode(wire, LiteralKind.String)]);
 
-    /// <summary>Builds a checked JSON conversion into a required field.</summary>
+    /// <summary>Builds a checked JSON conversion with recursive numeric and wire-format validation.</summary>
     /// <param name="wire">The original schema property name.</param>
-    /// <param name="target">The destination model field.</param>
+    /// <param name="targetType">The rendered destination type.</param>
+    /// <param name="schemaType">The schema type determining its leaf wire format.</param>
     /// <returns>The field conversion expression.</returns>
-    private static CallExpressionNode BuildGetToCall(string wire, ExpressionNode target)
+    private static CallExpressionNode BuildReadCall(string wire, string targetType, IrType schemaType)
         => new(
-            new MemberAccessExpressionNode(BuildAtCall(wire), new IdentifierNode("get_to")),
-            [target]);
+            StdExpressions.Ident("ValIO::ReadJson"),
+            [BuildAtCall(wire), StdJsonWireFormat.BuildArgument(schemaType)],
+            genericTypeName: targetType);
+
+    /// <summary>Builds serialization that preserves declared base64 and string wire formats.</summary>
+    /// <param name="schemaType">The schema type determining its leaf wire format.</param>
+    /// <param name="value">The DTO field value.</param>
+    /// <returns>The checked serialization expression.</returns>
+    private static CallExpressionNode BuildWriteCall(IrType schemaType, ExpressionNode value)
+        => new(StdExpressions.Ident("ValIO::WriteJson"), [value, StdJsonWireFormat.BuildArgument(schemaType)]);
 
     /// <summary>
     /// Collects JSON runtime support and ADL declarations for all referenced model and enum codecs.
@@ -313,6 +337,7 @@ public sealed class StdModelJsonAstBuilder
             new(_naming.SerializerHeaderPath(model.OriginalName)),
             new(options.JsonInclude, isSystemInclude: true),
             new("Runtime/ValIOJsonTypes.h"),
+            new("Runtime/ValIOJsonValidation.h"),
         };
 
         foreach (var refModel in referencedModels.Where(m => m != model.Name).OrderBy(x => x, StringComparer.Ordinal))

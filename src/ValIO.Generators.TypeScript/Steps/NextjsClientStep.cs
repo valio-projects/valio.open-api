@@ -25,11 +25,11 @@ public sealed class NextjsClientStep : TypeScriptClientStepBase
         : base(namingConverter, nodeRenderers) { }
 
     /// <inheritdoc />
+    /// <inheritdoc />
     protected override SourceFileNode BuildOperationSourceFile(
-        IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
+        IrDocumentContext documentContext, IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
-        var builder = new NextjsClientAstBuilder(NamingConverter, options);
-        builder.ModelsByName = ModelsByName;
+        var builder = new NextjsClientAstBuilder(documentContext, NamingConverter, options);
         return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

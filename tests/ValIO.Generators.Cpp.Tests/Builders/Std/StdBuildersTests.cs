@@ -21,12 +21,16 @@ public class StdBuildersTests
     private readonly StdNamingConvention _naming = new();
     private readonly CppGenerationOptions _options = new();
 
-    private StdCppTypeMapper CreateMapper(IReadOnlySet<string> enumNames)
+    /// <summary>Creates finalized declaration indexes for one focused builder scenario.</summary>
+    /// <param name="models">The model declarations used by the scenario.</param>
+    /// <param name="enumNames">The enum names referenced by the scenario.</param>
+    /// <returns>The document context shared by the mapper and builder.</returns>
+    private static IrDocumentContext CreateContext(IEnumerable<IrModel> models, IEnumerable<string>? enumNames = null) => new(new IrDocument
     {
-        var mapper = new StdCppTypeMapper(_naming);
-        mapper.SetEnumNamesForDocument(enumNames);
-        return mapper;
-    }
+        Metadata = new IrDocumentMetadata(), Models = models.ToList(), Clients = [],
+        Enums = (enumNames ?? []).Select(name => new IrEnum { Name = name, BaseType = IrEnumBaseType.String, Values = [] }).ToList(),
+        TypeDependencies = new IrTypeDependencyGraph { Dependencies = new Dictionary<string, IReadOnlyList<string>>(), TopologicalOrder = [] },
+    });
 
     private string Render(ValIO.Core.Ast.Nodes.AstNode node)
         => _renderer.Render(node).Replace("\r\n", "\n");
@@ -56,8 +60,9 @@ public class StdBuildersTests
             ],
         };
 
-        var builder = new StdModelAstBuilder(CreateMapper(new HashSet<string>()), _naming);
-        var content = Render(builder.Build(model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Petstore"));
+        var context = CreateContext([model]);
+        var builder = new StdModelAstBuilder(new StdCppTypeMapper(_naming, context), _naming, context);
+        var content = Render(builder.Build(model, "Petstore"));
 
         content.Should().Contain("struct Order");
         content.Should().Contain("std::int64_t BuildingId = 0;");
@@ -101,13 +106,14 @@ public class StdBuildersTests
         };
         var enumNames = new HashSet<string> { "OrderStatus" };
 
-        var builder = new StdModelAstBuilder(CreateMapper(enumNames), _naming);
-        var content = Render(builder.Build(order, enumNames, models, "Petstore"));
+        var context = CreateContext(models.Values.Append(order), enumNames);
+        var builder = new StdModelAstBuilder(new StdCppTypeMapper(_naming, context), _naming, context);
+        var content = Render(builder.Build(order, "Petstore"));
 
         content.Should().Contain("#include \"Models/Customer.h\"");
         content.Should().Contain("#include \"Enums/OrderStatus.h\"");
         content.Should().Contain("std::optional<Customer> Buyer;");
-        content.Should().Contain("OrderStatus Status;");
+        content.Should().Contain("OrderStatus Status = Petstore::OrderStatus();");
     }
 
     [Test]
@@ -134,8 +140,9 @@ public class StdBuildersTests
         };
         var lookup = new Dictionary<string, IrModel> { ["Animal"] = baseModel };
 
-        var builder = new StdModelAstBuilder(CreateMapper(new HashSet<string>()), _naming);
-        var content = Render(builder.Build(derived, new HashSet<string>(), lookup, "Petstore"));
+        var context = CreateContext(lookup.Values.Append(derived));
+        var builder = new StdModelAstBuilder(new StdCppTypeMapper(_naming, context), _naming, context);
+        var content = Render(builder.Build(derived, "Petstore"));
 
         content.Should().Contain("struct Dog : public Animal");
         content.Should().Contain("std::string Breed;");
@@ -162,9 +169,10 @@ public class StdBuildersTests
             ],
         };
 
-        var builder = new StdModelAstBuilder(CreateMapper(new HashSet<string>()), _naming);
+        var context = CreateContext([model]);
+        var builder = new StdModelAstBuilder(new StdCppTypeMapper(_naming, context), _naming, context);
         var warnings = new List<string>();
-        var build = () => builder.Build(model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Petstore", warnings);
+        var build = () => builder.Build(model, "Petstore", warnings);
         build.Should().Throw<NotSupportedException>().WithMessage("*Node*child*recursive ownership*");
     }
 
@@ -185,9 +193,9 @@ public class StdBuildersTests
             ],
         };
 
-        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming), _naming);
-        var (header, source) = builder.Build(
-            model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Petstore", _options);
+        var context = CreateContext([model]);
+        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming, context), _naming, context);
+        var (header, source) = builder.Build(model, "Petstore", _options);
 
         var headerContent = Render(header);
         headerContent.Should().Contain("#include <nlohmann/json_fwd.hpp>");
@@ -197,12 +205,12 @@ public class StdBuildersTests
 
         var sourceContent = Render(source);
         // wire-имена — OriginalName (не sanitized C++-имена!)
-        sourceContent.Should().Contain("j[\"buildingId\"] = value.BuildingId;");
-        sourceContent.Should().Contain("j.at(\"buildingId\").get_to(value.BuildingId);");
+        sourceContent.Should().Contain("j[\"buildingId\"] = ValIO::WriteJson(value.BuildingId, ValIO::JsonStringFormat::Plain);");
+        sourceContent.Should().Contain("value.BuildingId = ValIO::ReadJson<std::int64_t>(j.at(\"buildingId\"), ValIO::JsonStringFormat::Plain);");
         sourceContent.Should().Contain("if (value.DisplayName)");
-        sourceContent.Should().Contain("j[\"displayName\"] = *value.DisplayName;");
+        sourceContent.Should().Contain("j[\"displayName\"] = ValIO::WriteJson(*value.DisplayName, ValIO::JsonStringFormat::Plain);");
         sourceContent.Should().Contain("if (j.contains(\"displayName\"))");
-        sourceContent.Should().Contain("value.DisplayName.emplace(j.at(\"displayName\").get<std::string>());");
+        sourceContent.Should().Contain("value.DisplayName.emplace(ValIO::ReadJson<std::string>(j.at(\"displayName\"), ValIO::JsonStringFormat::Plain));");
         sourceContent.Should().Contain("value.DisplayName.reset();");
         // полный nlohmann — только в исходнике
         sourceContent.Should().Contain($"#include <{_options.JsonInclude}>");
@@ -224,8 +232,9 @@ public class StdBuildersTests
         };
         var lookup = new Dictionary<string, IrModel> { ["Animal"] = baseModel };
 
-        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming), _naming);
-        var (_, source) = builder.Build(derived, new HashSet<string>(), lookup, "Petstore", _options);
+        var context = CreateContext(lookup.Values.Append(derived));
+        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming, context), _naming, context);
+        var (_, source) = builder.Build(derived, "Petstore", _options);
         var content = Render(source);
 
         content.Should().Contain("to_json(j, static_cast<const Animal&>(value));");
@@ -258,13 +267,14 @@ public class StdBuildersTests
         var lookup = new Dictionary<string, IrModel> { ["Customer"] = new() { Name = "Customer", Properties = [] } };
         var enumNames = new HashSet<string> { "OrderStatus" };
 
-        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming), _naming);
-        var (_, source) = builder.Build(order, enumNames, lookup, "Petstore", _options);
+        var context = CreateContext(lookup.Values.Append(order), enumNames);
+        var builder = new StdModelJsonAstBuilder(new StdCppTypeMapper(_naming, context), _naming, context);
+        var (_, source) = builder.Build(order, "Petstore", _options);
         var content = Render(source);
 
         content.Should().Contain("#include \"Serializers/CustomerJson.h\"");
         content.Should().Contain("#include \"Serializers/OrderStatusJson.h\"");
-        content.Should().Contain("j.at(\"status\").get_to(value.Status);");
+        content.Should().Contain("value.Status = ValIO::ReadJson<OrderStatus>(j.at(\"status\"), ValIO::JsonStringFormat::Plain);");
     }
 
     // ===== Enum =====
@@ -345,7 +355,7 @@ public class StdBuildersTests
 
         var sourceContent = Render(source);
         sourceContent.Should().Contain("j = ToWire(value);");
-        sourceContent.Should().Contain("OrderStatusFromWire(j.get<std::string>())");
+        sourceContent.Should().Contain("OrderStatusFromWire(ValIO::ReadJson<std::string>(j))");
         sourceContent.Should().Contain("if (parsed)");
         sourceContent.Should().Contain("value = *parsed;");
         sourceContent.Should().Contain("throw nlohmann::json::out_of_range::create(1701, \"unknown OrderStatus wire value\", nullptr);");

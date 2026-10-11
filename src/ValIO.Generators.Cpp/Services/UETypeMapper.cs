@@ -1,5 +1,6 @@
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.IR.Utilities;
@@ -13,22 +14,22 @@ namespace ValIO.Generators.Cpp.Services;
 /// </summary>
 public sealed class UETypeMapper
 {
+    /// <summary>Converts generated declaration names to Unreal identifiers.</summary>
     private readonly UENamingConvention _naming;
-    private IReadOnlySet<string>? _enumNames;
 
-    public UETypeMapper(UENamingConvention naming)
+    /// <summary>Requires naming rules and finalized document indexes before mapping types.</summary>
+    /// <param name="naming">The Unreal naming rules.</param>
+    /// <param name="documentContext">The indexes used to classify enum references.</param>
+    /// <exception cref="ArgumentNullException">Either dependency is null.</exception>
+    public UETypeMapper(UENamingConvention naming, IrDocumentContext documentContext)
     {
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
+        DocumentContext = documentContext ?? throw new ArgumentNullException(nameof(documentContext));
     }
 
-    /// <summary>
-    /// Устанавливает множество имён enum'ов для текущей сборки.
-    /// Позволяет отличать IrModelReference на enum от ссылки на struct.
-    /// </summary>
-    public void SetEnumNamesForDocument(IEnumerable<string> enumNames)
-    {
-        _enumNames = enumNames?.ToHashSet();
-    }
+    /// <summary>Gets the document indexes retained for this mapper's lifetime.</summary>
+    /// <value>The mandatory immutable declaration context.</value>
+    public IrDocumentContext DocumentContext { get; }
 
     /// <summary>
     /// Маппит IR тип в UE C++ TypeNode
@@ -74,22 +75,22 @@ public sealed class UETypeMapper
         };
     }
 
-    /// <summary>
-    /// Маппит ссылку на модель/enum: IrModelReference → F{ModelName} или E{EnumName}
-    /// </summary>
+    /// <summary>Maps a declaration reference to the document's model or enum type.</summary>
+    /// <param name="modelRef">The exact generated declaration reference.</param>
+    /// <returns>An F-prefixed struct type or E-prefixed enum type.</returns>
     public TypeNode MapModelReference(IrModelReference modelRef)
     {
-        var isEnum = _enumNames != null && _enumNames.Contains(modelRef.ModelName);
+        var isEnum = DocumentContext.EnumNames.Contains(modelRef.ModelName);
         var typeName = isEnum ? _naming.EnumName(modelRef.ModelName) : _naming.StructName(modelRef.ModelName);
         return SimpleType(typeName);
     }
 
-    /// <summary>
-    /// Проверяет, является ли ModelName ссылкой на enum
-    /// </summary>
+    /// <summary>Determines whether the document declares an enum with the supplied name.</summary>
+    /// <param name="modelName">The exact generated declaration name.</param>
+    /// <returns>True when the ordinal name identifies an enum.</returns>
     public bool IsEnumReference(string modelName)
     {
-        return _enumNames != null && _enumNames.Contains(modelName);
+        return DocumentContext.EnumNames.Contains(modelName);
     }
 
     /// <summary>

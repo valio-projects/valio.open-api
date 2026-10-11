@@ -61,7 +61,7 @@ public sealed class RustModelsStep : ICodeGenerationStep
         var modelsDir = RustStepHelper.ModelsDir(opts);
 
         var builder = new RustModelAstBuilder(_namingConverter, _typeMapper);
-        var modelLookup = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal);
+        var modelLookup = context.DocumentContext.ModelsByName;
         foreach (var model in context.IrDocument.Models)
         {
             var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };

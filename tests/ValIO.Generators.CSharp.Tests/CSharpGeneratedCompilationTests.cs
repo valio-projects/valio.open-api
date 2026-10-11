@@ -73,6 +73,10 @@ public sealed class CSharpGeneratedCompilationTests
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
                 await File.WriteAllTextAsync(destination, file.Content);
             }
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "CSharpHttpPipeline", "BearerReplayHandler.cs"),
+                Path.Combine(directory, "BearerReplayHandler.cs"));
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "HttpPipelineChecks.cs.txt"),
+                Path.Combine(directory, "HttpPipelineChecks.cs"));
             var metricsSetup = metrics ? """
                 long successfulRequests = 0;
                 long failedRequests = 0;
@@ -260,6 +264,15 @@ public sealed class CSharpGeneratedCompilationTests
                 MethodName = "Ping", HttpMethod = "GET", Path = "/ping",
                 PathParameters = [], QueryParameters = [], HeaderParameters = [],
                 Responses = [new IrResponse { StatusCode = "204" }]
+            }, new IrOperation
+            {
+                MethodName = "SendJson", HttpMethod = "POST", Path = "/json",
+                PathParameters = [], QueryParameters = [], HeaderParameters = [],
+                RequestBody = new IrRequestBody
+                {
+                    Type = new IrModelReference { ModelName = "Combined" }, IsRequired = true, ContentType = "application/json"
+                },
+                Responses = [new IrResponse { StatusCode = "200", Type = Primitive(IrPrimitiveKind.Integer) }]
             }] }],
             TypeDependencies = new IrTypeDependencyGraph
             {
@@ -346,6 +359,7 @@ public sealed class CSharpGeneratedCompilationTests
         handler.ReturnError = false;
         await client.Ping();
         // TELEMETRY_CHECKS
+        await HttpPipelineChecks.Run();
         Console.WriteLine("CSharp generated runtime passed");
 
         /// <summary>Captures generated HTTP requests without making a network connection.</summary>

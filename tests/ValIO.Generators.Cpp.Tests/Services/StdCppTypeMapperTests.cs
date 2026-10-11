@@ -1,9 +1,11 @@
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Generators.Cpp.Services;
+using ValIO.Generators.Cpp.Tests.TestHelpers;
 
 namespace ValIO.Generators.Cpp.Tests.Services;
 
@@ -13,12 +15,16 @@ namespace ValIO.Generators.Cpp.Tests.Services;
 [TestFixture]
 public class StdCppTypeMapperTests
 {
-    private readonly StdCppTypeMapper _mapper = new(new StdNamingConvention());
+    /// <summary>Maps types against an explicitly declared enum document.</summary>
+    private readonly StdCppTypeMapper _mapper = new(new StdNamingConvention(), CppDocumentContextFactory.Create(enums: [new IrEnum { Name = "OrderStatus", BaseType = IrEnumBaseType.String, Values = [] }]));
 
     private static IrPrimitiveType Prim(IrPrimitiveKind kind) => new() { PrimitiveKind = kind };
 
     private string SimpleName(IrType type) => ((SimpleTypeNode)_mapper.MapType(type)).Name.Name;
 
+    /// <summary>Verifies the standalone scalar type mapping, including explicit JSON null.</summary>
+    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="expected">The expected standalone C++ declaration type.</param>
     [TestCase(IrPrimitiveKind.String, "std::string")]
     [TestCase(IrPrimitiveKind.Number, "double")]
     [TestCase(IrPrimitiveKind.Integer, "std::int32_t")]
@@ -29,6 +35,7 @@ public class StdCppTypeMapperTests
     [TestCase(IrPrimitiveKind.Time, "std::string")]
     [TestCase(IrPrimitiveKind.Uuid, "std::string")]
     [TestCase(IrPrimitiveKind.Void, "void")]
+    [TestCase(IrPrimitiveKind.Null, "std::nullptr_t")]
     public void Primitives_MapToStdTypes(IrPrimitiveKind kind, string expected)
         => SimpleName(Prim(kind)).Should().Be(expected);
 
@@ -85,11 +92,11 @@ public class StdCppTypeMapperTests
         ((SimpleTypeNode)t.TypeArguments[0]).Name.Name.Should().Be("std::int64_t");
     }
 
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
     [Test]
     public void ModelReference_MapsToPlainName_StructVsEnum()
     {
-        _mapper.SetEnumNamesForDocument(new HashSet<string> { "OrderStatus" });
-
         SimpleName(new IrModelReference { ModelName = "BuildingModel" }).Should().Be("BuildingModel");
         SimpleName(new IrModelReference { ModelName = "OrderStatus" }).Should().Be("OrderStatus");
     }
@@ -110,11 +117,15 @@ public class StdCppTypeMapperTests
         _mapper.Warnings.Should().Contain(w => w.Contains("intersection"));
     }
 
+    /// <summary>Verifies explicit scalar initialization, including required JSON null fields.</summary>
+    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="expected">The expected initializer, or null for value initialization.</param>
     [TestCase(IrPrimitiveKind.Number, "0.0")]
     [TestCase(IrPrimitiveKind.Integer, "0")]
     [TestCase(IrPrimitiveKind.Long, "0")]
     [TestCase(IrPrimitiveKind.Boolean, "false")]
     [TestCase(IrPrimitiveKind.String, null)]
+    [TestCase(IrPrimitiveKind.Null, "nullptr")]
     public void DefaultValue_ForPrimitives(IrPrimitiveKind kind, string? expected)
         => _mapper.GetDefaultValue(Prim(kind)).Should().Be(expected);
 
@@ -122,8 +133,6 @@ public class StdCppTypeMapperTests
     [Test]
     public void FormatQueryLiteral_BoolIntegerEnum()
     {
-        _mapper.SetEnumNamesForDocument(new HashSet<string> { "OrderStatus" });
-
         _mapper.FormatQueryLiteral(Prim(IrPrimitiveKind.Boolean), "IncludeDeleted")
             .Should().Be("(IncludeDeleted ? \"true\" : \"false\")");
         _mapper.FormatQueryLiteral(Prim(IrPrimitiveKind.Long), "Id")
@@ -134,11 +143,11 @@ public class StdCppTypeMapperTests
             .Should().Be("Filter");
     }
 
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
+    /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
     [Test]
     public void FormatQueryLiteral_ModelReference_SerializesToJsonDump()
     {
-        _mapper.SetEnumNamesForDocument(new HashSet<string> { "OrderStatus" });
-
         // Модель в query-параметре — компилируемое wire-представление: JSON-строка.
         _mapper.FormatQueryLiteral(new IrModelReference { ModelName = "BuildingModel" }, "Filter")
             .Should().Be("ValIO::Dump(Filter)");
@@ -155,5 +164,16 @@ public class StdCppTypeMapperTests
 
         StdCppTypeMapper.StdIncludesFor(type)
             .Should().BeEquivalentTo(["<cstdint>", "<optional>", "<string>", "<unordered_map>"]);
+    }
+
+    /// <summary>Ensures pure-null types have their own C++ type and required declaration header.</summary>
+    [Test]
+    public void NullContract_RequiresCstddefAndPreservesOptionalWrapper()
+    {
+        var pureNull = Prim(IrPrimitiveKind.Null);
+        StdCppTypeMapper.StdIncludesFor(pureNull).Should().Equal("<cstddef>");
+        var optionalNull = (GenericTypeNode)_mapper.MapType(new IrOptionalType { InnerType = pureNull });
+        optionalNull.Name.Name.Should().Be("std::optional");
+        ((SimpleTypeNode)optionalNull.TypeArguments.Single()).Name.Name.Should().Be("std::nullptr_t");
     }
 }

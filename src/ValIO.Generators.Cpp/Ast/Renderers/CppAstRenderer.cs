@@ -310,7 +310,10 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
             var inlineParams = string.Join(", ", node.Parameters.Select(RenderParameterInline));
             var isConstructor = node.Metadata.ContainsKey("cpp.constructor");
             var returnPrefix = isConstructor ? string.Empty : RenderType(node.ReturnType) + " ";
-            sb.Append($"{Indent()}{constexprPrefix}{returnPrefix}{node.Name.Name}({inlineParams}){constSuffix}").AppendLine();
+            var initializers = node.Initializers.Count == 0
+                ? string.Empty
+                : " : " + string.Join(", ", node.Initializers.Select(Visit));
+            sb.Append($"{Indent()}{constexprPrefix}{returnPrefix}{node.Name.Name}({inlineParams}){constSuffix}{initializers}").AppendLine();
             sb.Append(Visit(node.Body));
         }
         sb.AppendLine();
@@ -322,16 +325,17 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         return RenderParameterInline(node);
     }
 
+    /// <inheritdoc />
     public override string VisitCppMethodImplementation(CppMethodImplementationNode node)
     {
         var sb = new StringBuilder();
+        if (node.Documentation is not null)
+            sb.AppendLine(RenderDoxygenComment(node.Documentation.Text));
         var returnStr = node.ReturnType != null ? RenderType(node.ReturnType) + " " : "";
         var paramsStr = node.Parameters.Count > 0 ? string.Join(", ", node.Parameters.Select(RenderParameterInline)) : "";
         var constStr = node.IsConst ? " const" : "";
         sb.AppendLine($"{returnStr}{node.ClassName.Name}::{node.MethodName.Name}({paramsStr}){constStr}");
-        sb.AppendLine("{");
-        sb.AppendLine("\t// TODO: implement");
-        sb.AppendLine("}");
+        sb.Append(Visit(node.Body));
         return sb.ToString();
     }
 
@@ -551,6 +555,8 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
     {
         var obj = Visit(node.Object);
+        if (node.Object is UnaryExpressionNode or BinaryExpressionNode or ConditionalExpressionNode)
+            obj = "(" + obj + ")";
         var op = node.UseScopeOperator ? "::" : (node.UseArrowOperator ? "->" : ".");
         return $"{obj}{op}{node.Member.Name}";
     }
@@ -638,8 +644,25 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     public override string VisitThrowStatement(ThrowStatementNode node)
         => $"throw {Visit(node.Expression)};";
     public override string VisitUsingStatement(UsingStatementNode node) => "";
-    public override string VisitTryCatchStatement(TryCatchStatementNode node) => "";
-    public override string VisitCatchClause(CatchClauseNode node) => "";
+    /// <inheritdoc />
+    /// <exception cref="NotSupportedException">A finally block is supplied without a C++ lifetime guard.</exception>
+    public override string VisitTryCatchStatement(TryCatchStatementNode node)
+    {
+        if (node.FinallyBlock is not null)
+            throw new NotSupportedException("C++ finally blocks require an explicit RAII lifetime guard.");
+        var rendered = new StringBuilder().AppendLine($"{Indent()}try").Append(Visit(node.TryBlock));
+        foreach (var clause in node.CatchClauses)
+            rendered.Append(Visit(clause));
+        return rendered.ToString();
+    }
+
+    /// <inheritdoc />
+    public override string VisitCatchClause(CatchClauseNode node)
+    {
+        var declaration = node.ExceptionType is null ? "..." : RenderType(node.ExceptionType)
+            + (node.ExceptionVariable is null ? string.Empty : " " + node.ExceptionVariable.Name);
+        return $"{Indent()}catch ({declaration}){Environment.NewLine}{Visit(node.Body)}";
+    }
 
     public override string VisitTypeDeclaration(TypeDeclarationNode node) => "";
     public override string VisitPropertyDeclaration(PropertyDeclarationNode node) => "";
@@ -761,6 +784,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         return sb.ToString();
     }
 
+    /// <inheritdoc />
     public override string VisitFieldDeclaration(FieldDeclarationNode node)
     {
         var sb = new StringBuilder();
@@ -768,7 +792,10 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
         var typeStr = RenderType(node.Type);
         var defaultStr = node.DefaultValue != null ? $" = {RenderDefaultValue(node.DefaultValue)}" : "";
-        sb.AppendLine($"{Indent()}{typeStr} {node.Name.Name}{defaultStr};");
+        var prefix = node.Metadata.ContainsKey("cpp.constexpr")
+            ? node.IsStatic ? "inline static constexpr " : "constexpr "
+            : (node.IsStatic ? "inline static " : "") + (node.IsReadOnly ? "const " : "");
+        sb.AppendLine($"{Indent()}{prefix}{typeStr} {node.Name.Name}{defaultStr};");
         return sb.ToString();
     }
 
@@ -781,6 +808,8 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         var isConstructor = node.Metadata.ContainsKey(ConstructorMetadataKey);
         var isPureVirtual = node.IsAbstract || node.IsInterfaceMethod;
         var prefixParts = new List<string>();
+        if (isConstructor && node.Metadata.ContainsKey("cpp.explicit"))
+            prefixParts.Add("explicit");
         if (node.IsStatic)
             prefixParts.Add("static");
         if (node.IsVirtual || isPureVirtual)
@@ -822,10 +851,12 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         return sb.ToString();
     }
 
+    /// <inheritdoc />
     public override string VisitEnumMemberDeclaration(EnumMemberDeclarationNode node)
     {
         var valueStr = node.Value != null ? $" = {RenderDefaultValue(node.Value)}" : "";
-        return $"{node.Name.Name}{valueStr}";
+        var value = $"{node.Name.Name}{valueStr}";
+        return node.Documentation is null ? value : RenderDoxygenComment(node.Documentation.Text) + "\n" + Indent() + value;
     }
 
     public override string VisitParameterDeclaration(ParameterDeclarationNode node) => RenderCoreParameterInline(node);
@@ -906,8 +937,12 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     /// <returns>The C++ expression, preserving structured operators and literal escaping.</returns>
     private string RenderDefaultValue(ExpressionNode expression) => Visit(expression);
 
+    /// <summary>Renders schema prose without allowing it to terminate the generated comment.</summary>
+    /// <param name="text">The Doxygen documentation text.</param>
+    /// <returns>The escaped C++ documentation comment.</returns>
     private string RenderDoxygenComment(string text)
     {
+        text = text.Replace("*/", "* /", StringComparison.Ordinal);
         if (text.Contains('\n'))
         {
             var lines = text.Split('\n');

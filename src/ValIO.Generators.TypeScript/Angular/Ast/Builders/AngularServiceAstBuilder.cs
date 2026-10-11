@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -24,12 +25,8 @@ namespace ValIO.Generators.TypeScript.Angular.Ast.Builders;
 /// Methods return observables or promises and delegate to
 /// <c>this.http.{verb}&lt;T&gt;(url, { params, headers, body? })</c>.
 /// </summary>
-public sealed class AngularServiceAstBuilder
+public sealed class AngularServiceAstBuilder : AstBuilderBase
 {
-    /// <summary>Gets or sets models from the active IR document for multipart field serialization.</summary>
-    /// <value>The models indexed by their generated names.</value>
-    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } =
-        new Dictionary<string, IrModel>(StringComparer.Ordinal);
 
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
@@ -43,23 +40,24 @@ public sealed class AngularServiceAstBuilder
     /// <summary>Maps declared response bodies to their TypeScript assertion types when validation is disabled.</summary>
     private readonly Func<IrType, TypeNode> _typeBuilder;
 
-    /// <summary>Maps generated model names to their original file names for schema imports.</summary>
-    private readonly Dictionary<string, string> _originalNames = new(StringComparer.Ordinal);
 
-    /// <summary>Creates an Angular service builder sharing request generation between both return styles.</summary>
+    /// <summary>Creates a AngularServiceAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
     /// <param name="namingConverter">The generated identifier naming policy.</param>
-    /// <param name="options">The TypeScript generation and validation settings.</param>
-    /// <param name="promiseMode">Whether to generate promises rather than observables.</param>
-    /// <exception cref="ArgumentNullException">The naming converter is null.</exception>
-    public AngularServiceAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options, bool promiseMode = false)
+    /// <param name="options">The TypeScript generation settings.</param>
+    /// <param name="promiseMode">Whether methods adapt HTTP observables to promises.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public AngularServiceAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, TypeScriptGenerationOptions? options, bool promiseMode = false)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _promiseMode = promiseMode;
         _validation = ClientValidationStrategyFactory.Create(options);
-        var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
+        var typeBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
         _typeBuilder = typeBuilder.BuildType;
-        _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
+        _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
     }
 
     /// <summary>
@@ -93,8 +91,6 @@ public sealed class AngularServiceAstBuilder
         TypeScriptGenerationOptions? options = null)
     {
         ArgumentNullException.ThrowIfNull(client);
-        foreach (var operation in client.Operations)
-            OriginalNameMap.AddOperation(_originalNames, operation);
 
         var imports = BuildImports(client, fileOrganization);
         var serviceClass = BuildServiceClass(client);
@@ -178,6 +174,11 @@ public sealed class AngularServiceAstBuilder
                     isPrimitive: false),
                 isRequired: true));
         }
+
+        if (_promiseMode)
+            parameters.Add(new ParameterDeclarationNode(
+                new IdentifierNode("signal"), new SimpleTypeNode(new IdentifierNode("AbortSignal")), isRequired: false,
+                documentation: new CommentNode("Optional AbortSignal; abort unsubscribes the active HttpClient request.", CommentKind.JSDoc)));
 
         return new MethodDeclarationNode(
             name: new IdentifierNode(operation.MethodName),
@@ -332,7 +333,8 @@ public sealed class AngularServiceAstBuilder
     /// <returns>The promise expression with bodyless values normalized to undefined.</returns>
     private ExpressionNode BuildPromiseCall(IrOperation operation, bool hasResultType, string resultTypeName, ExpressionNode httpCall)
     {
-        var promise = new CallExpressionNode(Id("firstValueFrom"), ImmutableList.Create(httpCall));
+        var abortableRequest = new CallExpressionNode(Id("race"), [BuildAbortObservable(), httpCall]);
+        var promise = new CallExpressionNode(Id("firstValueFrom"), [abortableRequest]);
         if (!hasResultType)
             return new CallExpressionNode(Member(promise, "then"), ImmutableList.Create<ExpressionNode>(
                 new ArrowFunctionExpressionNode([], Id("undefined"))));
@@ -368,6 +370,35 @@ public sealed class AngularServiceAstBuilder
             new BlockNode(responseStatements.ToImmutableList()),
             returnType: new SimpleTypeNode(new IdentifierNode(resultTypeName)));
         return new CallExpressionNode(Member(promise, "then"), ImmutableList.Create<ExpressionNode>(callback));
+    }
+
+    /// <summary>Creates an abort-only observable whose teardown removes its listener after the HTTP request settles.</summary>
+    /// <remarks>The abort source is subscribed first so a pre-aborted signal never subscribes the HTTP request.</remarks>
+    /// <returns>An observable that errors with the signal reason and never emits a response value.</returns>
+    private static ExpressionNode BuildAbortObservable()
+    {
+        var abortReason = new BinaryExpressionNode(
+            Member(Id("signal"), "reason", optional: true), BinaryOperator.NullishCoalescing,
+            new CallExpressionNode(Id("DOMException"),
+                [new LiteralExpressionNode("The operation was aborted", LiteralKind.String), new LiteralExpressionNode("AbortError", LiteralKind.String)],
+                isNewExpression: true));
+        var onAbort = new ArrowFunctionExpressionNode([], new CallExpressionNode(Member(Id("subscriber"), "error"), [abortReason]));
+        var subscribe = new ArrowFunctionExpressionNode(
+            [new ParameterDeclarationNode(new IdentifierNode("subscriber"), type: null)],
+            new BlockNode([
+                new VariableDeclarationStatementNode(new IdentifierNode("onAbort"), type: null, initializer: onAbort),
+                new IfStatementNode(Member(Id("signal"), "aborted", optional: true), new BlockNode([
+                    new ExpressionStatementNode(new CallExpressionNode(Id("onAbort"))),
+                    new ReturnStatementNode(),
+                ])),
+                new ExpressionStatementNode(new CallExpressionNode(Member(Id("signal"), "addEventListener", optional: true),
+                    [new LiteralExpressionNode("abort", LiteralKind.String), Id("onAbort"),
+                        new ObjectLiteralExpressionNode([new PropertyAssignmentNode(new IdentifierNode("once"), new LiteralExpressionNode(true, LiteralKind.Boolean))])])),
+                new ReturnStatementNode(new ArrowFunctionExpressionNode([], new CallExpressionNode(
+                    Member(Id("signal"), "removeEventListener", optional: true), [new LiteralExpressionNode("abort", LiteralKind.String), Id("onAbort")]))),
+            ]));
+        return new CallExpressionNode(Id("Observable"), [subscribe], isNewExpression: true,
+            genericTypeArgument: new SimpleTypeNode(new IdentifierNode("never"), isPrimitive: true));
     }
 
     /// <summary>Builds a discriminated operation response value.</summary>
@@ -523,9 +554,10 @@ public sealed class AngularServiceAstBuilder
     /// <summary>Builds a member access expression.</summary>
     /// <param name="source">The object source.</param>
     /// <param name="name">The member identifier.</param>
+    /// <param name="optional">Whether the object may be absent.</param>
     /// <returns>The member access.</returns>
-    private static MemberAccessExpressionNode Member(ExpressionNode source, string name) =>
-        new(source, new IdentifierNode(name));
+    private static MemberAccessExpressionNode Member(ExpressionNode source, string name, bool optional = false) =>
+        new(source, new IdentifierNode(name), useOptionalChaining: optional);
 
     /// <summary>Builds a runtime identifier expression.</summary>
     /// <param name="name">The identifier name.</param>
@@ -559,7 +591,9 @@ public sealed class AngularServiceAstBuilder
             kind: ImportKind.Named));
 
         imports.Add(new ImportNode(
-            items: ImmutableList.Create(new IdentifierNode(_promiseMode ? "firstValueFrom" : "Observable")),
+            items: _promiseMode
+                ? [new IdentifierNode("firstValueFrom"), new IdentifierNode("Observable"), new IdentifierNode("race")]
+                : [new IdentifierNode("Observable")],
             from: "rxjs",
             kind: ImportKind.Named));
 
@@ -634,7 +668,7 @@ public sealed class AngularServiceAstBuilder
     /// <returns>The normalized relative module path.</returns>
     private string BuildModelImportPath(string modelName, FileOrganization? fileOrganization, bool schema)
     {
-        var modelFile = _namingConverter.ToCamelCase(_originalNames.GetValueOrDefault(modelName, modelName));
+        var modelFile = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
         var suffix = schema ? ".schema" : "";
         var modelPath = fileOrganization?.SeparateModels == true
             ? $"{fileOrganization.ModelsPath ?? "models"}/{modelFile}/{modelFile}{suffix}"

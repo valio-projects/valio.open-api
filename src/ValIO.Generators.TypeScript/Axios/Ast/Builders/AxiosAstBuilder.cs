@@ -18,20 +18,21 @@ namespace ValIO.Generators.TypeScript.Axios.Ast.Builders;
 /// <summary>
 /// Builds Axios-specific TypeScript AST nodes from transport-independent operation IR.
 /// </summary>
-public class AxiosAstBuilder
+public class AxiosAstBuilder : AstBuilderBase
 {
     private readonly HttpAstBuilder _httpBuilder;
     private readonly INamingConverter _namingConverter;
     private readonly Func<ValIO.Core.IR.Types.IrType, TypeNode> _typeBuilder;
     
-    /// <summary>
-    /// Конструктор
-    /// </summary>
-    /// <param name="namingConverter">Конвертер имен</param>
-    /// <param name="typeBuilder">Функция для построения TypeNode из IrType</param>
-    public AxiosAstBuilder(
+    /// <summary>Creates a AxiosAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public AxiosAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<ValIO.Core.IR.Types.IrType, TypeNode> typeBuilder)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));

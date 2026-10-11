@@ -1,5 +1,4 @@
 using ValIO.Core.Plugins;
-using ValIO.Generators.Cpp.Ast.Builders;
 using ValIO.Generators.Cpp.Ast.Builders.Std;
 using ValIO.Generators.Cpp.Ast.Renderers;
 
@@ -11,7 +10,9 @@ namespace ValIO.Generators.Cpp.Steps;
 /// </summary>
 public sealed class CppStdSerializersStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
 {
+    /// <inheritdoc />
     public override string Name => "cpp-std-serializers";
+    /// <inheritdoc />
     public override int Order => 60;
 
     /// <inheritdoc />
@@ -27,9 +28,7 @@ public sealed class CppStdSerializersStep(ICppAstRenderer renderer) : CppStdStep
         var (naming, mapper) = CreateServices(context);
         var options = EffectiveOptions(context);
         var enumBuilder = new StdEnumAstBuilder(naming);
-        var modelBuilder = new StdModelJsonAstBuilder(mapper, naming);
-        var (_, modelLookup) = CppAstBuilder.PrepareInputs(context.IrDocument);
-        var enumNames = context.IrDocument.Enums.Select(e => e.Name).ToHashSet();
+        var modelBuilder = new StdModelJsonAstBuilder(mapper, naming, context.DocumentContext);
         var rootNamespace = ResolveRootNamespace(context);
 
         foreach (var irEnum in context.IrDocument.Enums)
@@ -51,7 +50,7 @@ public sealed class CppStdSerializersStep(ICppAstRenderer renderer) : CppStdStep
         {
             ct.ThrowIfCancellationRequested();
             var (codecHeader, codecSource) = modelBuilder.Build(
-                model, enumNames, modelLookup, rootNamespace, options, context.Warnings);
+                model, rootNamespace, options, context.Warnings);
             context.GeneratedFiles.Add(new GeneratedFile(
                 naming.SerializerHeaderPath(model.OriginalName), Renderer.Render(codecHeader)));
             context.GeneratedFiles.Add(new GeneratedFile(

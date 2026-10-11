@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -16,36 +17,31 @@ using ValIO.Generators.TypeScript.Validation;
 namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
 
 /// <summary>
-/// Построитель AST для Zod специфичных узлов
-/// Использует IR для построения AST узлов
+/// Builds Zod schema AST using the shared document indexes for named declarations.
 /// </summary>
-public class ZodAstBuilder
+public class ZodAstBuilder : AstBuilderBase
 {
-    /// <summary>
-    /// Справочник моделей документа (по <see cref="IrModel.Name"/>) для резолва наследования allOf.
-    /// При наследовании z-схема строится как <c>z.intersection([BaseSchema, z.object({...ownProps})])</c>;
-    /// собственный object НЕ должен переобъявлять свойства базы (иначе выведенный тип не совпадает с
-    /// интерфейсом — TS2322). По умолчанию пуст — фильтрация не применяется.
-    /// </summary>
-    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } = new Dictionary<string, IrModel>();
-
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
     private readonly bool _useBigInt;
     private readonly string? _uuidFormat;
 
     /// <summary>
-    /// Конструктор
+    /// Creates a schema builder bound to the finalized input document.
     /// </summary>
-    /// <param name="namingConverter">Конвертер имен</param>
-    /// <param name="typeBuilder">Функция для построения TypeNode из IrType</param>
-    /// <param name="useBigInt">Использовать bigint для int64. По умолчанию false — number.</param>
-    /// <param name="uuidFormat">Режим обработки Guid/Uuid полей (guid/string/regex). null → guid.</param>
+    /// <param name="documentContext">The shared immutable declaration indexes.</param>
+    /// <param name="namingConverter">The language-specific naming converter.</param>
+    /// <param name="typeBuilder">The conversion from an IR type to a TypeScript type node.</param>
+    /// <param name="useBigInt">Whether int64 schemas validate bigint values.</param>
+    /// <param name="uuidFormat">The selected UUID validation mode.</param>
+    /// <exception cref="ArgumentNullException">A required dependency is null.</exception>
     public ZodAstBuilder(
+        IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
         bool useBigInt = false,
         string? uuidFormat = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));

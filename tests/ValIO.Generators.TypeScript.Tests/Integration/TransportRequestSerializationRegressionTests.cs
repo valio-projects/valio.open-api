@@ -118,7 +118,7 @@ public sealed class TransportRequestSerializationRegressionTests
     {
         var content = await GenerateUpload("fetch", required: true);
 
-        content.Should().Contain("await fetch(");
+        content.Should().Contain("await httpClient(");
         content.Should().NotContain("response.json()");
         content.Should().NotContain("const response =");
     }
@@ -144,7 +144,6 @@ public sealed class TransportRequestSerializationRegressionTests
     [Test]
     public void ModelProperties_PreservePresenceIndependentlyFromNullability()
     {
-        var builder = new TypeScriptAstBuilder(new ValIO.Core.Services.NamingConverter());
         var renderer = new TypeScriptAstRenderer();
         var stringType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         var model = new IrModel
@@ -157,6 +156,7 @@ public sealed class TransportRequestSerializationRegressionTests
             ],
         };
 
+        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(models: [model]), new ValIO.Core.Services.NamingConverter());
         var content = renderer.Render(builder.BuildSourceFile(model));
 
         content.Should().Contain("requiredNullable: string | null;");
@@ -267,7 +267,7 @@ public sealed class TransportRequestSerializationRegressionTests
                 },
             ],
         };
-        var builder = new TypeScriptAstBuilder(new ValIO.Core.Services.NamingConverter());
+        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(models: [model]), new ValIO.Core.Services.NamingConverter());
 
         var content = new TypeScriptAstRenderer().Render(builder.BuildSourceFile(model));
 

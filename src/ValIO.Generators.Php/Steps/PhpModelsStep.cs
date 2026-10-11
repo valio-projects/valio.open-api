@@ -58,22 +58,9 @@ public sealed class PhpModelsStep : ICodeGenerationStep
         var opts = context.PluginOptions as PhpGenerationOptions ?? new PhpGenerationOptions();
         var builder = new PhpModelAstBuilder(_namingConverter, _typeMapper);
 
-        var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
-        var byName = context.IrDocument.Models.ToDictionary(m => m.Name, StringComparer.Ordinal);
-        var processed = new HashSet<string>();
-
-        foreach (var name in orderedNames)
-        {
-            if (!byName.TryGetValue(name, out var model)) continue;
-            AddModelFile(context, builder, model, byName, opts.Namespace);
-            processed.Add(name);
-        }
-
-        foreach (var model in context.IrDocument.Models)
-        {
-            if (!processed.Contains(model.Name))
-                AddModelFile(context, builder, model, byName, opts.Namespace);
-        }
+        var documentContext = context.DocumentContext;
+        foreach (var model in documentContext.ModelsInDependencyOrder)
+            AddModelFile(context, builder, model, documentContext.ModelsByName, opts.Namespace);
 
         return Task.CompletedTask;
     }

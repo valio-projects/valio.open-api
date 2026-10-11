@@ -1,9 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
 using ValIO.Application.DependencyInjection;
 using ValIO.Generators.Cpp;
 using ValIO.Generators.CSharp;
-using ValIO.Generators.CSharp.Ast.Renderers;
 using ValIO.Generators.Dart;
 using ValIO.Generators.FSharp;
 using ValIO.Generators.Java;
@@ -29,9 +27,6 @@ public static class PluginsBootstrapExtensions
     /// <remarks>Repeated calls preserve existing registrations and do not configure plugin services again.</remarks>
     public static IServiceCollection AddAllGeneratorPlugins(this IServiceCollection services)
     {
-        // C# renderer dependency is needed before CSharp plugin is registered.
-        services.TryAddSingleton<ICSharpAstRenderer, CSharpAstRenderer>();
-
         services.AddGeneratorPlugin<CppGeneratorPlugin>();
         services.AddGeneratorPlugin<TypeScriptGeneratorPlugin>();
         services.AddGeneratorPlugin<CSharpGeneratorPlugin>();

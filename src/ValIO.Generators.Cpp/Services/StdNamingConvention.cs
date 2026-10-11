@@ -56,8 +56,14 @@ public sealed class StdNamingConvention
     private static string SerializerFileName(string originalModelName) => $"{UENamingConvention.ToPascalCase(originalModelName)}Json";
 
     public string ClientHeaderPath(string clientName) => $"Clients/{UENamingConvention.ToPascalCase(clientName)}Client.h";
-    public string ClientSourcePath(string clientName) => $"Clients/{UENamingConvention.ToPascalCase(clientName)}Client.cpp";
-    public string InterfaceHeaderPath(string clientName) => $"Clients/I{UENamingConvention.ToPascalCase(clientName)}.h";
+    /// <summary>Gets the implementation path, separate from public concrete client headers.</summary>
+    /// <param name="clientName">The stable client name.</param>
+    /// <returns>The implementation source path.</returns>
+    public string ClientSourcePath(string clientName) => $"Clients/Impl/{UENamingConvention.ToPascalCase(clientName)}Client.cpp";
+    /// <summary>Gets the contract path, separate from concrete HTTP implementations.</summary>
+    /// <param name="clientName">The stable client name.</param>
+    /// <returns>The public interface header path.</returns>
+    public string InterfaceHeaderPath(string clientName) => $"Interfaces/I{UENamingConvention.ToPascalCase(clientName)}.h";
 
     /// <summary>Суффикс «_» для зарезервированных слов; гарантирует не-пустой идентификатор.</summary>
     private static string Escape(string identifier)

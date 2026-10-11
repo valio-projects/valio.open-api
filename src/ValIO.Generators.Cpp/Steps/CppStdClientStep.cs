@@ -1,5 +1,4 @@
 using ValIO.Core.Plugins;
-using ValIO.Generators.Cpp.Ast.Builders;
 using ValIO.Generators.Cpp.Ast.Builders.Std;
 using ValIO.Generators.Cpp.Ast.Renderers;
 
@@ -12,9 +11,12 @@ namespace ValIO.Generators.Cpp.Steps;
 /// </summary>
 public sealed class CppStdClientStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
 {
+    /// <inheritdoc />
     public override string Name => "cpp-std-clients";
+    /// <inheritdoc />
     public override int Order => 80;
 
+    /// <inheritdoc />
     public override bool ShouldExecute(GenerationContext context)
         => base.ShouldExecute(context)
            && context.Configuration.GenerateClients
@@ -25,15 +27,13 @@ public sealed class CppStdClientStep(ICppAstRenderer renderer) : CppStdStepBase(
     {
         var (naming, mapper) = CreateServices(context);
         var options = EffectiveOptions(context);
-        var builder = new StdClientAstBuilder(mapper, naming);
-        var (_, modelLookup) = CppAstBuilder.PrepareInputs(context.IrDocument);
-        var enumNames = context.IrDocument.Enums.Select(e => e.Name).ToHashSet();
+        var builder = new StdClientAstBuilder(mapper, naming, context.DocumentContext);
         var rootNamespace = ResolveRootNamespace(context);
 
         foreach (var client in context.IrDocument.Clients)
         {
             ct.ThrowIfCancellationRequested();
-            var build = builder.Build(client, enumNames, modelLookup, rootNamespace, options);
+            var build = builder.Build(client, rootNamespace, options, context.Warnings);
 
             if (build.InterfaceHeader != null)
                 context.GeneratedFiles.Add(new GeneratedFile(

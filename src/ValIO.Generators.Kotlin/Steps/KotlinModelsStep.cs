@@ -60,17 +60,12 @@ public sealed class KotlinModelsStep : ICodeGenerationStep
         var opts = context.PluginOptions as KotlinGenerationOptions ?? new KotlinGenerationOptions();
         var modelsPackage = KotlinStepHelper.ModelsPackage(opts);
         var modelsDir = KotlinStepHelper.PackageToPath(modelsPackage);
-        var knownNames = new HashSet<string>(
-            context.IrDocument.Models.Select(m => m.Name)
-                .Concat(context.IrDocument.Enums.Select(e => e.Name)),
-            StringComparer.Ordinal);
-
-        var builder = new KotlinDataClassAstBuilder(_namingConverter, _typeMapper);
-        var modelLookup = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal);
+        var builder = new KotlinDataClassAstBuilder(context.DocumentContext, _namingConverter, _typeMapper);
+        var modelLookup = context.DocumentContext.ModelsByName;
         foreach (var model in context.IrDocument.Models)
         {
             var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
-            var file = builder.BuildFile(effectiveModel, modelsPackage, knownNames);
+            var file = builder.BuildFile(effectiveModel, modelsPackage);
             var content = _renderer.Render(file);
             // File name uses the ORIGINAL (pre-affix) name so files don't move when an
             // affix is applied; the emitted class identifier stays affixed (see builder).

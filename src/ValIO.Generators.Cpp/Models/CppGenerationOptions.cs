@@ -16,11 +16,13 @@ public sealed class CppGenerationOptions
     // ======== std-профиль (cpp-httplib + nlohmann_json) ========
 
     /// <summary>
-    /// Целевой стандарт C++ для сгенерированного кода: 17, 20 или 23.
-    /// Сгенерированный код пишется на C++17; ValIO::Expected выбирает std::expected
-    /// компайл-тайм при наличии (иначе бандловый polyfill), поэтому AST не зависит
-    /// от этой опции — она влияет на CMake-сниппет и документацию.
+    /// Gets or sets the target C++ standard used by generated code and its CMake target.
     /// </summary>
+    /// <value>17 by default; supported values are 17, 20, and 23.</value>
+    /// <remarks>
+    /// Chrono and modern-uuid providers require C++20 or later. ValIO::Expected uses
+    /// std::expected when available and otherwise uses the bundled implementation.
+    /// </remarks>
     public int CxxStandard { get; set; } = 17;
 
     /// <summary>
@@ -68,6 +70,14 @@ public sealed class CppGenerationOptions
     /// <summary>Whether standalone models and enums also emit their separate JSON codec files.</summary>
     /// <value>True by default; disable together with client generation for dependency-free DTO output.</value>
     public bool EmitSerializers { get; set; } = true;
+
+    /// <summary>Gets or sets the explicitly selected application temporal provider for standalone models.</summary>
+    /// <value>Validated strings by default; native providers retain wire offsets and reject unrepresentable values.</value>
+    public CppTemporalBackend TemporalBackend { get; set; } = CppTemporalBackend.String;
+
+    /// <summary>Gets or sets the independent application UUID provider for standalone models.</summary>
+    /// <value>Validated canonical UUID strings by default.</value>
+    public CppUuidBackend UuidBackend { get; set; } = CppUuidBackend.String;
 
     /// <summary>
     /// Макрос API модуля, вставляемый в UCLASS (например WIREFRAME_API, MYPROJECT_API).

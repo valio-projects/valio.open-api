@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -16,21 +17,27 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// Строитель AST для Result типов (discriminated union по status codes).
 /// По аналогии с UE C++: каждый status code → свой variant { status: N; body: T }.
 /// </summary>
-public sealed class TypeScriptResultsAstBuilder
+public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
     private readonly string _resultSuffix;
     private readonly string _resultPrefix;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public TypeScriptResultsAstBuilder(
+    /// <summary>Creates a TypeScriptResultsAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <param name="resultSuffix">The optional operation result type suffix.</param>
+    /// <param name="resultPrefix">The optional operation result type prefix.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public TypeScriptResultsAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
         string? resultSuffix = null,
         string? resultPrefix = null)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
@@ -100,7 +107,7 @@ public sealed class TypeScriptResultsAstBuilder
         FileOrganization? fileOrganization,
         string currentOperationName)
     {
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var declarations = new List<DeclarationNode>();
         var imports = new List<ImportNode>();
@@ -217,7 +224,7 @@ public sealed class TypeScriptResultsAstBuilder
             var modelsPath = fileOrganization?.ModelsPath ?? "models";
             foreach (var modelName in modelRefs.OrderBy(n => n, StringComparer.Ordinal))
             {
-                var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+                var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
                 var relativePath = $"../../{modelsPath}/{modelFileName}/{modelFileName}";
                 imports.Add(new ImportNode(
                     items: new[] { new IdentifierNode(modelName) }.ToImmutableList(),

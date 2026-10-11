@@ -34,13 +34,27 @@ public sealed class CppStdLayerBoundaryTests
         var context = await Generate(emitSerializers: true);
         var files = context.GeneratedFiles.ToDictionary(f => f.RelativePath, f => f.Content);
         files.Keys.Where(path => path.StartsWith("Runtime/", StringComparison.Ordinal))
-            .Should().BeEquivalentTo(["Runtime/ValIOJsonTypes.h"]);
+            .Should().BeEquivalentTo(["Runtime/ValIOJsonTypes.h", "Runtime/ValIOJsonValidation.h"]);
         files["Models/Probe.h"].Should().NotContainAny(["nlohmann", "httplib", "Runtime/"]);
         files["Serializers/ProbeJson.h"].Should().Contain("nlohmann/json_fwd.hpp").And.NotContain("nlohmann/json.hpp");
         files["Serializers/ProbeJson.cpp"].Should().Contain("nlohmann/json.hpp").And.Contain("Runtime/ValIOJsonTypes.h");
         files["Enums/State.h"].Should().NotContainAny(["ToWire", "FromWire"]);
         files["Serializers/StateJson.h"].Should().Contain("StateFromWire");
         files["Serializers/StateJson.cpp"].Should().Contain("std::string ToWireText(State v)");
+    }
+
+    /// <summary>Ensures enum-only codecs include their checked conversion dependency without HTTP layers.</summary>
+    /// <returns>The asynchronous test execution.</returns>
+    [Test]
+    public async Task EnumSerializersOnly_EmitCheckedValidationSupport()
+    {
+        var context = await Generate(emitSerializers: true, generateModels: false);
+        var files = context.GeneratedFiles.ToDictionary(file => file.RelativePath, file => file.Content);
+
+        files.Should().NotContainKey("Models/Probe.h");
+        files.Should().ContainKey("Runtime/ValIOJsonValidation.h");
+        files["Serializers/StateJson.cpp"].Should().Contain("Runtime/ValIOJsonValidation.h");
+        files.Keys.Should().NotContain(path => path.Contains("Http", StringComparison.Ordinal));
     }
 
     /// <summary>Checks unsupported typed union diagnostics are drained after mapping and deduplicated across layers.</summary>
@@ -60,8 +74,9 @@ public sealed class CppStdLayerBoundaryTests
     /// <summary>Runs a standalone model generation with or without the independent codec layer.</summary>
     /// <param name="emitSerializers">Whether JSON codec output is requested.</param>
     /// <param name="propertyType">The optional model field type to exercise mapper diagnostics.</param>
+    /// <param name="generateModels">Whether model definitions and codecs are requested alongside enum output.</param>
     /// <returns>The completed generation context.</returns>
-    private static async Task<GenerationContext> Generate(bool emitSerializers, IrType? propertyType = null)
+    private static async Task<GenerationContext> Generate(bool emitSerializers, IrType? propertyType = null, bool generateModels = true)
     {
         var options = new CppGenerationOptions { Runtime = CppRuntimeProfile.Std, EmitSerializers = emitSerializers };
         var document = new IrDocument
@@ -83,7 +98,7 @@ public sealed class CppStdLayerBoundaryTests
         var context = new GenerationContext
         {
             IrDocument = document, PluginOptions = options,
-            Configuration = new GenerationConfiguration { LanguageId = "cpp", PluginOptions = options, GenerateClients = false },
+            Configuration = new GenerationConfiguration { LanguageId = "cpp", PluginOptions = options, GenerateClients = false, GenerateModels = generateModels },
         };
         await new CppGeneratorPlugin().CreatePipeline(services).ExecuteAsync(context);
         return context;

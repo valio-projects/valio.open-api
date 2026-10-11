@@ -8,12 +8,12 @@ using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
+using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
 
 /// <summary>
-/// Строит AST выражений для Zod схем (цепочки вызовов z.string().uuid().min() и т.д.).
-/// Использует CallExpressionNode, MemberAccessExpressionNode — renderer только отрисовывает код.
+/// Builds Zod schema expressions from structured AST nodes, retaining wire formats and value constraints.
 /// </summary>
 public static class ZodExpressionBuilder
 {
@@ -38,8 +38,8 @@ public static class ZodExpressionBuilder
         bool coerceNumbers = false)
     {
         var expr = BuildBasePrimitive(primitiveKind, useBigInt, coerceNumbers);
-        expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
         expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
+        expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
         // Carry the OpenAPI property description into the schema as Zod metadata (.describe(...)).
         if (!string.IsNullOrWhiteSpace(description))
         {
@@ -110,9 +110,11 @@ public static class ZodExpressionBuilder
         return Call(MemberAccess(target, method), Array.Empty<ExpressionNode>());
     }
 
-    /// <summary>
-    /// Применяет уточнения формата: uuid, datetime, date, time
-    /// </summary>
+    /// <summary>Applies the shared wire-format predicates after string constraints, preserving Zod 3 effects compatibility.</summary>
+    /// <param name="expr">The constrained primitive schema.</param>
+    /// <param name="kind">The primitive kind.</param>
+    /// <param name="uuidFormat">The normalized UUID policy.</param>
+    /// <returns>The schema with consistent format validation across validator libraries.</returns>
     private static ExpressionNode ApplyFormatRefinements(ExpressionNode expr, IrPrimitiveKind kind, string uuidFormat)
     {
         return kind switch
@@ -122,27 +124,21 @@ public static class ZodExpressionBuilder
                 TypeScriptOptionIds.UuidFormat.String => expr,
                 TypeScriptOptionIds.UuidFormat.Regex => Chain(expr, "regex",
                     new[] { Identifier(TypeScriptOptionIds.UuidFormat.RegexConstName) }),
-                _ => Chain(expr, "uuid", Array.Empty<ExpressionNode>()),
+                _ => Chain(expr, "refine", [StandardStringFormatAst.Build("uuid")]),
             },
-            IrPrimitiveKind.DateTime => Chain(expr, "datetime", new[]
-            {
-                new ObjectLiteralExpressionNode(new[]
-                {
-                    new PropertyAssignmentNode(
-                        new IdentifierNode("offset"),
-                        new LiteralExpressionNode(true, ValIO.Core.Ast.Enums.LiteralKind.Boolean))
-                }.ToImmutableList())
-            }),
-            IrPrimitiveKind.Date => Chain(expr, "date", Array.Empty<ExpressionNode>()),
-            IrPrimitiveKind.Time => Chain(expr, "time", Array.Empty<ExpressionNode>()),
+            IrPrimitiveKind.DateTime => Chain(expr, "refine", [StandardStringFormatAst.Build("date-time")]),
+            IrPrimitiveKind.Date => Chain(expr, "refine", [StandardStringFormatAst.Build("date")]),
+            IrPrimitiveKind.Time => Chain(expr, "refine", [StandardStringFormatAst.Build("time")]),
             _ => expr
         };
     }
 
-    /// <summary>
-    /// Применяет ограничения min, max, minLength, maxLength, regex.
-    /// Использует ссылку на const объект (constraintsRef.propertyName) или литералы при отсутствии ref.
-    /// </summary>
+    /// <summary>Applies numeric or string constraints before effects wrap a primitive schema.</summary>
+    /// <param name="expr">The primitive schema expression.</param>
+    /// <param name="kind">The primitive kind deciding compatible constraints.</param>
+    /// <param name="constraints">The value constraints, when present.</param>
+    /// <param name="constraintsRef">An optional generated constants object reference.</param>
+    /// <returns>The constrained schema expression.</returns>
     private static ExpressionNode ApplyConstraints(
         ExpressionNode expr,
         IrPrimitiveKind kind,
@@ -188,19 +184,26 @@ public static class ZodExpressionBuilder
         return expr;
     }
 
+    /// <summary>Creates a decimal literal without converting it through a binary floating-point representation.</summary>
+    /// <param name="value">The exact numeric value.</param>
+    /// <returns>The literal expression.</returns>
     private static ExpressionNode Lit(decimal value)
     {
         return new LiteralExpressionNode(value, ValIO.Core.Ast.Enums.LiteralKind.Number);
     }
 
+    /// <summary>Creates an integer constraint literal.</summary>
+    /// <param name="value">The exact integer value.</param>
+    /// <returns>The literal expression.</returns>
     private static ExpressionNode Lit(int value)
     {
         return new LiteralExpressionNode(value, ValIO.Core.Ast.Enums.LiteralKind.Number);
     }
 
-    /// <summary>
-    /// Ссылка на поле объекта констант: "ConstraintsModel.prop.field" → MemberAccess(MemberAccess(Id(ConstraintsModel), prop), field)
-    /// </summary>
+    /// <summary>Creates structured member access to a generated constraint constant.</summary>
+    /// <param name="constraintsRef">The dotted owning object path.</param>
+    /// <param name="field">The constraint field name.</param>
+    /// <returns>The member-access expression.</returns>
     private static ExpressionNode Ref(string constraintsRef, string field)
     {
         var parts = constraintsRef.Split('.');
@@ -212,15 +215,21 @@ public static class ZodExpressionBuilder
         return new MemberAccessExpressionNode(current, new IdentifierNode(field));
     }
 
-    /// <summary>
-    /// Цепочка: expr.method(args)
-    /// </summary>
+    /// <summary>Appends an ordinary method call to a schema expression.</summary>
+    /// <param name="expr">The owning schema expression.</param>
+    /// <param name="method">The method name.</param>
+    /// <param name="args">The call arguments.</param>
+    /// <returns>The method-call expression.</returns>
     private static ExpressionNode Chain(ExpressionNode expr, string method, IReadOnlyList<ExpressionNode> args)
     {
         var member = new MemberAccessExpressionNode(expr, new IdentifierNode(method));
         return new CallExpressionNode(member, args?.ToImmutableList() ?? ImmutableList<ExpressionNode>.Empty);
     }
 
+    /// <summary>Creates a structured call to a schema factory.</summary>
+    /// <param name="target">The called factory expression.</param>
+    /// <param name="args">The call arguments.</param>
+    /// <returns>The call expression.</returns>
     private static ExpressionNode Call(ExpressionNode target, IReadOnlyList<ExpressionNode> args)
     {
         return new CallExpressionNode(
@@ -228,16 +237,18 @@ public static class ZodExpressionBuilder
             args?.ToImmutableList() ?? ImmutableList<ExpressionNode>.Empty);
     }
 
-    private static ExpressionNode Member(string name)
-    {
-        return new IdentifierExpressionNode(new IdentifierNode(name));
-    }
-
+    /// <summary>Creates a schema namespace or constant identifier.</summary>
+    /// <param name="name">The identifier name.</param>
+    /// <returns>The identifier expression.</returns>
     private static ExpressionNode Identifier(string name)
     {
         return new IdentifierExpressionNode(new IdentifierNode(name));
     }
 
+    /// <summary>Creates member access without embedding source code into an identifier.</summary>
+    /// <param name="obj">The owning expression.</param>
+    /// <param name="member">The member name.</param>
+    /// <returns>The member-access expression.</returns>
     private static ExpressionNode MemberAccess(ExpressionNode obj, string member)
     {
         return new MemberAccessExpressionNode(obj, new IdentifierNode(member));

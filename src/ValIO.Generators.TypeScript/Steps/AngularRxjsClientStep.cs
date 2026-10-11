@@ -60,10 +60,7 @@ public sealed class AngularRxjsClientStep : ICodeGenerationStep
             var transport = promiseMode ? TypeScriptOptionIds.Transport.AngularPromise : TypeScriptOptionIds.Transport.AngularRxjs;
             if (opts?.Transports?.Contains(transport, StringComparer.OrdinalIgnoreCase) != true)
                 continue;
-            var builder = new AngularServiceAstBuilder(_namingConverter, opts, promiseMode)
-            {
-                ModelsByName = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal),
-            };
+            var builder = new AngularServiceAstBuilder(context.DocumentContext, _namingConverter, opts, promiseMode);
             foreach (var client in context.IrDocument.Clients)
             {
                 ct.ThrowIfCancellationRequested();

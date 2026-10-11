@@ -57,7 +57,7 @@ target_link_libraries(model_only PRIVATE valio_models)
 add_library(valio_fixture_implementations STATIC ${VALIO_SOURCES})
 target_link_libraries(valio_fixture_implementations PUBLIC valio_models httplib::httplib nlohmann_json::nlohmann_json)
 
-add_executable(smoke_main smoke_main.cpp)
+add_executable(smoke_main smoke_main.cpp checked_codec_smoke.cpp)
 target_link_libraries(smoke_main PRIVATE valio_fixture_implementations)
 
 if(MSVC)

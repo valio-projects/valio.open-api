@@ -93,10 +93,12 @@ public class CppUePipelineTests
         };
     }
 
-    /// <summary>Baseline: монолитный фасад, отрендеренный тем же рендерером.</summary>
+    /// <summary>Renders the document-bound facade as the pipeline parity baseline.</summary>
+    /// <param name="document">The exact document retained by the facade context.</param>
+    /// <returns>The generated file contents indexed by relative path.</returns>
     private static Dictionary<string, string> RenderViaFacade(IrDocument document)
     {
-        var facade = new CppAstBuilder(new CppGenerationOptions());
+        var facade = new CppAstBuilder(new CppGenerationOptions(), new IrDocumentContext(document));
         var build = facade.Build(document);
         var renderer = new CppAstRenderer();
         return build.Files.ToDictionary(kv => kv.Key, kv => renderer.Render(kv.Value));

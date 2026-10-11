@@ -44,7 +44,7 @@ public sealed class CSharpAstBuilderConsistencyTests
     public void PrimitiveMapping_AllEntryPointsAgree(IrPrimitiveKind kind)
     {
         var type = new IrPrimitiveType { PrimitiveKind = kind };
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
 
         _renderer.Visit(builder.BuildType(type)).Should()
             .Be(_renderer.Visit(new CSharpIrTypeMapper().MapType(type)));
@@ -71,7 +71,7 @@ public sealed class CSharpAstBuilderConsistencyTests
             Name = "InvalidCode", BaseType = IrEnumBaseType.Integer,
             Values = [new IrEnumValue { Name = "Value", Value = value }]
         };
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
 
         var build = () => builder.BuildEnum(model);
 
@@ -84,7 +84,7 @@ public sealed class CSharpAstBuilderConsistencyTests
     [TestCase("default!")]
     public void StringDefault_KeywordText_RemainsQuoted(string value)
     {
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
         var property = Property("value", "Value") with
         {
             Constraints = new IrPropertyConstraints { DefaultValue = value }
@@ -109,7 +109,7 @@ public sealed class CSharpAstBuilderConsistencyTests
     [TestCase(IrPrimitiveKind.Number, "1e500")]
     public void InvalidNumericDefault_DoesNotRoundOrOverflow(IrPrimitiveKind kind, string value)
     {
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
         var property = Property("value", "Value") with
         {
             Type = new IrPrimitiveType { PrimitiveKind = kind },
@@ -149,7 +149,7 @@ public sealed class CSharpAstBuilderConsistencyTests
                 InnerType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer }
             }
         };
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
         var operation = new IrOperation
         {
             MethodName = "GetItems",
@@ -220,7 +220,7 @@ public sealed class CSharpAstBuilderConsistencyTests
                 Types = [new IrUnionType { Types = [new IrModelReference { ModelName = "First" }, new IrModelReference { ModelName = "Second" }] }]
             }
         };
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
 
         var build = () => builder.BuildClass(model);
 
@@ -234,7 +234,7 @@ public sealed class CSharpAstBuilderConsistencyTests
         var operation = OperationWithResponses(
             new IrResponse { StatusCode = "204" },
             new IrResponse { StatusCode = "2XX", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer } });
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
 
         _renderer.Render(builder.BuildMethod(operation)).Should().Contain("Task<int> GetItem");
     }
@@ -246,7 +246,7 @@ public sealed class CSharpAstBuilderConsistencyTests
         var operation = OperationWithResponses(
             new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer } },
             new IrResponse { StatusCode = "201", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } });
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
 
         var build = () => builder.BuildMethod(operation);
 
@@ -261,7 +261,7 @@ public sealed class CSharpAstBuilderConsistencyTests
             new IrResponse { StatusCode = "204" },
             new IrResponse { StatusCode = "400", Type = new IrModelReference { ModelName = "ValidationError" } },
             new IrResponse { StatusCode = "500", Type = new IrModelReference { ModelName = "ServerError" } });
-        var builder = new CSharpAstBuilder(new CSharpNamingConverter());
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
 
         var code = _renderer.Render(builder.BuildMethod(operation));
 
@@ -283,10 +283,8 @@ public sealed class CSharpAstBuilderConsistencyTests
     /// <param name="models">The models available to inheritance resolution.</param>
     /// <returns>A builder with the complete lookup.</returns>
     private static CSharpAstBuilder BuilderWithModels(params IrModel[] models) =>
-        new(new CSharpNamingConverter(), new CSharpGenerationOptions { UseSealed = true })
-        {
-            ModelsByName = models.ToDictionary(model => model.Name)
-        };
+        new(new CSharpNamingConverter(), CSharpDocumentFixture.Context(models, []),
+            new CSharpGenerationOptions { UseSealed = true });
 
     /// <summary>Creates a string property with a distinct wire name.</summary>
     /// <param name="wireName">The source schema property name.</param>

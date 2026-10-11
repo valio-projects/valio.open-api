@@ -62,7 +62,7 @@ public sealed class RubyModelsStep : ICodeGenerationStep
         var modelsDir = RubyStepHelper.ModelsDir(opts);
 
         var builder = new RubyModelAstBuilder(_namingConverter, _typeMapper);
-        var modelLookup = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal);
+        var modelLookup = context.DocumentContext.ModelsByName;
         foreach (var model in context.IrDocument.Models)
         {
             var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };

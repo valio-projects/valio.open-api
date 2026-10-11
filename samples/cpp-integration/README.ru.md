@@ -2,7 +2,8 @@
 
 Профиль `std`, C++17/20/23. DTO находятся в `generated/Models` и
 `generated/Enums`, JSON-кодеки — отдельно в `generated/Serializers/*.h/.cpp`,
-HTTP-клиенты — в `generated/Clients`.
+HTTP-клиенты — в `generated/Clients`, интерфейсы — в `generated/Interfaces`,
+реализации клиентов — в `generated/Clients/Impl`.
 
 Запускайте генератор из этого каталога: относительные пути конфигурации
 разрешаются от текущего рабочего каталога.
@@ -42,9 +43,20 @@ CMake-пример использует cpp-httplib 0.18.3 и nlohmann JSON 3.12
 включённые слои. JSON-кодеки подключаются явно через `Serializers/OrderJson.h`;
 сам DTO-заголовок не вводит внешних зависимостей.
 
+В примере явно выбраны `temporalBackend: "string"` и `uuidBackend: "string"`.
+Настройки независимы. Для дат/времени доступны `chrono`, `howard-date`,
+`boost-date-time`, `valio`; для UUID — `boost`, `stduuid`, `modern-uuid`.
+`chrono` и `modern-uuid` требуют `cxxStandard` 20 или 23. Выбранная внешняя
+библиотека становится зависимостью DTO-target; строки и `valio` обходятся без неё.
+Строковые UUID и temporal values проверяются на JSON-границе без изменения текста.
+
 `model_consumer` проверяет использование DTO, `codec_consumer` — JSON
 round trip с required nullable, optional и optional nullable свойствами.
-HTTP-клиент собирается; пример не обращается к внешнему серверу.
+`http_consumer` запускает локальный сервер, внедряет один общий HTTP-клиент
+в два generated клиента и показывает before/after hooks, динамический bearer,
+один refresh/replay после 401 и отмену до отправки. Внешний сервер не требуется.
+В примере авторизация используется последовательно; приложению с параллельными
+запросами нужна собственная синхронизация refresh и состояния токена.
 
 Поддержаны обычные объектные `allOf` с именованными базами. Типизированные
 `oneOf/anyOf`, discriminator dispatch и вложенные альтернативы в моделях

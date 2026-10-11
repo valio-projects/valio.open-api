@@ -58,8 +58,9 @@ public sealed class StdContractRegressionTests
             Composition = new IrComposition { Kind = kind, Types = [new IrModelReference { ModelName = "Variant" }] },
         };
         var naming = new StdNamingConvention();
-        var builder = new StdModelAstBuilder(new StdCppTypeMapper(naming), naming);
-        var build = () => builder.Build(model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Api");
+        var context = CreateContext([model]);
+        var builder = new StdModelAstBuilder(new StdCppTypeMapper(naming, context), naming, context);
+        var build = () => builder.Build(model, "Api");
         build.Should().Throw<NotSupportedException>().WithMessage("*Choice*typed variant codec*");
     }
 
@@ -77,8 +78,9 @@ public sealed class StdContractRegressionTests
             },
         };
         var naming = new StdNamingConvention();
-        var builder = new StdModelAstBuilder(new StdCppTypeMapper(naming), naming);
-        var build = () => builder.Build(model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Api");
+        var context = CreateContext([model]);
+        var builder = new StdModelAstBuilder(new StdCppTypeMapper(naming, context), naming, context);
+        var build = () => builder.Build(model, "Api");
         build.Should().Throw<NotSupportedException>().WithMessage("*Mixed*nested non-reference allOf*codec*");
     }
 
@@ -97,21 +99,20 @@ public sealed class StdContractRegressionTests
             ],
         };
         var naming = new StdNamingConvention();
-        var mapper = new StdCppTypeMapper(naming);
+        var context = CreateContext([model]);
+        var mapper = new StdCppTypeMapper(naming, context);
         var renderer = new CppAstRenderer();
-        var lookup = new Dictionary<string, IrModel>();
-        var enums = new HashSet<string>();
 
-        var header = renderer.Render(new StdModelAstBuilder(mapper, naming).Build(model, enums, lookup, "Api"));
-        var (_, codec) = new StdModelJsonAstBuilder(mapper, naming).Build(model, enums, lookup, "Api", new CppGenerationOptions());
+        var header = renderer.Render(new StdModelAstBuilder(mapper, naming, context).Build(model, "Api"));
+        var (_, codec) = new StdModelJsonAstBuilder(mapper, naming, context).Build(model, "Api", new CppGenerationOptions());
         var source = renderer.Render(codec);
 
         header.Should().Contain("std::optional<std::string> RequiredNullable;");
         header.Should().Contain("std::optional<std::optional<std::string>> OptionalNullable;");
-        source.Should().Contain("j.at(\"required_null\").get_to(value.RequiredNullable);");
+        source.Should().Contain("value.RequiredNullable = ValIO::ReadJson<std::optional<std::string>>(j.at(\"required_null\"), ValIO::JsonStringFormat::Plain);");
         source.Should().NotContain("j.contains(\"required_null\")");
-        source.Should().Contain("j[\"required_null\"] = value.RequiredNullable;");
-        source.Should().Contain("value.OptionalNullable.emplace(j.at(\"optional_null\").get<std::optional<std::string>>());");
+        source.Should().Contain("j[\"required_null\"] = ValIO::WriteJson(value.RequiredNullable, ValIO::JsonStringFormat::Plain);");
+        source.Should().Contain("value.OptionalNullable.emplace(ValIO::ReadJson<std::optional<std::string>>(j.at(\"optional_null\"), ValIO::JsonStringFormat::Plain));");
         source.Should().Contain("value.OptionalNullable.reset();");
         source.Should().Contain("j = nlohmann::json::object();");
     }
@@ -132,7 +133,9 @@ public sealed class StdContractRegressionTests
         };
 
         var source = RenderClient(operation, CppApiStyle.Sync).Source;
-        source.Should().Contain("\"/\" + ValIO::UrlEncode(std::to_string(Second)) + \"/\" + ValIO::UrlEncode(std::to_string(First)) + \"/\" + ValIO::UrlEncode(std::to_string(Second))");
+        source.Should().Contain("ValIO::ReplacePathParameter(path, \"{second-wire}\", ValIO::UrlEncode(std::to_string(Second)));");
+        source.Should().Contain("ValIO::ReplacePathParameter(path, \"{first-wire}\", ValIO::UrlEncode(std::to_string(First)));");
+        source.Split("ReplacePathParameter(path, \"{second-wire}\"", StringSplitOptions.None).Should().HaveCount(2);
     }
 
     /// <summary>Checks async-only clients retain a private implementation and own async transport state.</summary>
@@ -147,12 +150,12 @@ public sealed class StdContractRegressionTests
         var result = RenderClient(operation, CppApiStyle.Async);
 
         result.Header.Should().Contain("private:");
-        result.Header.Should().Contain("Fetch() const;");
-        result.Header.Should().Contain("FetchAsync() const;");
-        result.Source.Should().Contain("ProbeClient::Fetch() const");
-        result.Source.Should().Contain("[httpConfig = _config]");
-        result.Source.Should().Contain("ProbeClient worker = ProbeClient(httpConfig);");
-        result.Source.Should().Contain("return worker.Fetch();");
+        result.Header.Should().Contain("Fetch(ValIO::CancellationToken cancellationToken = {}) const;");
+        result.Header.Should().Contain("FetchAsync(ValIO::CancellationToken cancellationToken = {}) const;");
+        result.Source.Should().Contain("ProbeClient::Fetch(ValIO::CancellationToken cancellationToken) const");
+        result.Source.Should().Contain("[http = _http, cancellationToken]");
+        result.Source.Should().Contain("ProbeClient worker = ProbeClient(http);");
+        result.Source.Should().Contain("return worker.Fetch(cancellationToken);");
         result.Source.Should().NotContain("[this");
     }
 
@@ -166,6 +169,119 @@ public sealed class StdContractRegressionTests
         new CppAstRenderer().Render(clone).Should().Contain("inline void Wire()");
     }
 
+    /// <summary>Checks injected transport ownership and constructor initialization avoid redundant transport construction.</summary>
+    [Test]
+    public void Client_SharedTransportConstructorInitializesExactlyOnce()
+    {
+        var operation = EmptyOperation();
+        var result = RenderClient(operation, CppApiStyle.Both);
+        result.Header.Should().Contain("ProbeClient(std::shared_ptr<ValIO::HttpClient> http);");
+        result.Source.Should().Contain("ProbeClient::ProbeClient(const ValIO::HttpConfig& config) : _http(std::make_shared<ValIO::HttpClient>(config))");
+        result.Source.Should().Contain("ProbeClient::ProbeClient(std::shared_ptr<ValIO::HttpClient> http) : _http(std::move(http))");
+        result.Source.Should().Contain("throw std::invalid_argument(\"HTTP client must not be null\");");
+        result.Source.Should().NotContain("_config");
+    }
+
+    /// <summary>Checks checked request serialization returns an expected failure without broadly catching unrelated exceptions.</summary>
+    [Test]
+    public void Client_ConvertsKnownSerializationFailuresToExpectedErrors()
+    {
+        var result = RenderClient(EmptyOperation(), CppApiStyle.Both);
+        result.Source.Should().Contain("catch (const nlohmann::json::exception& exception)");
+        result.Source.Should().Contain("catch (const std::invalid_argument& exception)");
+        result.Source.Should().Contain("error.What = ValIO::Error::Code::Serialization;");
+        result.Source.Should().Contain("error.Message = exception.what();");
+        result.Source.Should().NotContain("catch (const std::exception&");
+    }
+
+    /// <summary>Checks declarations always include Doxygen, source descriptions, parameters, result ownership, and route constants.</summary>
+    [Test]
+    public void Client_DocumentsPublicContractAndEscapesCommentTerminators()
+    {
+        var operation = EmptyOperation() with { Summary = "Probe summary */ declaration", Description = "Detailed contract" };
+        var result = RenderClient(operation, CppApiStyle.Both);
+        result.Header.Should().Contain("@brief HTTP implementation for Probe.");
+        result.Header.Should().Contain("@brief Probe summary * / declaration");
+        result.Header.Should().Contain("@details Detailed contract");
+        result.Header.Should().Contain("@param http A non-null shared HTTP client");
+        result.Header.Should().Contain("@return A future retaining the shared transport and copied arguments");
+        result.Header.Should().Contain("inline static constexpr std::string_view FetchPath = \"/probe\";");
+        result.Source.Should().NotContain("std::string path = \"/probe\"");
+    }
+
+    /// <summary>Checks bodyless success does not accidentally adopt an unrelated default error payload.</summary>
+    [Test]
+    public void Client_NoContentDoesNotUseDefaultErrorSchema()
+    {
+        var operation = EmptyOperation() with
+        {
+            Responses = [new IrResponse { StatusCode = "204" },
+                new IrResponse { StatusCode = "default", Type = new IrModelReference { ModelName = "ErrorBody" } }],
+        };
+        var result = RenderClient(operation, CppApiStyle.Sync);
+        result.Header.Should().Contain("ValIO::Expected<void, ValIO::Error>");
+        result.Source.Should().NotContain("ValIO::Parse<ErrorBody>");
+    }
+
+    /// <summary>Checks mixed typed and bodyless successes have stable optional results in every response declaration order.</summary>
+    /// <param name="reverse">Whether the bodyless declaration appears first.</param>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void Client_MixedSuccessfulBodiesUseOptionalPayload(bool reverse)
+    {
+        var typed = new IrResponse { StatusCode = "200", Type = new IrModelReference { ModelName = "Value" } };
+        var empty = new IrResponse { StatusCode = "204" };
+        var operation = EmptyOperation() with { Responses = reverse ? [empty, typed] : [typed, empty] };
+        var result = RenderClient(operation, CppApiStyle.Both);
+        result.Header.Should().Contain("ValIO::Expected<std::optional<Value>, ValIO::Error>");
+        result.Source.Should().Contain("return std::optional<Value>();");
+        result.Source.Should().Contain("return ValIO::Parse<std::optional<Value>>(response.Body, ValIO::JsonStringFormat::Plain);");
+        result.Source.Should().Contain("response.StatusCode < 200 || response.StatusCode >= 300");
+    }
+
+    /// <summary>Checks HEAD never attempts to decode a payload even when its response schema lists one.</summary>
+    [Test]
+    public void Client_HeadIsAlwaysBodyless()
+    {
+        var operation = EmptyOperation() with { HttpMethod = "HEAD", Responses =
+            [new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }] };
+        var result = RenderClient(operation, CppApiStyle.Sync);
+        result.Header.Should().Contain("ValIO::Expected<void, ValIO::Error>");
+        result.Source.Should().NotContain("ValIO::Parse<");
+    }
+
+    /// <summary>Checks an exact payload response overrides a bodyless successful range.</summary>
+    [Test]
+    public void Client_ExactResponseTakesPrecedenceOverSuccessfulRange()
+    {
+        var operation = EmptyOperation() with { Responses =
+            [new IrResponse { StatusCode = "2XX" },
+             new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }] };
+        var result = RenderClient(operation, CppApiStyle.Sync);
+        result.Header.Should().Contain("ValIO::Expected<std::optional<bool>, ValIO::Error>");
+        result.Source.Should().Contain("response.StatusCode != 200");
+        result.Source.Should().Contain("return ValIO::Parse<std::optional<bool>>(response.Body, ValIO::JsonStringFormat::Plain);");
+    }
+
+    /// <summary>Checks unsupported heterogeneous successes cannot silently adopt the first declared schema.</summary>
+    [Test]
+    public void Client_DistinctSuccessfulSchemasFailExplicitly()
+    {
+        var operation = EmptyOperation() with { Responses =
+            [new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } },
+             new IrResponse { StatusCode = "201", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } }] };
+        var action = () => RenderClient(operation, CppApiStyle.Sync);
+        action.Should().Throw<NotSupportedException>().WithMessage("*Fetch*heterogeneous successful response schemas*");
+    }
+
+    /// <summary>Creates a minimal operation for constructor, documentation, and decoding regressions.</summary>
+    /// <returns>The bodyless probe operation.</returns>
+    private static IrOperation EmptyOperation() => new()
+    {
+        MethodName = "Fetch", HttpMethod = "GET", Path = "/probe",
+        PathParameters = [], QueryParameters = [], HeaderParameters = [], Responses = [],
+    };
+
     /// <summary>Renders a minimal client for a focused operation regression.</summary>
     /// <param name="operation">The operation under test.</param>
     /// <param name="style">The client execution style.</param>
@@ -173,10 +289,19 @@ public sealed class StdContractRegressionTests
     private static (string Header, string Source) RenderClient(IrOperation operation, CppApiStyle style)
     {
         var naming = new StdNamingConvention();
-        var builder = new StdClientAstBuilder(new StdCppTypeMapper(naming), naming);
-        var result = builder.Build(new IrClient { Name = "Probe", Operations = [operation] }, new HashSet<string>(),
-            new Dictionary<string, IrModel>(), "Api", new CppGenerationOptions { ApiStyle = style });
+        var context = CreateContext([]);
+        var builder = new StdClientAstBuilder(new StdCppTypeMapper(naming, context), naming, context);
+        var result = builder.Build(new IrClient { Name = "Probe", Operations = [operation] }, "Api", new CppGenerationOptions { ApiStyle = style });
         var renderer = new CppAstRenderer();
         return (renderer.Render(result.ClientHeader), renderer.Render(result.ClientSource));
     }
+    /// <summary>Creates a finalized document context shared by all services in a focused regression.</summary>
+    /// <param name="models">The scenario's model declarations.</param>
+    /// <returns>The immutable declaration indexes.</returns>
+    private static IrDocumentContext CreateContext(IReadOnlyList<IrModel> models) => new(new IrDocument
+    {
+        Metadata = new IrDocumentMetadata(), Models = models, Enums = [], Clients = [],
+        TypeDependencies = new IrTypeDependencyGraph { Dependencies = new Dictionary<string, IReadOnlyList<string>>(), TopologicalOrder = [] },
+    });
+
 }

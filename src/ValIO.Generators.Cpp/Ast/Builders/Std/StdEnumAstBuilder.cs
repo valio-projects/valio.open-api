@@ -17,8 +17,12 @@ namespace ValIO.Generators.Cpp.Ast.Builders.Std;
 /// </summary>
 public sealed class StdEnumAstBuilder
 {
+    /// <summary>Names enum declarations and their separate codec files.</summary>
     private readonly StdNamingConvention _naming;
 
+    /// <summary>Creates the enum builder with the generated naming convention.</summary>
+    /// <param name="naming">The generated naming convention.</param>
+    /// <exception cref="ArgumentNullException">The naming convention is missing.</exception>
     public StdEnumAstBuilder(StdNamingConvention naming)
     {
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
@@ -43,14 +47,15 @@ public sealed class StdEnumAstBuilder
             members.Add(new EnumMemberDeclarationNode(
                 new IdentifierNode(_naming.EnumMemberName(value.Name)),
                 isInteger ? IntegerWireLiteral(ParseIntegerWire(wire)) : new LiteralExpressionNode(i, LiteralKind.Number),
-                wireValue: isInteger ? null : wire));
+                wireValue: isInteger ? null : wire,
+                documentation: StdDocumentation.Create($"Represents wire value {wire}.", value.Description)));
         }
 
         var enumNode = new EnumDeclarationNode(
             new IdentifierNode(enumName),
             underlyingType: new SimpleTypeNode(new IdentifierNode(isInteger ? IntegerWireType(irEnum) : "std::int32_t"), isPrimitive: true),
             members: members,
-            documentation: BuildDocumentation(irEnum.Description));
+            documentation: StdDocumentation.Create($"Allowed values for {irEnum.OriginalName}.", irEnum.Description));
 
         var includes = new List<CppIncludeDirectiveNode>
         {
@@ -89,7 +94,8 @@ public sealed class StdEnumAstBuilder
                     new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("nlohmann::json"), isReference: true),
                     new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isConst: true, isReference: true),
                 ],
-                isDeclarationOnly: true),
+                isDeclarationOnly: true,
+                documentation: BuildCodecDocumentation(enumName, isToJson: true)),
             new CppFreeFunctionNode(
                 new IdentifierNode("from_json"),
                 new RawTypeNode("void"),
@@ -97,7 +103,8 @@ public sealed class StdEnumAstBuilder
                     new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("const nlohmann::json"), isReference: true),
                     new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isReference: true),
                 ],
-                isDeclarationOnly: true),
+                isDeclarationOnly: true,
+                documentation: BuildCodecDocumentation(enumName, isToJson: false)),
         };
 
         var header = new CppHeaderFileNode(
@@ -113,7 +120,7 @@ public sealed class StdEnumAstBuilder
             declarations: [new NamespaceDeclarationNode(new IdentifierNode(rootNamespace),
             [
                 .. codecDeclarations,
-                .. wireFunctions.Select(function => new CppFreeFunctionNode(function.Name, function.ReturnType, function.Parameters, isDeclarationOnly: true)),
+                .. wireFunctions.Select(function => new CppFreeFunctionNode(function.Name, function.ReturnType, function.Parameters, isDeclarationOnly: true, documentation: function.Documentation)),
             ])]);
 
         var toJsonBody = new BlockNode(
@@ -133,8 +140,8 @@ public sealed class StdEnumAstBuilder
                 new CallExpressionNode(
                     StdExpressions.Ident($"{enumName}FromWire"),
                     [new CallExpressionNode(
-                        new MemberAccessExpressionNode(StdExpressions.Ident("j"), new IdentifierNode("get")),
-                        [],
+                        StdExpressions.Ident("ValIO::ReadJson"),
+                        [StdExpressions.Ident("j")],
                         genericTypeName: wireCppType)])),
             new IfStatementNode(
                 StdExpressions.Ident("parsed"),
@@ -149,7 +156,7 @@ public sealed class StdEnumAstBuilder
                 new BlockNode(
                 [
                     new ThrowStatementNode(new CallExpressionNode(
-                        BuildNlohmannOutOfRangeCreate($"unknown {enumName} wire value"),
+                        BuildNlohmannOutOfRangeCreate(),
                         [
                             new LiteralExpressionNode("1701", LiteralKind.Number),
                             new LiteralExpressionNode($"unknown {enumName} wire value", LiteralKind.String),
@@ -164,6 +171,7 @@ public sealed class StdEnumAstBuilder
             [
                 new(_naming.SerializerHeaderPath(irEnum.OriginalName)),
                 new(options.JsonInclude, isSystemInclude: true),
+                new("Runtime/ValIOJsonValidation.h"),
             ],
             sections:
             [
@@ -179,7 +187,8 @@ public sealed class StdEnumAstBuilder
                                 new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("nlohmann::json"), isReference: true),
                                 new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isConst: true, isReference: true),
                             ],
-                            body: toJsonBody),
+                            body: toJsonBody,
+                            documentation: BuildCodecDocumentation(enumName, isToJson: true)),
                         new CppFreeFunctionNode(
                             new IdentifierNode("from_json"),
                             new RawTypeNode("void"),
@@ -187,7 +196,8 @@ public sealed class StdEnumAstBuilder
                                 new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("const nlohmann::json"), isReference: true),
                                 new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isReference: true),
                             ],
-                            body: fromJsonBody),
+                            body: fromJsonBody,
+                            documentation: BuildCodecDocumentation(enumName, isToJson: false)),
                     ]),
                 ]),
             ]);
@@ -209,7 +219,8 @@ public sealed class StdEnumAstBuilder
                 : new SimpleTypeNode(new IdentifierNode("std::string_view")),
             [new CppParameterNode(new IdentifierNode("v"), new SimpleTypeNode(new IdentifierNode(enumName)))],
             body: new BlockNode(BuildToWireStatements(irEnum, enumName, isInteger)),
-            documentation: new CommentNode("Returns the original OpenAPI wire value.", CommentKind.MultiLine));
+            documentation: StdDocumentation.Create("Returns the original OpenAPI wire value.",
+                details: ["@param v The enum value to encode.", "@return The original wire value.", "@throws nlohmann::json::exception The value is not a declared enum member."]));
 
         var fromWire = new CppFreeFunctionNode(
             new IdentifierNode($"{enumName}FromWire"),
@@ -220,7 +231,8 @@ public sealed class StdEnumAstBuilder
                     ? new SimpleTypeNode(new IdentifierNode(IntegerWireType(irEnum)), isPrimitive: true)
                     : new SimpleTypeNode(new IdentifierNode("std::string_view")))],
             body: new BlockNode(BuildFromWireStatements(irEnum, enumName, isInteger)),
-            documentation: new CommentNode("Parses a wire value; unknown values return std::nullopt.", CommentKind.MultiLine));
+            documentation: StdDocumentation.Create("Parses an original OpenAPI wire value.",
+                details: ["@param w The wire value to inspect.", "@return The corresponding enum member, or std::nullopt for an unknown value."]));
 
         var wireText = new CppFreeFunctionNode(
             new IdentifierNode("ToWireText"),
@@ -231,7 +243,9 @@ public sealed class StdEnumAstBuilder
                 new ReturnStatementNode(new CallExpressionNode(
                     StdExpressions.Ident(isInteger ? "std::to_string" : "std::string"),
                     [new CallExpressionNode(StdExpressions.Ident("ToWire"), [StdExpressions.Ident("v")])])),
-            ]));
+            ]),
+            documentation: StdDocumentation.Create("Formats the original enum wire value as request text.",
+                details: ["@param v The enum value to format.", "@return The original wire text.", "@throws nlohmann::json::exception The value is not a declared enum member."]));
 
         return [toWire, fromWire, wireText];
     }
@@ -263,10 +277,11 @@ public sealed class StdEnumAstBuilder
                 ])));
         }
 
-        statements.Add(new ReturnStatementNode(
-            isInteger
-                ? new LiteralExpressionNode("0", LiteralKind.Number)
-                : new LiteralExpressionNode(string.Empty, LiteralKind.String)));
+        statements.Add(new ThrowStatementNode(new CallExpressionNode(
+            BuildNlohmannOutOfRangeCreate(),
+            [new LiteralExpressionNode(1701, LiteralKind.Number),
+                new LiteralExpressionNode($"unknown {enumName} enum member", LiteralKind.String),
+                StdExpressions.Ident("nullptr")])));
         return statements;
     }
 
@@ -297,8 +312,9 @@ public sealed class StdEnumAstBuilder
         return statements;
     }
 
-    /// <summary>nlohmann::json::out_of_range::create(id, message) для throw при неизвестном wire-значении.</summary>
-    private static MemberAccessExpressionNode BuildNlohmannOutOfRangeCreate(string message)
+    /// <summary>Builds the JSON exception factory used for unknown wire values and undeclared enum members.</summary>
+    /// <returns>The structured exception factory access.</returns>
+    private static MemberAccessExpressionNode BuildNlohmannOutOfRangeCreate()
     {
         return new MemberAccessExpressionNode(
             new MemberAccessExpressionNode(
@@ -309,8 +325,25 @@ public sealed class StdEnumAstBuilder
             useScopeOperator: true);
     }
 
+    /// <summary>Builds a typed enum member access without embedding a source expression string.</summary>
+    /// <param name="enumName">The generated enum type name.</param>
+    /// <param name="memberName">The generated enum member name.</param>
+    /// <returns>The scoped enum member expression.</returns>
     private static MemberAccessExpressionNode BuildScopedMember(string enumName, string memberName)
         => new(StdExpressions.Ident(enumName), new IdentifierNode(memberName), useScopeOperator: true);
+
+    /// <summary>Documents the generated enum JSON boundary.</summary>
+    /// <param name="enumName">The generated enum type name.</param>
+    /// <param name="isToJson">Whether the codec serializes rather than parses.</param>
+    /// <returns>The generated Doxygen documentation.</returns>
+    private static CommentNode BuildCodecDocumentation(string enumName, bool isToJson)
+        => StdDocumentation.Create(isToJson ? $"Serializes a declared {enumName} wire value." : $"Parses an exact declared {enumName} wire value.",
+            details:
+            [
+                isToJson ? "@param j Receives the JSON wire value." : "@param j The JSON wire value to inspect.",
+                isToJson ? "@param value The declared enum member." : "@param value Receives the parsed enum member.",
+                "@throws nlohmann::json::exception The JSON type, integer range, or enum value is invalid.",
+            ]);
 
     /// <summary>Selects a representation capable of preserving every declared signed integer wire value.</summary>
     /// <param name="irEnum">The enum contract.</param>
@@ -344,8 +377,4 @@ public sealed class StdEnumAstBuilder
         return new LiteralExpressionNode(value is < int.MinValue or > int.MaxValue ? text + "LL" : text, LiteralKind.Number);
     }
 
-    private static CommentNode? BuildDocumentation(string? description)
-        => !string.IsNullOrWhiteSpace(description)
-            ? new CommentNode(description, CommentKind.MultiLine)
-            : null;
 	}

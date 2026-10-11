@@ -174,7 +174,7 @@ public partial class TypeScriptAstBuilder
         var ctx = PrepareHttpParamSourcesWithOptionalZod(operation);
         statements.AddRange(ctx.LeadingStatements);
 
-        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(_namingConverter, BuildType);
+        var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(DocumentContext, _namingConverter, BuildType);
         var pathUrlExpr = axiosBuilder.BuildUrlWithSource(operation, ctx.RouteSource);
         // The URLSearchParams builder shared with Next.js skips absent optional params and handles encoding.
         var requestUrlExpr = TypeScriptQueryString.AppendQueryToUrl(
@@ -257,8 +257,9 @@ public partial class TypeScriptAstBuilder
             initializer: mergedInit));
 
         var fetchName = GetFetchImplementationName();
+        statements.Add(TypeScriptHttpClientInjection.Declaration(fetchName));
         var fetchCall = new CallExpressionNode(
-            new IdentifierExpressionNode(new IdentifierNode(fetchName)),
+            Id("httpClient"),
             new[]
             {
                 new IdentifierExpressionNode(new IdentifierNode("requestUrl")),

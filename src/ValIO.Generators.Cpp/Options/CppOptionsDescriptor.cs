@@ -31,6 +31,25 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         new("interface+impl", "Interface I{Client} + {Client}Client impl",     "cpp.clientShape.interfaceImpl.desc"),
     ];
 
+    /// <summary>Explicit application temporal representations.</summary>
+    private static readonly OptionChoice[] TemporalChoices =
+    [
+        new("string", "Validated strings", "cpp.temporal.string.desc"),
+        new("chrono", "Standard chrono (C++20+)", "cpp.temporal.chrono.desc"),
+        new("howard-date", "Howard Hinnant date", "cpp.temporal.howardDate.desc"),
+        new("boost-date-time", "Boost.Date_Time", "cpp.temporal.boost.desc"),
+        new("valio", "ValIO lightweight values", "cpp.temporal.valio.desc"),
+    ];
+
+    /// <summary>Explicit application UUID representations.</summary>
+    private static readonly OptionChoice[] UuidChoices =
+    [
+        new("string", "Validated strings", "cpp.uuid.string.desc"),
+        new("boost", "Boost.Uuid", "cpp.uuid.boost.desc"),
+        new("stduuid", "stduuid", "cpp.uuid.stduuid.desc"),
+        new("modern-uuid", "modern-uuid (C++20+)", "cpp.uuid.modern.desc"),
+    ];
+
     /// <inheritdoc />
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
@@ -55,6 +74,32 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
 
         if (rawOptions.TryGetValue("clientShape", out var clientShape) && clientShape.ValueKind == JsonValueKind.String)
             opts.ClientShape = NormalizeClientShape(clientShape.GetString(), errorList);
+
+        if (rawOptions.TryGetValue("temporalBackend", out var temporal))
+        {
+            if (temporal.ValueKind != JsonValueKind.String) errorList.Add("Option 'temporalBackend' must be a string");
+            else opts.TemporalBackend = temporal.GetString()?.Trim().ToLowerInvariant() switch
+            {
+                "string" => CppTemporalBackend.String,
+                "chrono" => CppTemporalBackend.Chrono,
+                "howard-date" => CppTemporalBackend.HowardDate,
+                "boost-date-time" => CppTemporalBackend.BoostDateTime,
+                "valio" => CppTemporalBackend.Valio,
+                var unknown => Unknown(errorList, unknown ?? "", CppTemporalBackend.String, "temporalBackend", "string, chrono, howard-date, boost-date-time, valio"),
+            };
+        }
+        if (rawOptions.TryGetValue("uuidBackend", out var uuid))
+        {
+            if (uuid.ValueKind != JsonValueKind.String) errorList.Add("Option 'uuidBackend' must be a string");
+            else opts.UuidBackend = uuid.GetString()?.Trim().ToLowerInvariant() switch
+            {
+                "string" => CppUuidBackend.String,
+                "boost" => CppUuidBackend.BoostUuid,
+                "stduuid" => CppUuidBackend.StdUuid,
+                "modern-uuid" => CppUuidBackend.ModernUuid,
+                var unknown => Unknown(errorList, unknown ?? "", CppUuidBackend.String, "uuidBackend", "string, boost, stduuid, modern-uuid"),
+            };
+        }
 
         if (rawOptions.TryGetValue("namespace", out var ns) && ns.ValueKind == JsonValueKind.String)
             opts.Namespace = ns.GetString()?.Trim();
@@ -120,6 +165,14 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         var errors = new List<string>();
         if (opts.CxxStandard is not (17 or 20 or 23))
             errors.Add($"Option 'cxxStandard' must be 17, 20 or 23 (got {opts.CxxStandard})");
+        if (!Enum.IsDefined(opts.TemporalBackend)) errors.Add("Unknown temporalBackend enum value");
+        if (!Enum.IsDefined(opts.UuidBackend)) errors.Add("Unknown uuidBackend enum value");
+        if (opts.TemporalBackend == CppTemporalBackend.Chrono && opts.CxxStandard < 20)
+            errors.Add("Option 'temporalBackend=chrono' requires cxxStandard 20 or 23");
+        if (opts.UuidBackend == CppUuidBackend.ModernUuid && opts.CxxStandard < 20)
+            errors.Add("Option 'uuidBackend=modern-uuid' requires cxxStandard 20 or 23");
+        if (opts.Runtime != CppRuntimeProfile.Std && (opts.TemporalBackend != CppTemporalBackend.String || opts.UuidBackend != CppUuidBackend.String))
+            errors.Add("Native temporal and UUID backend options require runtime=std");
         if (!string.IsNullOrEmpty(opts.Namespace)
             && !System.Text.RegularExpressions.Regex.IsMatch(opts.Namespace, @"^[A-Za-z_][A-Za-z0-9_]*$"))
             errors.Add("Option 'namespace' must be a valid C++ identifier");
@@ -157,6 +210,11 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
             Choices:      ApiStyleChoices,
             Group:        "std runtime",
             DependsOn:    "runtime"),
+
+        new(Name: "temporalBackend", Description: "Application date/time/duration representation. Strings retain valid original text; native providers retain offsets and reject unrepresentable precision or calendar intervals.",
+            DefaultValue: "string", IsRequired: false, Kind: OptionKind.EnumSingle, Choices: TemporalChoices, Group: "std runtime", DependsOn: "runtime"),
+        new(Name: "uuidBackend", Description: "Application UUID representation, independent of temporal types. Selected provider dependencies are public model dependencies; JSON and HTTP remain separate.",
+            DefaultValue: "string", IsRequired: false, Kind: OptionKind.EnumSingle, Choices: UuidChoices, Group: "std runtime", DependsOn: "runtime"),
 
         new(
             Name:         "clientShape",

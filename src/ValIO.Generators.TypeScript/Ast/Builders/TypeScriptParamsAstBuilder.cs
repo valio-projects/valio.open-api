@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -16,17 +17,21 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// Создаёт интерфейсы параметров с под-интерфейсами Route/Query/Body/Form (по аналогии с UE Cpp).
 /// При одной группе параметров — плоская структура без вложенности.
 /// </summary>
-public sealed class TypeScriptParamsAstBuilder
+public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public TypeScriptParamsAstBuilder(
+    /// <summary>Creates a TypeScriptParamsAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="typeBuilder">The language type mapping function.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public TypeScriptParamsAstBuilder(IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
@@ -89,7 +94,7 @@ public sealed class TypeScriptParamsAstBuilder
         FileOrganization? fileOrganization,
         string currentOperationName)
     {
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var declarations = new List<DeclarationNode>();
         var imports = new List<ImportNode>();
@@ -453,7 +458,7 @@ public sealed class TypeScriptParamsAstBuilder
 
     private ImportNode CreateModelImport(string typeName, FileOrganization? fileOrganization)
     {
-        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(typeName, typeName));
+        var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, typeName));
         var relativePath = $"../../{fileOrganization?.ModelsPath ?? "models"}/{modelFileName}/{modelFileName}";
         return new ImportNode(
             items: new[] { new IdentifierNode(typeName) }.ToImmutableList(),

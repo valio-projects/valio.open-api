@@ -1,3 +1,4 @@
+using ValIO.Core.Ast.Builders;
 using System.Collections.Immutable;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -22,35 +23,36 @@ namespace ValIO.Generators.TypeScript.Got.Ast.Builders;
 /// <c>got(url, { method, headers, json, searchParams, responseType:"json", throwHttpErrors:false })</c>
 /// returns a <c>Response&lt;unknown&gt;</c>; the result is branched on <c>response.statusCode</c>.
 /// </summary>
-public sealed class GotClientAstBuilder
+public sealed class GotClientAstBuilder : AstBuilderBase
 {
-    /// <summary>Gets or sets models from the active IR document for multipart field serialization.</summary>
-    /// <value>The models indexed by their generated names.</value>
-    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } =
-        new Dictionary<string, IrModel>(StringComparer.Ordinal);
 
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly Validation.IClientValidationStrategy _validation;
 
-    /// <summary>Карта «affix-имя → исходное имя» для путей импорта (тождество без affix).</summary>
-    private readonly Dictionary<string, string> _orig = new(StringComparer.Ordinal);
 
-    public GotClientAstBuilder(INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+    /// <summary>Creates a GotClientAstBuilder for one finalized IR document.</summary>
+    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
+    /// <param name="namingConverter">The generated identifier naming policy.</param>
+    /// <param name="options">The TypeScript generation settings.</param>
+    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    public GotClientAstBuilder(IrDocumentContext documentContext,
+        INamingConverter namingConverter, TypeScriptGenerationOptions? options)
+        : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = Validation.ClientValidationStrategyFactory.Create(options);
 
-        var typeBuilder = new TypeScriptAstBuilder(namingConverter, options);
-        _paramsBuilder = new TypeScriptParamsAstBuilder(namingConverter, typeBuilder.BuildType);
-        _resultsBuilder = new TypeScriptResultsAstBuilder(namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
+        var typeBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
+        _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType);
+        _resultsBuilder = new TypeScriptResultsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType, options?.ResultTypeSuffix, options?.ResultTypePrefix);
     }
 
     public SourceFileNode BuildOperationClientSourceFile(IrOperation operation, FileOrganization fileOrganization)
     {
         ArgumentNullException.ThrowIfNull(operation);
-        OriginalNameMap.AddOperation(_orig, operation);
+
 
         var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         var hasParameters = _paramsBuilder.HasParameters(operation);
@@ -68,6 +70,13 @@ public sealed class GotClientAstBuilder
                 $"Got HTTP client for the {operation.MethodName} operation."));
     }
 
+    /// <summary>Imports the native transport types and operation-specific models and validation schemas.</summary>
+    /// <param name="operation">The operation whose imports are generated.</param>
+    /// <param name="operationFileName">The original operation file name.</param>
+    /// <param name="fileOrganization">The configured output layout.</param>
+    /// <param name="hasParameters">Whether a generated parameter type is needed.</param>
+    /// <param name="hasResultType">Whether a generated result union is needed.</param>
+    /// <returns>The imports required by the native client operation.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
         IrOperation operation,
         string operationFileName,
@@ -80,6 +89,12 @@ public sealed class GotClientAstBuilder
             items: ImmutableList.Create(new IdentifierNode("got")),
             from: "got",
             kind: ImportKind.Default));
+
+        imports.Add(new ImportNode(
+            items: ImmutableList.Create(new IdentifierNode("Got")),
+            from: "got",
+            kind: ImportKind.Named,
+            isTypeOnly: true));
 
         // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
         imports.AddRange(_validation.RuntimeImports(
@@ -154,6 +169,11 @@ public sealed class GotClientAstBuilder
             ? new[] { operation.RequestBody.Type }
             : Array.Empty<IrType>();
 
+    /// <summary>Builds a native operation with compatible options, cancellation, and optional configured client injection.</summary>
+    /// <param name="operation">The operation whose callable API is generated.</param>
+    /// <param name="hasParameters">Whether the operation accepts a parameter object.</param>
+    /// <param name="hasResultType">Whether the operation returns a response union.</param>
+    /// <returns>The generated operation declaration.</returns>
     private FunctionDeclarationNode BuildOperationFunction(
         IrOperation operation,
         bool hasParameters,
@@ -177,6 +197,8 @@ public sealed class GotClientAstBuilder
             type: Simple("AbortSignal"),
             isRequired: false));
 
+        parameters.Add(TypeScriptHttpClientInjection.Parameter(Simple("Got")));
+
         return new FunctionDeclarationNode(
             name: new IdentifierNode(operation.MethodName),
             returnType: new GenericTypeNode(new IdentifierNode("Promise"), ImmutableList.Create(returnType)),
@@ -194,6 +216,7 @@ public sealed class GotClientAstBuilder
     private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasResultType)
     {
         var statements = new List<StatementNode>();
+        statements.Add(TypeScriptHttpClientInjection.Declaration("got"));
         var sources = TypeScriptParameterSources.Create(operation);
 
         if (_validation.IsEnabled)
@@ -212,7 +235,7 @@ public sealed class GotClientAstBuilder
         statements.Add(new BlankLineStatementNode());
 
         var gotCall = new CallExpressionNode(
-            Id("got"),
+            Id("httpClient"),
             ImmutableList.Create<ExpressionNode>(
                 Id("requestUrl"),
                 BuildGotOptionsExpression(operation, sources, hasResultType)));
@@ -460,7 +483,7 @@ public sealed class GotClientAstBuilder
     {
         // Model schemas are co-located with their models under modelsPath.
         var modelsPath = fileOrganization.ModelsPath ?? "models";
-        var modelFileName = _namingConverter.ToCamelCase(_orig.GetValueOrDefault(modelName, modelName));
+        var modelFileName = _namingConverter.ToCamelCase(OriginalNameMap.GetTypeOriginalName(DocumentContext, modelName));
         return fileOrganization.SeparateModels
             ? $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema"
             : $"../../{modelsPath}/{modelFileName}.schema";
