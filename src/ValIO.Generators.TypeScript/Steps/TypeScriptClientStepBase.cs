@@ -30,6 +30,13 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
     /// <summary>Renderer instance built once per Step with the Chain-of-Responsibility node renderers.</summary>
     protected TypeScriptAstRenderer Renderer { get; }
 
+    /// <summary>
+    /// Models from the active IR document, keyed by generated model name, for transport builders that need request
+    /// body property metadata such as multipart field names.
+    /// </summary>
+    protected IReadOnlyDictionary<string, IrModel> ModelsByName { get; private set; } =
+        new Dictionary<string, IrModel>(StringComparer.Ordinal);
+
     /// <inheritdoc />
     public abstract string Name { get; }
 
@@ -78,6 +85,7 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
+        ModelsByName = context.IrDocument.Models.ToDictionary(model => model.Name, StringComparer.Ordinal);
 
         foreach (var client in context.IrDocument.Clients)
         {
