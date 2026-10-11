@@ -27,6 +27,7 @@ public static class PluginsBootstrapExtensions
         // C# renderer dependency is needed before CSharp plugin is registered.
         services.AddSingleton<ICSharpAstRenderer, CSharpAstRenderer>();
 
+        services.AddGeneratorPlugin<CppGeneratorPlugin>();
         services.AddGeneratorPlugin<TypeScriptGeneratorPlugin>();
         services.AddGeneratorPlugin<CSharpGeneratorPlugin>();
         services.AddGeneratorPlugin<PythonGeneratorPlugin>();
