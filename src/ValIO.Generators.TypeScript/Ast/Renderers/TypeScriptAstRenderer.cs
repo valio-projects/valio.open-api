@@ -597,10 +597,37 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         {
             return key; // Shorthand: { name } вместо { name: name }
         }
+<<<<<<< HEAD
         // Ключ, не являющийся валидным JS-идентификатором (напр. точечное «проводное» имя
         // query-параметра Paging.Offset), печатаем в кавычках — иначе получится невалидный TS.
         var safeKey = IsSafeObjectKey(key) ? key : $"'{key}'";
         return $"{safeKey}: {value}";
+=======
+        return $"{QuoteKeyIfNeeded(key)}: {value}";
+    }
+
+    /// <summary>
+    /// Оборачивает ключ объектного литерала в кавычки, если он не является валидным TS-идентификатором.
+    /// Нужно для «проводных» имён, которые легальны в query-string, но не в синтаксисе идентификатора:
+    /// вложенная модель ASP.NET биндится по точечному имени (<c>Paging.Offset</c>), заголовки приходят
+    /// через дефис (<c>Content-Type</c>). Без кавычек такой ключ — синтаксическая ошибка.
+    /// </summary>
+    /// <param name="key">Ключ свойства.</param>
+    /// <returns>Ключ как есть либо в одинарных кавычках.</returns>
+    private static string QuoteKeyIfNeeded(string key)
+    {
+        if (key.Length == 0)
+            return "''";
+
+        // Уже закавычен вызывающей стороной — не дублируем.
+        if ((key[0] == '\'' || key[0] == '"') && key[^1] == key[0])
+            return key;
+
+        var isIdentifier = (char.IsLetter(key[0]) || key[0] == '_' || key[0] == '$')
+            && key.All(c => char.IsLetterOrDigit(c) || c == '_' || c == '$');
+
+        return isIdentifier ? key : $"'{key}'";
+>>>>>>> gitlab/fix/ts-nested-query-param-names
     }
 
     private static bool IsSafeObjectKey(string name) =>

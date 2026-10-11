@@ -374,15 +374,17 @@ public sealed class UndiciClientAstBuilder
         foreach (var parameter in operation.QueryParameters)
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
+            // Ключ — «проводное» имя (Paging.Offset), значение читается по sanitized-свойству
+            // (Paging_Offset): ASP.NET биндит вложенную модель по точечному имени.
             if (parameter.IsRequired)
             {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode(parameter.Name), access));
+                properties.Add(new PropertyAssignmentNode(new IdentifierNode(parameter.OriginalName), access));
             }
             else
             {
                 properties.Add(SpreadProperty(new ConditionalExpressionNode(
                     new BinaryExpressionNode(access, BinaryOperator.NotEqual, Id("undefined")),
-                    Object((parameter.Name, access)),
+                    Object((parameter.OriginalName, access)),
                     EmptyObject())));
             }
         }

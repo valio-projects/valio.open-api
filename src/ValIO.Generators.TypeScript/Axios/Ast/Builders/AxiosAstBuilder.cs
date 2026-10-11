@@ -108,11 +108,15 @@ public class AxiosAstBuilder
         {
             properties.Add(new PropertyAssignmentNode(
                 new IdentifierNode("params"),
+<<<<<<< HEAD
                 TypeScriptWireParameterObject.BuildFromSource(
                     operation.QueryParameters,
                     paramsSource.QueryParamsSource,
                     parameterModel.QueryMayBeUndefined,
                     omitUndefinedValues: true)));
+=======
+                BuildQueryParamsSourceForAxios(operation, paramsSource.QueryParamsSource)));
+>>>>>>> gitlab/fix/ts-nested-query-param-names
         }
 
         if (paramsSource.HeadersSource != null && operation.HeaderParameters.Count > 0)
@@ -181,7 +185,42 @@ public class AxiosAstBuilder
     }
 
     /// <summary>
+<<<<<<< HEAD
     /// Builds an Axios request configuration for a legacy flat operation function.
+=======
+    /// Выражение для <c>params</c> в axios-config. Обычно это сам query-объект (<c>parsedQuery</c>) —
+    /// его свойства и есть ключи query-string. Но если sanitize переименовал хотя бы один параметр
+    /// (вложенная модель <c>Paging.Offset</c> → идентификатор <c>Paging_Offset</c>), объект передавать
+    /// нельзя: axios отправит ключи с подчёркиванием, и ASP.NET model binding их не найдёт. В этом
+    /// случае собираем литерал, отображающий «проводное» имя на sanitized-свойство. Отсутствующие
+    /// опциональные параметры axios отбрасывает сам (<c>undefined</c> не сериализуется), поэтому
+    /// условный спред не нужен.
+    /// </summary>
+    /// <param name="operation">IR-операция, чьи query-параметры проверяются на переименование.</param>
+    /// <param name="queryParamsSource">Выражение исходного query-объекта.</param>
+    /// <returns>Исходное выражение либо объектный литерал с «проводными» ключами.</returns>
+    private static ExpressionNode BuildQueryParamsSourceForAxios(
+        IrOperation operation,
+        ExpressionNode queryParamsSource)
+    {
+        var needsWireNames = operation.QueryParameters
+            .Any(p => !string.Equals(p.OriginalName, p.Name, StringComparison.Ordinal));
+
+        if (!needsWireNames)
+            return queryParamsSource;
+
+        var mapped = operation.QueryParameters
+            .Select(p => new PropertyAssignmentNode(
+                new IdentifierNode(p.OriginalName),
+                new MemberAccessExpressionNode(queryParamsSource, new IdentifierNode(p.Name))))
+            .ToImmutableList();
+
+        return new ObjectLiteralExpressionNode(mapped, preferMultilineFormat: true);
+    }
+
+    /// <summary>
+    /// Строит AxiosConfigNode из IrOperation
+>>>>>>> gitlab/fix/ts-nested-query-param-names
     /// </summary>
     /// <param name="operation">The operation whose request is generated.</param>
     /// <returns>An Axios configuration AST node preserving OpenAPI wire names.</returns>

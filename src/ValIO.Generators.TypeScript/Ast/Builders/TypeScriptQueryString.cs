@@ -76,8 +76,13 @@ public static class TypeScriptQueryString
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(querySource, parameter.Name, queryMayBeUndefined);
             // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
+<<<<<<< HEAD
             // Ключ query-string — «проводное» имя (Paging.Offset), а не sanitized-идентификатор (Paging_Offset):
             // значение всё так же читаем по sanitized-полю распарсенного объекта.
+=======
+            // The key is the wire name (Paging.Offset), not the sanitized TS property (Paging_Offset):
+            // ASP.NET binds a nested model by its dotted name and finds nothing under the underscore.
+>>>>>>> gitlab/fix/ts-nested-query-param-names
             var setCall = new ExpressionStatementNode(new CallExpressionNode(
                 Member(Id("query"), "set"),
                 ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
