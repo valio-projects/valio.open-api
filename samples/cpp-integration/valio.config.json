@@ -1,0 +1,36 @@
+{
+  "projects": {
+    "CppIntegration": {
+      "language": "cpp",
+      "schema": "./openapi.json",
+      "outputPath": "./generated",
+      "namespace": "Integration",
+      "generateModels": true,
+      "generateClients": true,
+      "options": {
+        "runtime": "std",
+        "namespace": "Integration",
+        "cxxStandard": 17,
+        "apiStyle": "both",
+        "clientShape": "interface+impl",
+        "emitSerializers": true,
+        "emitCmake": true
+      }
+    },
+    "CppDefinitions": {
+      "language": "cpp",
+      "schema": "./openapi.json",
+      "outputPath": "./definitions",
+      "namespace": "Integration",
+      "generateModels": true,
+      "generateClients": false,
+      "options": {
+        "runtime": "std",
+        "namespace": "Integration",
+        "cxxStandard": 17,
+        "emitSerializers": false,
+        "emitCmake": true
+      }
+    }
+  }
+}

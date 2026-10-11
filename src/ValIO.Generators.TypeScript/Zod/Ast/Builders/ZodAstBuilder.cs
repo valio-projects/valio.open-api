@@ -11,6 +11,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.IR.Utilities;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
+using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
 
@@ -53,10 +54,10 @@ public class ZodAstBuilder
     }
     
     /// <summary>
-    /// Строит ZodSchemaNode из IrModel с учётом oneOf, allOf, anyOf
+    /// Builds a model schema, intersecting sibling properties with composition constraints.
     /// </summary>
-    /// <param name="model">IR модель</param>
-    /// <returns>AST узел Zod схемы (object, union или intersection)</returns>
+    /// <param name="model">The model being validated.</param>
+    /// <returns>The complete model schema.</returns>
     public ZodSchemaNode BuildZodSchemaFromIrModel(IrModel model)
     {
         if (model.Composition != null && model.Composition.Types.Count > 0)
@@ -68,22 +69,14 @@ public class ZodAstBuilder
                     var unionVariants = model.Composition.Types
                         .Select(t => BuildZodSchemaFromIrType(t, model.Name))
                         .ToImmutableList();
-                    if (unionVariants.Count == 1)
-                        return unionVariants[0];
-                    // z.discriminatedUnion needs every variant to be an object with a literal at the
-                    // discriminator key. Enable it only for oneOf + a declared discriminator where every
-                    // variant is a (non-self) model reference — the generated {Model}Schema are z.object,
-                    // whereas a self-reference would render as z.lazy(...) which discriminatedUnion rejects.
-                    // The key is sanitized exactly like model property names so it matches the variants.
-                    var canDiscriminate = model.Composition.Kind == IrCompositionKind.OneOf
-                        && !string.IsNullOrWhiteSpace(model.Composition.DiscriminatorPropertyName)
-                        && model.Composition.Types.All(t =>
-                            t is IrModelReference m && !m.ModelName.Equals(model.Name, StringComparison.OrdinalIgnoreCase));
-                    var discriminator = canDiscriminate
-                        ? _namingConverter.SanitizeReservedKeyword(
-                            _namingConverter.SanitizeIdentifier(model.Composition.DiscriminatorPropertyName!))
-                        : null;
-                    return new ZodUnionNode(unionVariants, discriminator: discriminator);
+                    // Named schemas have the general ZodSchema<T> type and can contain intersections or
+                    // lazy references. A discriminator alone cannot prove they are Zod object schemas.
+                    ZodSchemaNode alternatives = unionVariants.Count == 1
+                        ? unionVariants[0]
+                        : new ZodUnionNode(unionVariants, isExclusive: model.Composition.Kind == IrCompositionKind.OneOf);
+                    return model.Properties.Count == 0
+                        ? alternatives
+                        : new ZodIntersectionNode([alternatives, BuildZodObject(model)]);
                 case IrCompositionKind.AllOf:
                     var allOfSchemas = model.Composition.Types
                         .Select(t => BuildZodSchemaFromIrType(t, model.Name))
@@ -150,18 +143,19 @@ public class ZodAstBuilder
     }
     
     /// <summary>
-    /// Строит ZodPropertyNode из IrProperty
+    /// Builds a property schema with independent presence and null acceptance.
     /// </summary>
-    /// <param name="property">IR свойство</param>
-    /// <param name="currentModelName">Имя текущей модели (для constraints ref и self-reference)</param>
-    /// <param name="constraintsObjectName">Имя const объекта с метаданными валидации (например MyModelConstraints), null если не генерируем</param>
-    /// <returns>AST узел Zod property</returns>
+    /// <param name="property">The property metadata and constraints.</param>
+    /// <param name="currentModelName">The containing model for recursive references.</param>
+    /// <param name="constraintsObjectName">An optional exported constraint constant object.</param>
+    /// <returns>The property schema with independent nullable and optional wrappers.</returns>
     public ZodPropertyNode BuildZodProperty(IrProperty property, string? currentModelName = null, string? constraintsObjectName = null)
     {
         var name = new IdentifierNode(property.Name);
         var unwrapNullable = TryUnwrapIrNullableRoot(property.Type, out var innerIr);
         var schemaIr = unwrapNullable ? innerIr! : property.Type;
-        var schema = BuildZodSchemaFromIrType(schemaIr, currentModelName, property, constraintsObjectName);
+        var schema = BuildZodSchemaFromIrType(schemaIr, currentModelName, property, constraintsObjectName,
+            property.Constraints ?? property.Type.Constraints);
         
         return new ZodPropertyNode(
             name: name,
@@ -172,34 +166,46 @@ public class ZodAstBuilder
     }
     
     /// <summary>
-    /// Строит ZodSchemaNode из IrType
+    /// Builds a schema from an IR type with constraints applied inside nullable and optional wrappers.
     /// </summary>
-    /// <param name="irType">IR тип</param>
-    /// <param name="currentModelName">Имя текущей модели</param>
-    /// <param name="property">Контекст свойства (для constraints), null для параметров</param>
-    /// <param name="constraintsObjectName">Имя const объекта (MyModelConstraints)</param>
+    /// <param name="irType">The type being validated.</param>
+    /// <param name="currentModelName">The containing model for recursive references.</param>
+    /// <param name="property">An optional property context.</param>
+    /// <param name="constraintsObjectName">An optional exported property constraint object.</param>
+    /// <param name="constraints">Constraints propagated through value wrappers.</param>
+    /// <returns>The schema preserving type and composition metadata.</returns>
     public ZodSchemaNode BuildZodSchemaFromIrType(
         ValIO.Core.IR.Types.IrType irType,
         string? currentModelName = null,
         IrProperty? property = null,
-        string? constraintsObjectName = null)
+        string? constraintsObjectName = null,
+        IrPropertyConstraints? constraints = null)
     {
+        constraints ??= property?.Constraints ?? irType.Constraints;
+        if (irType is IrPrimitiveType constrainedPrimitive && constrainedPrimitive.Constraints is { } local
+            && constraints is not null && !ValidationConstraints.Equivalent(local, constraints))
+            return new ZodIntersectionNode([
+                BuildZodPrimitive(constrainedPrimitive, local),
+                BuildZodPrimitive(constrainedPrimitive, constraints,
+                    property?.Constraints != null && !string.IsNullOrEmpty(constraintsObjectName)
+                        ? $"{constraintsObjectName}.{property.Name}" : null, property?.Description)
+            ]);
         return irType switch
         {
             IrPrimitiveType p => BuildZodPrimitive(
                 p,
-                property?.Constraints,
-                property != null && !string.IsNullOrEmpty(constraintsObjectName)
+                constraints,
+                property?.Constraints != null && !string.IsNullOrEmpty(constraintsObjectName)
                     ? $"{constraintsObjectName}.{property.Name}"
                     : null,
                 property?.Description),
             IrModelReference r => BuildZodModelReference(r, currentModelName),
             IrArrayType arr => BuildZodArray(arr, currentModelName),
-            IrDictionaryType dict => BuildZodDictionary(dict),
-            IrUnionType union => BuildZodUnion(union, currentModelName, property, constraintsObjectName),
-            IrIntersectionType intersection => BuildZodIntersection(intersection, currentModelName, property, constraintsObjectName),
-            IrNullableType nullable => BuildZodNullable(nullable, currentModelName, property, constraintsObjectName),
-            IrOptionalType optional => BuildZodOptional(optional, currentModelName, property, constraintsObjectName),
+            IrDictionaryType dict => BuildZodDictionary(dict, currentModelName),
+            IrUnionType union => BuildZodUnion(union, currentModelName, property, constraintsObjectName, constraints),
+            IrIntersectionType intersection => BuildZodIntersection(intersection, currentModelName, property, constraintsObjectName, constraints),
+            IrNullableType nullable => BuildZodNullable(nullable, currentModelName, property, constraintsObjectName, constraints),
+            IrOptionalType optional => BuildZodOptional(optional, currentModelName, property, constraintsObjectName, constraints),
             _ => BuildZodAny()
         };
     }
@@ -248,9 +254,13 @@ public class ZodAstBuilder
     // Приватные вспомогательные методы для IR типов
     
     /// <summary>
-    /// Строит Zod схему из IrPrimitiveType.
-    /// Использует ZodExpressionBuilder для AST цепочки вызовов (uuid, datetime, min, max и т.д.).
+    /// Builds runtime instance schemas for binary types and shared primitive format or constraint expressions.
     /// </summary>
+    /// <param name="primitiveType">The primitive's IR metadata.</param>
+    /// <param name="constraints">The primitive's validation constraints.</param>
+    /// <param name="constraintsRef">An optional exported constraint constant reference.</param>
+    /// <param name="description">An optional schema description.</param>
+    /// <returns>The complete primitive schema.</returns>
     private ZodSchemaNode BuildZodPrimitive(
         IrPrimitiveType primitiveType,
         IrPropertyConstraints? constraints = null,
@@ -258,18 +268,19 @@ public class ZodAstBuilder
         string? description = null)
     {
         var kind = primitiveType.PrimitiveKind;
-        // Binary/ByteArray/File сериализуются runtime'ом как Blob/File.
-        // Используем z.instanceof(Blob|File) — это правильно типизируется
-        // (vs. z.any(), который выводится как `any | undefined` и ломает
-        // required‑поля).
-        if (kind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray)
+        if (kind is IrPrimitiveKind.Binary)
             return BuildZodInstanceOf("Blob");
+        if (kind is IrPrimitiveKind.ByteArray)
+            return BuildZodInstanceOf("Uint8Array");
         if (kind is IrPrimitiveKind.File)
             return BuildZodInstanceOf("File");
 
         return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef, _uuidFormat, description);
     }
 
+    /// <summary>Builds an instance validator matching the generated runtime binary type.</summary>
+    /// <param name="typeName">The runtime constructor name.</param>
+    /// <returns>The instance validation expression.</returns>
     private static ZodExpressionSchemaNode BuildZodInstanceOf(string typeName)
     {
         return new ZodExpressionSchemaNode(new CallExpressionNode(
@@ -301,44 +312,66 @@ public class ZodAstBuilder
     }
     
     /// <summary>
-    /// Строит Zod схему из IrDictionaryType
+    /// Builds a record schema that validates both keys and values, preserving recursive references.
     /// </summary>
-    private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType)
+    /// <param name="dictionaryType">The dictionary type to validate.</param>
+    /// <param name="currentModelName">The containing model, used for lazy self references.</param>
+    /// <returns>A record expression compatible with Zod 3 and Zod 4.</returns>
+    private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType, string? currentModelName)
     {
-        _ = BuildZodSchemaFromIrType(dictionaryType.ValueType, null, null, null);
-        return BuildZodAny();
+        return new ZodExpressionSchemaNode(new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("z")),
+                new IdentifierNode("record")),
+            ImmutableList.Create<ExpressionNode>(
+                BuildZodSchemaFromIrType(dictionaryType.KeyType, currentModelName),
+                BuildZodSchemaFromIrType(dictionaryType.ValueType, currentModelName))));
     }
     
     /// <summary>
-    /// Строит Zod схему из IrUnionType
+    /// Builds inclusive or exclusive alternatives while retaining value constraints.
     /// </summary>
+    /// <param name="unionType">The alternatives and their matching semantics.</param>
+    /// <param name="currentModelName">The containing model for recursive references.</param>
+    /// <param name="property">The property constraint context.</param>
+    /// <param name="constraintsObjectName">An optional exported constraint object.</param>
+    /// <param name="constraints">Constraints on the alternatives.</param>
+    /// <returns>The cardinality-aware alternative schema.</returns>
     private ZodSchemaNode BuildZodUnion(
         IrUnionType unionType,
         string? currentModelName = null,
         IrProperty? property = null,
-        string? constraintsObjectName = null)
+        string? constraintsObjectName = null,
+        IrPropertyConstraints? constraints = null)
     {
         var variants = unionType.Types
-            .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName))
+            .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName, constraints))
             .ToImmutableList();
         if (variants.Count == 0)
             return BuildZodAny();
         if (variants.Count == 1)
             return variants[0];
-        return new ZodUnionNode(variants);
+        return new ZodUnionNode(variants, isExclusive: unionType.Kind == IrUnionKind.OneOf);
     }
     
     /// <summary>
-    /// Строит Zod схему из IrIntersectionType
+    /// Builds the intersecting schemas, preserving value constraints on each member.
     /// </summary>
+    /// <param name="intersectionType">The intersecting types.</param>
+    /// <param name="currentModelName">The containing model.</param>
+    /// <param name="property">The optional property context.</param>
+    /// <param name="constraintsObjectName">The optional exported constraint object.</param>
+    /// <param name="constraints">Constraints applying to the value.</param>
+    /// <returns>The intersection schema.</returns>
     private ZodSchemaNode BuildZodIntersection(
         IrIntersectionType intersectionType,
         string? currentModelName = null,
         IrProperty? property = null,
-        string? constraintsObjectName = null)
+        string? constraintsObjectName = null,
+        IrPropertyConstraints? constraints = null)
     {
         var schemas = intersectionType.Types
-            .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName))
+            .Select(t => BuildZodSchemaFromIrType(t, currentModelName, property, constraintsObjectName, constraints))
             .ToImmutableList();
         if (schemas.Count == 0)
             return BuildZodAny();
@@ -348,28 +381,42 @@ public class ZodAstBuilder
     }
     
     /// <summary>
-    /// Строит Zod схему из IrNullableType
+    /// Applies value constraints before allowing explicit null.
     /// </summary>
+    /// <param name="nullableType">The nullable type.</param>
+    /// <param name="currentModelName">The containing model.</param>
+    /// <param name="property">The optional property context.</param>
+    /// <param name="constraintsObjectName">The optional exported constraint object.</param>
+    /// <param name="constraints">Constraints applying to the inner value.</param>
+    /// <returns>The nullable schema.</returns>
     private ZodSchemaNode BuildZodNullable(
         IrNullableType nullableType,
         string? currentModelName = null,
         IrProperty? property = null,
-        string? constraintsObjectName = null)
+        string? constraintsObjectName = null,
+        IrPropertyConstraints? constraints = null)
     {
-        var innerSchema = BuildZodSchemaFromIrType(nullableType.InnerType, currentModelName, property, constraintsObjectName);
+        var innerSchema = BuildZodSchemaFromIrType(nullableType.InnerType, currentModelName, property, constraintsObjectName, constraints);
         return new ZodEffectsNode(innerSchema, ZodEffectKind.Nullable);
     }
     
     /// <summary>
-    /// Строит Zod схему из IrOptionalType
+    /// Applies value constraints before allowing undefined.
     /// </summary>
+    /// <param name="optionalType">The optional type.</param>
+    /// <param name="currentModelName">The containing model.</param>
+    /// <param name="property">The optional property context.</param>
+    /// <param name="constraintsObjectName">The optional exported constraint object.</param>
+    /// <param name="constraints">Constraints applying to the inner value.</param>
+    /// <returns>The optional schema.</returns>
     private ZodSchemaNode BuildZodOptional(
         IrOptionalType optionalType,
         string? currentModelName = null,
         IrProperty? property = null,
-        string? constraintsObjectName = null)
+        string? constraintsObjectName = null,
+        IrPropertyConstraints? constraints = null)
     {
-        var innerSchema = BuildZodSchemaFromIrType(optionalType.InnerType, currentModelName, property, constraintsObjectName);
+        var innerSchema = BuildZodSchemaFromIrType(optionalType.InnerType, currentModelName, property, constraintsObjectName, constraints);
         return new ZodEffectsNode(innerSchema, ZodEffectKind.Optional);
     }
     

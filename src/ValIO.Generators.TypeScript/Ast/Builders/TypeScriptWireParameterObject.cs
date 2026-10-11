@@ -19,6 +19,54 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// </remarks>
 public static class TypeScriptWireParameterObject
 {
+    /// <summary>Builds HTTP headers with original names and a single correctly defaulted content type.</summary>
+    /// <param name="operation">The operation whose body encoding determines the content type.</param>
+    /// <param name="source">The optional header parameter group.</param>
+    /// <param name="sourceMayBeUndefined">Whether the parameter group may be absent.</param>
+    /// <param name="includeJsonContentType">Whether this transport requires an explicit JSON content type.</param>
+    /// <returns>The header object with unavailable values omitted.</returns>
+    public static ObjectLiteralExpressionNode BuildHeaders(
+        IrOperation operation,
+        ExpressionNode? source,
+        bool sourceMayBeUndefined,
+        bool includeJsonContentType = false)
+    {
+        var contentType = DefaultContentType(operation.RequestBody, includeJsonContentType);
+        var headerParameters = operation.HeaderParameters;
+        var contentTypeParameter = contentType == null ? null : headerParameters.FirstOrDefault(parameter =>
+            string.Equals(parameter.OriginalName, "Content-Type", StringComparison.OrdinalIgnoreCase));
+        var remaining = contentTypeParameter == null
+            ? headerParameters
+            : headerParameters.Where(parameter => parameter != contentTypeParameter).ToList();
+        var wireHeaders = source == null
+            ? EmptyObject()
+            : BuildFromSource(remaining, source, sourceMayBeUndefined, omitUndefinedValues: true);
+        if (contentType == null)
+            return wireHeaders;
+
+        ExpressionNode value = new LiteralExpressionNode(contentType, LiteralKind.String);
+        if (contentTypeParameter != null && source != null)
+        {
+            var provided = TypeScriptRequestPath.BuildParameterAccess(source, contentTypeParameter.Name, sourceMayBeUndefined);
+            value = new BinaryExpressionNode(provided, BinaryOperator.NullishCoalescing, value);
+        }
+
+        return new ObjectLiteralExpressionNode(
+            wireHeaders.Properties.ToImmutableList().Insert(0, new PropertyAssignmentNode(WireKey(contentTypeParameter?.OriginalName ?? "Content-Type"), value)),
+            preferMultilineFormat: true);
+    }
+
+    /// <summary>Resolves default content types for request bodies that serialize to text.</summary>
+    /// <param name="body">The optional request-body contract.</param>
+    /// <param name="includeJson">Whether to explicitly describe JSON bodies.</param>
+    /// <returns>The required text content type, or no default for native multipart/binary values.</returns>
+    internal static string? DefaultContentType(IrRequestBody? body, bool includeJson) => body switch
+    {
+        { IsFormUrlEncoded: true } => "application/x-www-form-urlencoded",
+        { IsJson: true } when includeJson => "application/json",
+        _ => null,
+    };
+
     /// <summary>
     /// Builds an object literal by reading every parameter from <paramref name="source"/> through its sanitized
     /// <see cref="IrParameter.Name"/> and writing it under its original <see cref="IrParameter.OriginalName"/>.

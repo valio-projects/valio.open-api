@@ -18,27 +18,29 @@ namespace ValIO.Generators.TypeScript.Zod.Ast.Builders;
 public static class ZodExpressionBuilder
 {
     /// <summary>
-    /// Строит выражение для Zod примитива с опциональными уточнениями (uuid, datetime, min, max и т.д.)
+    /// Builds a primitive schema with shared format and value refinements.
     /// </summary>
-    /// <param name="primitiveKind">Примитивный IR тип</param>
-    /// <param name="useBigInt">Использовать bigint для Long</param>
-    /// <param name="constraints">Ограничения свойства (min, max, minLength, maxLength, pattern)</param>
-    /// <param name="constraintsRef">Ссылка на объект констант вида "ModelNameConstraints.propertyName" для подстановки значений</param>
-    /// <returns>ZodExpressionSchemaNode с полной цепочкой вызовов</returns>
+    /// <param name="primitiveKind">The primitive IR kind.</param>
+    /// <param name="useBigInt">Whether int64 values use JavaScript bigint.</param>
+    /// <param name="constraints">Value constraints to retain in the schema.</param>
+    /// <param name="constraintsRef">An optional reference to exported constraint constants.</param>
+    /// <param name="uuidFormat">The configured UUID validation mode.</param>
+    /// <param name="description">An optional description attached as schema metadata.</param>
+    /// <param name="coerceNumbers">Whether numeric input may be coerced to its runtime representation.</param>
+    /// <returns>The complete schema expression.</returns>
     public static ZodExpressionSchemaNode BuildPrimitiveExpression(
         IrPrimitiveKind primitiveKind,
         bool useBigInt,
         IrPropertyConstraints? constraints = null,
         string? constraintsRef = null,
         string? uuidFormat = null,
-        string? description = null)
+        string? description = null,
+        bool coerceNumbers = false)
     {
-        var expr = BuildBasePrimitive(primitiveKind, useBigInt);
+        var expr = BuildBasePrimitive(primitiveKind, useBigInt, coerceNumbers);
         expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
         expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
         // Carry the OpenAPI property description into the schema as Zod metadata (.describe(...)).
-        // Многострочные описания иначе выводят сырой перевод строки прямо в строковый литерал и рвут его
-        // (unterminated string literal) — схлопываем любые пробелы/переводы строк в один пробел.
         if (!string.IsNullOrWhiteSpace(description))
         {
             var singleLineDescription = System.Text.RegularExpressions.Regex.Replace(description!, @"\s+", " ").Trim();
@@ -49,9 +51,13 @@ public static class ZodExpressionBuilder
     }
 
     /// <summary>
-    /// Базовое выражение: z.string(), z.coerce.number() и т.д.
+    /// Builds the primitive schema before format and constraint refinements.
     /// </summary>
-    private static ExpressionNode BuildBasePrimitive(IrPrimitiveKind kind, bool useBigInt)
+    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="useBigInt">Whether int64 values use bigint.</param>
+    /// <param name="coerceNumbers">Whether numeric input is coerced.</param>
+    /// <returns>The base schema expression.</returns>
+    private static ExpressionNode BuildBasePrimitive(IrPrimitiveKind kind, bool useBigInt, bool coerceNumbers)
     {
         ExpressionNode baseCall;
         switch (kind)
@@ -64,31 +70,26 @@ public static class ZodExpressionBuilder
                 baseCall = Call(MemberAccess(Identifier("z"), "string"), Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Number:
-                baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "number"),
-                    Array.Empty<ExpressionNode>());
+                baseCall = BuildNumber("number", coerceNumbers);
                 break;
             case IrPrimitiveKind.Integer:
-                baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "number"),
-                    Array.Empty<ExpressionNode>());
+                baseCall = BuildNumber("number", coerceNumbers);
                 baseCall = Chain(baseCall, "int", Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Long when useBigInt:
-                baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "bigint"),
-                    Array.Empty<ExpressionNode>());
+                baseCall = BuildNumber("bigint", coerceNumbers);
                 break;
             case IrPrimitiveKind.Long:
-                baseCall = Call(
-                    MemberAccess(MemberAccess(Identifier("z"), "coerce"), "number"),
-                    Array.Empty<ExpressionNode>());
+                baseCall = Chain(BuildNumber("number", coerceNumbers), "int", Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Boolean:
                 baseCall = Call(MemberAccess(Identifier("z"), "boolean"), Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Null:
                 baseCall = Call(MemberAccess(Identifier("z"), "null"), Array.Empty<ExpressionNode>());
+                break;
+            case IrPrimitiveKind.Void:
+                baseCall = Call(MemberAccess(Identifier("z"), "void"), Array.Empty<ExpressionNode>());
                 break;
             case IrPrimitiveKind.Any:
             default:
@@ -97,6 +98,16 @@ public static class ZodExpressionBuilder
         }
 
         return baseCall;
+    }
+
+    /// <summary>Builds a numeric schema with coercion confined to the requested input boundary.</summary>
+    /// <param name="method">The Zod numeric factory.</param>
+    /// <param name="coerce">Whether coercion is enabled.</param>
+    /// <returns>The numeric schema expression.</returns>
+    private static ExpressionNode BuildNumber(string method, bool coerce)
+    {
+        var target = coerce ? MemberAccess(Identifier("z"), "coerce") : Identifier("z");
+        return Call(MemberAccess(target, method), Array.Empty<ExpressionNode>());
     }
 
     /// <summary>

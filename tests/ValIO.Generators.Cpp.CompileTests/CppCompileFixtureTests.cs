@@ -26,6 +26,8 @@ namespace ValIO.Generators.Cpp.CompileTests;
 [Parallelizable(ParallelScope.None)]
 public class CppCompileFixtureTests
 {
+    /// <summary>Creates models and operations that exercise enum overloads, nullable codecs, and multipart transport.</summary>
+    /// <returns>The native smoke contract.</returns>
     private static IrDocument BuildDocument()
     {
         var order = new IrModel
@@ -62,6 +64,86 @@ public class CppCompileFixtureTests
                 new IrEnumValue { Name = "placed", Value = "placed" },
                 new IrEnumValue { Name = "approved", Value = "approved" },
             ],
+        };
+
+        var probe = new IrModel
+        {
+            Name = "CodecProbe",
+            Properties =
+            [
+                new IrProperty
+                {
+                    Name = "RequiredNullable", OriginalName = "required_null", IsRequired = true,
+                    Type = new IrNullableType { InnerType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } },
+                },
+                new IrProperty
+                {
+                    Name = "OptionalNullable", OriginalName = "optional_null", IsRequired = false,
+                    Type = new IrNullableType { InnerType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } },
+                },
+                new IrProperty
+                {
+                    Name = "NullableItems", OriginalName = "nullable_items", IsRequired = true,
+                    Type = new IrArrayType { ElementType = new IrNullableType { InnerType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } } },
+                },
+                new IrProperty { Name = "Color", OriginalName = "color", IsRequired = false, Type = new IrModelReference { ModelName = "Color" } },
+            ],
+        };
+        var upload = new IrModel
+        {
+            Name = "Upload",
+            Properties =
+            [
+                new IrProperty { Name = "Title", OriginalName = "document.title", IsRequired = false, Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } },
+                new IrProperty
+                {
+                    Name = "Files", OriginalName = "documents", IsRequired = true,
+                    Type = new IrArrayType { ElementType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Binary } },
+                },
+            ],
+        };
+        var nameBase = new IrModel
+        {
+            Name = "NameBase",
+            Properties = [new IrProperty { Name = "Name", OriginalName = "name", IsRequired = true, Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } }],
+        };
+        var idBase = new IrModel
+        {
+            Name = "IdBase",
+            Properties = [new IrProperty { Name = "Id", OriginalName = "id", IsRequired = true, Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Long } }],
+        };
+        var singleBase = new IrModel
+        {
+            Name = "SingleBase", Properties = [],
+            Composition = new IrComposition { Kind = IrCompositionKind.AllOf, Types = [new IrModelReference { ModelName = "NameBase" }] },
+        };
+        var combined = new IrModel
+        {
+            Name = "Combined", Properties = [],
+            Composition = new IrComposition
+            {
+                Kind = IrCompositionKind.AllOf,
+                Types = [new IrModelReference { ModelName = "NameBase" }, new IrModelReference { ModelName = "IdBase" }],
+            },
+        };
+        var scalar = new IrOperation
+        {
+            MethodName = "GetActive", HttpMethod = "GET", Path = "/store/active",
+            PathParameters = [], HeaderParameters = [],
+            QueryParameters =
+            [
+                new IrParameter { Name = "Level", OriginalName = "filter[level]", IsRequired = true, Type = new IrModelReference { ModelName = "Level" } },
+            ],
+            Responses = [new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }],
+        };
+
+        // Builds a multipart endpoint with a conventional PascalCase operation name.
+        IrOperation UploadOperation(string verb) => new()
+        {
+            MethodName = $"Upload{verb[0]}{verb[1..].ToLowerInvariant()}", HttpMethod = verb, Path = "/store/upload",
+            PathParameters = [], QueryParameters = [], HeaderParameters = [],
+            RequestBody = new IrRequestBody { Type = new IrModelReference { ModelName = "Upload" }, IsRequired = true, ContentType = "multipart/form-data" },
+            Responses = [new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }],
         };
 
         IrOperation Operation(string method, string path, string name, string? body = null, string successCode = "200", bool successBody = true) => new()
@@ -110,8 +192,18 @@ public class CppCompileFixtureTests
         return new IrDocument
         {
             Metadata = new IrDocumentMetadata(),
-            Models = [order],
-            Enums = [status],
+            Models = [order, probe, upload, nameBase, idBase, singleBase, combined, new IrModel { Name = "Empty", Properties = [] }],
+            Enums =
+            [
+                status,
+                new IrEnum { Name = "Color", BaseType = IrEnumBaseType.String, Values = [new IrEnumValue { Name = "red", Value = "red" }] },
+                new IrEnum { Name = "Level", BaseType = IrEnumBaseType.Integer, Values = [new IrEnumValue { Name = "high", Value = 2 }] },
+                new IrEnum
+                {
+                    Name = "Wide", BaseType = IrEnumBaseType.Integer,
+                    Values = [new IrEnumValue { Name = "minimum", Value = long.MinValue }, new IrEnumValue { Name = "maximum", Value = long.MaxValue }],
+                },
+            ],
             Clients =
             [
                 new IrClient
@@ -122,6 +214,8 @@ public class CppCompileFixtureTests
                         Operation("GET", "/store/order/{orderId}", "GetOrderById"),
                         Operation("POST", "/store/order", "PlaceOrder", body: "Order"),
                         Operation("DELETE", "/store/order/{orderId}", "DeleteOrder", successCode: "204", successBody: false),
+                        scalar,
+                        UploadOperation("POST"), UploadOperation("PUT"), UploadOperation("PATCH"),
                     ],
                 },
             ],
@@ -133,15 +227,22 @@ public class CppCompileFixtureTests
         };
     }
 
+    /// <summary>Runs the real C++ pipeline and writes its output into an isolated fixture directory.</summary>
+    /// <param name="outputDirectory">The generated output directory.</param>
+    /// <param name="cxxStandard">The target C++ standard.</param>
+    /// <param name="apiStyle">The client execution style.</param>
+    /// <param name="clientShape">The client declaration shape.</param>
+    /// <returns>The generated output directory.</returns>
     private static async Task<string> GenerateIntoAsync(string outputDirectory, int cxxStandard, string apiStyle, string clientShape)
     {
         var options = new CppGenerationOptions
         {
             Runtime = CppRuntimeProfile.Std,
             CxxStandard = cxxStandard,
-            ApiStyle = apiStyle == "both" ? CppApiStyle.Both : CppApiStyle.Sync,
+            ApiStyle = apiStyle switch { "both" => CppApiStyle.Both, "async" => CppApiStyle.Async, _ => CppApiStyle.Sync },
             ClientShape = clientShape == "interface+impl" ? CppClientShape.InterfaceImpl : CppClientShape.Class,
             Namespace = "Petstore",
+            EmitCmake = true,
         };
 
         var services = new ServiceCollection()
@@ -178,6 +279,12 @@ public class CppCompileFixtureTests
         return null;
     }
 
+    /// <summary>Runs a native tool with concurrent output capture and a bounded process-tree timeout.</summary>
+    /// <param name="fileName">The native executable.</param>
+    /// <param name="arguments">The tool arguments.</param>
+    /// <param name="workingDirectory">The isolated fixture directory.</param>
+    /// <param name="output">The captured standard output and error text.</param>
+    /// <returns>The exit code, or minus one when the process exceeds its timeout.</returns>
     private static int RunTool(string fileName, string arguments, string workingDirectory, out string output)
     {
         using var process = new Process
@@ -192,14 +299,64 @@ public class CppCompileFixtureTests
             },
         };
         process.Start();
-        output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
-        process.WaitForExit((int)TimeSpan.FromMinutes(10).TotalMilliseconds);
-        return process.ExitCode;
+        var standardOutput = process.StandardOutput.ReadToEndAsync();
+        var standardError = process.StandardError.ReadToEndAsync();
+        var exited = process.WaitForExit((int)TimeSpan.FromMinutes(10).TotalMilliseconds);
+        if (!exited)
+        {
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit();
+        }
+        output = standardOutput.GetAwaiter().GetResult() + standardError.GetAwaiter().GetResult();
+        return exited ? process.ExitCode : -1;
     }
 
+    /// <summary>Uses an optional caller-provided checkout of a pinned dependency without downloading it again.</summary>
+    /// <param name="environmentVariable">The environment variable containing the dependency source directory.</param>
+    /// <param name="cmakeVariable">The corresponding FetchContent source override.</param>
+    /// <param name="headerRelativePath">The required public header relative to the source root.</param>
+    /// <returns>A quoted CMake argument, or an empty string when the override is absent.</returns>
+    /// <exception cref="InvalidOperationException">The configured directory lacks its CMake project or public header.</exception>
+    private static string DependencySourceArgument(string environmentVariable, string cmakeVariable, string headerRelativePath)
+    {
+        var configuredPath = Environment.GetEnvironmentVariable(environmentVariable);
+        if (string.IsNullOrWhiteSpace(configuredPath))
+            return string.Empty;
+
+        var sourceRoot = Path.GetFullPath(configuredPath);
+        if (!File.Exists(Path.Combine(sourceRoot, "CMakeLists.txt"))
+            || !File.Exists(Path.Combine(sourceRoot, headerRelativePath)))
+            throw new InvalidOperationException($"{environmentVariable} must identify a dependency source root containing CMakeLists.txt and {headerRelativePath}: {sourceRoot}");
+
+        return $" -D{cmakeVariable}=\"{sourceRoot.Replace('\\', '/')}\"";
+    }
+
+    /// <summary>Enables exact-version installed packages when an offline CMake package prefix is configured.</summary>
+    /// <returns>The installed dependency switch and normalized CMake search prefixes, or an empty string.</returns>
+    /// <exception cref="InvalidOperationException">A configured package search directory does not exist.</exception>
+    private static string InstalledDependencyArguments()
+    {
+        var configuredPath = Environment.GetEnvironmentVariable("VALIO_CPP_CMAKE_PREFIX_PATH");
+        if (string.IsNullOrWhiteSpace(configuredPath))
+            return string.Empty;
+
+        var prefixes = configuredPath.Split(';', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .Select(Path.GetFullPath).ToArray();
+        if (prefixes.Length == 0 || prefixes.Any(prefix => !Directory.Exists(prefix)))
+            throw new InvalidOperationException($"VALIO_CPP_CMAKE_PREFIX_PATH must contain existing CMake package search directories: {configuredPath}");
+
+        return $" -DCMAKE_PREFIX_PATH=\"{string.Join(';', prefixes).Replace('\\', '/')}\" -DVALIO_USE_INSTALLED_DEPENDENCIES=ON";
+    }
+
+    /// <summary>Compiles all generated translation units and runs HTTP and codec contract regressions.</summary>
+    /// <param name="cxxStandard">The native language standard.</param>
+    /// <param name="apiStyle">The client execution style.</param>
+    /// <param name="clientShape">The client declaration shape.</param>
+    /// <returns>The asynchronous test execution.</returns>
     [TestCase(17, "both", "interface+impl")]
     [TestCase(20, "sync", "class")]
     [TestCase(23, "both", "interface+impl")]
+    [TestCase(17, "async", "class")]
     public async Task GeneratedClient_CompilesAndRoundTrips(int cxxStandard, string apiStyle, string clientShape)
     {
         var cmake = FindCmake();
@@ -210,19 +367,25 @@ public class CppCompileFixtureTests
         var generatedDir = Path.Combine(workRoot, "gen");
         var fixturesDir = Path.Combine(AppContext.BaseDirectory, "fixtures");
         var buildDir = Path.Combine(workRoot, "build");
-        // smoke-файл использует async-методы только при apiStyle=both/sync c async.
-        var smokeAsync = apiStyle == "both" ? "1" : "0";
+        // The smoke executable selects the available client execution methods.
+        var smokeAsync = apiStyle is "both" or "async" ? "1" : "0";
+        var asyncOnly = apiStyle == "async" ? "1" : "0";
+        var passed = false;
         try
         {
             await GenerateIntoAsync(generatedDir, cxxStandard, apiStyle, clientShape);
 
-            // cmake -D с backslash-путями даёт «Invalid character escape '\U'» в VerifyGlobs —
-            // генерируем glob-путь в forward-slash форме.
-            var configureArguments = $"-S \"{fixturesDir}\" -B \"{buildDir}\" -DGEN_DIR=\"{generatedDir.Replace('\\', '/')}\" -DCMAKE_CXX_STANDARD={cxxStandard} -DVALIO_SMOKE_ASYNC={smokeAsync}";
+            // Forward slashes prevent CMake from interpreting Windows path characters as escapes.
+            var configureArguments = $"-S \"{fixturesDir}\" -B \"{buildDir}\" -DGEN_DIR=\"{generatedDir.Replace('\\', '/')}\" -DCMAKE_CXX_STANDARD={cxxStandard} -DVALIO_SMOKE_ASYNC={smokeAsync} -DVALIO_ASYNC_ONLY={asyncOnly}";
+            configureArguments += DependencySourceArgument("VALIO_CPP_HTTPLIB_SOURCE", "FETCHCONTENT_SOURCE_DIR_HTTPLIB", "httplib.h");
+            configureArguments += DependencySourceArgument("VALIO_CPP_JSON_SOURCE", "FETCHCONTENT_SOURCE_DIR_JSON", Path.Combine("single_include", "nlohmann", "json.hpp"));
+            configureArguments += InstalledDependencyArguments();
             var configureExit = RunTool(cmake, configureArguments, workRoot, out var configureOutput);
+            await File.WriteAllTextAsync(Path.Combine(workRoot, "configure.log"), configureOutput);
             configureExit.Should().Be(0, $"cmake configure must succeed:\n{configureOutput}");
 
             var buildExit = RunTool(cmake, $"--build \"{buildDir}\" --config Debug", workRoot, out var buildOutput);
+            await File.WriteAllTextAsync(Path.Combine(workRoot, "build.log"), buildOutput);
             buildExit.Should().Be(0, $"generated C++ must compile warning-clean against cpp-httplib 0.18.3 + nlohmann_json 3.12.0:\n{buildOutput}");
 
             var smokeExecutable = Directory.EnumerateFiles(buildDir, "smoke_main*", SearchOption.AllDirectories)
@@ -230,26 +393,33 @@ public class CppCompileFixtureTests
             smokeExecutable.Should().NotBeNull($"smoke_main must be built:\n{buildOutput}");
 
             var smokeExit = RunTool(smokeExecutable!, string.Empty, workRoot, out var smokeOutput);
+            await File.WriteAllTextAsync(Path.Combine(workRoot, "smoke.log"), smokeOutput);
             smokeExit.Should().Be(0, $"smoke round-trip must pass (wire names, optional semantics, enum codec, non-2xx, void, async):\n{smokeOutput}");
+            passed = true;
         }
         finally
         {
-            // FetchContent клонирует git-репозитории: pack-файлы read-only, Directory.Delete
-            // без снятия атрибута падает с UnauthorizedAccessException на Windows.
-            // Очистка best-effort — temp-каталог в любом случае почистится системой.
+            // Preserve the generated source, build tree, and tool logs when any assertion fails.
+            if (!passed)
+                TestContext.Progress.WriteLine($"Native fixture retained at {workRoot}");
+            // FetchContent repositories contain read-only pack files on Windows.
+            // Successful runs remove those attributes before best-effort cleanup.
             try
             {
-                foreach (var file in Directory.EnumerateFiles(workRoot, "*", SearchOption.AllDirectories))
+                if (passed)
                 {
-                    var attributes = File.GetAttributes(file);
-                    if (attributes.HasFlag(FileAttributes.ReadOnly))
-                        File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly);
+                    foreach (var file in Directory.EnumerateFiles(workRoot, "*", SearchOption.AllDirectories))
+                    {
+                        var attributes = File.GetAttributes(file);
+                        if (attributes.HasFlag(FileAttributes.ReadOnly))
+                            File.SetAttributes(file, attributes & ~FileAttributes.ReadOnly);
+                    }
+                    Directory.Delete(workRoot, recursive: true);
                 }
-                Directory.Delete(workRoot, recursive: true);
             }
             catch (Exception cleanupFailure) when (cleanupFailure is IOException or UnauthorizedAccessException)
             {
-                // занято тулчейном — оставляем temp как есть
+                // Leave directories still held open by the native toolchain for later cleanup.
             }
         }
     }

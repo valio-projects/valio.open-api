@@ -123,7 +123,8 @@ public class CSharpClientStepTests
         helpers.Should().ContainSingle();
         helpers[0].Content.Should().Contain("namespace Test.Ns;");
         helpers[0].Content.Should().Contain("case byte[] bytes:");
-        helpers[0].Content.Should().Contain("bool boolean => boolean ? \"true\" : \"false\"");
-        helpers[0].Content.Should().Contain("DateTimeOffset dateTimeOffset => dateTimeOffset.ToString(\"O\"");
+        context.GeneratedFiles.Single(file => file.RelativePath == "Api/HttpWireValueFormatter.cs")
+            .Content.Should().Contain("bool boolean => boolean ? \"true\" : \"false\"");
+        context.GeneratedFiles.Single(file => file.RelativePath == "Api/HttpWireValueFormatter.cs").Content.Should().Contain("DateTimeOffset dateTimeOffset => dateTimeOffset.ToString(\"O\"");
     }
 }

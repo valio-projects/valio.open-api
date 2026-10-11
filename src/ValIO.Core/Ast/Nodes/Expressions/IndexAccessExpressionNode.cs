@@ -20,7 +20,8 @@ public sealed class IndexAccessExpressionNode : ExpressionNode
     public ExpressionNode Index { get; }
 
 
-    public override IReadOnlyList<AstNode> Children => new AstNode[] { Object, Index };
+    /// <inheritdoc/>
+    public override IReadOnlyList<AstNode> Children => [Object, Index, .. base.Children];
 
     /// <summary>
     /// Конструктор

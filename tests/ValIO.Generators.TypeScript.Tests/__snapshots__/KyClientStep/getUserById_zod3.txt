@@ -43,7 +43,7 @@ export async function getUserById(
         requestUrl,
         kyOptions
     );
-    const responseData = ((response.status === 204) ? undefined : await response.json<unknown>());
+    const responseData = (((response.status === 204) || (response.status === 205)) ? undefined : await response.json<unknown>());
     
         if ((response.status === 200)) {
         return ({

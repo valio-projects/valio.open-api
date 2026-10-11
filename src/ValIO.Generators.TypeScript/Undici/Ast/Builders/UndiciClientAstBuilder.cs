@@ -23,6 +23,11 @@ namespace ValIO.Generators.TypeScript.Undici.Ast.Builders;
 /// </summary>
 public sealed class UndiciClientAstBuilder
 {
+    /// <summary>Gets or sets models from the active IR document for multipart field serialization.</summary>
+    /// <value>The models indexed by their generated names.</value>
+    public IReadOnlyDictionary<string, IrModel> ModelsByName { get; set; } =
+        new Dictionary<string, IrModel>(StringComparer.Ordinal);
+
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
@@ -181,6 +186,10 @@ public sealed class UndiciClientAstBuilder
             isExported: true);
     }
 
+    /// <summary>Builds validation, serialized request data, and response dispatch for one operation.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="hasResultType">Whether the operation returns a generated result union.</param>
+    /// <returns>The operation function body.</returns>
     private BlockNode BuildOperationFunctionBody(IrOperation operation, bool hasResultType)
     {
         var statements = new List<StatementNode>();
@@ -188,6 +197,12 @@ public sealed class UndiciClientAstBuilder
 
         if (_validation.IsEnabled)
             AddValidationParsingStatements(operation, sources, statements);
+
+        if (operation.RequestBody is { IsForm: true } requestBody && sources.BodySource != null)
+        {
+            sources.BodySource = TypeScriptFormBody.Build(requestBody, sources.BodySource, ModelsByName, statements);
+            statements.Add(new BlankLineStatementNode());
+        }
 
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("requestUrl"),
@@ -228,13 +243,7 @@ public sealed class UndiciClientAstBuilder
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"),
             type: null,
-            initializer: new ConditionalExpressionNode(
-                new BinaryExpressionNode(
-                    Member(Id("response"), "statusCode"),
-                    BinaryOperator.Equal,
-                    Number(204)),
-                Id("undefined"),
-                bodyJsonCast)));
+            initializer: TypeScriptResponseBody.Read(operation, Member(Id("response"), "statusCode"), bodyJsonCast)));
         statements.Add(new BlankLineStatementNode());
 
         AddStatusResultBranches(operation, statements);
@@ -243,6 +252,10 @@ public sealed class UndiciClientAstBuilder
         return new BlockNode(statements.ToImmutableList());
     }
 
+    /// <summary>Validates present parameter groups while preserving optional request-body absence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="sources">The current raw or validated parameter group expressions.</param>
+    /// <param name="statements">The endpoint statements receiving validation or request construction.</param>
     private void AddValidationParsingStatements(
         IrOperation operation,
         TypeScriptParameterSources sources,
@@ -281,15 +294,23 @@ public sealed class UndiciClientAstBuilder
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("parsedBody"),
                 type: null,
-                initializer: _validation.Validate(operation.RequestBody.Type, sources.BodySource)));
+                initializer: sources.BodySourceMayBeUndefined
+                    ? new ConditionalExpressionNode(
+                        new BinaryExpressionNode(sources.BodySource, BinaryOperator.NotEqual, Id("undefined")),
+                        _validation.Validate(operation.RequestBody.Type, sources.BodySource),
+                        Id("undefined"))
+                    : _validation.Validate(operation.RequestBody.Type, sources.BodySource)));
             sources.BodySource = Id("parsedBody");
-            sources.BodySourceMayBeUndefined = false;
         }
 
         if (statements.Count > 0)
             statements.Add(new BlankLineStatementNode());
     }
 
+    /// <summary>Builds transport options from validated values and original wire names.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="sources">The current raw or validated parameter group expressions.</param>
+    /// <returns>The transport request options.</returns>
     private ObjectLiteralExpressionNode BuildUndiciOptionsExpression(
         IrOperation operation,
         TypeScriptParameterSources sources)
@@ -299,26 +320,10 @@ public sealed class UndiciClientAstBuilder
             new(new IdentifierNode("method"), String(operation.HttpMethod.ToUpperInvariant()))
         };
 
-        if (operation.HeaderParameters.Count > 0 && sources.HeadersSource != null)
-        {
-            // *HeaderParams interface is narrow; undici accepts IncomingHttpHeaders.
-            var castedHeaders = new CastExpressionNode(
-                Simple("Record<string, string>", isPrimitive: false),
-                new CastExpressionNode(Simple("unknown", isPrimitive: true), sources.HeadersSource, useAsOperator: true),
-                useAsOperator: true);
-
-            if (sources.HeadersSourceMayBeUndefined)
-            {
-                properties.Add(SpreadProperty(new ConditionalExpressionNode(
-                    sources.HeadersSource,
-                    Object(("headers", castedHeaders)),
-                    EmptyObject())));
-            }
-            else
-            {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), castedHeaders));
-            }
-        }
+        var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
+            operation, sources.HeadersSource, sources.HeadersSourceMayBeUndefined, includeJsonContentType: true);
+        if (wireHeaders.Properties.Count > 0)
+            properties.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), wireHeaders));
 
         if (operation.RequestBody != null && sources.BodySource != null)
         {
@@ -367,42 +372,34 @@ public sealed class UndiciClientAstBuilder
         return new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
     }
 
+    /// <summary>Builds a canonical wire-keyed query parameter object.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="sources">The current raw or validated parameter group expressions.</param>
+    /// <returns>The query parameter expression.</returns>
     private ExpressionNode BuildQueryObject(IrOperation operation, TypeScriptParameterSources sources)
     {
-        var properties = new List<PropertyAssignmentNode>();
+        var literal = TypeScriptWireParameterObject.BuildFromSource(
+            operation.QueryParameters,
+            sources.QuerySource!,
+            sources.QuerySourceMayBeUndefined,
+            omitUndefinedValues: true);
 
-        foreach (var parameter in operation.QueryParameters)
-        {
-            var access = TypeScriptRequestPath.BuildParameterAccess(sources.QuerySource!, parameter.Name, sources.QuerySourceMayBeUndefined);
-            // Ключ — «проводное» имя (Paging.Offset), значение читается по sanitized-свойству
-            // (Paging_Offset): ASP.NET биндит вложенную модель по точечному имени.
-            if (parameter.IsRequired)
-            {
-                properties.Add(new PropertyAssignmentNode(new IdentifierNode(parameter.OriginalName), access));
-            }
-            else
-            {
-                properties.Add(SpreadProperty(new ConditionalExpressionNode(
-                    new BinaryExpressionNode(access, BinaryOperator.NotEqual, Id("undefined")),
-                    Object((parameter.OriginalName, access)),
-                    EmptyObject())));
-            }
-        }
-
-        var literal = new ObjectLiteralExpressionNode(properties.ToImmutableList(), preferMultilineFormat: true);
         return new CastExpressionNode(
             Simple("Record<string, string | number | boolean | string[]>", isPrimitive: false),
             new CastExpressionNode(Simple("unknown", isPrimitive: true), literal, useAsOperator: true),
             useAsOperator: true);
     }
 
+    /// <summary>Adds a result branch for every documented numeric status, including responses without content.</summary>
+    /// <param name="operation">The operation whose response contract is generated.</param>
+    /// <param name="statements">The function statements receiving the response branches.</param>
     private void AddStatusResultBranches(IrOperation operation, List<StatementNode> statements)
     {
         var resultTypeName = _resultsBuilder.ResultTypeName(operation.MethodName);
         var responseStatus = Member(Id("response"), "statusCode");
         var responseData = Id("responseData");
 
-        foreach (var response in operation.Responses.Where(r => r.Type != null && int.TryParse(r.StatusCode, out _)))
+        foreach (var response in operation.Responses.Where(r => int.TryParse(r.StatusCode, out _)))
         {
             var statusCode = int.Parse(response.StatusCode);
             var isSuccessful = statusCode >= 200 && statusCode < 300;
@@ -443,8 +440,15 @@ public sealed class UndiciClientAstBuilder
     /// Тело ответа: голая ссылка на модель → <c>{Model}Schema</c>; constructed-тип (union/array/...) →
     /// вынесенная <c>{Op}Result{Status}Schema</c>; иначе/без валидации — сырые данные.
     /// </summary>
+    /// <summary>Builds undefined for bodyless responses or validates the documented response value.</summary>
+    /// <param name="operation">The operation whose response contract is generated.</param>
+    /// <param name="response">The documented response variant.</param>
+    /// <param name="responseData">The decoded response data expression.</param>
+    /// <returns>The decoded or validated response body value.</returns>
     private ExpressionNode BuildResponseBody(IrOperation operation, IrResponse response, ExpressionNode responseData)
     {
+        if (response.Type == null)
+            return Id("undefined");
         if (!_validation.IsEnabled || !Validation.ValidationTypes.IsValidatable(response.Type!))
             return responseData;
         if (response.Type is IrModelReference modelRef)

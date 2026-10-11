@@ -87,8 +87,13 @@ public sealed class TypeScriptResultsAstBuilder
     }
 
     /// <summary>
-    /// Строит SourceFileNode с Result type (discriminated union) для операции
+    /// Builds a result union including documented bodyless statuses when any response has a body.
     /// </summary>
+    /// <param name="operation">The operation whose responses define the union.</param>
+    /// <param name="importPath">The optional import path override.</param>
+    /// <param name="fileOrganization">The generated model layout settings.</param>
+    /// <param name="currentOperationName">The operation name used for generated result declarations.</param>
+    /// <returns>The result variants and union source file.</returns>
     public SourceFileNode BuildResultsSourceFile(
         IrOperation operation,
         string? importPath,
@@ -115,10 +120,12 @@ public sealed class TypeScriptResultsAstBuilder
         {
             var variantTypes = new List<TypeNode>();
 
-            foreach (var response in responsesWithType)
+            foreach (var response in operation.Responses)
             {
                 var statusLiteral = ParseStatusCodeLiteral(response.StatusCode);
-                var bodyType = _typeBuilder(response.Type!);
+                var bodyType = response.Type == null
+                    ? new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true)
+                    : _typeBuilder(response.Type);
                 var isSuccess = IsSuccessStatusCode(response.StatusCode);
 
                 var variantInterfaceName = ResultVariantInterfaceName(currentOperationName, response.StatusCode);

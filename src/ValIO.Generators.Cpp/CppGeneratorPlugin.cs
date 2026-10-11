@@ -1,51 +1,36 @@
 using Microsoft.Extensions.DependencyInjection;
 using ValIO.Core.Plugins;
-<<<<<<< HEAD
 using ValIO.Generators.Cpp.Ast.Renderers;
-=======
->>>>>>> gitlab/feature/cubemap_generator_mpv1
 using ValIO.Generators.Cpp.Options;
 using ValIO.Generators.Cpp.Steps;
 
 namespace ValIO.Generators.Cpp;
 
 /// <summary>
-<<<<<<< HEAD
-/// Plugin для генерации C++ кода из IR. Два runtime-профиля (опция "runtime"):
-/// UE (USTRUCT/UCLASS + внешний UE-runtime, по умолчанию) и std
-/// (cpp-httplib + nlohmann_json, самодостаточный ValIO-runtime).
-/// Пайплайн содержит шаги обоих профилей; выбор делает каждый шаг в
-/// ShouldExecute по context.PluginOptions (паттерн TS-транспортов).
-/// Регистрируется через AddGeneratorPlugin&lt;CppGeneratorPlugin&gt;().
-=======
-/// Generator plugin for C++ / Unreal Engine 5 output.
-/// Registered via AddAllGeneratorPlugins() in ValIO.Plugins.Bootstrap.
->>>>>>> gitlab/feature/cubemap_generator_mpv1
+/// Registers the Unreal Engine and standalone C++ generation profiles in one pipeline.
 /// </summary>
 public sealed class CppGeneratorPlugin : IGeneratorPlugin
 {
+    /// <inheritdoc />
     public string LanguageId => "cpp";
-<<<<<<< HEAD
+    /// <inheritdoc />
     public string DisplayName => "C++";
-    public IReadOnlyList<string> LanguageAliases => ["cpp", "c++", "cpp-ue", "cpp-std"];
-=======
-    public string DisplayName => "C++ (Unreal Engine)";
-    public IReadOnlyList<string> LanguageAliases => ["cpp", "c++", "ue", "unreal"];
->>>>>>> gitlab/feature/cubemap_generator_mpv1
+    /// <inheritdoc />
+    public IReadOnlyList<string> LanguageAliases => ["cpp", "c++", "cpp-ue", "cpp-std", "ue", "unreal"];
+    /// <inheritdoc />
     public IGeneratorOptionsDescriptor OptionsDescriptor { get; } = new CppOptionsDescriptor();
 
+    /// <inheritdoc />
     public ICodeGenerationPipeline CreatePipeline(IServiceProvider services)
     {
-<<<<<<< HEAD
         var renderer = services.GetRequiredService<ICppAstRenderer>();
         var steps = new ICodeGenerationStep[]
         {
-            // UE runtime profile (default) — активны при Runtime == Ue или отсутствии опций.
+            // Each step selects its runtime profile through ShouldExecute.
             new CppUeModelsStep(renderer),
             new CppUeEnumsStep(renderer),
             new CppUeEndpointsStep(renderer),
 
-            // std runtime profile (cpp-httplib + nlohmann_json) — активны при Runtime == Std.
             new CppStdEnumsStep(renderer),
             new CppStdModelsStep(renderer),
             new CppStdSerializersStep(renderer),
@@ -56,14 +41,9 @@ public sealed class CppGeneratorPlugin : IGeneratorPlugin
         return new CodeGenerationPipeline(steps);
     }
 
+    /// <inheritdoc />
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddSingleton<ICppAstRenderer, CppAstRenderer>();
     }
-=======
-        return new CodeGenerationPipeline([new CppGenerationStep()]);
-    }
-
-    public void ConfigureServices(IServiceCollection services) { }
->>>>>>> gitlab/feature/cubemap_generator_mpv1
 }

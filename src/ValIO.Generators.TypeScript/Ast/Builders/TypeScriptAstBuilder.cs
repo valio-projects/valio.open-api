@@ -318,29 +318,12 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Nullish в смысле OpenAPI/IR: ключ может отсутствовать, значение — <c>null</c> или тип допускает JSON-null.
+    /// Builds a source file preserving object, union, and sibling-property model semantics.
     /// </summary>
-    private static bool IsIrModelPropertyNullish(IrProperty property) =>
-        !property.IsRequired || property.Type is IrNullableType;
-    
-    /// <summary>
-    /// Тип поля интерфейса-модели: при nullish/optional — <c>(T | null) | undefined</c> и <c>?</c> в рендерере; иначе строго <c>T</c>.
-    /// </summary>
-    private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
-    {
-        if (!IsIrModelPropertyNullish(property))
-            return BuildType(property.Type);
-        
-        var irCore = property.Type is IrNullableType n ? n.InnerType : property.Type;
-        var valueCore = BuildType(irCore);
-        var withNull = new NullableTypeNode(valueCore);
-        var undefinedType = new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true);
-        return new UnionTypeNode(ImmutableList.Create<TypeNode>(withNull, undefinedType));
-    }
-    
-    /// <summary>
-    /// Строит SourceFile из IrModel
-    /// </summary>
+    /// <param name="model">The source IR model.</param>
+    /// <param name="importPath">The optional import path override.</param>
+    /// <param name="fileOrganization">The generated model layout settings.</param>
+    /// <returns>The model declaration and its dependencies.</returns>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
         OriginalNameMap.AddModel(_orig, model);
@@ -348,7 +331,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         dependencies = dependencies.Where(d => d != model.Name).ToList();
         var imports = BuildImports(dependencies, importPath, fileOrganization, FileCategory.Models, model.Name);
         
-        var declarations = new List<DeclarationNode> { BuildInterface(model) };
+        var declarations = new List<DeclarationNode> { BuildModelDeclaration(model) };
         var constraintsDecl = BuildConstraintsDeclaration(model);
         if (constraintsDecl != null)
             declarations.Add(constraintsDecl);
@@ -364,6 +347,26 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 $"{modelFileBase}.ts",
                 $"models/{modelFileBase}",
                 string.IsNullOrWhiteSpace(model.Description) ? $"{model.Name} model." : model.Description));
+    }
+
+    /// <summary>Builds union models as aliases, intersecting sibling properties rather than discarding alternatives.</summary>
+    /// <param name="model">The source model.</param>
+    /// <returns>The interface or composed model type alias.</returns>
+    private DeclarationNode BuildModelDeclaration(IrModel model)
+    {
+        if (model.Composition is not { Kind: IrCompositionKind.OneOf or IrCompositionKind.AnyOf } composition)
+            return BuildInterface(model);
+
+        TypeNode valueType = BuildUnionType(new IrUnionType { Types = composition.Types });
+        if (model.Properties.Count > 0)
+        {
+            var ownShape = new TypeLiteralNode(model.Properties.Select(property =>
+                new TypeLiteralMember(property.Name, BuildType(property.Type), isOptional: !property.IsRequired)).ToImmutableList());
+            valueType = new IntersectionTypeNode(ImmutableList.Create(valueType, (TypeNode)ownShape));
+        }
+
+        return new TypeAliasDeclarationNode(new IdentifierNode(model.Name), valueType,
+            string.IsNullOrWhiteSpace(model.Description) ? null : new CommentNode(model.Description, CommentKind.JSDoc));
     }
 
     /// <summary>
@@ -419,13 +422,14 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     }
     
     /// <summary>
-    /// Строит PropertyDeclarationNode из IrProperty.
-    /// Интерфейсы-модели и Zod: nullish (<c>?</c>, <c>T | null | undefined</c>, <c>.nullish()</c>) только если свойство не в <c>required</c> и/или тип <see cref="IrNullableType"/>.
+    /// Builds a model property, preserving required presence independently from nullable or optional value types.
     /// </summary>
+    /// <param name="property">The source IR property.</param>
+    /// <returns>The property declaration with the original presence and value constraints.</returns>
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
-        var type = BuildInterfacePropertyTypeNode(property);
+        var type = BuildType(property.Type);
         
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.JSDoc)
@@ -1242,9 +1246,9 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
         };
     }
     
-    /// <summary>
-    /// Строит тело функции с Axios вызовами, params interface и Zod serialization/deserialization
-    /// </summary>
+    /// <summary>Builds the Axios request and dispatches all documented response status variants.</summary>
+    /// <param name="operation">The operation whose endpoint is generated.</param>
+    /// <returns>The complete Axios operation body.</returns>
     private BlockNode BuildAxiosFunctionBody(IrOperation operation)
     {
         var statements = new List<StatementNode>();
@@ -1337,7 +1341,7 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("status"));
             var responsesWithType = operation.Responses
-                .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _))
+                .Where(r => int.TryParse(r.StatusCode, out _))
                 .ToList();
 
             foreach (var resp in responsesWithType)
@@ -1437,15 +1441,16 @@ public partial class TypeScriptAstBuilder : ITypeScriptAstBuilder
     private ExpressionNode CreateParseCall(string schemaName, ExpressionNode input) =>
         _validation.ValidateNamed(schemaName, input);
 
-    /// <summary>
-    /// Строит выражение тела (body) для per-status result-ветки клиента. Тип, требующий построения
-    /// схемы (union/array/...), валидируется ВЫНЕСЕННОЙ именованной схемой <c>{Op}Result{Status}Schema</c>
-    /// из <c>{op}.results.schemas.ts</c> (строится один раз, а не на каждый вызов); голая ссылка на модель —
-    /// напрямую <c>{Model}Schema</c>. Для unknown/void и при выключенной валидации возвращает сырые данные.
-    /// </summary>
+    /// <summary>Builds a per-status body, preserving bodyless variants and applying named validation schemas.</summary>
+    /// <param name="operation">The operation whose response is validated.</param>
+    /// <param name="response">The documented response variant.</param>
+    /// <param name="dataRef">The decoded response data expression.</param>
+    /// <returns>Undefined for a bodyless response, otherwise its raw or validated value.</returns>
     private ExpressionNode BuildStatusResultBody(IrOperation operation, IrResponse response, ExpressionNode dataRef)
     {
-        var type = response.Type!;
+        if (response.Type == null)
+            return new IdentifierExpressionNode(new IdentifierNode("undefined"));
+        var type = response.Type;
         if (!_validation.IsEnabled || !ValidationTypes.IsValidatable(type))
             return dataRef;
 

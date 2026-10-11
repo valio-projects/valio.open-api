@@ -27,6 +27,12 @@ public abstract class CSharpAstVisitorBase<TResult> : BaseAstVisitor<TResult>, I
     public abstract TResult VisitRecordDeclaration(RecordDeclarationNode node);
     public abstract TResult VisitConstructorDeclaration(ConstructorDeclarationNode node);
 
+    /// <inheritdoc/>
+    public abstract TResult VisitDefaultExpression(DefaultExpressionNode node);
+
+    /// <inheritdoc />
+    public abstract TResult VisitTypeOfExpression(TypeOfExpressionNode node);
+
     // Namespace/Class/Struct/Field — универсальные узлы Core; Visit-методы
     // наследуются из IAstVisitor (virtual-default в BaseAstVisitor),
     // рендерер переопределяет их напрямую.

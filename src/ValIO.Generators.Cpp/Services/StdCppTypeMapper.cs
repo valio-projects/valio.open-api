@@ -106,17 +106,21 @@ public sealed class StdCppTypeMapper
     public TypeNode MapWrapperType(string wrapper, IrType inner)
         => GenericType(wrapper, MapType(inner));
 
-    /// <summary>Union: прямого аналога нет; v1 — std::string (сквозной raw JSON) + warning.</summary>
+    /// <summary>Maps an unsupported typed union to text and records the missing structured-value semantics.</summary>
+    /// <param name="union">The union schema contract.</param>
+    /// <returns>The fallback text type.</returns>
     public TypeNode MapUnionType(IrUnionType union)
     {
-        AddWarning($"union type serialized as raw JSON string ({union.Types.Count} variants; typed variant — backlog)");
+        AddWarning($"union type maps to text ({union.Types.Count} variants); structured JSON preservation and variant validation require a dedicated codec");
         return SimpleType("std::string");
     }
 
-    /// <summary>Intersection: v1 — std::string (raw JSON) + warning.</summary>
+    /// <summary>Maps an unsupported typed intersection to text and reports its semantic limitation.</summary>
+    /// <param name="intersection">The intersection schema contract.</param>
+    /// <returns>The fallback text type.</returns>
     public TypeNode MapIntersectionType(IrIntersectionType intersection)
     {
-        AddWarning($"intersection type serialized as raw JSON string ({intersection.Types.Count} members)");
+        AddWarning($"intersection type maps to text ({intersection.Types.Count} members); structured JSON preservation requires a dedicated codec");
         return SimpleType("std::string");
     }
 
@@ -141,10 +145,11 @@ public sealed class StdCppTypeMapper
     }
 
     /// <summary>
-    /// Выражение литерала для query/path-параметра (инвариантное строковое представление):
-    /// bool → тернарник, целые → std::to_string, enum → std::string(ToWire(x)),
-    /// double → std::to_string (6 знаков; v1), строки/dates/uuid — как есть.
+    /// Formats a value for a query, header, path, or form field using its typed IR contract.
     /// </summary>
+    /// <param name="irType">The value's schema type.</param>
+    /// <param name="expression">The generated value expression.</param>
+    /// <returns>A C++ expression yielding the wire text.</returns>
     public string FormatQueryLiteral(IrType irType, string expression)
     {
         return irType switch
@@ -156,7 +161,7 @@ public sealed class StdCppTypeMapper
                 _ => expression,
             },
             IrModelReference modelRef when IsEnumReference(modelRef.ModelName)
-                => $"std::string(ToWire({expression}))",
+                => $"ToWireText({expression})",
             IrModelReference
                 => $"ValIO::Dump({expression})", // модель в query-параметре — JSON-строка (сериализатор включён в клиентском .cpp)
             IrNullableType n => FormatQueryLiteral(n.InnerType, expression),
@@ -223,9 +228,13 @@ public sealed class StdCppTypeMapper
     /// <summary>Файловый/бинарный тип (multipart-части) — общая реализация Core.</summary>
     public static bool IsFileOrBinaryType(IrType irType) => IrTypeQueries.IsFileOrBinary(irType);
 
+    /// <summary>Records when an unconstrained JSON value is reduced to the current text fallback.</summary>
+    /// <param name="irType">The original schema type.</param>
+    /// <param name="kind">The schema kind used in the diagnostic.</param>
+    /// <returns>The fallback text type.</returns>
     private TypeNode WarnedString(IrType irType, string kind)
     {
-        AddWarning($"{kind} fields map to std::string (raw JSON pass-through)");
+        AddWarning($"{kind} fields map to text; arbitrary structured JSON preservation requires a dedicated codec");
         return SimpleType("std::string");
     }
 

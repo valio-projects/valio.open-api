@@ -51,14 +51,29 @@ public class ValibotAstBuilderTests
         rendered.Should().Contain("v.pipe(").And.Contain("v.number()").And.Contain("v.integer()");
     }
 
+    /// <summary>Verifies each string format uses the validator action matching its wire representation.</summary>
+    /// <param name="kind">The formatted primitive kind.</param>
+    /// <param name="expectedRefiner">The expected Valibot refinement action.</param>
     [TestCase(IrPrimitiveKind.Uuid,     "v.uuid()")]
-    [TestCase(IrPrimitiveKind.DateTime, "v.isoDateTime()")]
+    [TestCase(IrPrimitiveKind.DateTime, "v.isoTimestamp()")]
     [TestCase(IrPrimitiveKind.Date,     "v.isoDate()")]
     [TestCase(IrPrimitiveKind.Time,     "v.isoTime()")]
     public void StringRefinements_PipeStringWithRefiner(IrPrimitiveKind kind, string expectedRefiner)
     {
         var rendered = Render(Prim(kind));
         rendered.Should().Contain("v.pipe(").And.Contain("v.string()").And.Contain(expectedRefiner);
+    }
+
+    /// <summary>Verifies date-time validation retains calendar checks and explicit RFC 3339 offset syntax.</summary>
+    [Test]
+    public void DateTime_UsesTimestampAndCalendarOffsetPredicate()
+    {
+        var rendered = Render(Prim(IrPrimitiveKind.DateTime));
+        rendered.Should().Contain("v.isoTimestamp()")
+            .And.Contain("v.check(")
+            .And.Contain("Date.parse(value.slice(")
+            .And.Contain(".toISOString().slice(")
+            .And.NotContain("v.isoDateTime()");
     }
 
     [Test]

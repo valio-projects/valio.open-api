@@ -11,23 +11,33 @@ using ValIO.Generators.Cpp.Services;
 namespace ValIO.Generators.Cpp.Ast.Builders.Std;
 
 /// <summary>
-/// Строитель ЧИСТЫХ моделей std-профиля: header-only struct без единого следа JSON —
-/// только std-типы + ссылки на другие модели/enum'ы. Сериализация живёт в
-/// StdModelJsonAstBuilder (model/codec separation). allOf: одиночный $ref-базис →
-/// наследование (общий IrInheritancePlan), иначе flatten. Рекурсивные свойства —
-/// пропуск + warning (паритет с UE; shared_ptr — backlog).
+/// Builds JSON-independent standalone C++ model headers from the shared inheritance plan.
 /// </summary>
 public sealed class StdModelAstBuilder
 {
+    /// <summary>Maps IR values to standalone C++ types.</summary>
     private readonly StdCppTypeMapper _typeMapper;
+    /// <summary>Names generated declarations and files.</summary>
     private readonly StdNamingConvention _naming;
 
+    /// <summary>Creates a model builder with consistent naming and type mapping.</summary>
+    /// <param name="typeMapper">The standalone type mapper.</param>
+    /// <param name="naming">The generated naming convention.</param>
+    /// <exception cref="ArgumentNullException">A required service is missing.</exception>
     public StdModelAstBuilder(StdCppTypeMapper typeMapper, StdNamingConvention naming)
     {
         _typeMapper = typeMapper ?? throw new ArgumentNullException(nameof(typeMapper));
         _naming = naming ?? throw new ArgumentNullException(nameof(naming));
     }
 
+    /// <summary>Builds a pure model header or rejects unsupported recursive ownership.</summary>
+    /// <param name="model">The model contract.</param>
+    /// <param name="enumNames">The document's enum names.</param>
+    /// <param name="modelLookup">The inheritance model lookup.</param>
+    /// <param name="rootNamespace">The generated namespace.</param>
+    /// <param name="warnings">The optional diagnostic sink.</param>
+    /// <returns>The generated definition header.</returns>
+    /// <exception cref="NotSupportedException">The model requires unsupported recursive ownership or composition codecs.</exception>
     public CppHeaderFileNode Build(
         IrModel model,
         IReadOnlySet<string> enumNames,
@@ -36,19 +46,14 @@ public sealed class StdModelAstBuilder
         ICollection<string>? warnings = null)
     {
         var structName = _naming.StructName(model.Name);
+        CppTypeReferenceCollector.EnsureSupportedComposition(model, modelLookup);
         var plan = IrInheritancePlan.Resolve(model, modelLookup);
+        CppTypeReferenceCollector.EnsureNonRecursive(model, plan.EffectiveProperties, enumNames);
 
         var fields = new List<FieldDeclarationNode>();
-        var skipped = new List<string>();
         foreach (var property in plan.EffectiveProperties)
         {
-            if (CppTypeReferenceCollector.ReferencesModel(property.Type, model.Name, enumNames))
-            {
-                skipped.Add(property.Name);
-                warnings?.Add($"Model {structName}: skipping recursive property '{property.OriginalName}' (std::shared_ptr support is backlog).");
-                continue;
-            }
-            fields.Add(BuildField(property, model, enumNames, plan));
+            fields.Add(BuildField(property));
         }
 
         var structNode = new StructDeclarationNode(
@@ -59,7 +64,7 @@ public sealed class StdModelAstBuilder
             members: fields,
             documentation: BuildDocumentation(model.Description));
 
-        var includes = CollectIncludes(model, plan, enumNames, skipped);
+        var includes = CollectIncludes(model, plan, enumNames);
 
         return new CppHeaderFileNode(
             fileName: _naming.ModelFileName(model.OriginalName),
@@ -67,15 +72,13 @@ public sealed class StdModelAstBuilder
             declarations: [new NamespaceDeclarationNode(new IdentifierNode(rootNamespace), [structNode])]);
     }
 
-    private FieldDeclarationNode BuildField(IrProperty property, IrModel model, IReadOnlySet<string> enumNames, IrInheritancePlan plan)
+    /// <summary>Builds one field without collapsing missing keys and explicit nulls.</summary>
+    /// <param name="property">The property contract.</param>
+    /// <returns>The corresponding C++ field declaration.</returns>
+    private FieldDeclarationNode BuildField(IrProperty property)
     {
-        var isWrapped = property.Type is IrNullableType or IrOptionalType;
-        var mapped = _typeMapper.MapType(property.Type);
-        // optional/nullable → std::optional; required без обёртки при !IsRequired — тоже optional
-        if (!property.IsRequired && !isWrapped)
-            mapped = new GenericTypeNode(new IdentifierNode("std::optional"), [mapped]);
-
-        var isOptional = !property.IsRequired || isWrapped;
+        var mapped = StdPropertyTypes.MapField(property, _typeMapper);
+        var isOptional = StdPropertyTypes.IsOptional(property) || property.Type is IrNullableType;
         var defaultValueStr = isOptional ? null : _typeMapper.GetDefaultValue(property.Type);
         var defaultValue = defaultValueStr != null
             ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
@@ -90,10 +93,13 @@ public sealed class StdModelAstBuilder
     }
 
     /// <summary>
-    /// std-инклуды по факту использования + ссылки на модели/enum'ы (пути — по OriginalName).
-    /// Порядок: системные (сорт.), затем проектные (сорт.).
+    /// Collects explicit standard dependencies and stable model and enum include paths.
     /// </summary>
-    private List<CppIncludeDirectiveNode> CollectIncludes(IrModel model, IrInheritancePlan plan, IReadOnlySet<string> enumNames, List<string> skipped)
+    /// <param name="model">The model contract.</param>
+    /// <param name="plan">The resolved inheritance plan.</param>
+    /// <param name="enumNames">The document's enum names.</param>
+    /// <returns>The ordered include directives.</returns>
+    private List<CppIncludeDirectiveNode> CollectIncludes(IrModel model, IrInheritancePlan plan, IReadOnlySet<string> enumNames)
     {
         var stdIncludes = new SortedSet<string>(StringComparer.Ordinal);
         var referencedModels = new HashSet<string>();
@@ -105,12 +111,10 @@ public sealed class StdModelAstBuilder
 
         foreach (var property in plan.EffectiveProperties)
         {
-            if (skipped.Contains(property.Name) && CppTypeReferenceCollector.ReferencesModel(property.Type, model.Name, enumNames))
-                continue;
             CppTypeReferenceCollector.Collect(property.Type, referencedModels, referencedEnums, enumNames);
             foreach (var include in StdCppTypeMapper.StdIncludesFor(property.Type))
                 stdIncludes.Add(include);
-            // std::optional для !IsRequired добавляет сам билдер (обёртка не видна StdIncludesFor).
+            // Property presence wrappers are added after mapping the schema value type.
             if (!property.IsRequired)
                 stdIncludes.Add("<optional>");
         }

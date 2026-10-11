@@ -20,10 +20,10 @@ public sealed class CppStdClientStep(ICppAstRenderer renderer) : CppStdStepBase(
            && context.Configuration.GenerateClients
            && context.IrDocument.Clients.Count > 0;
 
+    /// <inheritdoc />
     public override Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var (naming, mapper) = CreateServices(context);
-        DrainWarnings(context, mapper);
         var options = EffectiveOptions(context);
         var builder = new StdClientAstBuilder(mapper, naming);
         var (_, modelLookup) = CppAstBuilder.PrepareInputs(context.IrDocument);
@@ -44,6 +44,7 @@ public sealed class CppStdClientStep(ICppAstRenderer renderer) : CppStdStepBase(
                 naming.ClientSourcePath(client.Name), Renderer.Render(build.ClientSource)));
         }
 
+        DrainWarnings(context, mapper);
         return Task.CompletedTask;
     }
 }

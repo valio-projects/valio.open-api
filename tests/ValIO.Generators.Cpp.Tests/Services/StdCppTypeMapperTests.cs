@@ -118,6 +118,7 @@ public class StdCppTypeMapperTests
     public void DefaultValue_ForPrimitives(IrPrimitiveKind kind, string? expected)
         => _mapper.GetDefaultValue(Prim(kind)).Should().Be(expected);
 
+    /// <summary>Checks enum wire text dispatch works for both integer-backed and string-backed enums.</summary>
     [Test]
     public void FormatQueryLiteral_BoolIntegerEnum()
     {
@@ -128,7 +129,7 @@ public class StdCppTypeMapperTests
         _mapper.FormatQueryLiteral(Prim(IrPrimitiveKind.Long), "Id")
             .Should().Be("std::to_string(Id)");
         _mapper.FormatQueryLiteral(new IrModelReference { ModelName = "OrderStatus" }, "Status")
-            .Should().Be("std::string(ToWire(Status))");
+            .Should().Be("ToWireText(Status)");
         _mapper.FormatQueryLiteral(Prim(IrPrimitiveKind.String), "Filter")
             .Should().Be("Filter");
     }

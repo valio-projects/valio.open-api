@@ -291,12 +291,13 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     // C++ Function / Method nodes
     // ===================================================================
 
+    /// <inheritdoc />
     public override string VisitCppFreeFunction(CppFreeFunctionNode node)
     {
         var sb = new StringBuilder();
         if (node.Documentation != null)
             sb.AppendLine($"{Indent()}{RenderDoxygenComment(node.Documentation.Text)}");
-        var constexprPrefix = node.IsConstexpr ? "constexpr " : "";
+        var constexprPrefix = node.IsConstexpr ? "constexpr " : node.IsInline ? "inline " : "";
         var returnStr = RenderType(node.ReturnType);
         var constSuffix = node.IsConst ? " const" : "";
         if (node.IsDeclarationOnly)
@@ -629,7 +630,11 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     public override string VisitIndexAccessExpression(IndexAccessExpressionNode node)
         => $"{Visit(node.Object)}[{Visit(node.Index)}]";
 
-    public override string VisitForEachStatement(ForEachStatementNode node) => "";
+    /// <inheritdoc />
+    public override string VisitForEachStatement(ForEachStatementNode node)
+    {
+        return $"{Indent()}for (const auto& {node.Variable.Name} : {Visit(node.Collection)}){Environment.NewLine}{Visit(node.Body)}";
+    }
     public override string VisitThrowStatement(ThrowStatementNode node)
         => $"throw {Visit(node.Expression)};";
     public override string VisitUsingStatement(UsingStatementNode node) => "";
@@ -896,27 +901,10 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         return $"{constStr}{typeStr}{refStr} {param.Name.Name}{defaultStr}";
     }
 
-    private static string RenderDefaultValue(ExpressionNode expr)
-    {
-        // Сырой C++-токен дефолта (std::nullopt, {}) представляется Identifier-выражением —
-        // рендерится дословно; литералы остаются литералами (String = кавыченная строка).
-        if (expr is IdentifierExpressionNode identifier)
-        {
-            return identifier.Identifier.Name;
-        }
-        if (expr is LiteralExpressionNode lit)
-        {
-            return lit.LiteralKind switch
-            {
-                LiteralKind.String => $"\"{EscapeCppString(lit.Value?.ToString() ?? "")}\"",
-                LiteralKind.Number => lit.Value?.ToString() ?? "0",
-                LiteralKind.Boolean => lit.Value?.ToString()?.ToLowerInvariant() ?? "false",
-                LiteralKind.Null => "{}",
-                _ => lit.Value?.ToString() ?? ""
-            };
-        }
-        return expr.ToString() ?? "";
-    }
+    /// <summary>Renders an initializer through the same typed expression visitor used by function bodies.</summary>
+    /// <param name="expression">The field, parameter, or enum initializer.</param>
+    /// <returns>The C++ expression, preserving structured operators and literal escaping.</returns>
+    private string RenderDefaultValue(ExpressionNode expression) => Visit(expression);
 
     private string RenderDoxygenComment(string text)
     {

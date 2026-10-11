@@ -26,11 +26,12 @@ public sealed class CSharpModelsStep : ICodeGenerationStep
     public bool ShouldExecute(GenerationContext context)
         => context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0;
 
+    /// <inheritdoc/>
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as CSharpGenerationOptions;
         var ns = opts?.Namespace ?? context.Configuration.Namespace ?? "Generated";
-        var builder = new CSharpAstBuilder(_namingConverter);
+        var builder = new CSharpAstBuilder(_namingConverter, opts);
 
         var orderedNames = context.IrDocument.TypeDependencies.TopologicalOrder;
         var byName = context.IrDocument.Models.ToDictionary(m => m.Name);
@@ -42,6 +43,7 @@ public sealed class CSharpModelsStep : ICodeGenerationStep
         // Справочник имён enum'ов — чтобы необязательные enum-свойства ($ref на enum, value-type)
         // стали nullable и не роняли System.Text.Json на пришедшем с сервера null.
         builder.EnumNames = context.IrDocument.Enums.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
+        builder.EnumsByName = context.IrDocument.Enums.ToDictionary(enumModel => enumModel.Name, StringComparer.Ordinal);
 
         var processed = new HashSet<string>();
 

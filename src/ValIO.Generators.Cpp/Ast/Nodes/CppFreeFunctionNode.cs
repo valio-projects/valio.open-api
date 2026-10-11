@@ -42,6 +42,9 @@ public sealed class CppFreeFunctionNode : DeclarationNode
     /// </summary>
     public bool IsConstexpr { get; }
 
+    /// <summary>Whether a header-defined function uses inline linkage without requiring constexpr evaluation.</summary>
+    /// <value>True for non-constexpr function definitions shared by multiple translation units.</value>
+    public bool IsInline { get; }
 
     public override IReadOnlyList<AstNode> Children
     {
@@ -56,8 +59,19 @@ public sealed class CppFreeFunctionNode : DeclarationNode
     }
 
     /// <summary>
-    /// Конструктор
+    /// Creates a standalone C++ function declaration or definition.
     /// </summary>
+    /// <param name="name">The optionally qualified function name.</param>
+    /// <param name="returnType">The function's return type.</param>
+    /// <param name="parameters">The ordered parameters.</param>
+    /// <param name="body">The optional function body.</param>
+    /// <param name="isDeclarationOnly">Whether the node declares a function without a definition.</param>
+    /// <param name="documentation">The optional generated documentation.</param>
+    /// <param name="metadata">The optional construction metadata.</param>
+    /// <param name="isConst">Whether the out-of-class member definition is const-qualified.</param>
+    /// <param name="isConstexpr">Whether the function permits constant evaluation.</param>
+    /// <param name="isInline">Whether the definition has inline linkage.</param>
+    /// <exception cref="ArgumentNullException">The return type is missing.</exception>
     public CppFreeFunctionNode(
         IdentifierNode name,
         TypeNode returnType,
@@ -67,7 +81,8 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null,
         bool isConst = false,
-        bool isConstexpr = false)
+        bool isConstexpr = false,
+        bool isInline = false)
         : base(name, documentation, metadata: metadata)
     {
         ReturnType = returnType ?? throw new ArgumentNullException(nameof(returnType));
@@ -76,6 +91,7 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         IsDeclarationOnly = isDeclarationOnly;
         IsConst = isConst;
         IsConstexpr = isConstexpr;
+        IsInline = isInline;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -85,6 +101,7 @@ public sealed class CppFreeFunctionNode : DeclarationNode
         throw new NotSupportedException("Visitor must implement ICppAstVisitor<TResult> to visit CppFreeFunctionNode");
     }
 
+    /// <inheritdoc />
     public override AstNode Clone()
     {
         return new CppFreeFunctionNode(
@@ -96,7 +113,8 @@ public sealed class CppFreeFunctionNode : DeclarationNode
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary(),
             IsConst,
-            IsConstexpr);
+            IsConstexpr,
+            IsInline);
     }
 
     public override string ToString()

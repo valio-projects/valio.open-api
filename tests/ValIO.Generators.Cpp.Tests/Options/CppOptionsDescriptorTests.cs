@@ -141,4 +141,25 @@ public class CppOptionsDescriptorTests
             "httpInclude", "jsonInclude", "jsonFwdInclude", "errorModelName", "emitCmake",
         });
     }
+
+    /// <summary>Checks the merged descriptor retains Unreal Engine configuration alongside standalone options.</summary>
+    [Test]
+    public void UnrealOptions_ArePreservedBySharedDescriptor()
+    {
+        var options = Parse("""{"moduleApiMacro":"GAME_API","blueprintCategory":"Game","addUnrealEngineIncludesInHeaders":false,"baseAsyncActionClassName":"UCustomAsync"}""");
+        options.ModuleApiMacro.Should().Be("GAME_API");
+        options.BlueprintCategory.Should().Be("Game");
+        options.AddUnrealEngineIncludesInHeaders.Should().BeFalse();
+        options.BaseAsyncActionClassName.Should().Be("UCustomAsync");
+    }
+
+    /// <summary>Checks definition-only generation has a typed option that is visible in configuration metadata.</summary>
+    [Test]
+    public void EmitSerializers_ParsesBooleanAndRejectsOtherKinds()
+    {
+        Parse("""{"emitSerializers":false}""").EmitSerializers.Should().BeFalse();
+        _descriptor.ParseOptions(ParseRaw("""{"emitSerializers":"no"}"""), out var errors);
+        errors.Should().ContainSingle(error => error.Contains("emitSerializers", StringComparison.Ordinal));
+        _descriptor.GetOptionDescriptions().Should().Contain(option => option.Name == "emitSerializers");
+    }
 }

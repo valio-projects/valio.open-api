@@ -23,10 +23,12 @@ public sealed class GotClientStep : TypeScriptClientStepBase
     public GotClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
         : base(namingConverter, nodeRenderers) { }
 
+    /// <inheritdoc />
     protected override SourceFileNode BuildOperationSourceFile(
         IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
         var builder = new GotClientAstBuilder(NamingConverter, options);
+        builder.ModelsByName = ModelsByName;
         return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }

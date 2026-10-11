@@ -18,10 +18,10 @@ public sealed class CppStdModelsStep(ICppAstRenderer renderer) : CppStdStepBase(
            && context.Configuration.GenerateModels
            && context.IrDocument.Models.Count > 0;
 
+    /// <inheritdoc />
     public override Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var (naming, mapper) = CreateServices(context);
-        DrainWarnings(context, mapper);
         var builder = new StdModelAstBuilder(mapper, naming);
         var (_, modelLookup) = CppAstBuilder.PrepareInputs(context.IrDocument);
         var enumNames = context.IrDocument.Enums.Select(e => e.Name).ToHashSet();
@@ -35,6 +35,7 @@ public sealed class CppStdModelsStep(ICppAstRenderer renderer) : CppStdStepBase(
                 naming.ModelHeaderPath(model.OriginalName), Renderer.Render(header)));
         }
 
+        DrainWarnings(context, mapper);
         return Task.CompletedTask;
     }
 }

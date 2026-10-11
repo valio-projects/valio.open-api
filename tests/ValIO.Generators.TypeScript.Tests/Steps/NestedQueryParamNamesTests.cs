@@ -108,13 +108,16 @@ public class NestedQueryParamNamesTests
         content.Should().NotContain("params: parsedQuery");
     }
 
+    /// <summary>Preserves unchanged query wire names through the same serializer used for dotted names.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
-    public async Task AxiosClient_FlatQueryParams_StillPassQueryObjectThrough()
+    public async Task AxiosClient_FlatQueryParams_PreserveWireNames()
     {
         var content = await GenerateAsync(FlatQuerySchema, "axios", ".axios.ts");
 
-        // Без переименованных параметров форма вывода не меняется: никакого лишнего churn у 50 проектов.
-        content.Should().Contain("params: parsedQuery");
+        // The canonical object serializer also preserves identifiers that do not need sanitization.
+        content.Should().Contain("params: {");
+        content.Should().Contain("Search: parsedQuery.Search");
     }
 
     [Test]

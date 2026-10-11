@@ -31,10 +31,14 @@ public sealed class UEModelAstBuilder
     }
 
     /// <summary>
-    /// Строит CppHeaderFileNode из IrModel
+    /// Builds an Unreal Engine model header without discarding unsupported recursive properties.
     /// </summary>
-    /// <param name="modelLookup">Словарь моделей по имени (для раскрытия allOf)</param>
-    /// <param name="warnings">Коллекция для записи предупреждений (пропуск рекурсивных свойств)</param>
+    /// <param name="model">The model contract.</param>
+    /// <param name="enumNames">The document's enum names.</param>
+    /// <param name="modelLookup">The models used to resolve inheritance.</param>
+    /// <param name="warnings">The optional generation diagnostics.</param>
+    /// <returns>The generated Unreal Engine header.</returns>
+    /// <exception cref="NotSupportedException">The model requires unsupported recursive ownership or composition codecs.</exception>
     public CppHeaderFileNode Build(IrModel model, IReadOnlySet<string> enumNames, IReadOnlyDictionary<string, IrModel> modelLookup, ICollection<string>? warnings = null)
     {
         var structName = _naming.StructName(model.Name);
@@ -42,27 +46,18 @@ public sealed class UEModelAstBuilder
         var fileName = _naming.ModelFileName(model.OriginalName);
 
         var category = _naming.ModelTypeCategory(_options.BlueprintCategory);
+        CppTypeReferenceCollector.EnsureSupportedComposition(model, modelLookup);
         var (baseStruct, baseModelName, propertiesToUse) = GetPropertiesAndBase(model, modelLookup);
+        CppTypeReferenceCollector.EnsureNonRecursive(model, propertiesToUse, enumNames);
         var fields = new List<UPropertyFieldNode>();
-        var skippedProperties = new List<SkippedPropertyComment>();
         foreach (var property in propertiesToUse)
         {
-            if (TypeReferencesModel(property.Type, model.Name, enumNames))
-            {
-                var typeNode = _typeMapper.MapType(property.Type);
-                var propName = _naming.PropertyName(property.Name);
-                var reason = "Unreal Engine does not support recursive types";
-                skippedProperties.Add(new SkippedPropertyComment(propName, typeNode, reason));
-                warnings?.Add($"Model {structName}: skipping recursive property '{property.Name}' ({reason}).");
-                continue;
-            }
             fields.Add(BuildField(property, category));
         }
         var structNode = new UStructDeclarationNode(
             name: new IdentifierNode(structName),
             specifiers: new UStructSpecifiers { BlueprintType = true, Category = category },
             fields: fields,
-            skippedProperties: skippedProperties,
             baseStruct: baseStruct,
             documentation: BuildDocumentation(model.Description));
 

@@ -41,6 +41,13 @@ public sealed class StdClientAstBuilder
         public required CppSourceFileNode ClientSource { get; init; }
     }
 
+    /// <summary>Builds a client and its optional interface for the selected execution style.</summary>
+    /// <param name="client">The client contract.</param>
+    /// <param name="enumNames">The document's enum names.</param>
+    /// <param name="modelLookup">The document's model contracts.</param>
+    /// <param name="rootNamespace">The generated namespace.</param>
+    /// <param name="options">The client output options.</param>
+    /// <returns>The client declarations and implementation.</returns>
     public BuildResult Build(
         IrClient client,
         IReadOnlySet<string> enumNames,
@@ -56,8 +63,20 @@ public sealed class StdClientAstBuilder
 
         var referencedModels = new HashSet<string>();
         var referencedEnums = new HashSet<string>();
+        var originalNames = new Dictionary<string, string>(StringComparer.Ordinal);
+        var standardIncludes = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var operation in client.Operations)
+        {
             CollectOperationReferences(operation, referencedModels, referencedEnums, enumNames);
+            foreach (var type in OperationTypes(operation))
+            {
+                CppTypeReferenceCollector.CollectOriginalNames(type, originalNames);
+                foreach (var include in StdCppTypeMapper.StdIncludesFor(type))
+                    standardIncludes.Add(include);
+            }
+            if (operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters).Any(p => !p.IsRequired))
+                standardIncludes.Add("<optional>");
+        }
 
         // ===== Интерфейс (только модели + Expected/Error; без runtime-pimpl) =====
         CppHeaderFileNode? interfaceHeader = null;
@@ -74,7 +93,7 @@ public sealed class StdClientAstBuilder
 
             interfaceHeader = new CppHeaderFileNode(
                 fileName: _naming.InterfaceHeaderPath(client.Name),
-                includes: BuildInterfaceIncludes(referencedModels, referencedEnums, enumNames, emitAsync),
+                includes: BuildInterfaceIncludes(referencedModels, referencedEnums, originalNames, standardIncludes, emitAsync),
                 declarations:
                 [
                     new NamespaceDeclarationNode(new IdentifierNode(rootNamespace),
@@ -98,12 +117,17 @@ public sealed class StdClientAstBuilder
 
         foreach (var operation in client.Operations)
         {
-            if (emitSync)
-                classMembers.Add(BuildMethodDeclaration(operation, isAsync: false, isInterface: false));
+            if (emitSync || emitAsync)
+                classMembers.Add(BuildMethodDeclaration(operation, isAsync: false, isInterface: false,
+                    accessModifier: emitSync ? AccessModifier.Public : AccessModifier.Private));
             if (emitAsync)
                 classMembers.Add(BuildMethodDeclaration(operation, isAsync: true, isInterface: false));
         }
 
+        classMembers.Add(new FieldDeclarationNode(
+            new IdentifierNode("_config"),
+            new SimpleTypeNode(new IdentifierNode("ValIO::HttpConfig")),
+            AccessModifier.Private));
         classMembers.Add(new FieldDeclarationNode(
             new IdentifierNode("_http"),
             new SimpleTypeNode(new IdentifierNode("ValIO::HttpClient")),
@@ -111,7 +135,7 @@ public sealed class StdClientAstBuilder
 
         var clientHeader = new CppHeaderFileNode(
             fileName: _naming.ClientHeaderPath(client.Name),
-            includes: BuildClientIncludes(client.Name, referencedModels, referencedEnums, enumNames, useInterface, emitAsync),
+            includes: BuildClientIncludes(client.Name, referencedModels, referencedEnums, originalNames, standardIncludes, useInterface, emitAsync),
             declarations:
             [
                 new NamespaceDeclarationNode(new IdentifierNode(rootNamespace),
@@ -129,7 +153,7 @@ public sealed class StdClientAstBuilder
         sourceMembers.Add(BuildConstructorDefinition(clientClassName));
         foreach (var operation in client.Operations)
         {
-            if (emitSync)
+            if (emitSync || emitAsync)
                 sourceMembers.Add(BuildMethodDefinition(clientClassName, operation, enumNames, modelLookup, isAsync: false));
             if (emitAsync)
                 sourceMembers.Add(BuildMethodDefinition(clientClassName, operation, enumNames, modelLookup, isAsync: true));
@@ -137,7 +161,7 @@ public sealed class StdClientAstBuilder
 
         var clientSource = new CppSourceFileNode(
             fileName: _naming.ClientSourcePath(client.Name),
-            includes: BuildSourceIncludes(client.Name, referencedModels, referencedEnums, enumNames, useInterface, options),
+            includes: BuildSourceIncludes(client.Name, referencedModels, referencedEnums, originalNames),
             sections:
             [
                 new CppSourceSection(members:
@@ -156,15 +180,21 @@ public sealed class StdClientAstBuilder
 
     // ===== Сигнатуры =====
 
+    /// <summary>Declares an operation or an internal synchronous implementation for async-only clients.</summary>
+    /// <param name="operation">The operation contract.</param>
+    /// <param name="isAsync">Whether this declaration returns a future.</param>
+    /// <param name="isInterface">Whether it declares a pure virtual interface method.</param>
+    /// <param name="accessModifier">The visibility of the implementation method.</param>
+    /// <returns>The operation declaration.</returns>
     private MethodDeclarationNode BuildMethodDeclaration(
-        IrOperation operation, bool isAsync, bool isInterface)
+        IrOperation operation, bool isAsync, bool isInterface, AccessModifier accessModifier = AccessModifier.Public)
     {
         var methodName = _naming.MethodName(operation.MethodName);
         return new MethodDeclarationNode(
             new IdentifierNode(isAsync ? $"{methodName}Async" : methodName),
             returnType: BuildExpectedType(GetSuccessType(operation), isAsync),
             parameters: BuildMethodParameters(operation),
-            accessModifier: AccessModifier.Public,
+            accessModifier: accessModifier,
             isInterfaceMethod: isInterface,
             isConst: true);
     }
@@ -237,6 +267,9 @@ public sealed class StdClientAstBuilder
 
     // ===== Тела =====
 
+    /// <summary>Initializes the HTTP transport and retains configuration for independently owned async work.</summary>
+    /// <param name="clientClassName">The generated client type.</param>
+    /// <returns>The out-of-class constructor definition.</returns>
     private CppFreeFunctionNode BuildConstructorDefinition(string clientClassName)
     {
         var metadata = new Dictionary<string, object> { [ConstructorMetadataKey] = true };
@@ -246,6 +279,8 @@ public sealed class StdClientAstBuilder
             [new CppParameterNode(new IdentifierNode("config"), new RawTypeNode("const ValIO::HttpConfig&"))],
             body: new BlockNode(
             [
+                new ExpressionStatementNode(new BinaryExpressionNode(
+                    StdExpressions.Ident("_config"), BinaryOperator.Assign, StdExpressions.Ident("config"), isAssignment: true)),
                 new ExpressionStatementNode(new BinaryExpressionNode(
                     StdExpressions.Ident("_http"),
                     BinaryOperator.Assign,
@@ -257,6 +292,13 @@ public sealed class StdClientAstBuilder
             metadata: metadata);
     }
 
+    /// <summary>Defines an operation or an async wrapper owning its transport and parameter values.</summary>
+    /// <param name="clientClassName">The generated client type.</param>
+    /// <param name="operation">The operation contract.</param>
+    /// <param name="enumNames">The document's enum names.</param>
+    /// <param name="modelLookup">The available request model contracts.</param>
+    /// <param name="isAsync">Whether this definition returns a future.</param>
+    /// <returns>The operation definition.</returns>
     private CppFreeFunctionNode BuildMethodDefinition(
         string clientClassName, IrOperation operation, IReadOnlySet<string> enumNames, IReadOnlyDictionary<string, IrModel> modelLookup, bool isAsync)
     {
@@ -269,14 +311,13 @@ public sealed class StdClientAstBuilder
 
         if (isAsync)
         {
-            var captures = new List<string> { "this" };
+            var captures = new List<string> { "httpConfig = _config" };
             captures.AddRange(operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters).Select(p => _naming.PropertyName(p.Name)));
             var hasBody = operation.RequestBody != null;
             if (hasBody)
                 captures.Add("request");
 
-            // Порядок аргументов повторяет переупорядоченную сигнатуру:
-            // обязательные (path + required query/header + body) вперёд, optional — в хвост.
+            // Required parameters and the body precede all trailing default arguments.
             var orderedParameters = operation.PathParameters
                 .Concat(operation.QueryParameters).Concat(operation.HeaderParameters)
                 .OrderBy(p => p.IsRequired ? 0 : 1).ToList();
@@ -311,7 +352,13 @@ public sealed class StdClientAstBuilder
                             new CppLambdaExpressionNode(
                                 captures,
                                 [],
-                                new BlockNode([new ReturnStatementNode(new CallExpressionNode(StdExpressions.Ident(methodName), callArguments))])),
+                                new BlockNode(
+                                [
+                                    new VariableDeclarationStatementNode(new IdentifierNode("worker"), new RawTypeNode(clientClassName),
+                                        new CallExpressionNode(StdExpressions.Ident(clientClassName), [StdExpressions.Ident("httpConfig")])),
+                                    new ReturnStatementNode(new CallExpressionNode(
+                                        new MemberAccessExpressionNode(StdExpressions.Ident("worker"), new IdentifierNode(methodName)), callArguments)),
+                                ])),
                         ])),
                 ]),
                 isConst: true);
@@ -421,20 +468,26 @@ public sealed class StdClientAstBuilder
         return statements;
     }
 
+    /// <summary>Matches path placeholders by their original schema names rather than parameter declaration order.</summary>
+    /// <param name="operation">The operation containing the path template.</param>
+    /// <returns>The encoded path expression.</returns>
+    /// <exception cref="InvalidOperationException">A placeholder is malformed or has no declared parameter.</exception>
     private ExpressionNode BuildPathExpression(IrOperation operation)
     {
         var template = operation.Path;
-        var parameters = operation.PathParameters.ToList();
-        var parameterIndex = 0;
         ExpressionNode? path = null;
 
-        while (parameterIndex < parameters.Count && template.Contains('{'))
+        while (template.Contains('{'))
         {
             var placeholderStart = template.IndexOf('{');
-            var placeholderEnd = template.IndexOf('}');
+            var placeholderEnd = template.IndexOf('}', placeholderStart + 1);
+            if (placeholderEnd < 0)
+                throw new InvalidOperationException($"Operation '{operation.MethodName}' has an unterminated path placeholder.");
+            var placeholder = template[(placeholderStart + 1)..placeholderEnd];
+            var parameter = operation.PathParameters.FirstOrDefault(p => p.OriginalName == placeholder)
+                ?? throw new InvalidOperationException($"Operation '{operation.MethodName}' has no path parameter for '{{{placeholder}}}'.");
             var literalPart = template[..placeholderStart];
             template = template[(placeholderEnd + 1)..];
-            var parameter = parameters[parameterIndex++];
 
             if (literalPart.Length > 0)
             {
@@ -489,6 +542,10 @@ public sealed class StdClientAstBuilder
         }
     }
 
+    /// <summary>Builds JSON or form request content while preserving optional field presence.</summary>
+    /// <param name="statements">The operation statements being constructed.</param>
+    /// <param name="operation">The operation contract.</param>
+    /// <param name="modelLookup">The available request model contracts.</param>
     private void AppendRequestBody(List<StatementNode> statements, IrOperation operation, IReadOnlyDictionary<string, IrModel> modelLookup)
     {
         var body = operation.RequestBody;
@@ -499,7 +556,6 @@ public sealed class StdClientAstBuilder
 
         if (body.IsJson)
         {
-            // const std::string body = ValIO::Dump(request); httpRequest.SetJsonBody(body);
             statements.Add(new VariableDeclarationStatementNode(
                 new IdentifierNode("body"),
                 new SimpleTypeNode(new IdentifierNode("std::string")),
@@ -510,47 +566,59 @@ public sealed class StdClientAstBuilder
                 new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("SetJsonBody")),
                 [StdExpressions.Ident("body")])));
         }
-        else if (body.IsFormUrlEncoded)
+        else if (body.IsFormUrlEncoded || body.IsMultipartFormData)
         {
+            if (body.IsMultipartFormData)
+                statements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
+                    new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("ContentType")),
+                    BinaryOperator.Assign, new LiteralExpressionNode("multipart/form-data", LiteralKind.String), isAssignment: true)));
             foreach (var property in GetBodyProperties(body, modelLookup))
-            {
-                var literal = _typeMapper.FormatQueryLiteral(property.Type, $"request.{_naming.PropertyName(property.Name)}");
-                statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                    new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
-                    [
-                        new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                        StdExpressions.Ident(literal),
-                    ])));
-            }
+                statements.Add(BuildFormProperty(property, body.IsMultipartFormData));
         }
-        else if (body.IsMultipartFormData)
+    }
+
+    /// <summary>Builds one form field or binary part and omits absent optional fields.</summary>
+    /// <param name="property">The request model property.</param>
+    /// <param name="isMultipart">Whether binary values are emitted as file parts.</param>
+    /// <returns>The field conversion and its optional presence guard.</returns>
+    private StatementNode BuildFormProperty(IrProperty property, bool isMultipart)
+    {
+        var field = $"request.{_naming.PropertyName(property.Name)}";
+        var isOptional = StdPropertyTypes.IsOptional(property);
+        var value = isOptional ? $"(*{field})" : field;
+        var type = StdPropertyTypes.ValueType(property);
+        var isBinary = isMultipart && IrTypeQueries.IsFileOrBinary(type);
+        var nullable = type as IrNullableType;
+        var concreteValue = nullable == null ? value : $"(*{value})";
+        var concreteType = nullable?.InnerType ?? type;
+
+        StatementNode statement;
+        if (isBinary)
         {
-            foreach (var property in GetBodyProperties(body, modelLookup))
-            {
-                var fieldName = $"request.{_naming.PropertyName(property.Name)}";
-                if (IrTypeQueries.IsFileOrBinary(property.Type))
-                {
-                    statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                        new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFilePart")),
-                        [
-                            new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                            new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                            StdExpressions.Ident(fieldName),
-                            new LiteralExpressionNode("application/octet-stream", LiteralKind.String),
-                        ])));
-                }
-                else
-                {
-                    var literal = _typeMapper.FormatQueryLiteral(property.Type, fieldName);
-                    statements.Add(new ExpressionStatementNode(new CallExpressionNode(
-                        new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
-                        [
-                            new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                            StdExpressions.Ident(literal),
-                        ])));
-                }
-            }
+            var fileValue = concreteType is IrArrayType ? "filePart" : concreteValue;
+            statement = new ExpressionStatementNode(new CallExpressionNode(
+                new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFilePart")),
+                [
+                    new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
+                    new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
+                    StdExpressions.Ident(fileValue),
+                    new LiteralExpressionNode("application/octet-stream", LiteralKind.String),
+                ]));
+            if (concreteType is IrArrayType)
+                statement = new ForEachStatementNode(new IdentifierNode("filePart"), StdExpressions.Ident(concreteValue), new BlockNode([statement]));
+            if (nullable != null)
+                statement = new IfStatementNode(StdExpressions.Ident(value), new BlockNode([statement]));
         }
+        else
+        {
+            var literal = _typeMapper.FormatQueryLiteral(concreteType, concreteValue);
+            var wireValue = nullable == null ? literal : $"({value} ? {literal} : \"null\")";
+            statement = new ExpressionStatementNode(new CallExpressionNode(
+                new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
+                [new LiteralExpressionNode(property.OriginalName, LiteralKind.String), StdExpressions.Ident(wireValue)]));
+        }
+
+        return isOptional ? new IfStatementNode(StdExpressions.Ident(field), new BlockNode([statement])) : statement;
     }
 
     private static IEnumerable<IrProperty> GetBodyProperties(IrRequestBody body, IReadOnlyDictionary<string, IrModel> modelLookup)
@@ -603,22 +671,54 @@ public sealed class StdClientAstBuilder
         }
     }
 
-    private List<CppIncludeDirectiveNode> BuildInterfaceIncludes(
-        HashSet<string> referencedModels, HashSet<string> referencedEnums, IReadOnlySet<string> enumNames, bool emitAsync)
+    /// <summary>Enumerates every type used by an operation for include and original-name resolution.</summary>
+    /// <param name="operation">The operation contract.</param>
+    /// <returns>The parameter, body, and response types.</returns>
+    private static IEnumerable<IrType> OperationTypes(IrOperation operation)
     {
-        var includes = new List<CppIncludeDirectiveNode>();
+        foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
+            yield return parameter.Type;
+        if (operation.RequestBody != null)
+            yield return operation.RequestBody.Type;
+        foreach (var response in operation.Responses)
+            if (response.Type != null)
+                yield return response.Type;
+    }
+
+    /// <summary>Builds self-contained interface includes without depending on model transitive includes.</summary>
+    /// <param name="referencedModels">The referenced model names.</param>
+    /// <param name="referencedEnums">The referenced enum names.</param>
+    /// <param name="originalNames">The stable source names used for file paths.</param>
+    /// <param name="standardIncludes">The standard headers required by all operation types.</param>
+    /// <param name="emitAsync">Whether future declarations are generated.</param>
+    /// <returns>The interface include directives.</returns>
+    private List<CppIncludeDirectiveNode> BuildInterfaceIncludes(
+        HashSet<string> referencedModels, HashSet<string> referencedEnums, IReadOnlyDictionary<string, string> originalNames,
+        IEnumerable<string> standardIncludes, bool emitAsync)
+    {
+        var includes = standardIncludes.Select(i => new CppIncludeDirectiveNode(i.Trim('<', '>'), isSystemInclude: true)).ToList();
         if (emitAsync)
             includes.Add(new CppIncludeDirectiveNode("future", isSystemInclude: true));
         includes.Add(new CppIncludeDirectiveNode("Runtime/ValIOError.h"));
         includes.Add(new CppIncludeDirectiveNode("Runtime/ValIOExpected.h"));
-        includes.AddRange(BuildModelIncludes(referencedModels, referencedEnums));
+        includes.AddRange(BuildModelIncludes(referencedModels, referencedEnums, originalNames));
         return includes;
     }
 
+    /// <summary>Builds client includes with explicit standard dependencies and stable schema file names.</summary>
+    /// <param name="clientName">The client contract name.</param>
+    /// <param name="referencedModels">The referenced model names.</param>
+    /// <param name="referencedEnums">The referenced enum names.</param>
+    /// <param name="originalNames">The stable source names used for file paths.</param>
+    /// <param name="standardIncludes">The standard headers required by all operation types.</param>
+    /// <param name="useInterface">Whether the client implements a generated interface.</param>
+    /// <param name="emitAsync">Whether future declarations are generated.</param>
+    /// <returns>The client include directives.</returns>
     private List<CppIncludeDirectiveNode> BuildClientIncludes(
-        string clientName, HashSet<string> referencedModels, HashSet<string> referencedEnums, IReadOnlySet<string> enumNames, bool useInterface, bool emitAsync)
+        string clientName, HashSet<string> referencedModels, HashSet<string> referencedEnums,
+        IReadOnlyDictionary<string, string> originalNames, IEnumerable<string> standardIncludes, bool useInterface, bool emitAsync)
     {
-        var includes = new List<CppIncludeDirectiveNode>();
+        var includes = standardIncludes.Select(i => new CppIncludeDirectiveNode(i.Trim('<', '>'), isSystemInclude: true)).ToList();
         if (emitAsync)
             includes.Add(new CppIncludeDirectiveNode("future", isSystemInclude: true));
         if (useInterface)
@@ -626,12 +726,18 @@ public sealed class StdClientAstBuilder
         includes.Add(new CppIncludeDirectiveNode("Runtime/ValIOError.h"));
         includes.Add(new CppIncludeDirectiveNode("Runtime/ValIOExpected.h"));
         includes.Add(new CppIncludeDirectiveNode("Runtime/ValIOHttp.h"));
-        includes.AddRange(BuildModelIncludes(referencedModels, referencedEnums));
+        includes.AddRange(BuildModelIncludes(referencedModels, referencedEnums, originalNames));
         return includes;
     }
 
+    /// <summary>Collects codec declarations using original schema names even after identifier affixes.</summary>
+    /// <param name="clientName">The client contract name.</param>
+    /// <param name="referencedModels">The referenced model names.</param>
+    /// <param name="referencedEnums">The referenced enum names.</param>
+    /// <param name="originalNames">The stable source names used for file paths.</param>
+    /// <returns>The implementation include directives.</returns>
     private List<CppIncludeDirectiveNode> BuildSourceIncludes(
-        string clientName, HashSet<string> referencedModels, HashSet<string> referencedEnums, IReadOnlySet<string> enumNames, bool useInterface, CppGenerationOptions options)
+        string clientName, HashSet<string> referencedModels, HashSet<string> referencedEnums, IReadOnlyDictionary<string, string> originalNames)
     {
         var includes = new List<CppIncludeDirectiveNode>
         {
@@ -639,18 +745,24 @@ public sealed class StdClientAstBuilder
             new("Runtime/ValIOJson.h"),
         };
         foreach (var refModel in referencedModels.OrderBy(x => x, StringComparer.Ordinal))
-            includes.Add(new CppIncludeDirectiveNode(_naming.SerializerHeaderPath(refModel)));
+            includes.Add(new CppIncludeDirectiveNode(_naming.SerializerHeaderPath(originalNames.GetValueOrDefault(refModel, refModel))));
         foreach (var refEnum in referencedEnums.OrderBy(x => x, StringComparer.Ordinal))
-            includes.Add(new CppIncludeDirectiveNode(_naming.SerializerHeaderPath(refEnum)));
+            includes.Add(new CppIncludeDirectiveNode(_naming.SerializerHeaderPath(originalNames.GetValueOrDefault(refEnum, refEnum))));
         return includes;
     }
 
-    private IEnumerable<CppIncludeDirectiveNode> BuildModelIncludes(HashSet<string> referencedModels, HashSet<string> referencedEnums)
+    /// <summary>Builds model and enum includes from stable schema names.</summary>
+    /// <param name="referencedModels">The referenced model names.</param>
+    /// <param name="referencedEnums">The referenced enum names.</param>
+    /// <param name="originalNames">The stable source names used for file paths.</param>
+    /// <returns>The referenced declaration include directives.</returns>
+    private IEnumerable<CppIncludeDirectiveNode> BuildModelIncludes(HashSet<string> referencedModels, HashSet<string> referencedEnums,
+        IReadOnlyDictionary<string, string> originalNames)
     {
         foreach (var refModel in referencedModels.OrderBy(x => x, StringComparer.Ordinal))
-            yield return new CppIncludeDirectiveNode(_naming.ModelHeaderPath(refModel));
+            yield return new CppIncludeDirectiveNode(_naming.ModelHeaderPath(originalNames.GetValueOrDefault(refModel, refModel)));
         foreach (var refEnum in referencedEnums.OrderBy(x => x, StringComparer.Ordinal))
-            yield return new CppIncludeDirectiveNode(_naming.EnumHeaderPath(refEnum));
+            yield return new CppIncludeDirectiveNode(_naming.EnumHeaderPath(originalNames.GetValueOrDefault(refEnum, refEnum)));
     }
 
     }

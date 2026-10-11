@@ -14,15 +14,17 @@ public sealed class CppStdSerializersStep(ICppAstRenderer renderer) : CppStdStep
     public override string Name => "cpp-std-serializers";
     public override int Order => 60;
 
+    /// <inheritdoc />
     public override bool ShouldExecute(GenerationContext context)
         => base.ShouldExecute(context)
+           && EffectiveOptions(context).EmitSerializers
            && (context.Configuration.GenerateModels || context.Configuration.GenerateEnums)
            && (context.IrDocument.Models.Count > 0 || context.IrDocument.Enums.Count > 0);
 
+    /// <inheritdoc />
     public override Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var (naming, mapper) = CreateServices(context);
-        DrainWarnings(context, mapper);
         var options = EffectiveOptions(context);
         var enumBuilder = new StdEnumAstBuilder(naming);
         var modelBuilder = new StdModelJsonAstBuilder(mapper, naming);
@@ -56,6 +58,7 @@ public sealed class CppStdSerializersStep(ICppAstRenderer renderer) : CppStdStep
                 naming.SerializerSourcePath(model.OriginalName), Renderer.Render(codecSource)));
         }
 
+        DrainWarnings(context, mapper);
         return Task.CompletedTask;
     }
 }

@@ -10,6 +10,44 @@ namespace ValIO.Generators.Cpp.Ast.Builders;
 /// </summary>
 public static class CppTypeReferenceCollector
 {
+    /// <summary>Rejects model compositions that cannot be represented by the current C++ object-codec contract.</summary>
+    /// <param name="model">The model being generated.</param>
+    /// <param name="modelLookup">The available base model contracts.</param>
+    /// <exception cref="NotSupportedException">The reachable composition requires union validation or unresolved inheritance.</exception>
+    public static void EnsureSupportedComposition(IrModel model, IReadOnlyDictionary<string, IrModel> modelLookup)
+    {
+        var pending = new Stack<IrModel>();
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        pending.Push(model);
+        while (pending.TryPop(out var current))
+        {
+            if (!visited.Add(current.Name) || current.Composition == null)
+                continue;
+            if (current.Composition.Kind != IrCompositionKind.AllOf)
+                throw new NotSupportedException($"C++ model '{current.OriginalName}' uses {current.Composition.Kind}; a typed variant codec is required.");
+            foreach (var member in current.Composition.Types)
+            {
+                if (member is not IrModelReference reference)
+                    throw new NotSupportedException($"C++ model '{current.OriginalName}' contains a nested non-reference allOf member; a composition-aware codec is required.");
+                if (!modelLookup.TryGetValue(reference.ModelName, out var baseModel))
+                    throw new NotSupportedException($"C++ model '{current.OriginalName}' references unresolved allOf base '{reference.OriginalModelName}'.");
+                pending.Push(baseModel);
+            }
+        }
+    }
+
+    /// <summary>Rejects recursive value contracts rather than silently dropping their JSON properties.</summary>
+    /// <param name="model">The model being generated.</param>
+    /// <param name="properties">The effective fields after inheritance resolution.</param>
+    /// <param name="enumNames">The document's enum names.</param>
+    /// <exception cref="NotSupportedException">A property requires a recursive model representation not provided by this profile.</exception>
+    public static void EnsureNonRecursive(IrModel model, IReadOnlyList<IrProperty> properties, IReadOnlySet<string> enumNames)
+    {
+        foreach (var property in properties)
+            if (ReferencesModel(property.Type, model.Name, enumNames))
+                throw new NotSupportedException($"C++ model '{model.OriginalName}' has recursive property '{property.OriginalName}'; a recursive ownership representation is required.");
+    }
+
     /// <summary>
     /// Рекурсивно раскладывает ссылки типа по множествам models/enums.
     /// </summary>

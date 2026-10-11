@@ -5,18 +5,18 @@ using ValIO.Generators.Cpp.Models;
 namespace ValIO.Generators.Cpp.Options;
 
 /// <summary>
-/// Дескриптор опций C++-генератора: runtime-профиль (ue | std), стандарт C++ (17|20|23),
-/// стиль API (sync | async | both), форма клиента (class | interface+impl) и настройки
-/// std-профиля (cpp-httplib + nlohmann_json).
+/// Parses and validates runtime-specific C++ generator options.
 /// </summary>
 public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
 {
+    /// <summary>Runtime profiles available to consumers.</summary>
     private static readonly OptionChoice[] RuntimeChoices =
     [
         new("ue",  "Unreal Engine (USTRUCT/UCLASS + UE runtime)", "cpp.runtime.ue.desc"),
         new("std", "Standalone C++ (cpp-httplib + nlohmann_json)", "cpp.runtime.std.desc"),
     ];
 
+    /// <summary>Supported standalone client execution styles.</summary>
     private static readonly OptionChoice[] ApiStyleChoices =
     [
         new("sync",  "Synchronous methods (ValIO::Expected)",  "cpp.apiStyle.sync.desc"),
@@ -24,15 +24,16 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         new("both",  "Synchronous methods + async wrappers",   "cpp.apiStyle.both.desc"),
     ];
 
+    /// <summary>Supported standalone client declaration shapes.</summary>
     private static readonly OptionChoice[] ClientShapeChoices =
     [
         new("class",          "Single {Client}Client class",                   "cpp.clientShape.class.desc"),
         new("interface+impl", "Interface I{Client} + {Client}Client impl",     "cpp.clientShape.interfaceImpl.desc"),
     ];
 
+    /// <inheritdoc />
     public object? ParseOptions(Dictionary<string, JsonElement> rawOptions, out IReadOnlyList<string> errors)
     {
-<<<<<<< HEAD
         var errorList = new List<string>();
         var opts = new CppGenerationOptions();
 
@@ -77,13 +78,15 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
             else
                 errorList.Add("Option 'emitCmake' must be a boolean");
         }
+        if (rawOptions.TryGetValue("emitSerializers", out var emitSerializers))
+        {
+            if (emitSerializers.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                opts.EmitSerializers = emitSerializers.GetBoolean();
+            else
+                errorList.Add("Option 'emitSerializers' must be a boolean");
+        }
 
-        errors = errorList.AsReadOnly();
-=======
-        errors = Array.Empty<string>();
-        var opts = new Models.CppGenerationOptions();
-
-        // Each option falls back to the model's default when absent or of the wrong JSON kind.
+        // Unreal Engine options share the descriptor with the standalone profile.
         string? Str(string key) =>
             rawOptions.TryGetValue(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() : null;
         bool? Bool(string key) =>
@@ -104,10 +107,11 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         opts.GeneratedHeaderSuffix = Str("generatedHeaderSuffix") ?? opts.GeneratedHeaderSuffix;
         opts.OutputDirectory = Str("outputDirectory") ?? opts.OutputDirectory;
 
->>>>>>> gitlab/feature/cubemap_generator_mpv1
+        errors = errorList.AsReadOnly();
         return opts;
     }
 
+    /// <inheritdoc />
     public IReadOnlyList<string> ValidateOptions(object options)
     {
         if (options is not CppGenerationOptions opts)
@@ -122,6 +126,7 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         return errors.AsReadOnly();
     }
 
+    /// <inheritdoc />
     public IReadOnlyList<OptionDescription> GetOptionDescriptions() =>
     [
         new(
@@ -222,8 +227,17 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
             Choices:      null,
             Group:        "std runtime",
             DependsOn:    "runtime"),
+        new(
+            Name: "emitSerializers",
+            Description: "Emit separate JSON codec headers and sources. Disable together with client generation for pure DTO output without runtime or third-party dependencies.",
+            DefaultValue: "true", IsRequired: false, Kind: OptionKind.Bool, Choices: null,
+            Group: "std runtime", DependsOn: "runtime"),
     ];
 
+    /// <summary>Parses a runtime profile and records unsupported values.</summary>
+    /// <param name="value">The supplied option value.</param>
+    /// <param name="errors">The parse diagnostics.</param>
+    /// <returns>The selected runtime profile.</returns>
     private static CppRuntimeProfile NormalizeRuntime(string? value, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -237,6 +251,10 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         };
     }
 
+    /// <summary>Parses a client execution style and records unsupported values.</summary>
+    /// <param name="value">The supplied option value.</param>
+    /// <param name="errors">The parse diagnostics.</param>
+    /// <returns>The selected execution style.</returns>
     private static CppApiStyle NormalizeApiStyle(string? value, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -251,6 +269,10 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         };
     }
 
+    /// <summary>Parses a client declaration shape and records unsupported values.</summary>
+    /// <param name="value">The supplied option value.</param>
+    /// <param name="errors">The parse diagnostics.</param>
+    /// <returns>The selected client shape.</returns>
     private static CppClientShape NormalizeClientShape(string? value, List<string> errors)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -264,6 +286,14 @@ public sealed class CppOptionsDescriptor : IGeneratorOptionsDescriptor
         };
     }
 
+    /// <summary>Records an unknown enum option while retaining a usable fallback.</summary>
+    /// <typeparam name="TEnum">The option's enum type.</typeparam>
+    /// <param name="errors">The parse diagnostics.</param>
+    /// <param name="value">The unsupported supplied value.</param>
+    /// <param name="fallback">The default option value.</param>
+    /// <param name="optionName">The option's configuration key.</param>
+    /// <param name="allowed">The accepted values for diagnostics.</param>
+    /// <returns>The supplied fallback value.</returns>
     private static TEnum Unknown<TEnum>(List<string> errors, string value, TEnum fallback, string optionName, string allowed)
         where TEnum : struct, Enum
     {

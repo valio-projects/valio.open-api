@@ -13,6 +13,9 @@ using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Zod.Ast.Builders;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 using ValIO.Generators.TypeScript.Zod.Ast.Renderers;
+using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Generators.TypeScript.Ast.Renderers;
+using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.Zod;
 
@@ -71,7 +74,7 @@ public class ZodSchemaRenderer
         $"import {{ {TypeScriptOptionIds.UuidFormat.RegexConstName} }} from \"{relativeDir}/{TypeScriptOptionIds.UuidFormat.ConstFileName}\";";
     
     /// <summary>
-    /// Рендерит Zod схему для IR модели.
+    /// Renders a model schema with a checked output type and unknown external input.
     /// </summary>
     /// <remarks>
     /// Design note — the schema is emitted as <c>export const XSchema: ZodSchema&lt;X&gt; = …</c>, annotated
@@ -151,13 +154,13 @@ public class ZodSchemaRenderer
         var zodRenderer = new ZodAstRenderer();
         var zodSchemaCode = zodRenderer.RenderSchema(zodSchema);
         
-        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{model.Name}> = {zodSchemaCode};");
+        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: {SchemaType(model.Name)} = {zodSchemaCode};");
         
         return sb.ToString();
     }
     
     /// <summary>
-    /// Рендерит Zod схему для IR enum
+    /// Renders an enum schema with a checked output type and unknown external input.
     /// </summary>
     /// <param name="enumModel">IR enum</param>
     /// <param name="importPath">Путь для импортов (опционально)</param>
@@ -197,7 +200,7 @@ public class ZodSchemaRenderer
                 CommentGenerator.GenerateJSDocComment(sb, 0, enumModel.Description);
             }
 
-            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{typeName}> = z.enum({constArrayName});");
+            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: {SchemaType(typeName)} = z.enum({constArrayName});");
             return sb.ToString();
         }
 
@@ -217,10 +220,16 @@ public class ZodSchemaRenderer
         var zodRenderer = new ZodAstRenderer();
         var zodEnumCode = zodRenderer.VisitZodEnum(zodEnum);
 
-        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: ZodSchema<{typeName}> = {zodEnumCode};");
+        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: {SchemaType(typeName)} = {zodEnumCode};");
 
         return sb.ToString();
     }
+
+    /// <summary>Renders the selected Zod major's schema type using the canonical type AST.</summary>
+    /// <param name="outputName">The validated model or enum name.</param>
+    /// <returns>The schema annotation with an unknown input type.</returns>
+    private string SchemaType(string outputName) => new TypeScriptAstRenderer().Visit(
+        ZodSchemaTypes.Build(new SimpleTypeNode(new IdentifierNode(outputName)), _zodImportPath));
     
     /// <summary>
     /// Извлекает зависимости из IR модели

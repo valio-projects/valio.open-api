@@ -5,33 +5,47 @@ using ValIO.Generators.Cpp.Runtime;
 namespace ValIO.Generators.Cpp.Steps;
 
 /// <summary>
-/// Самодостаточный ValIO-runtime std-профиля — эмитится ровно один раз на проект.
-/// Файлы канонические (raw-строки, прецедент CSharpClientStep): компилируемость
-/// на C++17/20/23 против cpp-httplib 0.18.3 + nlohmann_json 3.12.0 проверяет
-/// compile-фикстура (W6).
+/// Emits only runtime layers actually required by the selected model, serializer, and client outputs.
 /// </summary>
 public sealed class CppStdRuntimeStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
 {
+    /// <inheritdoc />
     public override string Name => "cpp-std-runtime";
+    /// <inheritdoc />
     public override int Order => 70;
 
+    /// <inheritdoc />
     public override bool ShouldExecute(GenerationContext context)
         => base.ShouldExecute(context)
-           && (context.IrDocument.Models.Count > 0 || context.IrDocument.Clients.Count > 0);
+           && ((EffectiveOptions(context).EmitSerializers && context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0)
+               || (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0));
 
+    /// <inheritdoc />
     public override Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var options = EffectiveOptions(context);
-        var alreadyEmitted = context.GeneratedFiles.Any(f => f.RelativePath == StdRuntimeTemplates.ExpectedHeaderFileName);
-        if (alreadyEmitted)
-            return Task.CompletedTask;
-
         ct.ThrowIfCancellationRequested();
-        context.GeneratedFiles.Add(new GeneratedFile(StdRuntimeTemplates.ExpectedHeaderFileName, StdRuntimeTemplates.ExpectedHeader()));
-        context.GeneratedFiles.Add(new GeneratedFile(StdRuntimeTemplates.ErrorHeaderFileName, StdRuntimeTemplates.ErrorHeader()));
-        context.GeneratedFiles.Add(new GeneratedFile(StdRuntimeTemplates.HttpHeaderFileName, StdRuntimeTemplates.HttpHeader()));
-        context.GeneratedFiles.Add(new GeneratedFile(StdRuntimeTemplates.HttpSourceFileName, StdRuntimeTemplates.HttpSource(options.HttpInclude)));
-        context.GeneratedFiles.Add(new GeneratedFile(StdRuntimeTemplates.JsonHeaderFileName, StdRuntimeTemplates.JsonHeader(options.JsonInclude)));
+        if (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0 && !options.EmitSerializers)
+            throw new InvalidOperationException("Standalone C++ clients require emitSerializers=true; disable client generation for pure DTO output.");
+        AddRuntimeFile(context, StdRuntimeTemplates.JsonTypesHeaderFileName, StdRuntimeTemplates.JsonTypesHeader(options.JsonInclude));
+        if (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0)
+        {
+            AddRuntimeFile(context, StdRuntimeTemplates.ExpectedHeaderFileName, StdRuntimeTemplates.ExpectedHeader());
+            AddRuntimeFile(context, StdRuntimeTemplates.ErrorHeaderFileName, StdRuntimeTemplates.ErrorHeader());
+            AddRuntimeFile(context, StdRuntimeTemplates.HttpHeaderFileName, StdRuntimeTemplates.HttpHeader());
+            AddRuntimeFile(context, StdRuntimeTemplates.HttpSourceFileName, StdRuntimeTemplates.HttpSource(options.HttpInclude));
+            AddRuntimeFile(context, StdRuntimeTemplates.JsonHeaderFileName, StdRuntimeTemplates.JsonHeader(options.JsonInclude));
+        }
         return Task.CompletedTask;
+    }
+
+    /// <summary>Adds a canonical runtime file once even if a pipeline is resumed or executed repeatedly.</summary>
+    /// <param name="context">The current generation context.</param>
+    /// <param name="path">The canonical output path.</param>
+    /// <param name="content">The generated runtime content.</param>
+    private static void AddRuntimeFile(GenerationContext context, string path, string content)
+    {
+        if (!context.GeneratedFiles.Any(file => file.RelativePath == path))
+            context.GeneratedFiles.Add(new GeneratedFile(path, content));
     }
 }

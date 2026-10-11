@@ -33,24 +33,6 @@ public sealed class TypeScriptParamsAstBuilder
     }
 
     /// <summary>
-    /// Та же семантика, что у полей модели и <c>.nullish()</c> в Zod-схемах параметров операции.
-    /// </summary>
-    private static bool IsIrMemberNullish(bool isRequired, IrType type) =>
-        !isRequired || type is IrNullableType;
-
-    private TypeNode BuildIrMemberTypeNode(IrType type, bool isRequired)
-    {
-        if (!IsIrMemberNullish(isRequired, type))
-            return _typeBuilder(type);
-
-        var irCore = type is IrNullableType n ? n.InnerType : type;
-        var valueCore = _typeBuilder(irCore);
-        var withNull = new NullableTypeNode(valueCore);
-        var undefinedType = new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true);
-        return new UnionTypeNode(ImmutableList.Create<TypeNode>(withNull, undefinedType));
-    }
-
-    /// <summary>
     /// Имя params интерфейса: {OperationName}Params
     /// </summary>
     public string ParamsInterfaceName(string operationName)
@@ -201,13 +183,16 @@ public sealed class TypeScriptParamsAstBuilder
                 $"Request parameter types for the {operation.MethodName} operation."));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildRouteParamsInterface(IrOperation operation)
     {
         var routeName = RouteParamsInterfaceName(operation.MethodName);
         var properties = operation.PathParameters
             .Select(p => new PropertySignatureNode(
                 name: new IdentifierNode(p.Name),
-                type: BuildIrMemberTypeNode(p.Type, p.IsRequired),
+                type: _typeBuilder(p.Type),
                 isRequired: p.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(p.Description)
                     ? new CommentNode(p.Description, CommentKind.JSDoc)
@@ -222,13 +207,16 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Route/path parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildQueryParamsInterface(IrOperation operation)
     {
         var queryName = QueryParamsInterfaceName(operation.MethodName);
         var properties = operation.QueryParameters
             .Select(p => new PropertySignatureNode(
                 name: new IdentifierNode(p.Name),
-                type: BuildIrMemberTypeNode(p.Type, p.IsRequired),
+                type: _typeBuilder(p.Type),
                 isRequired: p.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(p.Description)
                     ? new CommentNode(p.Description, CommentKind.JSDoc)
@@ -243,13 +231,16 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Query string parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildHeadersParamsInterface(IrOperation operation)
     {
         var headersName = $"{_namingConverter.ToPascalCase(operation.MethodName)}HeaderParams";
         var properties = operation.HeaderParameters
             .Select(p => new PropertySignatureNode(
                 name: new IdentifierNode(p.Name),
-                type: BuildIrMemberTypeNode(p.Type, p.IsRequired),
+                type: _typeBuilder(p.Type),
                 isRequired: p.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(p.Description)
                     ? new CommentNode(p.Description, CommentKind.JSDoc)
@@ -264,6 +255,11 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Header parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="hasBody">Whether the operation exposes a non-form body.</param>
+    /// <param name="hasForm">Whether the operation exposes a form body.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildFlatParamsInterface(IrOperation operation, bool hasBody, bool hasForm)
     {
         var paramsName = ParamsInterfaceName(operation.MethodName);
@@ -273,7 +269,7 @@ public sealed class TypeScriptParamsAstBuilder
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
-                type: BuildIrMemberTypeNode(param.Type, param.IsRequired),
+                type: _typeBuilder(param.Type),
                 isRequired: param.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
@@ -281,7 +277,7 @@ public sealed class TypeScriptParamsAstBuilder
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
-                type: BuildIrMemberTypeNode(param.Type, param.IsRequired),
+                type: _typeBuilder(param.Type),
                 isRequired: param.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
@@ -289,7 +285,7 @@ public sealed class TypeScriptParamsAstBuilder
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
-                type: BuildIrMemberTypeNode(param.Type, param.IsRequired),
+                type: _typeBuilder(param.Type),
                 isRequired: param.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
@@ -299,7 +295,7 @@ public sealed class TypeScriptParamsAstBuilder
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("body"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
+                type: _typeBuilder(rb.Type),
                 isRequired: rb.IsRequired,
                 documentation: new CommentNode("Request body (JSON)", CommentKind.JSDoc)));
         }
@@ -309,7 +305,7 @@ public sealed class TypeScriptParamsAstBuilder
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("form"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
+                type: _typeBuilder(rb.Type),
                 isRequired: rb.IsRequired,
                 documentation: new CommentNode("Form data (multipart/form-data)", CommentKind.JSDoc)));
         }
@@ -322,6 +318,14 @@ public sealed class TypeScriptParamsAstBuilder
             documentation: new CommentNode($"Parameters for {operation.MethodName}", CommentKind.JSDoc));
     }
 
+    /// <summary>Builds the parameter interface with value nullability independent from required presence.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="hasRoute">Whether the operation exposes path parameters.</param>
+    /// <param name="hasQuery">Whether the operation exposes query parameters.</param>
+    /// <param name="hasBody">Whether the operation exposes a non-form body.</param>
+    /// <param name="hasForm">Whether the operation exposes a form body.</param>
+    /// <param name="hasHeaders">Whether the operation exposes header parameters.</param>
+    /// <returns>The generated parameter interface.</returns>
     private InterfaceDeclarationNode BuildAggregateParamsInterface(
         IrOperation operation,
         bool hasRoute,
@@ -360,7 +364,7 @@ public sealed class TypeScriptParamsAstBuilder
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("headers"),
                 type: new SimpleTypeNode(new IdentifierNode(headersName), isPrimitive: false, isNullable: false, isOptional: false),
-                isRequired: false,
+                isRequired: operation.HeaderParameters.Any(parameter => parameter.IsRequired),
                 documentation: new CommentNode("HTTP header parameters", CommentKind.JSDoc)));
         }
 
@@ -369,7 +373,7 @@ public sealed class TypeScriptParamsAstBuilder
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("body"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
+                type: _typeBuilder(rb.Type),
                 isRequired: rb.IsRequired,
                 documentation: new CommentNode("Request body (JSON)", CommentKind.JSDoc)));
         }
@@ -379,7 +383,7 @@ public sealed class TypeScriptParamsAstBuilder
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("form"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
+                type: _typeBuilder(rb.Type),
                 isRequired: rb.IsRequired,
                 documentation: new CommentNode("Form data (multipart/form-data)", CommentKind.JSDoc)));
         }

@@ -9,15 +9,18 @@ namespace ValIO.Core.IR.Utilities;
 public static class IrTypeQueries
 {
     /// <summary>
-    /// Разворачивает обёртки Nullable/Optional до «внутреннего» типа.
+    /// Unwraps any alternating sequence of nullable and optional wrappers.
     /// </summary>
+    /// <param name="type">The wrapped type to inspect.</param>
+    /// <returns>The underlying value type.</returns>
     public static IrType UnwrapNullableOptional(IrType type)
     {
-        while (type is IrNullableType nullable)
-            type = nullable.InnerType;
-        while (type is IrOptionalType optional)
-            type = optional.InnerType;
-        return type;
+        return type switch
+        {
+            IrNullableType nullable => UnwrapNullableOptional(nullable.InnerType),
+            IrOptionalType optional => UnwrapNullableOptional(optional.InnerType),
+            _ => type
+        };
     }
 
     /// <summary>

@@ -63,8 +63,8 @@ public sealed class WireParameterSerializationTests
             endpoint.Content.Should().NotContain("_: ");
             endpoint.Content.Should().Contain("'Paging.Offset': parsedQuery.Paging_Offset");
             endpoint.Content.Should().Contain("'Filter.By': parsedQuery.Filter_By");
-            endpoint.Content.Should().Contain("'X-Request-ID': params.headers?.X_Request_ID");
-            endpoint.Content.Should().Contain("'X-Trace-ID': params.headers?.X_Trace_ID");
+            endpoint.Content.Should().Contain("'X-Request-ID': params.headers.X_Request_ID");
+            endpoint.Content.Should().Contain("'X-Trace-ID': params.headers.X_Trace_ID");
             endpoint.Content.Should().Contain("UserId: parsedQuery.UserId");
             endpoint.Content.Should().NotContain("\"UserId\": parsedQuery.UserId");
         }
@@ -75,11 +75,17 @@ public sealed class WireParameterSerializationTests
             endpoint.Content.Should().Contain("\"Filter.By\",");
             endpoint.Content.Should().Contain("\"UserId\",");
             endpoint.Content.Should().Contain("String(parsedQuery.UserId)");
-            endpoint.Content.Should().Contain("'X-Request-ID': params.headers?.X_Request_ID");
-            endpoint.Content.Should().Contain("'X-Trace-ID': params.headers?.X_Trace_ID");
-
             if (transport == "nextjs")
+            {
+                endpoint.Content.Should().MatchRegex("requestHeaders\\.set\\(\\s+\"X-Request-ID\",\\s+String\\(params\\.headers\\.X_Request_ID\\)\\s+\\)");
+                endpoint.Content.Should().MatchRegex("requestHeaders\\.set\\(\\s+\"X-Trace-ID\",\\s+String\\(params\\.headers\\.X_Trace_ID\\)\\s+\\)");
                 endpoint.Content.Should().NotContain("as Record<string, string>) ?? {}");
+            }
+            else
+            {
+                endpoint.Content.Should().Contain("'X-Request-ID': params.headers.X_Request_ID");
+                endpoint.Content.Should().Contain("'X-Trace-ID': params.headers.X_Trace_ID");
+            }
         }
 
         if (validationLibrary == "zod4")

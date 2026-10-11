@@ -39,11 +39,12 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.boolean()");
     }
 
+    /// <summary>Verifies model numbers use strict JSON number semantics by default.</summary>
     [Test]
-    public void Number_NoConstraints_CoerceNumber()
+    public void Number_NoConstraints_UsesStrictNumber()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Number, useBigInt: false);
-        Render(schema).Should().Be("z.coerce.number()");
+        Render(schema).Should().Be("z.number()");
     }
 
     [Test]
@@ -53,25 +54,52 @@ public class ZodExpressionBuilderTests
         Render(schema).Should().Be("z.null()");
     }
 
+    /// <summary>Verifies integers reject fractional values without coercing strings.</summary>
     [Test]
     public void Integer_AddsIntRefinement()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Integer, useBigInt: false);
-        Render(schema).Should().Contain("z.coerce.number()").And.Contain(".int()");
+        Render(schema).Should().Contain("z.number()").And.Contain(".int()");
     }
 
+    /// <summary>Verifies int64 validation retains integer semantics when bigint is disabled.</summary>
     [Test]
     public void Long_WithoutBigInt_FallsBackToNumber()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Long, useBigInt: false);
-        Render(schema).Should().Be("z.coerce.number()");
+        Render(schema).Should().Be("z.number().int()");
     }
 
+    /// <summary>Verifies response schemas can validate numeric values without parameter coercion.</summary>
     [Test]
-    public void Long_WithBigInt_UsesCoerceBigint()
+    public void Number_WithCoercionDisabled_UsesStrictNumber()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Number, useBigInt: false, coerceNumbers: false);
+        Render(schema).Should().Be("z.number()");
+    }
+
+    /// <summary>Verifies void does not silently become an unconstrained value.</summary>
+    [Test]
+    public void Void_UsesVoidSchema()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Void, useBigInt: false);
+        Render(schema).Should().Be("z.void()");
+    }
+
+    /// <summary>Verifies bigint mode validates bigint values without implicit boundary conversion.</summary>
+    [Test]
+    public void Long_WithBigInt_UsesStrictBigint()
     {
         var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Long, useBigInt: true);
-        Render(schema).Should().Be("z.coerce.bigint()");
+        Render(schema).Should().Be("z.bigint()");
+    }
+
+    /// <summary>Verifies parameter numeric coercion remains available explicitly.</summary>
+    [Test]
+    public void Number_WithCoercionEnabled_UsesCoercedNumber()
+    {
+        var schema = ZodExpressionBuilder.BuildPrimitiveExpression(IrPrimitiveKind.Number, useBigInt: false, coerceNumbers: true);
+        Render(schema).Should().Be("z.coerce.number()");
     }
 
     [Test]

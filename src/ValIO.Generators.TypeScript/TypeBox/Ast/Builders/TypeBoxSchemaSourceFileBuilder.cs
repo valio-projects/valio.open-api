@@ -104,10 +104,22 @@ public sealed class TypeBoxSchemaSourceFileBuilder
 
     private static string GetSchemaName(string name) => $"{name}Schema";
 
+    /// <summary>Builds runtime imports and dependencies for the model's complete schema.</summary>
+    /// <param name="model">The model being rendered.</param>
+    /// <param name="currentFileName">The current schema file stem.</param>
+    /// <param name="schemasPath">The schema output directory.</param>
+    /// <returns>The imports needed by the generated model schema.</returns>
     private IReadOnlyList<ImportNode> BuildImports(IrModel model, string? currentFileName, string? schemasPath)
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
         imports.AddRange(BuildTypeBoxImports());
+        if (model.Properties.Any(property => TypeBoxInstanceAst.RequiresRegistry(property.Type))
+            || model.Composition?.Types.Any(TypeBoxInstanceAst.RequiresRegistry) == true)
+            imports.Add(new ImportNode([new IdentifierNode("Kind"), new IdentifierNode("TypeRegistry")],
+                "@sinclair/typebox", ImportKind.Named));
+        if (model.Properties.Any(property => _builder.RequiresFormatRegistry(property.Type))
+            || model.Composition?.Types.Any(_builder.RequiresFormatRegistry) == true)
+            imports.Add(new ImportNode([new IdentifierNode("FormatRegistry")], "@sinclair/typebox", ImportKind.Named));
         var dependencies = ExtractDependencies(model);
 
         foreach (var dependency in dependencies.OrderBy(name => name, StringComparer.Ordinal))

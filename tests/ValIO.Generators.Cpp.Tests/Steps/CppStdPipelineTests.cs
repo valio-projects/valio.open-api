@@ -111,6 +111,8 @@ public class CppStdPipelineTests
         return context.GeneratedFiles.ToDictionary(f => f.RelativePath, f => f.Content);
     }
 
+    /// <summary>Checks each output layer is emitted exactly once for a complete standalone client.</summary>
+    /// <returns>The asynchronous test execution.</returns>
     [Test]
     public async Task StdPipeline_InterfaceImplBoth_ProducesFullLayout()
     {
@@ -135,13 +137,14 @@ public class CppStdPipelineTests
             "Runtime/ValIOHttp.h",
             "Runtime/ValIOHttp.cpp",
             "Runtime/ValIOJson.h",
+            "Runtime/ValIOJsonTypes.h",
             "Clients/IStore.h",
             "Clients/StoreClient.h",
             "Clients/StoreClient.cpp",
         });
 
-        // Runtime эмитится ровно один раз (14 файлов — по одному runtime-набору).
-        files.Keys.Count(f => f.StartsWith("Runtime/")).Should().Be(5);
+        // Each runtime layer has one canonical output file.
+        files.Keys.Count(f => f.StartsWith("Runtime/")).Should().Be(6);
     }
 
     [Test]
@@ -238,6 +241,8 @@ public class CppStdPipelineTests
         files.Keys.Should().NotContain(f => f.StartsWith("Public/") || f.StartsWith("Private/"));
     }
 
+    /// <summary>Checks generated CMake separates layers and reuses canonical dependency targets supplied by a superproject.</summary>
+    /// <returns>The asynchronous test execution.</returns>
     [Test]
     public async Task EmitCmake_AddsRootCMakeLists_WithTargetStandard()
     {
@@ -257,12 +262,17 @@ public class CppStdPipelineTests
             CxxStandard = 20,
         });
         withCmake.Keys.Should().Contain("CMakeLists.txt");
-        withCmake["CMakeLists.txt"].Should()
+        withCmake["CMakeLists.txt"].Replace("\r\n", "\n").Should()
             .Contain("set(CMAKE_CXX_STANDARD 20)")
-            .And.Contain("target_compile_features(valio_generated PUBLIC cxx_std_20)")
+            .And.Contain("target_compile_features(valio_models INTERFACE cxx_std_20)")
             .And.Contain("find_package(httplib REQUIRED)")
             .And.Contain("find_package(nlohmann_json REQUIRED)")
-            .And.Contain("${CMAKE_CURRENT_SOURCE_DIR}/*.cpp")
+            .And.Contain("if(NOT TARGET nlohmann_json::nlohmann_json)\n        find_package(nlohmann_json REQUIRED)\n    endif()")
+            .And.Contain("if(NOT TARGET httplib::httplib)\n        find_package(httplib REQUIRED)\n    endif()")
+            .And.Contain("add_library(valio_models INTERFACE)")
+            .And.Contain("add_library(valio_serializers STATIC ${VALIO_SERIALIZER_SOURCES})")
+            .And.Contain("add_library(valio_clients STATIC ${VALIO_CLIENT_SOURCES}")
+            .And.Contain("PRIVATE httplib::httplib")
             .And.Contain("project(ValIO_Petstore LANGUAGES CXX)");
     }
 }

@@ -143,8 +143,9 @@ public class StdBuildersTests
         content.Should().Contain("#include \"Models/Animal.h\"");
     }
 
+    /// <summary>Rejects unsupported recursive value ownership instead of publishing a truncated model contract.</summary>
     [Test]
-    public void Model_RecursiveProperty_SkippedWithWarning()
+    public void Model_RecursiveProperty_ThrowsExplicitDiagnostic()
     {
         var model = new IrModel
         {
@@ -163,14 +164,13 @@ public class StdBuildersTests
 
         var builder = new StdModelAstBuilder(CreateMapper(new HashSet<string>()), _naming);
         var warnings = new List<string>();
-        var content = Render(builder.Build(model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Petstore", warnings));
-
-        content.Should().NotContain("Child");
-        warnings.Should().Contain(w => w.Contains("recursive property 'child'"));
+        var build = () => builder.Build(model, new HashSet<string>(), new Dictionary<string, IrModel>(), "Petstore", warnings);
+        build.Should().Throw<NotSupportedException>().WithMessage("*Node*child*recursive ownership*");
     }
 
     // ===== Кодек модели =====
 
+    /// <summary>Checks wire-name preservation and optional presence rather than nullable conflation.</summary>
     [Test]
     public void ModelJson_WireNamesFromOriginalName_SemanticsRequiredOptional()
     {
@@ -201,8 +201,9 @@ public class StdBuildersTests
         sourceContent.Should().Contain("j.at(\"buildingId\").get_to(value.BuildingId);");
         sourceContent.Should().Contain("if (value.DisplayName)");
         sourceContent.Should().Contain("j[\"displayName\"] = *value.DisplayName;");
-        sourceContent.Should().Contain("if (j.contains(\"displayName\") && !j.at(\"displayName\").is_null())");
-        sourceContent.Should().Contain("value.DisplayName = j.at(\"displayName\").get<std::string>();");
+        sourceContent.Should().Contain("if (j.contains(\"displayName\"))");
+        sourceContent.Should().Contain("value.DisplayName.emplace(j.at(\"displayName\").get<std::string>());");
+        sourceContent.Should().Contain("value.DisplayName.reset();");
         // полный nlohmann — только в исходнике
         sourceContent.Should().Contain($"#include <{_options.JsonInclude}>");
     }
@@ -268,6 +269,7 @@ public class StdBuildersTests
 
     // ===== Enum =====
 
+    /// <summary>Checks enum-qualified parsers so multiple string enums can coexist in one namespace.</summary>
     [Test]
     public void Enum_StringBase_WireMappingWithoutJson()
     {
@@ -288,18 +290,13 @@ public class StdBuildersTests
         content.Should().Contain("enum class OrderStatus : std::int32_t");
         content.Should().Contain("Placed = 0,");
         content.Should().Contain("Approved = 1");
-        content.Should().Contain("constexpr std::string_view ToWire(OrderStatus v)");
-        content.Should().Contain("if (v == OrderStatus::Placed)");
-        content.Should().Contain("return \"placed\";");
-        content.Should().Contain("constexpr std::optional<OrderStatus> FromWire(std::string_view w)");
-        content.Should().Contain("if (w == \"approved\")");
-        content.Should().Contain("return OrderStatus::Approved;");
-        content.Should().Contain("return std::nullopt;");
+        content.Should().NotContainAny(["ToWire", "FromWire", "to_json", "from_json"]);
         // чистота: без JSON
         content.Should().NotContainAny(["nlohmann", "json"]);
-        content.Should().Contain("#include <string_view>");
+        content.Should().NotContain("#include <string_view>");
     }
 
+    /// <summary>Checks integer enum values and their collision-free parser signature.</summary>
     [Test]
     public void Enum_IntegerBases_WireNumbers()
     {
@@ -319,11 +316,14 @@ public class StdBuildersTests
 
         content.Should().Contain("Low = 1,");
         content.Should().Contain("High = 2");
-        content.Should().Contain("constexpr std::int32_t ToWire(Level v)");
-        content.Should().Contain("constexpr std::optional<Level> FromWire(std::int32_t w)");
-        content.Should().Contain("if (w == 2)");
+        content.Should().NotContainAny(["ToWire", "FromWire"]);
+        var (_, source) = builder.BuildJson(irEnum, "Petstore", _options);
+        Render(source).Should().Contain("std::int32_t ToWire(Level v)");
+        Render(source).Should().Contain("std::optional<Level> LevelFromWire(std::int32_t w)");
+        Render(source).Should().Contain("if (w == 2)");
     }
 
+    /// <summary>Checks JSON codecs call the enum-specific parser and reject unknown wire values.</summary>
     [Test]
     public void EnumJson_CodecUsesToWireFromWireAndThrowsOnUnknown()
     {
@@ -345,7 +345,7 @@ public class StdBuildersTests
 
         var sourceContent = Render(source);
         sourceContent.Should().Contain("j = ToWire(value);");
-        sourceContent.Should().Contain("FromWire(j.get<std::string>())");
+        sourceContent.Should().Contain("OrderStatusFromWire(j.get<std::string>())");
         sourceContent.Should().Contain("if (parsed)");
         sourceContent.Should().Contain("value = *parsed;");
         sourceContent.Should().Contain("throw nlohmann::json::out_of_range::create(1701, \"unknown OrderStatus wire value\", nullptr);");

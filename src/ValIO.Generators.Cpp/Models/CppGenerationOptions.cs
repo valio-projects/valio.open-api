@@ -65,6 +65,10 @@ public sealed class CppGenerationOptions
     /// </summary>
     public bool EmitCmake { get; set; }
 
+    /// <summary>Whether standalone models and enums also emit their separate JSON codec files.</summary>
+    /// <value>True by default; disable together with client generation for dependency-free DTO output.</value>
+    public bool EmitSerializers { get; set; } = true;
+
     /// <summary>
     /// Макрос API модуля, вставляемый в UCLASS (например WIREFRAME_API, MYPROJECT_API).
     /// </summary>

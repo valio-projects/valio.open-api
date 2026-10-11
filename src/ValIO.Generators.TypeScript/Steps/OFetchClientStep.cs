@@ -23,10 +23,12 @@ public sealed class OFetchClientStep : TypeScriptClientStepBase
     public OFetchClientStep(INamingConverter namingConverter, IEnumerable<ITypeScriptNodeRenderer> nodeRenderers)
         : base(namingConverter, nodeRenderers) { }
 
+    /// <inheritdoc />
     protected override SourceFileNode BuildOperationSourceFile(
         IrOperation operation, FileOrganization fileOrg, TypeScriptGenerationOptions? options)
     {
         var builder = new OFetchClientAstBuilder(NamingConverter, options);
+        builder.ModelsByName = ModelsByName;
         return builder.BuildOperationClientSourceFile(operation, fileOrg);
     }
 }
