@@ -1,10 +1,14 @@
 using System.Diagnostics;
+using System.Text;
+using Microsoft.OpenApi;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Builders;
+using ValIO.Core.Services;
 using ValIO.Core.Models;
 using ValIO.Core.Plugins;
 using ValIO.Generators.CSharp.Ast.Renderers;
@@ -12,6 +16,7 @@ using ValIO.Generators.CSharp.Models;
 using ValIO.Generators.CSharp.Options;
 using ValIO.Generators.CSharp.Services;
 using ValIO.Generators.CSharp.Steps;
+using ValIO.Tests.Fixtures;
 
 namespace ValIO.Generators.CSharp.Tests;
 
@@ -20,6 +25,57 @@ namespace ValIO.Generators.CSharp.Tests;
 [NonParallelizable]
 public sealed class CSharpGeneratedCompilationTests
 {
+    /// <summary>Compiles nullable references from real OpenAPI and exercises their System.Text.Json codecs.</summary>
+    /// <returns>The asynchronous source generation, compiler and runtime verification.</returns>
+    [Test]
+    public async Task NullableReferenceUnionsCompileAndRoundTrip()
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CoreIR/nullable-reference-unions-3.1.json")));
+        var parsed = await OpenApiDocument.LoadAsync(input, "json");
+        var ir = new IrBuilder(new SchemaResolver(parsed.Document!), new NamingConverter()).BuildFromOpenApi(parsed.Document!);
+        var context = new GenerationContext
+        {
+            IrDocument = ir,
+            Configuration = new GenerationConfiguration { Namespace = "Generated.Contracts" },
+            PluginOptions = new CSharpGenerationOptions()
+        };
+        var naming = new CSharpNamingConverter();
+        var renderer = new CSharpAstRenderer();
+        await new CSharpModelsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpEnumsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpClientStep(naming, renderer).ExecuteAsync(context);
+        var model = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("NullableReferences.cs", StringComparison.Ordinal)).Content;
+        model.Should().Contain("NullableCountry?").And.Contain("NullableState?");
+        var directory = Path.Combine(Path.GetTempPath(), "ValIO.CSharp.Nullable", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(Path.Combine(directory, "Smoke.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup></Project>
+            """);
+        await File.WriteAllTextAsync(Path.Combine(directory, "NuGet.Config"), "<configuration><packageSources><clear /></packageSources></configuration>");
+        foreach (var file in context.GeneratedFiles)
+        {
+            var destination = Path.Combine(directory, file.RelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            await File.WriteAllTextAsync(destination, file.Content);
+        }
+        await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), """"
+            using System.Text.Json;
+            using Generated.Contracts;
+            var empty = JsonSerializer.Deserialize<NullableReferences>("""{"country":null,"state":null,"countries":[null],"states":{"one":null}}""")!;
+            var emptyJson = JsonSerializer.SerializeToElement(empty);
+            if (emptyJson.GetProperty("country").ValueKind != JsonValueKind.Null || emptyJson.GetProperty("state").ValueKind != JsonValueKind.Null) throw new Exception("Null references were lost.");
+            var populated = JsonSerializer.Deserialize<NullableReferences>("""{"country":{"id":7,"name":"DE"},"state":"granted","countries":[null,{"id":9,"name":"US"}],"states":{"one":"pending","two":null}}""")!;
+            var json = JsonSerializer.SerializeToElement(populated);
+            if (json.GetProperty("country").GetProperty("id").GetInt32() != 7 || json.GetProperty("state").GetString() != "granted" || json.GetProperty("countries")[1].GetProperty("id").GetInt32() != 9) throw new Exception("Structured references did not round-trip.");
+            try { JsonSerializer.Deserialize<NullableReferences>("""{"country":"DE","state":null,"countries":[],"states":{}}"""); throw new Exception("A model was decoded as string."); } catch (JsonException) { }
+            try { JsonSerializer.Deserialize<NullableReferences>("""{"country":null,"state":"unknown","countries":[],"states":{}}"""); throw new Exception("An invalid enum was accepted."); } catch (JsonException) { }
+            Console.WriteLine("CSharp nullable references passed");
+            """");
+        var result = await RunGeneratedProject(directory);
+        result.ExitCode.Should().Be(0, "generated nullable references must compile and round-trip. Sources: {0}\n{1}", directory, result.Output);
+        result.Output.Should().Contain("CSharp nullable references passed");
+    }
+
     /// <summary>Verifies generated models, enums, HTTP requests, interfaces, and telemetry compile together.</summary>
     /// <param name="traces">Whether the fixture generates tracing.</param>
     /// <param name="metrics">Whether the fixture generates metrics.</param>

@@ -30,6 +30,7 @@ public sealed class GeneratedJavaNativeTests
         foreach (var version in new[] { "3.0", "3.1", "3.2" })
             yield return $"CoreIR/composition-presence-{version}.json";
         yield return "TypeScriptCompile/compile-contracts-3.1.json";
+        yield return "CoreIR/nullable-reference-unions-3.1.json";
     }
 
     /// <summary>Parses a disk fixture, runs the generator, and compiles its model and enum output without hand edits.</summary>

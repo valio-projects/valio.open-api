@@ -314,13 +314,14 @@ public class CppCompileFixtureTests
         var pipeline = new CppGeneratorPlugin().CreatePipeline(services);
         var document = BuildDocument();
         var optionalBodies = await LoadOptionalBodiesAsync();
-        var models = document.Models.Concat(optionalBodies.Models).ToList();
-        var enums = document.Enums.Concat(optionalBodies.Enums).ToList();
+        var nullableReferences = await LoadNullableReferencesAsync();
+        var models = document.Models.Concat(optionalBodies.Models).Concat(nullableReferences.Models).ToList();
+        var enums = document.Enums.Concat(optionalBodies.Enums).Concat(nullableReferences.Enums).ToList();
         document = document with
         {
             Models = models,
             Enums = enums,
-            Clients = document.Clients.Concat(optionalBodies.Clients).ToList(),
+            Clients = document.Clients.Concat(optionalBodies.Clients).Concat(nullableReferences.Clients).ToList(),
             TypeDependencies = new IrTypeDependencyGraphBuilder().Build(models, enums),
         };
         var context = new GenerationContext
@@ -349,6 +350,18 @@ public class CppCompileFixtureTests
         var parsed = await OpenApiDocument.LoadAsync(stream, "json");
         if (parsed.Document is null || parsed.Diagnostic?.Errors.Count > 0)
             throw new InvalidOperationException("Cannot parse the optional C++ request-body fixture.");
+        return new IrBuilder(new SchemaResolver(parsed.Document), new NamingConverter()).BuildFromOpenApi(parsed.Document);
+    }
+
+    /// <summary>Loads disjoint nullable model and enum references through the production reader and IR builder.</summary>
+    /// <returns>The shared regression contract including nested containers and nullable HTTP bodies.</returns>
+    /// <exception cref="InvalidOperationException">The source fixture cannot be parsed without errors.</exception>
+    private static async Task<IrDocument> LoadNullableReferencesAsync()
+    {
+        await using var stream = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CoreIR/nullable-reference-unions-3.1.json")));
+        var parsed = await OpenApiDocument.LoadAsync(stream, "json");
+        if (parsed.Document is null || parsed.Diagnostic?.Errors.Count > 0)
+            throw new InvalidOperationException("Cannot parse the nullable reference fixture.");
         return new IrBuilder(new SchemaResolver(parsed.Document), new NamingConverter()).BuildFromOpenApi(parsed.Document);
     }
 

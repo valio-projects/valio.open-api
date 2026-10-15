@@ -34,6 +34,7 @@
 #include "Serializers/WideJson.h"
 #include "http_runtime_tests.h"
 #include "optional_body_smoke.h"
+#include "nullable_reference_smoke.h"
 
 int RunCheckedCodecSmoke();
 
@@ -66,6 +67,7 @@ int main()
     g_failures += RunHttpRuntimeTests();
     g_failures += RunCheckedCodecSmoke();
     g_failures += RunOptionalBodySmoke();
+    g_failures += RunNullableReferenceSmoke();
     Petstore::Order plainDefaultOrder;
     Check(plainDefaultOrder.Status == Petstore::OrderStatus::Placed,
         "ordinary default construction value-initializes a required string enum");

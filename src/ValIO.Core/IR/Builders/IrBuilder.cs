@@ -554,16 +554,20 @@ public class IrBuilder
         if (resolvedSchema == null)
             throw new InvalidOperationException($"Schema resolver returned null schema — at {_ctx.Describe()}");
         
-        // AnyOf permits duplicate removal and null lifting; OneOf must retain every match-counting branch.
+        // Lift null only when doing so preserves the exclusive alternative match count.
         if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)
         {
             var kind = resolvedSchema.OneOf?.Count > 0 ? IrUnionKind.OneOf : IrUnionKind.AnyOf;
             var variants = kind == IrUnionKind.OneOf ? resolvedSchema.OneOf! : resolvedSchema.AnyOf!;
             var nullable = SchemaAllowsJsonNull(resolvedSchema);
+            var nullCount = variants.Count(OpenApiNullability.IsNullOnly);
+            var liftNull = kind == IrUnionKind.AnyOf ||
+                nullCount == 1 && variants.Where(variant => !OpenApiNullability.IsNullOnly(variant))
+                    .All(variant => OpenApiNullability.RejectsNull(variant, document));
             var members = new List<IrType>(variants.Count);
             foreach (var variant in variants)
             {
-                if (kind == IrUnionKind.AnyOf && IsNullOnlySchema(variant))
+                if (liftNull && OpenApiNullability.IsNullOnly(variant))
                 {
                     nullable = true;
                     continue;
@@ -572,6 +576,9 @@ public class IrBuilder
                 members.Add(BuildType(variant, document, propertyContext));
             }
 
+            // An all-null inclusive union (or a single exclusive null branch) accepts only null.
+            if (members.Count == 0 && nullable)
+                return new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Null };
             return IrCompositionNormalizer.NormalizeUnion(members, nullable, kind);
         }
 
@@ -701,44 +708,11 @@ public class IrBuilder
         throw new InvalidOperationException($"Unknown schema type: {typeStr} — at {_ctx.Describe()}");
     }
     
-    /// <summary>
-    /// Схема допускает JSON null: type содержит Null или legacy nullable: true.
-    /// </summary>
+    /// <summary>Reads explicit type and legacy OpenAPI nullable annotations.</summary>
+    /// <param name="schema">The schema whose annotations are inspected.</param>
+    /// <returns>Whether an explicit annotation allows JSON null.</returns>
     private static bool SchemaAllowsJsonNull(IOpenApiSchema schema)
-    {
-        if (schema.Type.HasValue && schema.Type.Value.HasFlag(JsonSchemaType.Null))
-            return true;
-        
-        if (schema.Extensions != null &&
-            schema.Extensions.TryGetValue(OpenApiConstants.NullableExtension, out var nullableExtension) &&
-            nullableExtension is JsonNodeExtension { Node: { } jsonNode } &&
-            jsonNode.GetValueKind() == JsonValueKind.True)
-            return true;
-
-        return false;
-    }
-
-    /// <summary>
-    /// Схема представляет «только null» (OpenAPI 3.1 <c>{"type":"null"}</c>) — без других
-    /// примитивов, объекта/массива, композиции, $ref или enum. Такая ветка в oneOf/anyOf
-    /// означает nullable, а не отдельный член union.
-    /// </summary>
-    private static bool IsNullOnlySchema(IOpenApiSchema schema)
-    {
-        if (!schema.Type.HasValue || schema.Type.Value != JsonSchemaType.Null)
-            return false;
-
-        if (schema is IOpenApiReferenceHolder<OpenApiSchema, IOpenApiSchema, JsonSchemaReference> { Reference.Id.Length: > 0 })
-            return false;
-
-        if (schema.AllOf?.Count > 0 || schema.OneOf?.Count > 0 || schema.AnyOf?.Count > 0)
-            return false;
-
-        if (schema.Properties?.Count > 0 || (schema.Enum?.Count > 0))
-            return false;
-
-        return true;
-    }
+        => OpenApiNullability.HasExplicitNullAllowance(schema);
     
     /// <summary>
     /// Ровно один примитивный вид (без Null в флаге), без Object/Array.
