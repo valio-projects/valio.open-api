@@ -50,8 +50,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     }
 
     /// <summary>
-    /// Рендерит SourceFile
+    /// Формирует полный исходный файл TypeScript.
     /// </summary>
+    /// <param name="node">Исходный файл для вывода.</param>
+    /// <returns>Сформированный исходный текст, заканчивающийся одним переводом строки.</returns>
     public string Render(SourceFileNode node)
     {
         _sb.Clear();
@@ -71,7 +73,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         if (node.FileDocumentation != null)
         {
             RenderComment(_sb, node.FileDocumentation, 0);
-            CodeFormatter.AppendEmptyLine(_sb);
+            if (node.Imports.Count > 0 || node.Declarations.Count > 0)
+                CodeFormatter.AppendEmptyLine(_sb);
         }
 
         // Рендерим imports
@@ -81,15 +84,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             {
                 RenderImport(import);
             }
-            CodeFormatter.AppendEmptyLine(_sb);
+            if (node.Declarations.Count > 0)
+                CodeFormatter.AppendEmptyLine(_sb);
         }
         
         // Рендерим declarations (export уже добавлен в RenderInterface, RenderEnum, RenderTypeAlias)
-        foreach (var declaration in node.Declarations)
+        for (var i = 0; i < node.Declarations.Count; i++)
         {
-            var rendered = RenderDeclaration(declaration);
-            _sb.Append(rendered);
-            CodeFormatter.AppendEmptyLine(_sb);
+            if (i > 0) CodeFormatter.AppendEmptyLine(_sb);
+            _sb.Append(RenderDeclaration(node.Declarations[i]));
         }
         
         return _sb.ToString();
@@ -331,7 +334,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var argLines = node.Arguments.Select(a => indent + Visit(a));
-            return $"{prefix}{target}{generic}(\n{string.Join(",\n", argLines)}\n{closingIndent})";
+            return $"{prefix}{target}{generic}({Environment.NewLine}{string.Join("," + Environment.NewLine, argLines)}{Environment.NewLine}{closingIndent})";
         }
         var args = string.Join(", ", node.Arguments.Select(Visit));
         return $"{prefix}{target}{generic}({args})";
@@ -344,6 +347,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"{target}{op}{node.Member.Name}";
     }
 
+    /// <inheritdoc/>
     public override string VisitObjectLiteralExpression(ObjectLiteralExpressionNode node)
     {
         if (node.Properties.Count == 0)
@@ -355,7 +359,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var propertyLines = node.Properties.Select(p => indent + VisitPropertyAssignment(p));
-            result = "{\n" + string.Join(",\n", propertyLines) + "\n" + closingIndent + "}";
+            result = "{" + Environment.NewLine + string.Join("," + Environment.NewLine, propertyLines) + Environment.NewLine + closingIndent + "}";
         }
         else
         {
@@ -365,6 +369,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return node.AsConstAssertion ? $"{result} as const" : result;
     }
     
+    /// <inheritdoc/>
     public override string VisitArrayLiteralExpression(ArrayLiteralExpressionNode node)
     {
         if (node.PreferMultilineFormat && node.Elements.Count > 1)
@@ -372,7 +377,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             var indent = new string(' ', (_indentLevel + 1) * 4);
             var closingIndent = new string(' ', _indentLevel * 4);
             var elementLines = node.Elements.Select(e => indent + Visit(e));
-            return "[\n" + string.Join(",\n", elementLines) + "\n" + closingIndent + "]";
+            return "[" + Environment.NewLine + string.Join("," + Environment.NewLine, elementLines) + Environment.NewLine + closingIndent + "]";
         }
         var elements = string.Join(", ", node.Elements.Select(Visit));
         return $"[{elements}]";
@@ -516,6 +521,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return $"({condition} ? {trueExpr} : {falseExpr})";
     }
 
+    /// <inheritdoc/>
     public override string VisitBlock(BlockNode node)
     {
         var sb = new StringBuilder();
@@ -524,7 +530,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         foreach (var stmt in node.Statements)
         {
             var rendered = Visit(stmt);
-            CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+            if (rendered.Length == 0) sb.AppendLine();
+            else CodeFormatter.AppendLine(sb, _indentLevel, rendered);
         }
         _indentLevel--;
         CodeFormatter.AppendLine(sb, _indentLevel, "}");
@@ -788,10 +795,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
     }
 
-    /// <summary>Renders a function declaration and its JSDoc annotations.</summary>
-    /// <param name="sb">The output buffer.</param>
-    /// <param name="node">The function declaration.</param>
-    /// <param name="indentLevel">The declaration indentation level.</param>
+    /// <summary>Формирует функцию и её документацию.</summary>
+    /// <param name="sb">Буфер вывода.</param>
+    /// <param name="node">Объявление функции.</param>
+    /// <param name="indentLevel">Уровень отступа.</param>
     private void RenderFunction(StringBuilder sb, FunctionDeclarationNode node, int indentLevel)
     {
         // Формируем расширенный JSDoc комментарий
@@ -878,7 +885,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var useMultilineParams = node.Parameters.Count >= 2;
         var paramsIndent = new string(' ', (indentLevel + 1) * 4);
         var parametersStr = useMultilineParams
-            ? "\n" + string.Join(",\n", node.Parameters.Select(p => paramsIndent + RenderParameterDeclaration(p))) + "\n" + new string(' ', indentLevel * 4)
+            ? Environment.NewLine + string.Join("," + Environment.NewLine, node.Parameters.Select(p => paramsIndent + RenderParameterDeclaration(p))) + Environment.NewLine + new string(' ', indentLevel * 4)
             : string.Join(", ", node.Parameters.Select(p => RenderParameterDeclaration(p)));
 
         // Проверяем, является ли это type predicate (value is Type)
@@ -926,7 +933,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
                     foreach (var stmt in node.Body.Statements)
                     {
                         var rendered = Visit(stmt);
-                        CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                        if (rendered.Length == 0) sb.AppendLine();
+                        else CodeFormatter.AppendLine(sb, _indentLevel, rendered);
                     }
                     _indentLevel = savedIndent;
                 }
@@ -944,7 +952,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
                 foreach (var stmt in node.Body.Statements)
                 {
                     var rendered = Visit(stmt);
-                    CodeFormatter.AppendLine(sb, _indentLevel, rendered);
+                    if (rendered.Length == 0) sb.AppendLine();
+                    else CodeFormatter.AppendLine(sb, _indentLevel, rendered);
                 }
                 _indentLevel = savedIndent;
             }
@@ -1248,12 +1257,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return type.Accept(this);
     }
 
+    /// <summary>Формирует литерал с независимым от локали числовым синтаксисом TypeScript.</summary>
+    /// <param name="node">Литерал для вывода.</param>
+    /// <returns>Литеральное выражение TypeScript.</returns>
     private string RenderLiteral(LiteralExpressionNode node)
     {
         return node.LiteralKind switch
         {
             LiteralKind.String => $"\"{CodeEscapeHelper.EscapeTypeScriptString(node.Value?.ToString() ?? "")}\"",
-            LiteralKind.Number => node.Value?.ToString() ?? "0",
+            LiteralKind.Number => Convert.ToString(node.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "0",
             LiteralKind.Boolean => node.Value?.ToString()?.ToLowerInvariant() ?? "false",
             LiteralKind.Null => "null",
             LiteralKind.Character => $"'{node.Value}'",

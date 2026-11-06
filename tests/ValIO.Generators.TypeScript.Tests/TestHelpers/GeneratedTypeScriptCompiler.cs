@@ -24,11 +24,11 @@ internal static class GeneratedTypeScriptCompiler
         return output;
     }
 
-    /// <summary>Builds a compiler program that resolves actual external package exports and declaration files.</summary>
-    /// <param name="workspace">The temporary generated-source root.</param>
-    /// <param name="modules">The external node_modules directory containing real package declarations.</param>
-    /// <param name="sourcePaths">Every emitted TypeScript source path, including clients, models, schemas, and exports.</param>
-    /// <returns>A CommonJS Node script that fails on any compiler diagnostic.</returns>
+    /// <summary>Создаёт программу строгой компиляции с разрешением реальных зависимостей и отдельно закреплённых основных версий Zod.</summary>
+    /// <param name="workspace">Корневой временный каталог сгенерированных исходных файлов.</param>
+    /// <param name="modules">Внешний каталог node_modules с декларациями реальных пакетов.</param>
+    /// <param name="sourcePaths">Пути ко всем сгенерированным исходным файлам TypeScript, включая клиенты, модели, схемы и экспорты.</param>
+    /// <returns>Сценарий Node.js в формате CommonJS, завершающийся ошибкой при любой диагностике компилятора.</returns>
     private static string CompilerScript(string workspace, string modules, IReadOnlyList<string> sourcePaths) => $$"""
         const path = require('node:path');
         const modules = {{JsonSerializer.Serialize(modules)}};
@@ -54,9 +54,10 @@ internal static class GeneratedTypeScriptCompiler
         const cache = ts.createModuleResolutionCache(root, file => file, options);
         const dependencyEntry = path.join(path.dirname(modules), '__valio_dependency_lookup__.ts');
         host.resolveModuleNames = (names, containingFile) => names.map(name => {
-          let resolved = ts.resolveModuleName(name, containingFile, options, host, cache).resolvedModule;
-          if (!resolved && !name.startsWith('.') && !path.isAbsolute(name))
-            resolved = ts.resolveModuleName(name, dependencyEntry, options, host, cache).resolvedModule;
+          const dependency = name === 'zod' ? 'zod3' : name === 'zod/v4' ? 'zod4' : name;
+          let resolved = ts.resolveModuleName(dependency, containingFile, options, host, cache).resolvedModule;
+          if (!resolved && !dependency.startsWith('.') && !path.isAbsolute(dependency))
+            resolved = ts.resolveModuleName(dependency, dependencyEntry, options, host, cache).resolvedModule;
           return resolved;
         });
         const program = ts.createProgram(files, options, host);

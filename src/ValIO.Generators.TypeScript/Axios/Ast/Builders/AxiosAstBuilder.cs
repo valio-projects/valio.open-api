@@ -157,6 +157,9 @@ public class AxiosAstBuilder : AstBuilderBase
             properties: properties.ToImmutableList());
     }
 
+    /// <summary>Определяет, содержит ли успешный ответ двоичные данные.</summary>
+    /// <param name="response">Задокументированный ответ.</param>
+    /// <returns>Требует ли ответ декодирования двоичных данных.</returns>
     private static bool IsBinarySuccessResponse(IrResponse response)
     {
         if (!int.TryParse(response.StatusCode, out var statusCode) || statusCode is < 200 or >= 300)
@@ -168,6 +171,9 @@ public class AxiosAstBuilder : AstBuilderBase
         };
     }
 
+    /// <summary>Удаляет обёртки nullable и optional из типа ответа.</summary>
+    /// <param name="type">Проверяемый тип ответа.</param>
+    /// <returns>Базовый тип или null, если тип отсутствует.</returns>
     private static ValIO.Core.IR.Types.IrType? Unwrap(ValIO.Core.IR.Types.IrType? type)
     {
         return type switch

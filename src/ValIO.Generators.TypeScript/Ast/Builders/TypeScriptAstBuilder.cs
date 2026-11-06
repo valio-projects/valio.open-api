@@ -309,13 +309,41 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         };
     }
     
+    /// <summary>Создаёт тип значения свойства, не смешивая отсутствие свойства и JSON null.</summary>
+    /// <param name="property">Свойство, тип которого может содержать обёртку optional.</param>
+    /// <returns>Тип значения; необязательность выражается маркером свойства.</returns>
+    private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
+    {
+        return BuildType(UnwrapMemberOptional(property.Type));
+    }
+
+    /// <summary>Удаляет обёртки optional на уровне члена, сохраняя обёртки nullable.</summary>
+    /// <param name="type">Исходный тип члена.</param>
+    /// <returns>Тип значения без обёрток optional на уровне члена.</returns>
+    private static IrType UnwrapMemberOptional(IrType type) => type switch
+    {
+        IrOptionalType optional => UnwrapMemberOptional(optional.InnerType),
+        IrNullableType nullable => nullable with { InnerType = UnwrapMemberOptional(nullable.InnerType) },
+        _ => type
+    };
+
+    /// <summary>Определяет необязательность через вложенные обёртки nullable и optional.</summary>
+    /// <param name="type">Исходный тип члена.</param>
+    /// <returns>Допускает ли член отсутствие значения.</returns>
+    internal static bool IsOptionalMemberType(IrType type) => type switch
+    {
+        IrOptionalType => true,
+        IrNullableType nullable => IsOptionalMemberType(nullable.InnerType),
+        _ => false
+    };
+
     /// <summary>
-    /// Builds a source file preserving object, union, and sibling-property model semantics.
+    /// Создаёт исходный файл модели.
     /// </summary>
-    /// <param name="model">The source IR model.</param>
-    /// <param name="importPath">The optional import path override.</param>
-    /// <param name="fileOrganization">The generated model layout settings.</param>
-    /// <returns>The model declaration and its dependencies.</returns>
+    /// <param name="model">Модель для генерации.</param>
+    /// <param name="importPath">Необязательное переопределение пути импорта.</param>
+    /// <param name="fileOrganization">Организация генерируемых файлов.</param>
+    /// <returns>Исходный файл модели.</returns>
     public SourceFileNode BuildSourceFile(IrModel model, string? importPath = null, FileOrganization? fileOrganization = null)
     {
 
@@ -361,7 +389,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         if (model.Properties.Count > 0)
         {
             var ownShape = new TypeLiteralNode(model.Properties.Select(property =>
-                new TypeLiteralMember(property.Name, BuildType(property.Type), isOptional: !property.IsRequired)).ToImmutableList());
+                new TypeLiteralMember(property.Name, BuildInterfacePropertyTypeNode(property), isOptional: !property.IsRequired || IsOptionalMemberType(property.Type))).ToImmutableList());
             valueType = new IntersectionTypeNode(ImmutableList.Create(valueType, (TypeNode)ownShape));
         }
 
@@ -388,8 +416,10 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     }
 
     /// <summary>
-    /// Строит InterfaceDeclarationNode из IrModel
+    /// Создаёт объявление интерфейса из модели.
     /// </summary>
+    /// <param name="model">Модель для генерации.</param>
+    /// <returns>Объявление интерфейса.</returns>
     public InterfaceDeclarationNode BuildInterface(IrModel model)
     {
         var name = new IdentifierNode(model.Name);
@@ -397,11 +427,15 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             ? new CommentNode(model.Description, CommentKind.JSDoc)
             : null;
         
-        // При наследовании (extends Base) не переобъявляем свойства базовых классов: собственный inline-член
-        // allOf мог переобъявить свойство базы (напр. nullable-дискриминатор) — это несовместимо перекрывает
-        // базу (TS2430). Единый резолвер наследования — общий для всех генераторов.
-        var ownProperties = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, ModelsByName);
-        var properties = ownProperties.Select(BuildProperty).ToList<DeclarationNode>();
+        // allOf intersects inherited and local constraints instead of discarding local overrides.
+        var inherited = CollectInheritedProperties(model);
+        var properties = model.Properties
+            .Where(property => !inherited.TryGetValue(property.OriginalName, out var bases) ||
+                !bases.All(baseProperty => HasEquivalentPropertyContract(property, baseProperty)))
+            .Select(property =>
+            inherited.TryGetValue(property.OriginalName, out var bases)
+                ? BuildIntersectedProperty(property, bases)
+                : BuildProperty(property)).ToList<DeclarationNode>();
 
         var baseTypes = ImmutableList<TypeNode>.Empty;
         if (model.Composition?.Kind == IrCompositionKind.AllOf && model.Composition.Types.Count > 0)
@@ -421,6 +455,61 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             documentation: comment);
     }
     
+    /// <summary>Собирает объявления всех свойств, наследуемых по графу allOf.</summary>
+    /// <param name="model">Модель, базовые типы которой проверяются.</param>
+    /// <returns>Наследуемые объявления, индексированные по исходному имени в данных.</returns>
+    private Dictionary<string, List<IrProperty>> CollectInheritedProperties(IrModel model)
+    {
+        var result = new Dictionary<string, List<IrProperty>>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        // Traverse each reachable base once, retaining declarations with the same wire name.
+        void Collect(IrModel current)
+        {
+            if (current.Composition is not { Kind: IrCompositionKind.AllOf } composition)
+                return;
+            foreach (var reference in composition.Types.OfType<IrModelReference>())
+            {
+                if (!visited.Add(reference.ModelName) || !ModelsByName.TryGetValue(reference.ModelName, out var parent))
+                    continue;
+                foreach (var property in parent.Properties)
+                {
+                    if (!result.TryGetValue(property.OriginalName, out var declarations))
+                        result[property.OriginalName] = declarations = [];
+                    declarations.Add(property);
+                }
+                Collect(parent);
+            }
+        }
+        Collect(model);
+        return result;
+    }
+
+    /// <summary>Проверяет, задают ли два объявления свойства одинаковый контракт значения и присутствия.</summary>
+    /// <param name="left">Локальное объявление свойства.</param>
+    /// <param name="right">Наследуемое объявление свойства.</param>
+    /// <returns>Представляет ли наследуемое объявление локальный контракт.</returns>
+    private static bool HasEquivalentPropertyContract(IrProperty left, IrProperty right) =>
+        (left.IsRequired && !IsOptionalMemberType(left.Type)) ==
+            (right.IsRequired && !IsOptionalMemberType(right.Type)) &&
+        left.Constraints == right.Constraints &&
+        IrTypeComparer.AreSemanticallyEqual(left.Type, right.Type, ignorePresence: false);
+
+    /// <summary>Пересекает локальное свойство со всеми наследуемыми ограничениями значения и присутствия.</summary>
+    /// <param name="property">Локально объявленное свойство.</param>
+    /// <param name="bases">Наследуемые объявления с тем же именем в данных.</param>
+    /// <returns>Совместимое свойство, сохраняющее все ограничения allOf.</returns>
+    private PropertyDeclarationNode BuildIntersectedProperty(IrProperty property, IReadOnlyList<IrProperty> bases)
+    {
+        var declarations = bases.Append(property).ToArray();
+        var types = declarations.Select(item => BuildType(UnwrapMemberOptional(item.Type))).ToImmutableList();
+        var required = declarations.Any(item => item.IsRequired && !IsOptionalMemberType(item.Type));
+        var comment = string.IsNullOrEmpty(property.Description) ? null : new CommentNode(property.Description, CommentKind.JSDoc);
+        var defaultValue = property.Constraints?.DefaultValue is { } value ? BuildLiteralFromValue(value) : null;
+        return new PropertyDeclarationNode(new IdentifierNode(property.Name), new IntersectionTypeNode(types),
+            isRequired: required, accessor: PropertyAccessorKind.Get, defaultValue: defaultValue,
+            documentation: comment, constraints: property.Constraints);
+    }
+
     /// <summary>
     /// Builds a model property, preserving required presence independently from nullable or optional value types.
     /// </summary>
@@ -429,7 +518,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
-        var type = BuildType(property.Type);
+        var type = BuildInterfacePropertyTypeNode(property);
         
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.JSDoc)
@@ -442,7 +531,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         return new PropertyDeclarationNode(
             name: name,
             type: type,
-            isRequired: property.IsRequired,
+            isRequired: property.IsRequired && !IsOptionalMemberType(property.Type),
             accessor: PropertyAccessorKind.Get,
             defaultValue: defaultValue,
             documentation: comment,
@@ -752,13 +841,25 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         };
     }
     
+    /// <summary>Собирает ссылки из объявления и пересечений наследуемых свойств.</summary>
+    /// <param name="model">Проверяемая модель.</param>
+    /// <returns>Имена моделей, на которые есть ссылки.</returns>
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
         var dependencies = new HashSet<string>();
         
+        var inherited = CollectInheritedProperties(model);
         foreach (var property in model.Properties)
         {
+            if (inherited.TryGetValue(property.OriginalName, out var equivalentBases) &&
+                equivalentBases.All(baseProperty => HasEquivalentPropertyContract(property, baseProperty)))
+                continue;
             ExtractDependenciesFromType(property.Type, dependencies);
+            if (!inherited.TryGetValue(property.OriginalName, out var bases)) continue;
+            foreach (var parentProperty in bases)
+            {
+                ExtractDependenciesFromType(parentProperty.Type, dependencies);
+            }
         }
         
         if (model.Composition != null)
@@ -1081,10 +1182,10 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         AddValidationSchemaImports(result, operation, fileOrganization);
     }
 
-    /// <summary>
-    /// Импорты схем валидации для выбранной библиотеки: params-схемы (zod), вынесенные result-схемы,
-    /// model-схемы тела/голых-ответов и runtime-импорты (z / v / Type / Value).
-    /// </summary>
+    /// <summary>Добавляет импорты валидации, необходимые генерируемому клиенту операции.</summary>
+    /// <param name="result">Список импортов для дополнения.</param>
+    /// <param name="operation">Операция, входные данные и ответы которой проверяются.</param>
+    /// <param name="fileOrganization">Настроенные пути выходных файлов.</param>
     private void AddValidationSchemaImports(
         List<ImportNode> result,
         IrOperation operation,
@@ -1135,6 +1236,19 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             result.Add(new ImportNode(
                 items: new[] { new IdentifierNode($"{modelName}Schema") }.ToImmutableList(),
                 from: $"../../{modelsPath}/{modelFileName}/{modelFileName}.schema",
+                kind: ImportKind.Named));
+        }
+
+        if (_validation.UuidConstName is { } uuidConst
+            && TypeScriptOptionIds.UuidFormat.Resolve(_options?.UuidFormat) == TypeScriptOptionIds.UuidFormat.Regex
+            && operation.RequestBody is { Type: var bodyType }
+            && ValidationTypes.IsValidatable(bodyType)
+            && ValidationTypes.NeedsConstructedSchema(bodyType)
+            && UuidFormatSupport.ContainsUuid(bodyType))
+        {
+            result.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode(uuidConst)),
+                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
                 kind: ImportKind.Named));
         }
 
@@ -1345,7 +1459,9 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
                 var dataAccess = new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"));
-                var parseCall = BuildStatusResultBody(operation, resp, dataAccess);
+                var parseCall = resp.Type is null
+                    ? new IdentifierExpressionNode(new IdentifierNode("undefined"))
+                    : BuildStatusResultBody(operation, resp, dataAccess);
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {

@@ -8,6 +8,7 @@ using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Validation;
+using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
@@ -20,19 +21,23 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
+    /// <summary>Используют ли генерируемые схемы общее регулярное выражение UUID.</summary>
+    private readonly bool _usesUuidRegex;
 
 
-    /// <summary>Creates a TypeScriptResultsSchemasAstBuilder for one finalized IR document.</summary>
-    /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
-    /// <param name="namingConverter">The generated identifier naming policy.</param>
-    /// <param name="validation">The configured runtime validation strategy.</param>
-    /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
+    /// <summary>Создаёт построитель схем ответов для окончательного документа.</summary>
+    /// <param name="documentContext">Общие индексы документа.</param>
+    /// <param name="namingConverter">Правила именования генерируемых идентификаторов.</param>
+    /// <param name="validation">Стратегия валидации во время выполнения.</param>
+    /// <param name="uuidFormat">Настроенный режим проверки UUID.</param>
+    /// <exception cref="ArgumentNullException">Необходимая зависимость равна null.</exception>
     internal TypeScriptResultsSchemasAstBuilder(IrDocumentContext documentContext,
-        INamingConverter namingConverter, IClientValidationStrategy validation)
+        INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat)
         : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
+        _usesUuidRegex = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat) == TypeScriptOptionIds.UuidFormat.Regex;
     }
 
     /// <summary>
@@ -84,6 +89,10 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
                 $"Response body validation schemas for {operation.MethodName}."));
     }
 
+    /// <summary>Создаёт импорты времени выполнения для схем, объявленных в файле ответов.</summary>
+    /// <param name="definedTypes">Типы ответов, для которых требуются схемы.</param>
+    /// <param name="fileOrganization">Структура генерируемых файлов.</param>
+    /// <returns>Импорты для валидации, констант UUID и схем моделей, на которые есть ссылки.</returns>
     private IReadOnlyList<ImportNode> BuildImports(IReadOnlyList<ValIO.Core.IR.Types.IrType> definedTypes, FileOrganization? fileOrganization)
     {
         var imports = new List<ImportNode>();
@@ -92,6 +101,13 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
         // Model schemas are co-located under modelsPath; this results-schema file sits at
         // {clientsPath}/{op}/ → two levels up to the output root, then into modelsPath.
         var modelsPath = fileOrganization?.ModelsPath ?? "models";
+        if (_usesUuidRegex && _validation.UuidConstName is { } uuidConst && definedTypes.Any(UuidFormatSupport.ContainsUuid))
+        {
+            imports.Add(new ImportNode(
+                items: ImmutableList.Create(new IdentifierNode(uuidConst)),
+                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
+                kind: ImportKind.Named));
+        }
         var modelNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in definedTypes)
             ValidationTypes.CollectModelSchemaNames(type, modelNames);

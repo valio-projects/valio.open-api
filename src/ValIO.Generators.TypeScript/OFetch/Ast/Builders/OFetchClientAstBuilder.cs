@@ -30,6 +30,8 @@ public sealed class OFetchClientAstBuilder : AstBuilderBase
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
     private readonly Validation.IClientValidationStrategy _validation;
+    /// <summary>Настроенный режим проверки UUID.</summary>
+    private readonly string? _uuidFormat;
 
 
     /// <summary>Creates a OFetchClientAstBuilder for one finalized IR document.</summary>
@@ -43,6 +45,7 @@ public sealed class OFetchClientAstBuilder : AstBuilderBase
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = Validation.ClientValidationStrategyFactory.Create(options);
+        _uuidFormat = options?.UuidFormat;
 
         var typeBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
         _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType);
@@ -145,6 +148,10 @@ public sealed class OFetchClientAstBuilder : AstBuilderBase
                     kind: ImportKind.Named));
             }
         }
+
+        var uuidImport = TypeScriptInlineUuidImport.Create([operation], _validation, _uuidFormat, fileOrganization.ModelsPath, "../..");
+        if (uuidImport != null)
+            imports.Add(uuidImport);
 
         return imports.ToImmutable();
     }

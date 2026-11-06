@@ -49,10 +49,10 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
     public string QueryParamsSchemaName(string operationName)
         => $"{_namingConverter.ToPascalCase(operationName)}QueryParamsSchema";
 
-    /// <summary>
-    /// Строит файл со схемами параметров. Возвращает <c>null</c>, если валидация выключена или у
-    /// операции нет route/query параметров.
-    /// </summary>
+    /// <summary>Создаёт схемы проверки параметров маршрута и запроса с использованием контекста окончательного документа.</summary>
+    /// <param name="operation">Операция, для параметров которой создаются схемы и импорты.</param>
+    /// <param name="fileOrganization">Необязательная структура генерируемых файлов для разрешения импортов.</param>
+    /// <returns>Исходный файл схем либо отсутствие файла, если валидация отключена или параметры маршрута и запроса отсутствуют.</returns>
     public SourceFileNode? BuildParamsSchemasSourceFile(IrOperation operation, FileOrganization? fileOrganization)
     {
         if (!_validation.IsEnabled)
@@ -120,7 +120,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
 
         var paramTypes = operation.PathParameters.Concat(operation.QueryParameters).Select(p => p.Type).ToList();
         var fileBase = _namingConverter.ToCamelCase(operation.OriginalMethodName);
-        var imports = BuildImports(operation, paramTypes, fileOrganization, annotatedInterfaces, fileBase, constraintConstNames);
+        var imports = BuildImports(paramTypes, fileOrganization, annotatedInterfaces, fileBase, constraintConstNames);
         return new SourceFileNode(
             imports: imports,
             declarations: declarations,
@@ -145,10 +145,15 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
             documentation: new CommentNode(summary, CommentKind.JSDoc),
             isExported: true);
 
-    /// <summary>Builds the imports for the params-schema file: schema runtime, the annotated params
-    /// interface(s) (type-only, sibling <c>./{op}.params</c>), the shared UUID constant and any model schemas.</summary>
+    /// <summary>Создаёт импорты для файла схем параметров: библиотеку схем, аннотированные интерфейсы параметров
+    /// (только типы, соседний файл <c>./{op}.params</c>), общую константу UUID и схемы моделей.</summary>
+    /// <param name="paramTypes">Типы параметров маршрута и запроса, представленные в этом файле.</param>
+    /// <param name="fileOrganization">Структура генерируемых файлов.</param>
+    /// <param name="annotatedInterfaces">Интерфейсы для аннотирования схем.</param>
+    /// <param name="fileBase">Основа имени файла операции.</param>
+    /// <param name="constraintConstNames">Генерируемые константы ограничений валидации.</param>
+    /// <returns>Импорты, необходимые генерируемым схемам.</returns>
     private IReadOnlyList<ImportNode> BuildImports(
-        IrOperation operation,
         IReadOnlyList<IrType> paramTypes,
         FileOrganization? fileOrganization,
         IReadOnlyCollection<string> annotatedInterfaces,
@@ -188,7 +193,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
         // `pattern: UUID_PATTERN` must import the constant from the shared {modelsPath}/formats.ts file.
         if (_validation.UuidConstName != null
             && _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex
-            && UuidFormatSupport.OperationParamsUseUuid(operation))
+            && paramTypes.Any(UuidFormatSupport.ContainsUuid))
         {
             imports.Add(new ImportNode(
                 items: ImmutableList.Create(new IdentifierNode(_validation.UuidConstName)),

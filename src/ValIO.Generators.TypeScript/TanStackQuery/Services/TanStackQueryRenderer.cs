@@ -72,10 +72,11 @@ public class TanStackQueryRenderer
     }
     
     /// <summary>
-    /// Рендерит query key функцию для IR операции
+    /// Формирует функцию ключа запроса для операции.
     /// </summary>
-    /// <param name="operation">IR операция</param>
-    /// <returns>TypeScript код query key функции</returns>
+    /// <param name="operation">Исходная операция.</param>
+    /// <returns>Сгенерированная функция TypeScript.</returns>
+    /// <exception cref="ArgumentNullException">Операция равна null.</exception>
     public string RenderQueryKeyFunction(IrOperation operation)
     {
         if (operation == null)
@@ -101,7 +102,7 @@ public class TanStackQueryRenderer
         
         if (parameters.Count > 0)
         {
-            CodeFormatter.AppendLine(sb, 1, string.Join(",\n", parameters.Select(p => $"{p}")));
+            CodeFormatter.AppendLine(sb, 1, string.Join("," + Environment.NewLine, parameters.Select(p => $"{p}")));
         }
         
         CodeFormatter.AppendLine(sb, 0, ") {");

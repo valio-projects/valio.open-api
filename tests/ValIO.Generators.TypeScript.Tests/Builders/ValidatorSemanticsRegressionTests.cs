@@ -54,7 +54,7 @@ public sealed class ValidatorSemanticsRegressionTests
     {
         var dictionary = new IrDictionaryType
         {
-            KeyType = Primitive(IrPrimitiveKind.String),
+            KeyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String, Constraints = new IrPropertyConstraints { MinLength = 2 } },
             ValueType = new IrModelReference { ModelName = "Node" }
         };
         var schema = ZodBuilder().BuildZodSchemaFromIrType(dictionary, currentModelName: "Node");
@@ -63,9 +63,31 @@ public sealed class ValidatorSemanticsRegressionTests
 
         content.Should().Contain("z.record(").And.Contain("z.string()").And.Contain("z.lazy(() => NodeSchema)");
         content.Should().NotContain("z.any()");
-        var call = ((ValIO.Generators.TypeScript.Zod.Ast.Nodes.ZodExpressionSchemaNode)schema).Expression
-            .Should().BeOfType<CallExpressionNode>().Subject;
-        call.Arguments.Should().HaveCount(2, "both Zod versions accept the explicit key/value record overload");
+        var record = schema.Should().BeOfType<ValIO.Generators.TypeScript.Zod.Ast.Nodes.ZodRecordNode>().Subject;
+        new ZodAstRenderer().RenderSchema(record.KeySchema).Should().Be("z.string().min(2)");
+        new ZodAstRenderer().RenderSchema(record.ValueSchema).Should().Be("z.lazy(() => NodeSchema)");
+    }
+
+    /// <summary>Проверяет, что allOf сохраняет локальное сужение ограничений и исключает идентичные унаследованные проверки.</summary>
+    [Test]
+    public void ZodAllOf_PreservesNarrowingAndOmitsIdenticalProperties()
+    {
+        var id = new IrProperty { Name = "id", OriginalName = "id", Type = Primitive(IrPrimitiveKind.String), IsRequired = true };
+        var value = new IrProperty { Name = "value", OriginalName = "value", Type = Primitive(IrPrimitiveKind.String), IsRequired = true };
+        var parent = new IrModel { Name = "Base", Properties = [id, value] };
+        var child = new IrModel
+        {
+            Name = "Child",
+            Properties = [id with { }, value with { Constraints = new IrPropertyConstraints { MinLength = 3 } }],
+            Composition = new IrComposition { Kind = IrCompositionKind.AllOf, Types = [new IrModelReference { ModelName = "Base" }] }
+        };
+        var context = IrDocumentContexts.Create(models: [parent, child]);
+        var builder = new ZodAstBuilder(context, new NamingConverter(), _ => new RawTypeNode("unknown"));
+
+        var output = new ZodAstRenderer().RenderSchema(builder.BuildZodSchemaFromIrModel(child));
+
+        output.Should().Contain("BaseSchema").And.Contain("value: z.string().min(ChildConstraints.value.minLength)")
+            .And.NotContain("id: z.string()");
     }
 
     /// <summary>Verifies that more than two allOf arms use nested binary intersections.</summary>

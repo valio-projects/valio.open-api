@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
+using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
@@ -88,6 +89,35 @@ public sealed class DefaultValuesGenerationTests
             process.ExitCode.Should().Be(0, error);
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>Сохраняет явные значения по умолчанию и независимую обязательность свойств при добавлении аффиксов к именам моделей и операций.</summary>
+    /// <returns>Задача, завершающаяся после строгой компиляции и выполнения экспортов значений по умолчанию с аффиксами.</returns>
+    [Test]
+    public async Task AffixedDefaultsPreserveOptionalNullableMembers()
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Contract);
+        var context = await harness.RunAsync(document,
+            new TypeScriptGenerationOptions { GenerateDefaultValues = true },
+            naming: new NamingConventions { ModelPrefix = "Api", MethodPrefix = "Api" });
+        var model = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("/settings.ts", StringComparison.Ordinal));
+        var parameters = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(".params.ts", StringComparison.Ordinal));
+        model.Content.Should().Contain("nullable?: string | null;").And.Contain("ApiSettingsDefaultValues");
+        parameters.Content.Should().Contain("ApigetItemsQueryParamsDefaultValues");
+        await GeneratedTypeScriptCompiler.Compile(context.GeneratedFiles
+            .Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray(), "affixed explicit defaults");
+        await GeneratedTypeScriptRuntime.Run(context, $$"""
+            const defaults = require(path.join(root, {{JsonSerializer.Serialize(model.RelativePath[..^3] + ".js")}})).ApiSettingsDefaultValues;
+            const params = require(path.join(root, {{JsonSerializer.Serialize(parameters.RelativePath[..^3] + ".js")}})).ApigetItemsQueryParamsDefaultValues;
+            assert.equal(defaults.disabled, false);
+            assert.equal(defaults.count, 0);
+            assert.equal(defaults.text, '');
+            assert.equal(Object.hasOwn(defaults, 'nullable'), false);
+            assert.equal(Object.hasOwn(defaults, 'missing'), false);
+            assert.equal(params.active, false);
+            assert.equal(params.text, '');
+            """);
     }
 
     /// <summary>Verifies the configuration parser defaults to false and accepts a boolean.</summary>

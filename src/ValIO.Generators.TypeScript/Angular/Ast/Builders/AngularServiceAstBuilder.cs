@@ -37,6 +37,9 @@ public sealed class AngularServiceAstBuilder : AstBuilderBase
     /// <summary>The configured request and response validation strategy.</summary>
     private readonly IClientValidationStrategy _validation;
 
+    /// <summary>Настроенный режим проверки UUID.</summary>
+    private readonly string? _uuidFormat;
+
     /// <summary>Maps declared response bodies to their TypeScript assertion types when validation is disabled.</summary>
     private readonly Func<IrType, TypeNode> _typeBuilder;
 
@@ -54,6 +57,7 @@ public sealed class AngularServiceAstBuilder : AstBuilderBase
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _promiseMode = promiseMode;
         _validation = ClientValidationStrategyFactory.Create(options);
+        _uuidFormat = options?.UuidFormat;
         var typeBuilder = new TypeScriptAstBuilder(documentContext, namingConverter, options);
         _typeBuilder = typeBuilder.BuildType;
         _paramsBuilder = new TypeScriptParamsAstBuilder(documentContext, namingConverter, typeBuilder.BuildType);
@@ -630,6 +634,10 @@ public sealed class AngularServiceAstBuilder : AstBuilderBase
 
         if (_promiseMode && _validation.IsEnabled)
         {
+            var uuidImport = TypeScriptInlineUuidImport.Create(client.Operations, _validation, _uuidFormat, fileOrganization?.ModelsPath, "..");
+            if (uuidImport != null)
+                imports.Add(uuidImport);
+
             var bodyTypes = client.Operations.Where(operation => operation.RequestBody != null && ValidationTypes.IsValidatable(operation.RequestBody.Type))
                 .Select(operation => operation.RequestBody!.Type).ToArray();
             imports.AddRange(_validation.RuntimeImports(bodyTypes,

@@ -32,9 +32,9 @@ export async function getUserById(
 ): Promise<GetUserByIdResults> {
     const httpClient = (client ?? ky);
     const parsedRoute = GetUserByIdRouteParamsSchema.parse(params);
-    
+
     const requestUrl = `/users/${parsedRoute.id}`;
-    
+
     const kyOptions: Options = {
         ...(options ?? {}),
         throwHttpErrors: false,
@@ -42,13 +42,13 @@ export async function getUserById(
         signal: signal
     } : {})
     };
-    
+
     const response = await httpClient.get(
         requestUrl,
         kyOptions
     );
     const responseData = (((response.status === 204) || (response.status === 205)) ? undefined : await response.json<unknown>());
-    
+
         if ((response.status === 200)) {
         return ({
             status: 200,
