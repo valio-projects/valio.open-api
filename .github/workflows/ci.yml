@@ -95,7 +95,6 @@ jobs:
 
       - name: Test
         env:
-          VALIO_TEST_NODE_MODULES: ${{ github.workspace }}/tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules
           VALIO_VALIDATOR_NODE_MODULES: ${{ github.workspace }}/tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules
         run: >
           dotnet test ValIO.sln

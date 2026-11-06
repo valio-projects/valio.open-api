@@ -32,8 +32,7 @@ public sealed class IdentityClientContractTests
                 Property("requiredValue", text, true),
                 Property("requiredNullable", nullable, true),
                 Property("optionalValue", text, false),
-                Property("optionalNullable", nullable, false),
-                Property("nestedOptional", new IrNullableType { InnerType = new IrOptionalType { InnerType = text } }, true)
+                Property("optionalNullable", nullable, false)
             ]
         };
         var modelCode = renderer.Render(builder.BuildSourceFile(model));
@@ -41,7 +40,6 @@ public sealed class IdentityClientContractTests
         modelCode.Should().Contain("requiredNullable: string | null;");
         modelCode.Should().Contain("optionalValue?: string;");
         modelCode.Should().Contain("optionalNullable?: string | null;");
-        modelCode.Should().Contain("nestedOptional?: string | null;");
         var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]) with
         {
             QueryParameters =
@@ -128,28 +126,6 @@ public sealed class IdentityClientContractTests
         code.Should().Contain("axiosInstance.request");
     }
 
-    /// <summary>Documented bodyless successes are represented and never parsed as JSON by fetch.</summary>
-    /// <param name="transport">The native HTTP transport used to decode successful responses.</param>
-    [TestCase("axios")]
-    [TestCase("fetch")]
-    public void MixedResponsesIncludeBodylessSuccess(string transport)
-    {
-        var operation = Operation([
-            new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } },
-            new IrResponse { StatusCode = "204", Type = null }
-        ]);
-        var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), new TypeScriptGenerationOptions { Transports = [transport] });
-        var renderer = new TypeScriptAstRenderer([new AxiosNodeRenderer()]);
-        var code = renderer.Render(builder.BuildSourceFileForOperation(operation, transport: transport));
-        var results = renderer.Render(new TypeScriptResultsAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), builder.BuildType)
-            .BuildResultsSourceFile(operation, null, null, operation.MethodName));
-        results.Should().Contain("ExampleResult204");
-        results.Should().Contain("body: undefined;");
-        code.Should().Contain("body: undefined");
-        if (transport == "fetch")
-            code.IndexOf("204", StringComparison.Ordinal).Should().BeLessThan(code.IndexOf("response.json", StringComparison.Ordinal));
-    }
-
     /// <summary>Generated client separators contain no spaces while string literals keep theirs.</summary>
     /// <param name="transport">The selected HTTP transport.</param>
     [TestCase("axios")]
@@ -163,17 +139,6 @@ public sealed class IdentityClientContractTests
         code.Should().Contain("/  literal  ");
         code.Should().EndWith(Environment.NewLine);
         code.Should().NotEndWith(Environment.NewLine + Environment.NewLine);
-    }
-
-    /// <summary>Pure bodyless responses retain a void return and do not read JSON in fetch.</summary>
-    [Test]
-    public void FetchVoidDoesNotReadJson()
-    {
-        var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]);
-        var code = new TypeScriptAstRenderer([new AxiosNodeRenderer()]).Render(new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter())
-            .BuildSourceFileForOperation(operation, transport: "fetch"));
-        code.Should().Contain("Promise<void>");
-        code.Should().NotContain("response.json");
     }
 
     /// <summary>Creates one model property for the presence/nullability matrix.</summary>

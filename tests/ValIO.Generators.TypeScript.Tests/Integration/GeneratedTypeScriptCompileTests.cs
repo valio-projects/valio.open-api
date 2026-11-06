@@ -32,7 +32,7 @@ public sealed class GeneratedTypeScriptCompileTests
         }
     }
 
-    /// <summary>Compiles actual pipeline output covering model composition, enums, request encodings, and empty responses.</summary>
+    /// <summary>Compiles actual pipeline output covering model composition, enums, inline UUIDs, request encodings, and empty responses.</summary>
     /// <param name="transport">The HTTP client or framework transport to generate.</param>
     /// <param name="validation">The selected validator, or <c>none</c> to omit runtime schemas.</param>
     /// <returns>The asynchronous generation and TypeScript compiler check.</returns>
@@ -45,6 +45,7 @@ public sealed class GeneratedTypeScriptCompileTests
         {
             Transports = [transport],
             ValidationLibrary = validation == "none" ? null : validation,
+            UuidFormat = "regex",
         });
 
         var files = context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
@@ -55,7 +56,10 @@ public sealed class GeneratedTypeScriptCompileTests
         files.Should().Contain(file => file.RelativePath.EndsWith(clientSuffix, StringComparison.Ordinal), "the requested transport must be generated");
         files.Should().Contain(file => file.RelativePath.EndsWith("state/state.ts", StringComparison.Ordinal), "named enums must participate in the compilation");
         if (validation != "none")
+        {
             files.Should().Contain(file => file.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal), "the selected validator must contribute real schemas");
+            files.Should().Contain(file => file.RelativePath.EndsWith("models/formats.ts", StringComparison.Ordinal), "inline UUID validation requires shared formats");
+        }
 
         await GeneratedTypeScriptCompiler.Compile(files, $"strict compilation for {transport}/{validation}");
     }

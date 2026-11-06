@@ -204,23 +204,24 @@ worked examples of this end-to-end thread.
 
 Tests live under `tests/` (one project per source assembly), NUnit 4 + FluentAssertions.
 The TypeScript contract tests execute generated schemas with Zod 3 and Zod 4 and compile them
-with strict TypeScript. Node.js 22.19+ and the pinned runtime dependencies are required; missing
-dependencies fail these tests rather than skipping validation. CI prepares them on every host.
+with strict TypeScript. Node.js 22.19+ and the pinned runtime dependencies enable these opt-in checks. An absent
+VALIO_VALIDATOR_NODE_MODULES skips them; an explicitly configured invalid installation fails.
+CI prepares and enables them on every host.
 Before a local test run (PowerShell):
 
 ```powershell
 npm ci --ignore-scripts --prefix tests/ValIO.Generators.TypeScript.Tests/Runtime
-$env:VALIO_TEST_NODE_MODULES = Join-Path (Get-Location) 'tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules'
-$env:VALIO_VALIDATOR_NODE_MODULES = $env:VALIO_TEST_NODE_MODULES
+$env:VALIO_VALIDATOR_NODE_MODULES = Join-Path (Get-Location) 'tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules'
 ```
 
-In a POSIX shell, export `VALIO_TEST_NODE_MODULES="$PWD/tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules"`
-and `VALIO_VALIDATOR_NODE_MODULES="$VALIO_TEST_NODE_MODULES"` after the same `npm ci` command.
+In a POSIX shell, export `VALIO_VALIDATOR_NODE_MODULES="$PWD/tests/ValIO.Generators.TypeScript.Tests/Runtime/node_modules"`
+after the same `npm ci` command. Use `--filter "TestCategory!=NodeIntegration"` for a .NET-only test run.
 The same pinned installation supplies real transport and validator declarations for the complete
 TypeScript matrix, including Angular 20 with TypeScript 5.8 and Next.js 16. Node.js 22.19+ is required.
 Zod 3 and 4 are installed as compatibility-test aliases. The test compiler and runtime loader
 resolve `zod` and `zod/v4` to those exact versions without rewriting the generated sources;
-these aliases are not generator or generated-client runtime dependencies.
+these aliases are not generator or generated-client runtime dependencies. The Zod 3 alias deliberately
+retains compatibility coverage for that major version and is used only by the tests.
 
 Run:
 

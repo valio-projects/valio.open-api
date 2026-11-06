@@ -64,6 +64,22 @@ const server = http.createServer((request, response) => {
       return response;
     });
   }
+  let configuredCalls = 0;
+  if (transport === 'axios') {
+    const configured = axios.create({ baseURL: base });
+    configured.interceptors.request.use(config => {
+      configuredCalls++;
+      config.headers.set('Authorization', 'Bearer refreshed');
+      return config;
+    });
+    configured.interceptors.response.use(response => ({ ...response, data: response.data + '-configured' }));
+    const Module = require('node:module');
+    const originalLoad = Module._load;
+    Module._load = function(name, ...args) {
+      if (name === '@app/native-client') return { apiMutator: configured };
+      return originalLoad.call(this, name, ...args);
+    };
+  }
   const { mixed } = require(path.join(root, 'api', 'mixed', `mixed.${transport}.js`));
   try {
     const result = await mixed({ body: 'input' }, undefined, undefined, client);
@@ -71,6 +87,13 @@ const server = http.createServer((request, response) => {
     assert.equal(requests, 2);
     assert.equal(refreshCount, 1);
     assert.deepEqual(events, ['before:expired', 'after:401', 'refresh', 'before:refreshed', 'after:200']);
+    assert.equal(configuredCalls, 0, 'The explicit native client must override the configured default');
+    if (transport === 'axios') {
+      const configuredResult = await mixed({ body: 'input' });
+      assert.equal(configuredResult.body, 'accepted-configured', 'The configured native response interceptor must run');
+      assert.equal(configuredCalls, 1);
+      assert.equal(requests, 3);
+    }
 
     events.length = 0;
     requests = 0;

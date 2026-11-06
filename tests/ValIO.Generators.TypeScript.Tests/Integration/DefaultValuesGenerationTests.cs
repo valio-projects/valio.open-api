@@ -87,6 +87,7 @@ public sealed class DefaultValuesGenerationTests
     /// <summary>Preserves explicit defaults and independent member presence after model and operation affixes.</summary>
     /// <returns>A task that completes after strict compilation and execution of the affixed default exports.</returns>
     [Test]
+    [Category("NodeIntegration")]
     public async Task AffixedDefaultsPreserveOptionalNullableMembers()
     {
         using var harness = new PipelineTestHarness();

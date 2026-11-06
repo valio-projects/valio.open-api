@@ -1,0 +1,67 @@
+{
+  "swagger": "2.0",
+  "info": {"title": "Presence is independent of nullability", "version": "1.0"},
+  "paths": {
+    "/items/{id}": {
+      "parameters": [
+        {"name": "id", "in": "path", "required": true, "type": "string"},
+        {"name": "requiredQuery", "in": "query", "required": true, "type": "string"},
+        {"name": "optionalQuery", "in": "query", "type": "string", "default": "fallback"},
+        {"name": "requiredHeader", "in": "header", "required": true, "type": "string"},
+        {"name": "optionalHeader", "in": "header", "required": false, "type": "string"}
+      ],
+      "post": {
+        "operationId": "requiredBody",
+        "responses": {"204": {"description": "Accepted"}},
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {"type": "string", "x-nullable": true, "default": "fallback"},
+            "required": true
+          }
+        ]
+      },
+      "put": {
+        "operationId": "optionalBody",
+        "responses": {"204": {"description": "Accepted"}},
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {"type": "string", "x-nullable": true, "default": "fallback"},
+            "required": false
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "omittedBody",
+        "responses": {"204": {"description": "Accepted"}},
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "schema": {"type": "string", "x-nullable": true, "default": "fallback"}
+          }
+        ]
+      }
+    }
+  },
+  "consumes": ["application/json"],
+  "definitions": {
+    "Presence": {
+      "type": "object",
+      "required": ["requiredValue", "requiredNullable"],
+      "properties": {
+        "requiredValue": {"type": "string"},
+        "optionalValue": {"type": "string"},
+        "requiredNullable": {"type": "string", "x-nullable": true},
+        "optionalNullable": {"type": "string", "x-nullable": true},
+        "defaultValue": {"type": "string", "default": "fallback"},
+        "nullableArray": {"type": "array", "items": {"type": "string", "x-nullable": true}},
+        "nullableMap": {"type": "object", "additionalProperties": {"type": "string", "x-nullable": true}},
+        "nullableCollection": {"type": "array", "items": {"type": "string"}, "x-nullable": true}
+      }
+    }
+  }
+}

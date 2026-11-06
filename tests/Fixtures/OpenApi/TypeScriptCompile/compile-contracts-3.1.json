@@ -5,6 +5,24 @@
     "version": "1"
   },
   "paths": {
+    "/inline-uuids": {
+      "post": {
+        "operationId": "postInlineUuids",
+        "tags": ["Items"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": { "type": "string", "format": "uuid" }
+              }
+            }
+          }
+        },
+        "responses": { "204": { "description": "No content" } }
+      }
+    },
     "/items": {
       "post": {
         "operationId": "createItem",

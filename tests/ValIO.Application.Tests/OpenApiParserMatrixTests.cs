@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Text;
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.OpenApi;
@@ -15,17 +16,22 @@ using ValIO.Tests.Fixtures;
 namespace ValIO.Application.Tests;
 
 /// <summary>Exercises the production parser and IR builder against each supported OpenAPI dialect and serialization.</summary>
-    /// <returns>The asynchronous test operation.</returns>
 [TestFixture]
 public sealed class OpenApiParserMatrixTests
 {
+    /// <summary>Lists every published Swagger 2.0 and OpenAPI 3.x patch through OpenAPI 3.2.1.</summary>
+    /// <remarks>Patch versions share dialect fixtures; only the root version marker changes before parsing.</remarks>
+    /// <value>The versions published in the official OpenAPI specification index.</value>
+    private static IEnumerable<string> PublishedVersions =>
+        ["2.0", "3.0.0", "3.0.1", "3.0.2", "3.0.3", "3.0.4", "3.1.0", "3.1.1", "3.1.2", "3.2.0", "3.2.1"];
+
     /// <summary>Enumerates dialect and serialization pairs, including native YAML rather than JSON disguised as YAML.</summary>
-    /// <value>The eight supported source combinations.</value>
+    /// <value>Every published version in both supported serializations.</value>
     private static IEnumerable<TestCaseData> VersionsAndFormats
     {
         get
         {
-            foreach (var version in new[] { "2.0", "3.0.4", "3.1.2", "3.2.0" })
+            foreach (var version in PublishedVersions)
             foreach (var format in new[] { "json", "yaml" })
                 yield return new TestCaseData(version, format);
         }
@@ -37,7 +43,7 @@ public sealed class OpenApiParserMatrixTests
     {
         get
         {
-            foreach (var version in new[] { "2.0", "3.0.4", "3.1.2", "3.2.0" })
+            foreach (var version in PublishedVersions)
             foreach (var format in new[] { "json", "yaml" })
             foreach (var composition in version == "2.0" ? new[] { "allOf" } : new[] { "allOf", "oneOf", "anyOf" })
                 yield return new TestCaseData(version, format, composition);
@@ -50,7 +56,7 @@ public sealed class OpenApiParserMatrixTests
     {
         get
         {
-            foreach (var version in new[] { "3.0.4", "3.1.2", "3.2.0" })
+            foreach (var version in PublishedVersions.Where(v => v != "2.0"))
             foreach (var format in new[] { "json", "yaml" })
             foreach (var composition in new[] { "anyOf-in-allOf", "allOf-in-oneOf" })
                 yield return new TestCaseData(version, format, composition);
@@ -64,7 +70,7 @@ public sealed class OpenApiParserMatrixTests
     [TestCaseSource(nameof(VersionsAndFormats))]
     public async Task FileParser_PreservesContractAcrossVersionsAndFormats(string version, string format)
     {
-        var document = await ParseFileAsync($"{version}-contract.{format}");
+        var document = await ParseVersionedFileAsync(version, "contract", format);
         var ir = BuildIr(document);
         ir.Metadata.Title.Should().Be("Parser matrix");
         ir.Metadata.ServerUrl.Should().Be("https://api.example.test/v1");
@@ -93,7 +99,7 @@ public sealed class OpenApiParserMatrixTests
     [TestCaseSource(nameof(CompositionCases))]
     public async Task Composition_PreservesModelAndEndpointSemantics(string version, string format, string composition)
     {
-        var document = await ParseFileAsync($"{version}-{composition}.{format}");
+        var document = await ParseVersionedFileAsync(version, composition, format);
         var ir = BuildIr(document);
         var model = ir.Models.Single(m => m.Name == "Choice");
         var expectedKind = composition switch
@@ -134,12 +140,70 @@ public sealed class OpenApiParserMatrixTests
     [TestCaseSource(nameof(VersionsAndFormats))]
     public async Task NullableBodies_PreserveRequirednessAndScalarType(string version, string format)
     {
-        var document = await ParseFileAsync($"{version}-nullable.{format}");
+        var document = await ParseVersionedFileAsync(version, "nullable", format);
         var operation = BuildIr(document).Clients.SelectMany(c => c.Operations).Single();
         operation.RequestBody!.IsRequired.Should().BeTrue();
         foreach (var type in new[] { operation.RequestBody.Type, operation.Responses.Single(r => r.StatusCode == "200").Type })
             type.Should().BeOfType<IrNullableType>().Which.InnerType.Should().BeOfType<IrPrimitiveType>()
                 .Which.PrimitiveKind.Should().Be(IrPrimitiveKind.String);
+    }
+
+    /// <summary>Separates omission from nullability for properties, parameters, and request bodies in every published dialect.</summary>
+    /// <remarks>Swagger 2.0 nullability cases exercise the x-nullable extension; Swagger itself has no null schema type.</remarks>
+    /// <param name="version">The published specification version marker.</param>
+    /// <param name="format">The actual JSON or native YAML serialization.</param>
+    /// <returns>The asynchronous test operation.</returns>
+    [TestCaseSource(nameof(VersionsAndFormats))]
+    public async Task Presence_PreservesFlagsWithoutOptionalTypeWrappers(string version, string format)
+    {
+        var ir = BuildIr(await ParseVersionedFileAsync(version, "presence", format));
+        var properties = ir.Models.Single(m => m.Name == "Presence").Properties;
+        foreach (var property in properties)
+        {
+            property.IsRequired.Should().Be(property.OriginalName is "requiredValue" or "requiredNullable");
+            property.Type.Should().NotBeOfType<IrOptionalType>();
+        }
+        foreach (var name in new[] { "requiredValue", "optionalValue", "defaultValue" })
+            AssertStringType(properties.Single(p => p.OriginalName == name).Type, false);
+        foreach (var name in new[] { "requiredNullable", "optionalNullable" })
+            AssertStringType(properties.Single(p => p.OriginalName == name).Type, true);
+        var defaultProperty = properties.Single(p => p.OriginalName == "defaultValue");
+        defaultProperty.Constraints!.DefaultValue!.ToString().Should().Be("fallback");
+        AssertStringType(properties.Single(p => p.OriginalName == "nullableArray").Type
+            .Should().BeOfType<IrArrayType>().Which.ElementType, true);
+        AssertStringType(properties.Single(p => p.OriginalName == "nullableMap").Type
+            .Should().BeOfType<IrDictionaryType>().Which.ValueType, true);
+        AssertStringType(properties.Single(p => p.OriginalName == "nullableCollection").Type
+            .Should().BeOfType<IrNullableType>().Which.InnerType
+            .Should().BeOfType<IrArrayType>().Which.ElementType, false);
+
+        foreach (var operation in ir.Clients.SelectMany(c => c.Operations))
+        {
+            var path = operation.PathParameters.Single();
+            path.IsRequired.Should().BeTrue();
+            AssertStringType(path.Type, false);
+            foreach (var parameter in operation.QueryParameters.Concat(operation.HeaderParameters))
+            {
+                parameter.IsRequired.Should().Be(parameter.OriginalName.StartsWith("required", StringComparison.Ordinal));
+                AssertStringType(parameter.Type, parameter.OriginalName.Contains("Nullable", StringComparison.Ordinal));
+            }
+            operation.QueryParameters.Single(p => p.OriginalName == "optionalQuery")
+                .DefaultValue!.ToString().Should().Be("fallback");
+            operation.RequestBody!.IsRequired.Should().Be(operation.HttpMethod == "POST");
+            AssertStringType(operation.RequestBody.Type, true);
+        }
+        ir.Clients.SelectMany(c => c.Operations).Should().HaveCount(3);
+    }
+
+    /// <summary>Rejects an unpublished future dialect rather than silently interpreting it as the latest supported specification.</summary>
+    /// <param name="format">The actual JSON or native YAML serialization.</param>
+    /// <returns>The asynchronous test operation.</returns>
+    [TestCase("json")]
+    [TestCase("yaml")]
+    public async Task UnpublishedVersion_IsRejected(string format)
+    {
+        Func<Task> parse = async () => await ParseVersionedFileAsync("3.3.0", "contract", format);
+        await parse.Should().ThrowAsync<Exception>();
     }
 
     /// <summary>Retains mixed composition boundaries in model properties, declarations, and endpoint schemas.</summary>
@@ -150,7 +214,7 @@ public sealed class OpenApiParserMatrixTests
     [TestCaseSource(nameof(NestedCompositionCases))]
     public async Task NestedCompositions_PreserveModelPropertyAndEndpointBoundaries(string version, string format, string composition)
     {
-        var ir = BuildIr(await ParseFileAsync($"{version}-{composition}.{format}"));
+        var ir = BuildIr(await ParseVersionedFileAsync(version, composition, format));
         var operation = ir.Clients.SelectMany(c => c.Operations).Single();
         var property = ir.Models.Single(m => m.Name == "Container").Properties.Single(p => p.OriginalName == "choice");
         foreach (var type in new[] { property.Type, operation.RequestBody!.Type, operation.Responses.Single(r => r.StatusCode == "200").Type! })
@@ -311,19 +375,57 @@ public sealed class OpenApiParserMatrixTests
     private static IrDocument BuildIr(OpenApiDocument document) =>
         new IrBuilder(new SchemaResolver(document), new NamingConverter()).BuildFromOpenApi(document);
 
+    /// <summary>Checks value nullability while ensuring omission has not become a type wrapper.</summary>
+    /// <param name="type">The normalized scalar value type.</param>
+    /// <param name="nullable">Whether the source schema accepts JSON null.</param>
+    private static void AssertStringType(IrType type, bool nullable)
+    {
+        if (nullable)
+            type = type.Should().BeOfType<IrNullableType>().Which.InnerType;
+        type.Should().BeOfType<IrPrimitiveType>().Which.PrimitiveKind.Should().Be(IrPrimitiveKind.String);
+    }
+
     /// <summary>Creates a production parser with no remote calls for local-source tests.</summary>
     /// <returns>The parser under test.</returns>
     private static OpenApiDocumentParser CreateParser() => new(new UnusedHttpClientFactory(), NullLogger<OpenApiDocumentParser>.Instance);
+
+    /// <summary>Reuses a representative dialect fixture while exercising the production reader's actual patch-version dispatch.</summary>
+    /// <param name="version">The exact version marker passed to the reader.</param>
+    /// <param name="scenario">The fixture scenario within the selected dialect.</param>
+    /// <param name="format">The actual source serialization.</param>
+    /// <returns>The parsed document.</returns>
+    private static async Task<OpenApiDocument> ParseVersionedFileAsync(string version, string scenario, string format)
+    {
+        var dialectVersion = version switch
+        {
+            "2.0" => "2.0",
+            var v when v.StartsWith("3.0.", StringComparison.Ordinal) => "3.0.4",
+            var v when v.StartsWith("3.1.", StringComparison.Ordinal) || scenario == "presence" => "3.1.2",
+            _ => "3.2.0"
+        };
+        var source = OpenApiFixture.Read($"Parser/{dialectVersion}-{scenario}.{format}");
+        // Replace only the root version declaration, leaving all schema and operation syntax unchanged.
+        source = Regex.Replace(source, """^(\s*"(?:openapi|swagger)"\s*:\s*")[^"]+(")""",
+            match => match.Groups[1].Value + version + match.Groups[2].Value, RegexOptions.Multiline);
+        return await ParseSourceFileAsync(source, format);
+    }
 
     /// <summary>Copies an explicit source fixture to a temporary file and exercises the public file entry point.</summary>
     /// <param name="fixtureName">The JSON or YAML fixture name inside the Parser fixture directory.</param>
     /// <returns>The parsed document.</returns>
     private static async Task<OpenApiDocument> ParseFileAsync(string fixtureName)
+        => await ParseSourceFileAsync(OpenApiFixture.Read($"Parser/{fixtureName}"), Path.GetExtension(fixtureName));
+
+    /// <summary>Exercises the public file parser with an actual source serialization and cleans up its temporary input.</summary>
+    /// <param name="source">The complete source document.</param>
+    /// <param name="format">The filename extension used to select the production reader.</param>
+    /// <returns>The parsed document.</returns>
+    private static async Task<OpenApiDocument> ParseSourceFileAsync(string source, string format)
     {
-        var filePath = Path.Combine(Path.GetTempPath(), $"valio-parser-{Guid.NewGuid():N}{Path.GetExtension(fixtureName)}");
+        var filePath = Path.Combine(Path.GetTempPath(), $"valio-parser-{Guid.NewGuid():N}.{format.TrimStart('.')}");
         try
         {
-            await File.WriteAllTextAsync(filePath, OpenApiFixture.Read($"Parser/{fixtureName}"));
+            await File.WriteAllTextAsync(filePath, source);
             return await CreateParser().ParseFromFileAsync(filePath);
         }
         finally

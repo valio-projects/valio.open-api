@@ -59,7 +59,7 @@ public sealed class NativeTransportInjectionTests
         source.Should().Contain($"(client ?? axiosDefaults.{exportName})");
     }
 
-    /// <summary>Runs real fetch and Axios against a local HTTP server with native interceptors and abort signals.</summary>
+    /// <summary>Runs real fetch and Axios with configured defaults, caller overrides, interceptors, and abort signals.</summary>
     /// <param name="transport">The native HTTP transport under test.</param>
     /// <returns>The asynchronous runtime contract check.</returns>
     [TestCase("fetch")]
@@ -69,7 +69,11 @@ public sealed class NativeTransportInjectionTests
     {
         using var harness = new PipelineTestHarness();
         var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/runtime-contracts-3.0.json"));
-        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = [transport], ValidationLibrary = "zod4" });
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = [transport], ValidationLibrary = "zod4",
+            Axios = new TypeScriptAxiosOptions { CustomInstancePath = "@app/native-client", CustomInstanceName = "apiMutator" }
+        });
         var script = $"const transport = {JsonSerializer.Serialize(transport)};" + Environment.NewLine + ReadScript("native-http-pipeline.cjs");
 
         var output = await GeneratedTypeScriptRuntime.Run(context, script);
