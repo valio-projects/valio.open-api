@@ -8,7 +8,6 @@ using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Validation;
-using ValIO.Generators.TypeScript.Options;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
@@ -21,8 +20,8 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
-    /// <summary>Whether generated schemas use the shared UUID regular expression.</summary>
-    private readonly bool _usesUuidRegex;
+    /// <summary>The configured UUID validation mode used by the shared import planner.</summary>
+    private readonly string? _uuidFormat;
 
 
     /// <summary>Creates a response schema builder for a finalized document.</summary>
@@ -37,7 +36,7 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
-        _usesUuidRegex = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat) == TypeScriptOptionIds.UuidFormat.Regex;
+        _uuidFormat = uuidFormat;
     }
 
     /// <summary>
@@ -101,13 +100,9 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
         // Model schemas are co-located under modelsPath; this results-schema file sits at
         // {clientsPath}/{op}/ → two levels up to the output root, then into modelsPath.
         var modelsPath = fileOrganization?.ModelsPath ?? "models";
-        if (_usesUuidRegex && _validation.UuidConstName is { } uuidConst && definedTypes.Any(UuidFormatSupport.ContainsUuid))
-        {
-            imports.Add(new ImportNode(
-                items: ImmutableList.Create(new IdentifierNode(uuidConst)),
-                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
-                kind: ImportKind.Named));
-        }
+        var uuidImport = TypeScriptInlineUuidImport.CreateForTypes(definedTypes, _validation, _uuidFormat, modelsPath, "../..");
+        if (uuidImport != null)
+            imports.Add(uuidImport);
         var modelNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in definedTypes)
             ValidationTypes.CollectModelSchemaNames(type, modelNames);

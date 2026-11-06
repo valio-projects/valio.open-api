@@ -8,7 +8,6 @@ using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Ast.Nodes;
-using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Validation;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -23,7 +22,8 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
 {
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
-    private readonly string _uuidFormat;
+    /// <summary>The configured UUID validation mode used by the shared import planner.</summary>
+    private readonly string? _uuidFormat;
 
 
     /// <summary>Creates a TypeScriptParamsSchemasAstBuilder for one finalized IR document.</summary>
@@ -38,7 +38,7 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
-        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+        _uuidFormat = uuidFormat;
     }
 
     /// <summary>Имя константы схемы route-параметров: <c>{Op}RouteParamsSchema</c>.</summary>
@@ -189,17 +189,9 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
         var modelsPath = fileOrganization?.ModelsPath ?? "models";
         var separateModels = fileOrganization?.SeparateModels ?? true;
 
-        // Shared UUID constant (uuidFormat = regex): a parameter schema rendered as `.regex(UUID_REGEX)` /
-        // `pattern: UUID_PATTERN` must import the constant from the shared {modelsPath}/formats.ts file.
-        if (_validation.UuidConstName != null
-            && _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex
-            && paramTypes.Any(UuidFormatSupport.ContainsUuid))
-        {
-            imports.Add(new ImportNode(
-                items: ImmutableList.Create(new IdentifierNode(_validation.UuidConstName)),
-                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
-                kind: ImportKind.Named));
-        }
+        var uuidImport = TypeScriptInlineUuidImport.CreateForTypes(paramTypes, _validation, _uuidFormat, modelsPath, "../..");
+        if (uuidImport != null)
+            imports.Add(uuidImport);
         var modelNames = new HashSet<string>(StringComparer.Ordinal);
         foreach (var type in paramTypes)
             ValidationTypes.CollectModelSchemaNames(type, modelNames);

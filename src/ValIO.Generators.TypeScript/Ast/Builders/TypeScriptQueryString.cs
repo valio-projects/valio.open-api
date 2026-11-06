@@ -4,7 +4,6 @@ using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.IR;
-using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -83,7 +82,7 @@ public static class TypeScriptQueryString
                 Member(Id("query"), "set"),
                 ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
                     new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
-            if (!queryMayBeUndefined && !TypeScriptParameterModel.IsOptional(parameter))
+            if (parameter.IsRequired)
                 statements.Add(setCall);
             else
                 statements.Add(new IfStatementNode(

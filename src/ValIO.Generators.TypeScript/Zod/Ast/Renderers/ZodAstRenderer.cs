@@ -48,7 +48,6 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
             ZodExpressionSchemaNode exprNode => VisitZodExpressionSchema(exprNode),
             ZodObjectNode obj => VisitZodObject(obj),
             ZodArrayNode array => VisitZodArray(array),
-            ZodRecordNode record => VisitZodRecord(record),
             ZodUnionNode union => VisitZodUnion(union),
             ZodIntersectionNode intersection => VisitZodIntersection(intersection),
             ZodEnumNode enumNode => VisitZodEnum(enumNode),
@@ -137,18 +136,6 @@ public class ZodAstRenderer : ZodAstVisitorBase<string>, IZodAstVisitor<string>,
         return $"z.array({elementSchema})";
     }
     
-    /// <summary>Renders a string-keyed record while preserving its value schema.</summary>
-    /// <param name="node">The record schema to render.</param>
-    /// <returns>The Zod record expression.</returns>
-    private string VisitZodRecord(ZodRecordNode node)
-    {
-        var key = Visit((AstNode)node.KeySchema);
-        var value = Visit((AstNode)node.ValueSchema);
-        return node.DeferValueSchema
-            ? $"z.record({key}, z.lazy(() => {value}))"
-            : $"z.record({key}, {value})";
-    }
-
     /// <inheritdoc />
     public override string VisitZodUnion(ZodUnionNode node)
     {

@@ -61,11 +61,8 @@ public sealed class ValidatorSemanticsRegressionTests
 
         var content = new ZodAstRenderer().RenderSchema(schema);
 
-        content.Should().Contain("z.record(").And.Contain("z.string()").And.Contain("z.lazy(() => NodeSchema)");
-        content.Should().NotContain("z.any()");
-        var record = schema.Should().BeOfType<ValIO.Generators.TypeScript.Zod.Ast.Nodes.ZodRecordNode>().Subject;
-        new ZodAstRenderer().RenderSchema(record.KeySchema).Should().Be("z.string().min(2)");
-        new ZodAstRenderer().RenderSchema(record.ValueSchema).Should().Be("z.lazy(() => NodeSchema)");
+        content.Should().Be(string.Join(Environment.NewLine,
+            "z.record(", "    z.string().min(2),", "    z.lazy(() => NodeSchema)", ")"));
     }
 
     /// <summary>Verifies allOf keeps local narrowing but removes equivalent inherited validation.</summary>

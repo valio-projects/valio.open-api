@@ -111,6 +111,7 @@ public sealed record IrParameter
     /// <summary>
     /// Gets whether the HTTP operation requires the parameter to be present.
     /// </summary>
+    /// <remarks>Presence is independent of whether <see cref="Type"/> permits JSON null.</remarks>
     /// <value>Whether omission violates the source contract.</value>
     public required bool IsRequired { get; init; }
 
@@ -164,8 +165,10 @@ public sealed record IrRequestBody
     public required IrType Type { get; init; }
     
     /// <summary>
-    /// Является ли request body обязательным
+    /// Gets whether the HTTP operation requires a request body to be present.
     /// </summary>
+    /// <remarks>Presence is independent of whether <see cref="Type"/> permits JSON null.</remarks>
+    /// <value>Whether omitting the request body violates the source contract.</value>
     public required bool IsRequired { get; init; }
     
     /// <summary>

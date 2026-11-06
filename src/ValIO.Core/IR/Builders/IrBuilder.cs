@@ -555,7 +555,6 @@ public class IrBuilder
         
         if (resolvedSchema == null)
             throw new InvalidOperationException($"Schema resolver returned null schema — at {_ctx.Describe()}");
-
         
         // Lift null only when doing so preserves the exclusive alternative match count.
         if (resolvedSchema.OneOf?.Count > 0 || resolvedSchema.AnyOf?.Count > 0)

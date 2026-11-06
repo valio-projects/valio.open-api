@@ -41,25 +41,6 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         _generateDefaultValues = generateDefaultValues;
     }
 
-    /// <summary>Builds a parameter value type independently of member presence.</summary>
-    /// <param name="type">The parameter or body type.</param>
-    /// <param name="isRequired">Whether the member must be present.</param>
-    /// <returns>The value type without its member-level optional wrapper.</returns>
-    private TypeNode BuildIrMemberTypeNode(IrType type, bool isRequired)
-    {
-        return _typeBuilder(UnwrapMemberOptional(type));
-    }
-
-    /// <summary>Removes member-level optional wrappers while retaining nullable value wrappers.</summary>
-    /// <param name="type">The source member type.</param>
-    /// <returns>The member value type.</returns>
-    private static IrType UnwrapMemberOptional(IrType type) => type switch
-    {
-        IrOptionalType optional => UnwrapMemberOptional(optional.InnerType),
-        IrNullableType nullable => nullable with { InnerType = UnwrapMemberOptional(nullable.InnerType) },
-        _ => type
-    };
-
     /// <summary>
     /// Имя params интерфейса: {OperationName}Params
     /// </summary>
@@ -235,8 +216,8 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         var properties = operation.PathParameters
             .Select(p => new PropertySignatureNode(
                 name: new IdentifierNode(p.Name),
-                type: BuildIrMemberTypeNode(p.Type, p.IsRequired),
-                isRequired: p.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(p.Type),
+                type: _typeBuilder(p.Type),
+                isRequired: p.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(p.Description)
                     ? new CommentNode(p.Description, CommentKind.JSDoc)
                     : null) as DeclarationNode)
@@ -259,8 +240,8 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         var properties = operation.QueryParameters
             .Select(p => new PropertySignatureNode(
                 name: new IdentifierNode(p.Name),
-                type: BuildIrMemberTypeNode(p.Type, p.IsRequired),
-                isRequired: p.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(p.Type),
+                type: _typeBuilder(p.Type),
+                isRequired: p.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(p.Description)
                     ? new CommentNode(p.Description, CommentKind.JSDoc)
                     : null) as DeclarationNode)
@@ -283,8 +264,8 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         var properties = operation.HeaderParameters
             .Select(p => new PropertySignatureNode(
                 name: new IdentifierNode(p.Name),
-                type: BuildIrMemberTypeNode(p.Type, p.IsRequired),
-                isRequired: p.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(p.Type),
+                type: _typeBuilder(p.Type),
+                isRequired: p.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(p.Description)
                     ? new CommentNode(p.Description, CommentKind.JSDoc)
                     : null) as DeclarationNode)
@@ -312,24 +293,24 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
-                type: BuildIrMemberTypeNode(param.Type, param.IsRequired),
-                isRequired: param.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(param.Type),
+                type: _typeBuilder(param.Type),
+                isRequired: param.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
         foreach (var param in operation.QueryParameters)
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
-                type: BuildIrMemberTypeNode(param.Type, param.IsRequired),
-                isRequired: param.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(param.Type),
+                type: _typeBuilder(param.Type),
+                isRequired: param.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
         foreach (var param in operation.HeaderParameters)
         {
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode(param.Name),
-                type: BuildIrMemberTypeNode(param.Type, param.IsRequired),
-                isRequired: param.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(param.Type),
+                type: _typeBuilder(param.Type),
+                isRequired: param.IsRequired,
                 documentation: !string.IsNullOrWhiteSpace(param.Description) ? new CommentNode(param.Description, CommentKind.JSDoc) : null));
         }
 
@@ -338,8 +319,8 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("body"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
-                isRequired: rb.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(rb.Type),
+                type: _typeBuilder(rb.Type),
+                isRequired: rb.IsRequired,
                 documentation: new CommentNode("Request body (JSON)", CommentKind.JSDoc)));
         }
 
@@ -348,8 +329,8 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("form"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
-                isRequired: rb.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(rb.Type),
+                type: _typeBuilder(rb.Type),
+                isRequired: rb.IsRequired,
                 documentation: new CommentNode("Form data (multipart/form-data)", CommentKind.JSDoc)));
         }
 
@@ -393,7 +374,7 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
         if (hasQuery)
         {
             var queryName = QueryParamsInterfaceName(operation.MethodName);
-            var allQueryParamsOptional = operation.QueryParameters.All(p => !p.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(p.Type));
+            var allQueryParamsOptional = operation.QueryParameters.All(p => !p.IsRequired);
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("query"),
                 type: new SimpleTypeNode(new IdentifierNode(queryName), isPrimitive: false, isNullable: false, isOptional: false),
@@ -407,8 +388,7 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("headers"),
                 type: new SimpleTypeNode(new IdentifierNode(headersName), isPrimitive: false, isNullable: false, isOptional: false),
-                isRequired: operation.HeaderParameters.Any(parameter =>
-                    parameter.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(parameter.Type)),
+                isRequired: operation.HeaderParameters.Any(parameter => parameter.IsRequired),
                 documentation: new CommentNode("HTTP header parameters", CommentKind.JSDoc)));
         }
 
@@ -417,8 +397,8 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("body"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
-                isRequired: rb.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(rb.Type),
+                type: _typeBuilder(rb.Type),
+                isRequired: rb.IsRequired,
                 documentation: new CommentNode("Request body (JSON)", CommentKind.JSDoc)));
         }
 
@@ -427,8 +407,8 @@ public sealed class TypeScriptParamsAstBuilder : AstBuilderBase
             var rb = operation.RequestBody;
             properties.Add(new PropertySignatureNode(
                 name: new IdentifierNode("form"),
-                type: BuildIrMemberTypeNode(rb.Type, rb.IsRequired),
-                isRequired: rb.IsRequired && !TypeScriptAstBuilder.IsOptionalMemberType(rb.Type),
+                type: _typeBuilder(rb.Type),
+                isRequired: rb.IsRequired,
                 documentation: new CommentNode("Form data (multipart/form-data)", CommentKind.JSDoc)));
         }
 

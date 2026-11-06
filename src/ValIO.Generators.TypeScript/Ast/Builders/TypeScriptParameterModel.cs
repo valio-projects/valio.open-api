@@ -129,18 +129,11 @@ public sealed class TypeScriptParameterModel
             hasBody: hasBody,
             hasForm: hasForm,
             // In aggregate mode the `query` property is optional exactly when every query param is optional.
-            queryMayBeUndefined: hasQuery && !isFlat && operation.QueryParameters.All(IsOptional),
+            queryMayBeUndefined: hasQuery && !isFlat && operation.QueryParameters.All(p => !p.IsRequired),
             // A required wire header also requires the aggregate header group.
-            headersMayBeUndefined: hasHeaders && !isFlat && operation.HeaderParameters.All(IsOptional),
-            bodyMayBeUndefined: (hasBody || hasForm) && requestBody is not null
-                && (!requestBody.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(requestBody.Type)));
+            headersMayBeUndefined: hasHeaders && !isFlat && operation.HeaderParameters.All(parameter => !parameter.IsRequired),
+            bodyMayBeUndefined: (hasBody || hasForm) && requestBody?.IsRequired == false);
     }
-
-    /// <summary>Determines whether a parameter can be omitted in the generated TypeScript contract.</summary>
-    /// <param name="parameter">The parameter whose declared presence and type are inspected.</param>
-    /// <returns>Whether the parameter may be undefined.</returns>
-    public static bool IsOptional(IrParameter parameter) =>
-        !parameter.IsRequired || TypeScriptAstBuilder.IsOptionalMemberType(parameter.Type);
 
     /// <summary>The root <c>params</c> expression (the whole params object).</summary>
     /// <returns>The <c>params</c> identifier expression.</returns>

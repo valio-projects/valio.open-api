@@ -10,6 +10,7 @@ using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Utilities;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 using ValIO.Generators.TypeScript.Validation;
@@ -100,34 +101,14 @@ public class ZodAstBuilder : AstBuilderBase
     /// <returns>Local properties that add or change validation.</returns>
     private IReadOnlyList<IrProperty> ExcludeIdenticalInheritedProperties(IrModel model)
     {
-        var inherited = new Dictionary<string, List<IrProperty>>(StringComparer.Ordinal);
-        var visited = new HashSet<string>(StringComparer.Ordinal) { model.Name };
-        var pending = new Stack<IrModel>();
-        pending.Push(model);
-        while (pending.TryPop(out var current))
-        {
-            if (current.Composition is not { Kind: IrCompositionKind.AllOf } composition)
-                continue;
-            foreach (var reference in composition.Types.OfType<IrModelReference>())
-            {
-                if (!visited.Add(reference.ModelName) || !ModelsByName.TryGetValue(reference.ModelName, out var parent))
-                    continue;
-                foreach (var property in parent.Properties)
-                {
-                    if (!inherited.TryGetValue(property.OriginalName, out var matches))
-                        inherited[property.OriginalName] = matches = [];
-                    matches.Add(property);
-                }
-                pending.Push(parent);
-            }
-        }
+        var inherited = TypeScriptModelProperties.CollectInherited(model, ModelsByName);
 
         return model.Properties.Where(property =>
             !inherited.TryGetValue(property.OriginalName, out var matches) ||
             !matches.All(parent => SameValidation(property, parent))).ToArray();
     }
 
-    /// <summary>Compares property presence, value type, and validation constraints.</summary>
+    /// <summary>Compares property presence, value type, and validation independently from default documentation.</summary>
     /// <param name="first">The local declaration.</param>
     /// <param name="second">An inherited declaration.</param>
     /// <returns>True when both declarations impose identical validation.</returns>
@@ -385,8 +366,13 @@ public class ZodAstBuilder : AstBuilderBase
     /// <returns>A Zod record schema with the translated value type.</returns>
     private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType, string? currentModelName)
     {
-        var valueSchema = BuildZodSchemaFromIrType(dictionaryType.ValueType, currentModelName);
-        return new ZodRecordNode(BuildZodSchemaFromIrType(dictionaryType.KeyType, currentModelName), valueSchema);
+        return new ZodExpressionSchemaNode(new CallExpressionNode(
+            new MemberAccessExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("z")),
+                new IdentifierNode("record")),
+            ImmutableList.Create<ExpressionNode>(
+                BuildZodSchemaFromIrType(dictionaryType.KeyType, currentModelName),
+                BuildZodSchemaFromIrType(dictionaryType.ValueType, currentModelName))));
     }
     
     /// <summary>

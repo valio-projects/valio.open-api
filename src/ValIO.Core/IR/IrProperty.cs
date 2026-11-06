@@ -24,8 +24,10 @@ public sealed record IrProperty
     public required IrType Type { get; init; }
     
     /// <summary>
-    /// Является ли свойство обязательным
+    /// Gets whether the containing object requires this property to be present.
     /// </summary>
+    /// <remarks>Presence is independent of whether <see cref="Type"/> permits JSON null.</remarks>
+    /// <value>Whether omitting the property violates the source contract.</value>
     public required bool IsRequired { get; init; }
     
     /// <summary>

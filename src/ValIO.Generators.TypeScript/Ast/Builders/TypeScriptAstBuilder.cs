@@ -309,34 +309,6 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         };
     }
     
-    /// <summary>Builds a property value type without conflating absence and JSON null.</summary>
-    /// <param name="property">The property whose type may carry an optional wrapper.</param>
-    /// <returns>The value type; optionality is represented by the property marker.</returns>
-    private TypeNode BuildInterfacePropertyTypeNode(IrProperty property)
-    {
-        return BuildType(UnwrapMemberOptional(property.Type));
-    }
-
-    /// <summary>Removes member-level optional wrappers while preserving nullable wrappers.</summary>
-    /// <param name="type">The source member type.</param>
-    /// <returns>The value type without member-level optional wrappers.</returns>
-    private static IrType UnwrapMemberOptional(IrType type) => type switch
-    {
-        IrOptionalType optional => UnwrapMemberOptional(optional.InnerType),
-        IrNullableType nullable => nullable with { InnerType = UnwrapMemberOptional(nullable.InnerType) },
-        _ => type
-    };
-
-    /// <summary>Detects optionality through nested nullable and optional wrappers.</summary>
-    /// <param name="type">The source member type.</param>
-    /// <returns>Whether the member permits omission.</returns>
-    internal static bool IsOptionalMemberType(IrType type) => type switch
-    {
-        IrOptionalType => true,
-        IrNullableType nullable => IsOptionalMemberType(nullable.InnerType),
-        _ => false
-    };
-
     /// <summary>
     /// Builds the source file for a model.
     /// </summary>
@@ -389,7 +361,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         if (model.Properties.Count > 0)
         {
             var ownShape = new TypeLiteralNode(model.Properties.Select(property =>
-                new TypeLiteralMember(property.Name, BuildInterfacePropertyTypeNode(property), isOptional: !property.IsRequired || IsOptionalMemberType(property.Type))).ToImmutableList());
+                new TypeLiteralMember(property.Name, BuildType(property.Type), isOptional: !property.IsRequired)).ToImmutableList());
             valueType = new IntersectionTypeNode(ImmutableList.Create(valueType, (TypeNode)ownShape));
         }
 
@@ -428,7 +400,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             : null;
         
         // allOf intersects inherited and local constraints instead of discarding local overrides.
-        var inherited = CollectInheritedProperties(model);
+        var inherited = TypeScriptModelProperties.CollectInherited(model, ModelsByName);
         var properties = model.Properties
             .Where(property => !inherited.TryGetValue(property.OriginalName, out var bases) ||
                 !bases.All(baseProperty => HasEquivalentPropertyContract(property, baseProperty)))
@@ -455,42 +427,12 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             documentation: comment);
     }
     
-    /// <summary>Collects each inherited property declaration along the allOf inheritance graph.</summary>
-    /// <param name="model">The model whose bases are inspected.</param>
-    /// <returns>Inherited declarations indexed by their original wire name.</returns>
-    private Dictionary<string, List<IrProperty>> CollectInheritedProperties(IrModel model)
-    {
-        var result = new Dictionary<string, List<IrProperty>>(StringComparer.Ordinal);
-        var visited = new HashSet<string>(StringComparer.Ordinal);
-        // Traverse each reachable base once, retaining declarations with the same wire name.
-        void Collect(IrModel current)
-        {
-            if (current.Composition is not { Kind: IrCompositionKind.AllOf } composition)
-                return;
-            foreach (var reference in composition.Types.OfType<IrModelReference>())
-            {
-                if (!visited.Add(reference.ModelName) || !ModelsByName.TryGetValue(reference.ModelName, out var parent))
-                    continue;
-                foreach (var property in parent.Properties)
-                {
-                    if (!result.TryGetValue(property.OriginalName, out var declarations))
-                        result[property.OriginalName] = declarations = [];
-                    declarations.Add(property);
-                }
-                Collect(parent);
-            }
-        }
-        Collect(model);
-        return result;
-    }
-
-    /// <summary>Checks whether two property declarations impose the same value and presence contract.</summary>
+    /// <summary>Checks whether two property declarations impose the same value, presence, and default metadata.</summary>
     /// <param name="left">The local property declaration.</param>
     /// <param name="right">An inherited property declaration.</param>
-    /// <returns>Whether the inherited declaration already represents the local contract.</returns>
+    /// <returns>Whether the inherited declaration already represents the local contract and default documentation.</returns>
     private static bool HasEquivalentPropertyContract(IrProperty left, IrProperty right) =>
-        (left.IsRequired && !IsOptionalMemberType(left.Type)) ==
-            (right.IsRequired && !IsOptionalMemberType(right.Type)) &&
+        left.IsRequired == right.IsRequired &&
         left.Constraints == right.Constraints &&
         IrTypeComparer.AreSemanticallyEqual(left.Type, right.Type, ignorePresence: false);
 
@@ -501,8 +443,8 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     private PropertyDeclarationNode BuildIntersectedProperty(IrProperty property, IReadOnlyList<IrProperty> bases)
     {
         var declarations = bases.Append(property).ToArray();
-        var types = declarations.Select(item => BuildType(UnwrapMemberOptional(item.Type))).ToImmutableList();
-        var required = declarations.Any(item => item.IsRequired && !IsOptionalMemberType(item.Type));
+        var types = declarations.Select(item => BuildType(item.Type)).ToImmutableList();
+        var required = declarations.Any(item => item.IsRequired);
         var comment = string.IsNullOrEmpty(property.Description) ? null : new CommentNode(property.Description, CommentKind.JSDoc);
         var defaultValue = property.Constraints?.DefaultValue is { } value ? BuildLiteralFromValue(value) : null;
         return new PropertyDeclarationNode(new IdentifierNode(property.Name), new IntersectionTypeNode(types),
@@ -518,7 +460,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     public PropertyDeclarationNode BuildProperty(IrProperty property)
     {
         var name = new IdentifierNode(property.Name);
-        var type = BuildInterfacePropertyTypeNode(property);
+        var type = BuildType(property.Type);
         
         var comment = !string.IsNullOrEmpty(property.Description)
             ? new CommentNode(property.Description, CommentKind.JSDoc)
@@ -531,7 +473,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         return new PropertyDeclarationNode(
             name: name,
             type: type,
-            isRequired: property.IsRequired && !IsOptionalMemberType(property.Type),
+            isRequired: property.IsRequired,
             accessor: PropertyAccessorKind.Get,
             defaultValue: defaultValue,
             documentation: comment,
@@ -848,7 +790,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     {
         var dependencies = new HashSet<string>();
         
-        var inherited = CollectInheritedProperties(model);
+        var inherited = TypeScriptModelProperties.CollectInherited(model, ModelsByName);
         foreach (var property in model.Properties)
         {
             if (inherited.TryGetValue(property.OriginalName, out var equivalentBases) &&
@@ -1239,18 +1181,9 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
                 kind: ImportKind.Named));
         }
 
-        if (_validation.UuidConstName is { } uuidConst
-            && TypeScriptOptionIds.UuidFormat.Resolve(_options?.UuidFormat) == TypeScriptOptionIds.UuidFormat.Regex
-            && operation.RequestBody is { Type: var bodyType }
-            && ValidationTypes.IsValidatable(bodyType)
-            && ValidationTypes.NeedsConstructedSchema(bodyType)
-            && UuidFormatSupport.ContainsUuid(bodyType))
-        {
-            result.Add(new ImportNode(
-                items: ImmutableList.Create(new IdentifierNode(uuidConst)),
-                from: $"../../{modelsPath}/{TypeScriptOptionIds.UuidFormat.ConstFileName}",
-                kind: ImportKind.Named));
-        }
+        var uuidImport = TypeScriptInlineUuidImport.Create(
+            [operation], _validation, _options?.UuidFormat, modelsPath, "../..");
+        if (uuidImport != null) result.Add(uuidImport);
 
         // Runtime-импорты библиотеки (z / v / Type / Value) — зависят от генерируемых выражений.
         result.AddRange(_validation.RuntimeImports(
@@ -1459,9 +1392,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
                 var dataAccess = new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("response")),
                     new IdentifierNode("data"));
-                var parseCall = resp.Type is null
-                    ? new IdentifierExpressionNode(new IdentifierNode("undefined"))
-                    : BuildStatusResultBody(operation, resp, dataAccess);
+                var parseCall = BuildStatusResultBody(operation, resp, dataAccess);
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {
