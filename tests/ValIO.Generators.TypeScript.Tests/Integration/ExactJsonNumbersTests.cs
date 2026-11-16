@@ -11,7 +11,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [Category("NodeIntegration")]
 public sealed class ExactJsonNumbersTests
 {
-    /// <summary>Compiles generated clients and verifies exact JSON tokens, query defaults, and a bodyless result.</summary>
+    /// <summary>Compiles generated clients and verifies exact numbers, numeric enums, query defaults, and a bodyless result.</summary>
     /// <param name="transport">The generated client transport.</param>
     /// <returns>The asynchronous generated-client check.</returns>
     [TestCase("axios")]
@@ -27,6 +27,7 @@ public sealed class ExactJsonNumbersTests
             ValidationLibrary = "zod4",
             ExactJsonNumbers = true,
             IncludeResponseHeaders = true,
+            EnumFormat = "Enum",
         });
 
         context.GeneratedFiles.Single(file => file.RelativePath == "models/change/change.ts").Content
@@ -49,11 +50,11 @@ public sealed class ExactJsonNumbersTests
               body: {
                 revision: new LosslessNumber(revision),
                 amount: new LosslessNumber(decimal),
-                rates: [1.25], label: revision, count: 0, otherAmount: null
+                rates: [1.25], label: revision, count: 0, otherAmount: null, state: 0
               }
             };
             const document = '{"revision":' + revision + ',"amount":' + decimal
-              + ',"rates":[1.25],"label":"' + revision + '","count":0,"otherAmount":null}';
+              + ',"rates":[1.25],"label":"' + revision + '","count":0,"otherAmount":null,"state":0}';
             let status = 200;
             let responseBody = document;
 
@@ -63,6 +64,7 @@ public sealed class ExactJsonNumbersTests
               assert(body.includes('"amount":' + decimal + ','));
               assert(body.includes('"label":"' + revision + '"'));
               assert.equal(JSON.parse(body).count, 0);
+              assert.equal(JSON.parse(body).state, 0);
               assert.equal(headers.get('content-type'), 'application/json');
               assert.equal(headers.get('x-revision'), revision);
               assert(signal instanceof AbortSignal);
@@ -91,6 +93,7 @@ public sealed class ExactJsonNumbersTests
               assert.equal(result.body.label, revision);
               assert.deepEqual(result.body.rates, [1.25]);
               assert.equal(result.body.count, 0);
+              assert.equal(result.body.state, 0);
               assert.equal(result.body.otherAmount, null);
               assert.equal(result.body.omitted, undefined);
               if (transport !== 'fetch') assert.equal(result.headers.etag, '"version"');
@@ -102,6 +105,10 @@ public sealed class ExactJsonNumbersTests
               responseBody = document.replace('"amount":' + decimal, '"amount":"' + decimal + '"');
               await assert.rejects(() => save(request, undefined, signal, client));
               responseBody = document.replace('"count":0', '"count":1.000000000000000001');
+              await assert.rejects(() => save(request, undefined, signal, client));
+              responseBody = document.replace('"state":0', '"state":"0"');
+              await assert.rejects(() => save(request, undefined, signal, client));
+              responseBody = document.replace('"state":0', '"state":2');
               await assert.rejects(() => save(request, undefined, signal, client));
               responseBody = document.replace('"revision":' + revision, '"revision":9223372036854775808');
               await assert.rejects(() => save(request, undefined, signal, client));
@@ -141,15 +148,16 @@ public sealed class ExactJsonNumbersTests
               }
             }
           },
-          "components":{"schemas":{"Change":{
+          "components":{"schemas":{"ChangeState":{"type":"integer","format":"int32","enum":[0,1]},"Change":{
             "type":"object",
-            "required":["revision","amount","rates","label","count","otherAmount"],
+            "required":["revision","amount","rates","label","count","otherAmount","state"],
             "properties":{
               "revision":{"type":"integer","format":"int64"},
               "amount":{"type":"number","format":"decimal","minimum":0.100000000000000001},
               "rates":{"type":"array","items":{"type":"number","format":"double"}},
               "label":{"type":"string"},
               "count":{"type":"integer","format":"int32"},
+              "state":{"$ref":"#/components/schemas/ChangeState"},
               "otherAmount":{"type":["number","null"],"format":"decimal"},
               "omitted":{"type":"number","format":"decimal"}
             }

@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
@@ -211,11 +213,9 @@ public class ZodAstBuilder : AstBuilderBase
         };
     }
     
-    /// <summary>
-    /// Строит ZodEnumNode из IrEnum
-    /// </summary>
-    /// <param name="enumModel">IR enum</param>
-    /// <returns>AST узел Zod enum схемы</returns>
+    /// <summary>Builds an enum schema with literal kinds matching the JSON wire values.</summary>
+    /// <param name="enumModel">The enum whose values constrain the schema.</param>
+    /// <returns>The Zod enum schema node.</returns>
     public ZodEnumNode BuildZodEnum(IrEnum enumModel)
     {
         var values = enumModel.Values.Select(v =>
@@ -223,6 +223,8 @@ public class ZodAstBuilder : AstBuilderBase
             var name = new IdentifierNode(v.Name);
             var value = v.Value switch
             {
+                JsonValue json when json.GetValueKind() == JsonValueKind.Number
+                    => new LiteralExpressionNode(json.ToJsonString(), LiteralKind.Number),
                 string str => new LiteralExpressionNode(str, LiteralKind.String),
                 int i => new LiteralExpressionNode(i, LiteralKind.Number),
                 long l => new LiteralExpressionNode(l, LiteralKind.Number),
