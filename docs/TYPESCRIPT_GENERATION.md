@@ -418,6 +418,12 @@ npm install zod
 
 Set `options.generateDefaultValues` to `true` to export `{Model}DefaultValues` and `{Operation}RouteParamsDefaultValues` / `{Operation}QueryParamsDefaultValues` constants. Only explicitly specified non-null OpenAPI defaults are included; requiredness and nullability of generated types do not change. The option defaults to `false`. Validation constraint constants are generated independently when constraints exist.
 
+### Exact JSON numbers
+
+Set <code>"exactJsonNumbers": true</code> and <code>"validation": "zod4"</code> in the TypeScript project and install lossless-json in the SDK consumer. The generated Next.js, Axios, and Fetch clients read the original JSON tokens. Models represent number/decimal and integer/int64 as LosslessNumber instances. Create one from form text and use its toString() value when formatting or passing data across a server-to-client boundary. JSON request bodies serialize these values as numeric tokens. Ordinary numeric and string fields retain their TypeScript types.
+
+Exact numeric values are supported in JSON bodies and as scalar or array path, query, and header values. The mode currently requires explicit contracts and excludes generated mock handlers, exported default value constants, exact numeric form fields, and mixed JSON and binary Axios responses.
+
 ### Response headers
 
 Set `options.includeResponseHeaders` to `true` to include the received headers on typed Axios and Next.js results. Read a header by its lowercase name, for example `result.headers?.location` for an HTTP 202 response. Missing headers are `undefined`. Header values are strings in the representation exposed by the transport; Axios arrays are joined with a comma and a space. A browser can expose only the headers allowed by its CORS policy.
