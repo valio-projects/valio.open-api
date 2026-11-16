@@ -48,10 +48,11 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
     public ExpressionNode ValidateNamed(string schemaName, ExpressionNode input) =>
         Call(Member(Id(schemaName), "parse"), input);
 
+    /// <inheritdoc />
     public IReadOnlyList<ImportNode> RuntimeImports(IReadOnlyCollection<IrType> inlineConstructedTypes, bool hasParams, bool hasNamedSchemaParse) =>
-        // `z` нужен только когда строится inline `z.*` (union/array/... в теле запроса);
-        // `{Schema}.parse` (модели, параметры zod, вынесенные result-схемы) в `z` не нуждаются.
-        inlineConstructedTypes.Any(ValidationTypes.NeedsConstructedSchema)
+        // Nullable named schemas use their own .nullable() method and need no Zod namespace.
+        inlineConstructedTypes.Where(ValidationTypes.NeedsConstructedSchema)
+            .Any(type => TypeScriptIdentifierUsage.References(_schema.Build(type), "z"))
             ? _exactJsonNumbers && inlineConstructedTypes.Any(TypeScriptExactJson.UsesNumberCodec)
                 ? [ZodImport(), TypeScriptExactJson.Import()]
                 : [ZodImport()]

@@ -84,10 +84,14 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
                 $"Response body validation schemas for {operation.MethodName}."));
     }
 
+    /// <summary>Imports the runtime builders and referenced schemas used by the inferred result declarations.</summary>
+    /// <param name="definedTypes">Response types with a local schema declaration.</param>
+    /// <param name="fileOrganization">The configured paths of generated model and client files.</param>
+    /// <returns>The result schema file imports.</returns>
     private IReadOnlyList<ImportNode> BuildImports(IReadOnlyList<ValIO.Core.IR.Types.IrType> definedTypes, FileOrganization? fileOrganization)
     {
         var imports = new List<ImportNode>();
-        imports.AddRange(_validation.SchemaDefinitionImports(definedTypes));
+        imports.AddRange(_validation.SchemaDefinitionImports(definedTypes).Where(import => !import.IsTypeOnly));
 
         // Model schemas are co-located under modelsPath; this results-schema file sits at
         // {clientsPath}/{op}/ → two levels up to the output root, then into modelsPath.

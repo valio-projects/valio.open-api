@@ -39,6 +39,48 @@ public sealed class ValidatorBoundaryPipelineTests
         var schema = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("getDates.results.schemas.ts", StringComparison.Ordinal)).Content;
 
         schema.Should().Contain("z.array(z.string().refine(");
+        schema.Should().NotContain("import type { ZodSchema }");
+    }
+
+    /// <summary>Verifies that optional nullable model requests use the named validator with no Zod namespace import.</summary>
+    [Test]
+    public async Task NullableNamedRequest_DoesNotImportUnusedZodNamespace()
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync("""
+            {
+              "openapi": "3.1.0",
+              "info": {"title": "Items", "version": "1"},
+              "paths": {
+                "/items": {
+                  "post": {
+                    "operationId": "ChangeItem",
+                    "requestBody": {
+                      "content": {
+                        "application/json": {
+                          "schema": {"oneOf": [{"type": "null"}, {"$ref": "#/components/schemas/Item"}]}
+                        }
+                      }
+                    },
+                    "responses": {"204": {"description": "No content"}}
+                  }
+                }
+              },
+              "components": {
+                "schemas": {"Item": {"type": "object", "properties": {"label": {"type": "string"}}}}
+              }
+            }
+            """);
+
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = ["nextjs"],
+            ValidationLibrary = "zod4",
+        });
+        var client = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("changeItem.nextjs.ts", StringComparison.Ordinal)).Content;
+
+        client.Should().Contain("ItemSchema.nullable().parse(");
+        client.Should().NotContain("import { z }");
     }
 
     /// <summary>Verifies nullable parameter constraints are applied before the nullable wrapper.</summary>
