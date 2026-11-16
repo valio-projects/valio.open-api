@@ -12,6 +12,67 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [Category("NodeIntegration")]
 public sealed class TransportRuntimeIntegrationTests
 {
+    /// <summary>Verifies that native fetch clients repeat form arrays and preserve explicitly delimited arrays.</summary>
+    /// <param name="transport">The generated native fetch transport.</param>
+    /// <returns>The asynchronous generated-code runtime check.</returns>
+    [TestCase("fetch")]
+    [TestCase("nextjs")]
+    public async Task QueryArrays_UseOpenApiFormDefaultsAndRespectExplodeOverride(string transport)
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(QueryArrayDocument);
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = [transport],
+            ValidationLibrary = "zod4",
+            NextJs = new TypeScriptNextJsOptions { GenerateRevalidateHelpers = false },
+        });
+        var sources = context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
+        await GeneratedTypeScriptCompiler.Compile(sources, $"query arrays with {transport}");
+
+        var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
+            const transport = {{JsonSerializer.Serialize(transport)}};
+            const { list } = require(path.join(root, 'api', 'list', 'list.' + transport + '.js'));
+            let requestUrl;
+            const client = async url => {
+              requestUrl = url;
+              return new Response(null, { status: 204 });
+            };
+            (async () => {
+              await list({ ids: ['a,b', 'space + π'], explicit: [0, 2], csv: [1, 3] }, undefined, undefined, client);
+              assert.equal(requestUrl, '/items?ids=a%2Cb&ids=space+%2B+%CF%80&explicit=0&explicit=2&csv=1%2C3');
+              await list({ ids: [], explicit: null }, undefined, undefined, client);
+              assert.equal(requestUrl, '/items');
+              await list({}, undefined, undefined, client);
+              assert.equal(requestUrl, '/items');
+              console.log('query array serialization passed');
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """);
+
+        output.Should().Contain("query array serialization passed");
+    }
+
+    /// <summary>Describes omitted, explicit, and overridden OpenAPI form array serialization settings.</summary>
+    private const string QueryArrayDocument = """
+        {
+          "openapi": "3.1.0",
+          "info": { "title": "Query arrays", "version": "1" },
+          "paths": {
+            "/items": {
+              "get": {
+                "operationId": "list",
+                "parameters": [
+                  { "name": "ids", "in": "query", "schema": { "type": "array", "items": { "type": "string" } } },
+                  { "name": "explicit", "in": "query", "style": "form", "explode": true, "schema": { "type": ["array", "null"], "items": { "type": "integer" } } },
+                  { "name": "csv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer" } } }
+                ],
+                "responses": { "204": { "description": "No content" } }
+              }
+            }
+          }
+        }
+        """;
+
     /// <summary>Verifies actual wire field values and omitted bodies through each generated transport boundary.</summary>
     /// <param name="transport">The generated HTTP client transport.</param>
     /// <returns>The asynchronous generated-code runtime check.</returns>

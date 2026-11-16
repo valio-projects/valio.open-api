@@ -4,6 +4,9 @@ using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Enums;
+using ValIO.Core.IR.Types;
+using ValIO.Core.IR.Utilities;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 
 namespace ValIO.Generators.TypeScript.Ast.Builders;
@@ -22,11 +25,12 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// const query = new URLSearchParams();
 /// query.set("required", String(source.required));
 /// if (source.optional !== undefined) query.set("optional", String(source.optional));
-/// // …
+/// for (const item of source.ids ?? []) query.append("ids", String(item));
 /// const url = path + (query.size &gt; 0 ? `?${query}` : "");
 /// </code>
-/// <c>URLSearchParams</c> performs the percent-encoding, so no manual <c>encodeURIComponent</c> is emitted. Array
-/// values are comma-joined by <c>String(...)</c> — adequate for v1. Each URLSearchParams key uses
+/// <c>URLSearchParams</c> performs the percent-encoding. Form arrays with the default <c>explode: true</c>
+/// repeat the parameter name for every value. Form arrays with <c>explode: false</c> keep a single comma-delimited
+/// value. Each URLSearchParams key uses
 /// <see cref="IrParameter.OriginalName"/>, while its value access uses the sanitized
 /// <see cref="IrParameter.Name"/>.
 /// </remarks>
@@ -75,13 +79,17 @@ public static class TypeScriptQueryString
         foreach (var parameter in operation.QueryParameters)
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(querySource, parameter.Name, queryMayBeUndefined);
-            // Scalars stringify directly; array values are comma-joined by String(...) — adequate for v1.
-            // The key is the wire name (Paging.Offset), not the sanitized TS property (Paging_Offset):
-            // ASP.NET binds a nested model by its dotted name and finds nothing under the underscore.
-            var setCall = new ExpressionStatementNode(new CallExpressionNode(
-                Member(Id("query"), "set"),
-                ImmutableList.Create<ExpressionNode>(Str(parameter.OriginalName),
-                    new CallExpressionNode(Id("String"), ImmutableList.Create<ExpressionNode>(access)))));
+            if ((parameter.Style ?? IrParameterStyle.Form) == IrParameterStyle.Form
+                && (parameter.Explode ?? true)
+                && IrTypeQueries.UnwrapNullableOptional(parameter.Type) is IrArrayType)
+            {
+                var items = new BinaryExpressionNode(access, BinaryOperator.NullishCoalescing, new ArrayLiteralExpressionNode([]));
+                statements.Add(new ForEachStatementNode(new IdentifierNode("item"), items,
+                    new BlockNode([WriteValue("append", parameter.OriginalName, Id("item"))])));
+                continue;
+            }
+
+            var setCall = WriteValue("set", parameter.OriginalName, access);
             if (parameter.IsRequired)
                 statements.Add(setCall);
             else
@@ -97,6 +105,15 @@ public static class TypeScriptQueryString
             Str(string.Empty));
         return new BinaryExpressionNode(urlExpr, BinaryOperator.Add, queryTail);
     }
+
+    /// <summary>Writes a query value under its original OpenAPI parameter name.</summary>
+    /// <param name="method">The URLSearchParams method to use for a single or repeated value.</param>
+    /// <param name="name">The parameter name on the wire.</param>
+    /// <param name="value">The TypeScript expression containing the value to encode.</param>
+    /// <returns>The statement writing the stringified value.</returns>
+    private static ExpressionStatementNode WriteValue(string method, string name, ExpressionNode value) => new(
+        new CallExpressionNode(Member(Id("query"), method),
+            [Str(name), new CallExpressionNode(Id("String"), [value])]));
 
     /// <summary>Builds an identifier expression.</summary>
     /// <param name="name">The identifier name.</param>
