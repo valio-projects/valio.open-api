@@ -122,7 +122,7 @@ internal sealed class ZodSchemaExpressionBuilder
     /// <param name="value">The default value (number/string/bool, or a <see cref="System.Text.Json"/> node).</param>
     /// <param name="literal">The resulting literal expression, or <see langword="null"/> if unrenderable.</param>
     /// <returns><see langword="true"/> when a literal could be produced.</returns>
-    private static bool TryDefaultLiteral(object? value, out ExpressionNode? literal)
+    private static bool TryDefaultLiteral(object? value, out LiteralExpressionNode? literal)
     {
         literal = value switch
         {
@@ -137,7 +137,10 @@ internal sealed class ZodSchemaExpressionBuilder
         return literal != null;
     }
 
-    private static ExpressionNode? JsonElementLiteral(System.Text.Json.JsonElement el) => el.ValueKind switch
+    /// <summary>Preserves a JSON scalar default as a literal, including the original numeric token.</summary>
+    /// <param name="el">The scalar or composite JSON default.</param>
+    /// <returns>A scalar literal, or <see langword="null"/> for an unsupported default.</returns>
+    private static LiteralExpressionNode? JsonElementLiteral(System.Text.Json.JsonElement el) => el.ValueKind switch
     {
         System.Text.Json.JsonValueKind.Number => new LiteralExpressionNode(el.GetRawText(), LiteralKind.Number),
         System.Text.Json.JsonValueKind.String => new LiteralExpressionNode(el.GetString(), LiteralKind.String),
@@ -146,7 +149,10 @@ internal sealed class ZodSchemaExpressionBuilder
         _ => null
     };
 
-    private static ExpressionNode? JsonValueLiteral(System.Text.Json.Nodes.JsonValue jv) => jv.GetValueKind() switch
+    /// <summary>Preserves a parsed JSON scalar default as a literal.</summary>
+    /// <param name="jv">The parsed JSON value holding the default.</param>
+    /// <returns>A scalar literal, or <see langword="null"/> for an unsupported default.</returns>
+    private static LiteralExpressionNode? JsonValueLiteral(System.Text.Json.Nodes.JsonValue jv) => jv.GetValueKind() switch
     {
         System.Text.Json.JsonValueKind.Number => new LiteralExpressionNode(jv.ToJsonString(), LiteralKind.Number),
         System.Text.Json.JsonValueKind.String => new LiteralExpressionNode(jv.GetValue<string>(), LiteralKind.String),
