@@ -42,6 +42,9 @@ public sealed class TransportRequestSerializationRegressionTests
         content.Should().Contain("const formData = new FormData();");
         content.Should().MatchRegex("formData\\.append\\(\\s+\"file\",\\s+params\\.form\\.file\\s+\\)");
         content.Should().MatchRegex("formData\\.append\\(\\s+\"metadata\",\\s+JSON\\.stringify\\(params\\.form\\.metadata\\)\\s+\\)");
+        content.Should().MatchRegex("formData\\.append\\(\\s+\"mode\",\\s+String\\(params\\.form\\.mode\\)\\s+\\)");
+        content.Should().Contain("for (const item of params.form.priorities)");
+        content.Should().MatchRegex("formData\\.append\\(\\s+\"priorities\",\\s+String\\(item\\)\\s+\\)");
         content.Should().Contain("for (const item of params.form.tags)");
         content.Should().MatchRegex("formData\\.append\\(\\s+\"tags\",\\s+String\\(item\\)\\s+\\)");
         content.Should().Contain("item !== null");
@@ -310,6 +313,7 @@ public sealed class TransportRequestSerializationRegressionTests
             new IrRequestBody { IsRequired = true, ContentType = "multipart/form-data", Type = new IrModelReference { ModelName = "Derived" } },
             new IdentifierExpressionNode(new IdentifierNode("body")),
             new Dictionary<string, IrModel> { [baseModel.Name] = baseModel, [derived.Name] = derived },
+            ImmutableHashSet<string>.Empty,
             statements);
 
         var content = new TypeScriptAstRenderer().VisitBlock(new BlockNode(statements.ToImmutableList()));

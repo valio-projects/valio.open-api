@@ -20,6 +20,7 @@ public static class TypeScriptFormBody
     /// <param name="requestBody">The form request body whose model properties define the wire fields.</param>
     /// <param name="bodySource">The validated or raw TypeScript request model expression.</param>
     /// <param name="modelsByName">The request model lookup from the active IR document.</param>
+    /// <param name="enumNames">Scalar enum declarations referenced by form fields.</param>
     /// <param name="statements">The endpoint statements that receive the native form construction.</param>
     /// <returns>The native multipart data or encoded text, or <paramref name="bodySource"/> when the model is unavailable.</returns>
     /// <exception cref="ArgumentNullException">One of the required inputs is null.</exception>
@@ -28,6 +29,7 @@ public static class TypeScriptFormBody
         IrRequestBody requestBody,
         ExpressionNode bodySource,
         IReadOnlyDictionary<string, IrModel> modelsByName,
+        IReadOnlySet<string> enumNames,
         List<StatementNode> statements)
     {
         ArgumentNullException.ThrowIfNull(requestBody);
@@ -59,6 +61,7 @@ public static class TypeScriptFormBody
                 property.OriginalName,
                 value,
                 property.Type,
+                enumNames,
                 requestBody.IsMultipartFormData);
             appendStatements.Add(new IfStatementNode(
                 IsPresent(value),
@@ -87,6 +90,7 @@ public static class TypeScriptFormBody
     /// <param name="wireName">The original OpenAPI form field name.</param>
     /// <param name="value">The property value expression.</param>
     /// <param name="type">The property type that controls scalar/binary conversion.</param>
+    /// <param name="enumNames">Scalar enum declaration names in the active document.</param>
     /// <param name="multipart">Whether native binary values are supported by the form encoding.</param>
     /// <returns>A scalar append or a <c>for...of</c> statement for arrays.</returns>
     private static StatementNode BuildMultipartAppendStatement(
@@ -94,12 +98,13 @@ public static class TypeScriptFormBody
         string wireName,
         MemberAccessExpressionNode value,
         IrType type,
+        IReadOnlySet<string> enumNames,
         bool multipart)
     {
         if (TryGetMultipartArrayElementType(type, out var elementType))
         {
             var item = Id("item");
-            var appendItem = BuildMultipartAppendCall(formData, wireName, item, elementType, multipart);
+            var appendItem = BuildMultipartAppendCall(formData, wireName, item, elementType, enumNames, multipart);
             return new ForEachStatementNode(
                 new IdentifierNode("item"),
                 value,
@@ -107,7 +112,7 @@ public static class TypeScriptFormBody
                     IsPresent(item), new BlockNode(ImmutableList.Create<StatementNode>(appendItem))))));
         }
 
-        return BuildMultipartAppendCall(formData, wireName, value, type, multipart);
+        return BuildMultipartAppendCall(formData, wireName, value, type, enumNames, multipart);
     }
 
     /// <summary>
@@ -117,6 +122,7 @@ public static class TypeScriptFormBody
     /// <param name="wireName">The original OpenAPI form field name.</param>
     /// <param name="value">The value expression to append.</param>
     /// <param name="type">The value type that determines binary versus text encoding.</param>
+    /// <param name="enumNames">Scalar enum declarations that must be appended as text.</param>
     /// <param name="multipart">Whether native binary values are supported by the form encoding.</param>
     /// <returns>The append expression statement.</returns>
     /// <exception cref="NotSupportedException">A URL-encoded form field uses a native binary type without a textual encoding.</exception>
@@ -125,6 +131,7 @@ public static class TypeScriptFormBody
         string wireName,
         ExpressionNode value,
         IrType type,
+        IReadOnlySet<string> enumNames,
         bool multipart)
     {
         if (!multipart && IsMultipartBinary(type))
@@ -135,7 +142,7 @@ public static class TypeScriptFormBody
                     new CallExpressionNode(Id("Uint8Array"), ImmutableList.Create(value), isNewExpression: true)))), isNewExpression: true)
             : multipart && IsMultipartBinary(type)
                 ? value
-            : IsMultipartStructured(type)
+            : IsMultipartStructured(type, enumNames)
                 ? ExpressionBuilders.BuildJsonStringify(value)
                 : new CallExpressionNode(Id("String"), ImmutableList.Create(value));
         return new ExpressionStatementNode(new CallExpressionNode(
@@ -163,13 +170,14 @@ public static class TypeScriptFormBody
     /// Determines whether a multipart field has structured JSON semantics rather than scalar text semantics.
     /// </summary>
     /// <param name="type">The property or array-element type to inspect.</param>
+    /// <param name="enumNames">Scalar enum declarations referenced by the type.</param>
     /// <returns><see langword="true"/> when the field must be serialized with <c>JSON.stringify</c>.</returns>
-    private static bool IsMultipartStructured(IrType type)
+    private static bool IsMultipartStructured(IrType type, IReadOnlySet<string> enumNames) => Unwrap(type) switch
     {
-        type = Unwrap(type);
-
-        return type is IrModelReference or IrDictionaryType or IrUnionType or IrIntersectionType;
-    }
+        IrModelReference reference => !enumNames.Contains(reference.ModelName),
+        IrDictionaryType or IrUnionType or IrIntersectionType => true,
+        _ => false,
+    };
 
     /// <summary>
     /// Resolves the element type of a nullable/optional multipart array.

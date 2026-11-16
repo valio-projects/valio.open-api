@@ -227,7 +227,7 @@ public sealed class KyClientAstBuilder : AstBuilderBase
 
         if (operation.RequestBody is { IsForm: true } requestBody && sources.BodySource != null)
         {
-            sources.BodySource = TypeScriptFormBody.Build(requestBody, sources.BodySource, ModelsByName, statements);
+            sources.BodySource = TypeScriptFormBody.Build(requestBody, sources.BodySource, ModelsByName, EnumNames, statements);
             statements.Add(new BlankLineStatementNode());
         }
 

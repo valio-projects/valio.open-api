@@ -30,6 +30,15 @@
                       }
                     }
                   },
+                  "mode": {
+                    "$ref": "#/components/schemas/UploadMode"
+                  },
+                  "priorities": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/UploadPriority"
+                    }
+                  },
                   "tags": {
                     "type": "array",
                     "items": {
@@ -47,6 +56,18 @@
             "description": "No content"
           }
         }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "UploadMode": {
+        "type": "string",
+        "enum": ["draft", "publish"]
+      },
+      "UploadPriority": {
+        "type": "integer",
+        "enum": [1, 2]
       }
     }
   }

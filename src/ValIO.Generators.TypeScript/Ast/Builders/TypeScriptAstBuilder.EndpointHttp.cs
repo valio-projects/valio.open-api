@@ -117,7 +117,7 @@ public partial class TypeScriptAstBuilder
 
         if (rb is { IsForm: true } && bodySource != null)
         {
-            bodySource = TypeScriptFormBody.Build(rb, bodySource, ModelsByName, ctx.LeadingStatements);
+            bodySource = TypeScriptFormBody.Build(rb, bodySource, ModelsByName, EnumNames, ctx.LeadingStatements);
             ctx.LeadingStatements.Add(CreateBlankLineStatement());
         }
 
