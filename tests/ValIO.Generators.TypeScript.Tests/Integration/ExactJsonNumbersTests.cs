@@ -11,7 +11,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [Category("NodeIntegration")]
 public sealed class ExactJsonNumbersTests
 {
-    /// <summary>Verifies exact JSON tokens in both directions, ordinary scalar types, and a bodyless result.</summary>
+    /// <summary>Compiles generated clients and verifies exact JSON tokens, query defaults, and a bodyless result.</summary>
     /// <param name="transport">The generated client transport.</param>
     /// <returns>The asynchronous generated-client check.</returns>
     [TestCase("axios")]
@@ -32,12 +32,16 @@ public sealed class ExactJsonNumbersTests
         context.GeneratedFiles.Single(file => file.RelativePath == "models/change/change.ts").Content
             .Should().Contain("import(\"lossless-json\").LosslessNumber");
 
+        var sources = context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
+        await GeneratedTypeScriptCompiler.Compile(sources, $"exact numbers with {transport}");
+
         var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
             const transport = {{JsonSerializer.Serialize(transport)}};
             const { LosslessNumber } = require('lossless-json');
             const { save } = require(path.join(root, 'api', 'save', 'save.' + transport + '.js'));
             const decimal = '0.100000000000000001';
             const revision = '9007199254740993';
+            let expectedAfter = revision;
             const request = {
               route: { revision: new LosslessNumber(revision) },
               query: { after: new LosslessNumber(revision) },
@@ -54,7 +58,7 @@ public sealed class ExactJsonNumbersTests
             let responseBody = document;
 
             function checkRequest(url, body, headers, signal) {
-              assert.equal(url, '/changes/' + revision + '?after=' + revision);
+              assert.equal(url, '/changes/' + revision + '?after=' + expectedAfter);
               assert(body.includes('"revision":' + revision + ','));
               assert(body.includes('"amount":' + decimal + ','));
               assert(body.includes('"label":"' + revision + '"'));
@@ -91,6 +95,10 @@ public sealed class ExactJsonNumbersTests
               assert.equal(result.body.omitted, undefined);
               if (transport !== 'fetch') assert.equal(result.headers.etag, '"version"');
 
+              expectedAfter = '9007199254740995';
+              await save({ ...request, query: undefined }, undefined, signal, client);
+              expectedAfter = revision;
+
               responseBody = document.replace('"amount":' + decimal, '"amount":"' + decimal + '"');
               await assert.rejects(() => save(request, undefined, signal, client));
               responseBody = document.replace('"count":0', '"count":1.000000000000000001');
@@ -122,7 +130,7 @@ public sealed class ExactJsonNumbersTests
                 "operationId":"save",
                 "parameters":[
                   {"name":"revision","in":"path","required":true,"schema":{"type":"integer","format":"int64"}},
-                  {"name":"after","in":"query","schema":{"type":"integer","format":"int64"}},
+                  {"name":"after","in":"query","schema":{"type":"integer","format":"int64","default":9007199254740995}},
                   {"name":"X-Revision","in":"header","required":true,"schema":{"type":"integer","format":"int64"}}
                 ],
                 "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Change"}}}},

@@ -190,22 +190,33 @@ public partial class TypeScriptAstBuilder
         var methodLiteral = new LiteralExpressionNode(methodUpper, LiteralKind.String);
 
         var parameterModel = TypeScriptParameterModel.Create(operation);
-        var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
-            operation, ctx.HeadersSource, parameterModel.HeadersMayBeUndefined, includeJsonContentType: true);
-        var headersExpr = wireHeaders.Properties.Count == 0 ? null : CastToHeadersInit(wireHeaders);
+        var exactJsonNumbers = _options?.ExactJsonNumbers == true;
 
         var initProps = new List<PropertyAssignmentNode>
         {
             new(new IdentifierNode("method"), methodLiteral)
         };
 
-        if (headersExpr != null)
-            initProps.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), headersExpr));
+        ExpressionNode? normalizedHeaders = null;
+        if (exactJsonNumbers)
+        {
+            if (ctx.HeadersSource != null || TypeScriptWireParameterObject.DefaultContentType(operation.RequestBody, includeJson: true) != null)
+                normalizedHeaders = TypeScriptFetchHeaders.Build(
+                    operation, ctx.HeadersSource, parameterModel.HeadersMayBeUndefined,
+                    new MemberAccessExpressionNode(Id("options"), new IdentifierNode("headers"), useOptionalChaining: true), statements);
+        }
+        else
+        {
+            var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
+                operation, ctx.HeadersSource, parameterModel.HeadersMayBeUndefined, includeJsonContentType: true);
+            if (wireHeaders.Properties.Count > 0)
+                initProps.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), CastToHeadersInit(wireHeaders)));
+        }
 
         if (operation.RequestBody != null && operation.RequestBody.IsJson && ctx.BodySource != null)
         {
             var jsonStringify = new CallExpressionNode(
-                _options?.ExactJsonNumbers == true
+                exactJsonNumbers
                     ? TypeScriptExactJson.Runtime("stringify")
                     : Member(Id("JSON"), "stringify"),
                 new[] { ctx.BodySource }.ToImmutableList());
@@ -239,12 +250,15 @@ public partial class TypeScriptAstBuilder
         var emptyObj = new ObjectLiteralExpressionNode(ImmutableList<PropertyAssignmentNode>.Empty);
         var optionsSpread = new BinaryExpressionNode(optionsRef, BinaryOperator.NullishCoalescing, emptyObj);
         var placeholder = new IdentifierNode("_");
-        var mergedInit = new ObjectLiteralExpressionNode(new[]
+        var mergedProps = new List<PropertyAssignmentNode>
         {
             new PropertyAssignmentNode(placeholder, new IdentifierExpressionNode(new IdentifierNode("baseInit")), isSpread: true),
             new PropertyAssignmentNode(placeholder, optionsSpread, isSpread: true),
-            new PropertyAssignmentNode(placeholder, signalSpread, isSpread: true)
-        }.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true);
+        };
+        if (normalizedHeaders != null)
+            mergedProps.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), normalizedHeaders));
+        mergedProps.Add(new PropertyAssignmentNode(placeholder, signalSpread, isSpread: true));
+        var mergedInit = new ObjectLiteralExpressionNode(mergedProps.ToImmutableList(), type: null, metadata: null, preferMultilineFormat: true);
 
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("baseInit"),
@@ -281,7 +295,7 @@ public partial class TypeScriptAstBuilder
         statements.Add(CreateBlankLineStatement());
 
         var responseStatus = Member(Id("response"), "status");
-        var decodeBody = _options?.ExactJsonNumbers == true
+        var decodeBody = exactJsonNumbers
             ? TypeScriptExactJson.DecodeFetchResponse(Id("response"))
             : new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty));
         statements.Add(new VariableDeclarationStatementNode(
