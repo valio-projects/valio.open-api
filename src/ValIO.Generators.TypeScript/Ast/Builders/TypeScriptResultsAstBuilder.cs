@@ -24,6 +24,9 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
     private readonly string _resultSuffix;
     private readonly string _resultPrefix;
 
+    /// <summary>Whether the shared result shape describes response headers.</summary>
+    /// <value>True when at least one generated transport exposes headers.</value>
+    internal bool IncludeResponseHeaders { get; init; }
 
     /// <summary>Creates a TypeScriptResultsAstBuilder for one finalized IR document.</summary>
     /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
@@ -159,6 +162,9 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
                         isRequired: true,
                         documentation: new CommentNode(isSuccess ? "False — response is 2xx" : "True — response is not 2xx"))
                 };
+                if (IncludeResponseHeaders)
+                    members.Add(TypeScriptResponseHeaders.Signature());
+
                 var variantInterface = new InterfaceDeclarationNode(
                     name: new IdentifierNode(variantInterfaceName),
                     accessModifier: AccessModifier.Public,
@@ -172,35 +178,38 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
 
             // Catch-all variant для неизвестных status codes: { status: number; body: unknown }
             var otherVariantName = $"{_namingConverter.ToPascalCase(currentOperationName)}ResultOther";
+            var otherMembers = new List<DeclarationNode>
+            {
+                new PropertySignatureNode(
+                    new IdentifierNode("status"),
+                    new SimpleTypeNode(new IdentifierNode("number"), isPrimitive: true),
+                    isRequired: true,
+                    documentation: new CommentNode("HTTP status code not in schema (e.g. 204, 301, 503)")),
+                new PropertySignatureNode(
+                    new IdentifierNode("body"),
+                    new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
+                    isRequired: true,
+                    documentation: new CommentNode("Response body for unhandled status")),
+                new PropertySignatureNode(
+                    new IdentifierNode("isSuccessful"),
+                    // A literal false excludes this catch-all when narrowing to successful typed variants.
+                    new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: false),
+                    isRequired: true,
+                    documentation: new CommentNode("Always false — undocumented status codes are treated as non-success")),
+                new PropertySignatureNode(
+                    new IdentifierNode("isFailed"),
+                    new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: true),
+                    isRequired: true,
+                    documentation: new CommentNode("Always true — undocumented status codes are treated as failures"))
+            };
+            if (IncludeResponseHeaders)
+                otherMembers.Add(TypeScriptResponseHeaders.Signature());
+
             var otherVariantInterface = new InterfaceDeclarationNode(
                 name: new IdentifierNode(otherVariantName),
                 accessModifier: AccessModifier.Public,
                 baseTypes: ImmutableList<TypeNode>.Empty,
-                members: new List<DeclarationNode>
-                {
-                    new PropertySignatureNode(
-                        new IdentifierNode("status"),
-                        new SimpleTypeNode(new IdentifierNode("number"), isPrimitive: true),
-                        isRequired: true,
-                        documentation: new CommentNode("HTTP status code not in schema (e.g. 204, 301, 503)")),
-                    new PropertySignatureNode(
-                        new IdentifierNode("body"),
-                        new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
-                        isRequired: true,
-                        documentation: new CommentNode("Response body for unhandled status")),
-                    new PropertySignatureNode(
-                        new IdentifierNode("isSuccessful"),
-                        // Literal `false` (not `boolean`) so this catch-all is a discriminable failure
-                        // member: `if (r.isSuccessful)` excludes it and narrows to the typed variant(s).
-                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: false),
-                        isRequired: true,
-                        documentation: new CommentNode("Always false — undocumented status codes are treated as non-success")),
-                    new PropertySignatureNode(
-                        new IdentifierNode("isFailed"),
-                        new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: true),
-                        isRequired: true,
-                        documentation: new CommentNode("Always true — undocumented status codes are treated as failures"))
-                }.ToImmutableList(),
+                members: otherMembers.ToImmutableList(),
                 documentation: new CommentNode("Response for status codes not explicitly defined in OpenAPI schema. " +
                     "Treated as a failure (isSuccessful: false) so the union stays discriminable; an undocumented 2xx (e.g. 204) lands here."));
             declarations.Add(otherVariantInterface);

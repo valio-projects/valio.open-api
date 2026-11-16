@@ -417,3 +417,9 @@ npm install zod
 ### Explicit default values
 
 Set `options.generateDefaultValues` to `true` to export `{Model}DefaultValues` and `{Operation}RouteParamsDefaultValues` / `{Operation}QueryParamsDefaultValues` constants. Only explicitly specified non-null OpenAPI defaults are included; requiredness and nullability of generated types do not change. The option defaults to `false`. Validation constraint constants are generated independently when constraints exist.
+
+### Response headers
+
+Set `options.includeResponseHeaders` to `true` to include the received headers on typed Axios and Next.js results. Read a header by its lowercase name, for example `result.headers?.location` for an HTTP 202 response. Missing headers are `undefined`. Header values are strings in the representation exposed by the transport; Axios arrays are joined with a comma and a space. A browser can expose only the headers allowed by its CORS policy.
+
+The option defaults to `false`. It does not change void return types or make other transports return headers. A generated Next.js client returning `Promise<void>` resolves for a successful HTTP response and rejects with the status in the error message for a failed response.

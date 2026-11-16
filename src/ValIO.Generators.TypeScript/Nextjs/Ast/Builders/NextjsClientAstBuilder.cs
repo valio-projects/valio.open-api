@@ -41,6 +41,8 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
     private readonly int? _defaultRevalidate;
     private readonly bool _generateRevalidateHelpers;
 
+    /// <summary>Whether to expose the native fetch response headers on generated result values.</summary>
+    private readonly bool _includeResponseHeaders;
 
     /// <summary>Creates a NextjsClientAstBuilder for one finalized IR document.</summary>
     /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
@@ -60,6 +62,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
 
         _defaultRevalidate = options?.NextJs?.DefaultRevalidate;
         _generateRevalidateHelpers = options?.NextJs?.GenerateRevalidateHelpers ?? true;
+        _includeResponseHeaders = options?.IncludeResponseHeaders == true;
     }
 
     /// <summary>
@@ -367,16 +370,22 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
             Id("httpClient"),
             ImmutableList.Create<ExpressionNode>(Id("requestUrl"), Id("requestInit")));
 
-        if (!hasResultType)
-        {
-            statements.Add(new ExpressionStatementNode(new AwaitExpressionNode(fetchCall)));
-            return new BlockNode(statements.ToImmutableList());
-        }
-
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("response"), type: null, initializer: new AwaitExpressionNode(fetchCall)));
 
-        // responseData = response.status === 204 ? undefined : await response.json() as unknown
+        if (!hasResultType)
+        {
+            var message = new TemplateLiteralExpressionNode([
+                new TemplateLiteralPart("HTTP "),
+                new TemplateLiteralPart(Member(Id("response"), "status"))
+            ]);
+            statements.Add(new IfStatementNode(
+                new UnaryExpressionNode(UnaryOperator.LogicalNot, Member(Id("response"), "ok")),
+                new BlockNode(ImmutableList.Create<StatementNode>(new ThrowStatementNode(
+                    new CallExpressionNode(Id("Error"), [message], isNewExpression: true))))));
+            return new BlockNode(statements.ToImmutableList());
+        }
+
         var bodyJson = new CastExpressionNode(
             Simple("unknown", isPrimitive: true),
             new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty)),
@@ -385,6 +394,9 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
             new IdentifierNode("responseData"),
             type: null,
             initializer: TypeScriptResponseBody.Read(operation, Member(Id("response"), "status"), bodyJson)));
+        if (_includeResponseHeaders)
+            statements.AddRange(TypeScriptResponseHeaders.ReadFetch(Member(Id("response"), "headers")));
+
         statements.Add(new BlankLineStatementNode());
 
         AddStatusResultBranches(operation, statements);
@@ -544,11 +556,11 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
 
             var returnObject = new CastExpressionNode(
                 Simple(resultTypeName),
-                Object(
+                TypeScriptResponseHeaders.Attach(Object(
                     ("status", Number(statusCode)),
                     ("body", body),
                     ("isSuccessful", Bool(isSuccessful)),
-                    ("isFailed", Bool(!isSuccessful))),
+                    ("isFailed", Bool(!isSuccessful))), _includeResponseHeaders),
                 useAsOperator: true);
 
             statements.Add(new IfStatementNode(
@@ -557,17 +569,20 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         }
     }
 
+    /// <summary>Returns an undocumented response as the discriminable fallback failure.</summary>
+    /// <param name="operation">The operation whose fallback result is returned.</param>
+    /// <returns>The return statement preserving the actual status and decoded body.</returns>
     private ReturnStatementNode BuildFallbackResult(IrOperation operation)
     {
         var resultTypeName = _resultsBuilder.ResultTypeName(operation.MethodName);
         // Undocumented status → catch-all `…ResultOther`, a literal failure so the union stays discriminable.
         return new ReturnStatementNode(new CastExpressionNode(
             Simple(resultTypeName),
-            Object(
+            TypeScriptResponseHeaders.Attach(Object(
                 ("status", Member(Id("response"), "status")),
                 ("body", Id("responseData")),
                 ("isSuccessful", Bool(false)),
-                ("isFailed", Bool(true))),
+                ("isFailed", Bool(true))), _includeResponseHeaders),
             useAsOperator: true));
     }
 

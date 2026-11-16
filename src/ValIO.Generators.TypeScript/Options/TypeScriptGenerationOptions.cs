@@ -6,6 +6,10 @@ public sealed class TypeScriptGenerationOptions
     /// <value>False unless default-value constants are requested.</value>
     public bool GenerateDefaultValues { get; set; }
 
+    /// <summary>Whether to expose received HTTP headers on typed Axios and Next.js results.</summary>
+    /// <value>False to retain the default result shape.</value>
+    public bool IncludeResponseHeaders { get; set; }
+
     public List<string> Transports { get; set; } = ["fetch"];
     public string EnumFormat { get; set; } = "union";
     public string? ValidationLibrary { get; set; }

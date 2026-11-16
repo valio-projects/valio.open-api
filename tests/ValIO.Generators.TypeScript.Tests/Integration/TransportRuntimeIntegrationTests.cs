@@ -42,7 +42,7 @@ public sealed class TransportRuntimeIntegrationTests
             const originalLoad = Module._load;
             let captured;
             const unexpectedJson = async () => { throw new Error('A bodyless response was decoded as JSON'); };
-            const response = () => ({ status: 204, statusCode: 204, data: undefined, _data: undefined,
+            const response = () => ({ ok: true, status: 204, statusCode: 204, data: undefined, _data: undefined,
                                       json: unexpectedJson, body: { json: unexpectedJson } });
             async function send(url, options) { captured = options; return response(); }
             const axios = { request: async options => { captured = { ...options, body: options.data }; return response(); } };
@@ -131,6 +131,88 @@ public sealed class TransportRuntimeIntegrationTests
             """);
 
         output.Should().Contain("transport runtime passed");
+    }
+
+    /// <summary>Verifies that a Next.js mutation with no response body still reports HTTP failures.</summary>
+    /// <returns>The asynchronous generated-code runtime check.</returns>
+    [Test]
+    public async Task NextJsVoidMutation_ResolvesForNoContentAndRejectsHttpFailure()
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Document());
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
+        var output = await GeneratedTypeScriptRuntime.Run(context, """
+            const { uploadOptional } = require(path.join(root, 'api', 'uploadOptional', 'uploadOptional.nextjs.js'));
+            const controller = new AbortController();
+            (async () => {
+              const status = code => async (url, options) => {
+                assert.equal(options.signal, controller.signal);
+                return new Response(null, { status: code });
+              };
+              assert.equal(await uploadOptional({}, undefined, controller.signal, status(204)), undefined);
+              await assert.rejects(uploadOptional({}, undefined, controller.signal, status(500)), /HTTP 500/);
+
+              controller.abort();
+              const abortedFetch = async (url, options) => options.signal.throwIfAborted();
+              await assert.rejects(uploadOptional({}, undefined, controller.signal, abortedFetch), { name: 'AbortError' });
+              console.log('Next.js void response runtime passed');
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """);
+
+        output.Should().Contain("Next.js void response runtime passed");
+    }
+
+    /// <summary>Checks that header exposure preserves a typed 202 result and a typed 404 result.</summary>
+    /// <param name="transport">The generated transport whose response headers are exposed.</param>
+    /// <returns>The asynchronous generated-code runtime check.</returns>
+    [TestCase("axios")]
+    [TestCase("nextjs")]
+    public async Task TypedResponse_ExposesLocationAndPreservesDocumentedFailures(string transport)
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Document());
+        using var options = JsonDocument.Parse($$"""
+            {"transports":["{{transport}}"],"includeResponseHeaders":true,"validation":"zod4"}
+            """);
+        var rawOptions = options.RootElement.EnumerateObject().ToDictionary(property => property.Name, property => property.Value);
+        var configured = (TypeScriptGenerationOptions)new TypeScriptOptionsDescriptor().ParseOptions(rawOptions, out var errors)!;
+        errors.Should().BeEmpty();
+        var context = await harness.RunAsync(document, configured);
+        var results = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("mixed.results.ts", StringComparison.Ordinal));
+        results.Content.Should().Contain("headers?: Readonly<Record<string, string | undefined>>");
+        var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
+            const transport = {{JsonSerializer.Serialize(transport)}};
+            const { mixed } = require(path.join(root, 'api', 'mixed', 'mixed.' + transport + '.js'));
+            const axios = transport === 'axios' ? require('axios') : undefined;
+            const headers = { Location: '/jobs/42', 'X-Request-ID': 'request-42' };
+            const client = (status, body, headers) => transport === 'nextjs'
+              ? async () => Response.json(body, { status, headers })
+              : axios.create({ adapter: async config => {
+                  assert.equal(config.validateStatus(status), true);
+                  return { status, data: body, headers, config };
+                } });
+
+            (async () => {
+              const accepted = await mixed({ body: 'input' }, undefined, undefined, client(202, 'job-42', headers));
+              assert.equal(accepted.status, 202);
+              assert.equal(accepted.body, 'job-42');
+              assert.equal(accepted.isSuccessful, true);
+              assert.equal(accepted.headers.location, '/jobs/42');
+              assert.equal(accepted.headers['x-request-id'], 'request-42');
+              assert.equal(accepted.headers['Location'], undefined);
+
+              const missing = await mixed({ body: 'input' }, undefined, undefined, client(404, { reason: 'missing' }, {}));
+              assert.equal(missing.status, 404);
+              assert.equal(missing.isFailed, true);
+              assert.deepEqual(missing.body, { reason: 'missing' });
+              assert.equal(missing.headers.location, undefined);
+
+              await assert.rejects(mixed({ body: 'input' }, undefined, undefined, client(404, { reason: 42 }, {})));
+              console.log('typed response headers runtime passed');
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """);
+
+        output.Should().Contain("typed response headers runtime passed");
     }
 
     /// <summary>Creates multipart, optional multipart, and mixed typed/no-body response contracts.</summary>

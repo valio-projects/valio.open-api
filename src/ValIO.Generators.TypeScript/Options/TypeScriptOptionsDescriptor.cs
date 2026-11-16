@@ -85,6 +85,14 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
                 errorList.Add("Option 'generateDefaultValues' must be a boolean");
         }
 
+        if (rawOptions.TryGetValue("includeResponseHeaders", out var responseHeaders))
+        {
+            if (responseHeaders.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                opts.IncludeResponseHeaders = responseHeaders.GetBoolean();
+            else
+                errorList.Add("Option 'includeResponseHeaders' must be a boolean");
+        }
+
         if (rawOptions.TryGetValue("transports", out var transports))
         {
             if (transports.ValueKind == JsonValueKind.Array)
@@ -192,6 +200,8 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
     [
         new(Name: "generateDefaultValues", Description: "Export explicitly specified non-null OpenAPI default values.",
             DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Models"),
+        new(Name: "includeResponseHeaders", Description: "Expose received headers on typed Axios and Next.js results using lowercase names.",
+            DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Clients"),
         new(
             Name:           "transports",
             Description:    "HTTP transport library to generate clients for. At least one is required.",

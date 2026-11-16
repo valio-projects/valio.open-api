@@ -1328,6 +1328,10 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
 
         if (useResultType)
         {
+            var includeResponseHeaders = _options?.IncludeResponseHeaders == true;
+            if (includeResponseHeaders)
+                statements.AddRange(TypeScriptResponseHeaders.ReadAxios(Member(Id("response"), "headers")));
+
             var responseDataRef = new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("data"));
@@ -1363,12 +1367,12 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
 
                 statements.Add(new IfStatementNode(
                     condition,
-                    new BlockNode(new[] { new ReturnStatementNode(returnObj) }.ToImmutableList()),
+                    new BlockNode([new ReturnStatementNode(TypeScriptResponseHeaders.Attach(returnObj, includeResponseHeaders))]),
                     null));
             }
 
             statements.Add(new ReturnStatementNode(
-                new ObjectLiteralExpressionNode(new[]
+                TypeScriptResponseHeaders.Attach(new ObjectLiteralExpressionNode(new[]
                 {
                     new PropertyAssignmentNode(new IdentifierNode("status"), responseStatusRef),
                     new PropertyAssignmentNode(new IdentifierNode("body"), responseDataRef),
@@ -1378,7 +1382,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
                         new LiteralExpressionNode(false, LiteralKind.Boolean)),
                     new PropertyAssignmentNode(new IdentifierNode("isFailed"),
                         new LiteralExpressionNode(true, LiteralKind.Boolean))
-                }.ToImmutableList())));
+                }.ToImmutableList()), includeResponseHeaders)));
         }
         else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
         {

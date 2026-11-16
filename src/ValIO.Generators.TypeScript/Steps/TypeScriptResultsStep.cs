@@ -34,11 +34,17 @@ public sealed class TypeScriptResultsStep : ICodeGenerationStep
     public bool ShouldExecute(GenerationContext context)
         => context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0;
 
+    /// <inheritdoc />
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var astBuilder = new TypeScriptAstBuilder(context.DocumentContext, _namingConverter, opts);
-        var resultsBuilder = new TypeScriptResultsAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType, opts?.ResultTypeSuffix, opts?.ResultTypePrefix);
+        var resultsBuilder = new TypeScriptResultsAstBuilder(context.DocumentContext, _namingConverter, astBuilder.BuildType,
+            opts?.ResultTypeSuffix, opts?.ResultTypePrefix)
+        {
+            IncludeResponseHeaders = opts?.IncludeResponseHeaders == true &&
+                opts.Transports.Any(transport => transport is TypeScriptOptionIds.Transport.Axios or TypeScriptOptionIds.Transport.Nextjs)
+        };
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
 
