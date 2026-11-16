@@ -205,9 +205,9 @@ public partial class TypeScriptAstBuilder
         if (operation.RequestBody != null && operation.RequestBody.IsJson && ctx.BodySource != null)
         {
             var jsonStringify = new CallExpressionNode(
-                new MemberAccessExpressionNode(
-                    new IdentifierExpressionNode(new IdentifierNode("JSON")),
-                    new IdentifierNode("stringify")),
+                _options?.ExactJsonNumbers == true
+                    ? TypeScriptExactJson.Runtime("stringify")
+                    : Member(Id("JSON"), "stringify"),
                 new[] { ctx.BodySource }.ToImmutableList());
             initProps.Add(new PropertyAssignmentNode(new IdentifierNode("body"), jsonStringify));
         }
@@ -281,10 +281,12 @@ public partial class TypeScriptAstBuilder
         statements.Add(CreateBlankLineStatement());
 
         var responseStatus = Member(Id("response"), "status");
-        var jsonCall = new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty);
+        var decodeBody = _options?.ExactJsonNumbers == true
+            ? TypeScriptExactJson.DecodeFetchResponse(Id("response"))
+            : new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty));
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"), type: null,
-            initializer: TypeScriptResponseBody.Read(operation, responseStatus, new AwaitExpressionNode(jsonCall))));
+            initializer: TypeScriptResponseBody.Read(operation, responseStatus, decodeBody)));
         statements.Add(CreateBlankLineStatement());
 
         if (useResultType)

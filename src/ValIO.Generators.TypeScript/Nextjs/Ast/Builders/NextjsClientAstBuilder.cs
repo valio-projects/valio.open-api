@@ -44,6 +44,9 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
     /// <summary>Whether to expose the native fetch response headers on generated result values.</summary>
     private readonly bool _includeResponseHeaders;
 
+    /// <summary>Whether this client reads and writes JSON using exact numeric tokens.</summary>
+    private readonly bool _exactJsonNumbers;
+
     /// <summary>Creates a NextjsClientAstBuilder for one finalized IR document.</summary>
     /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
     /// <param name="namingConverter">The generated identifier naming policy.</param>
@@ -63,6 +66,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         _defaultRevalidate = options?.NextJs?.DefaultRevalidate;
         _generateRevalidateHelpers = options?.NextJs?.GenerateRevalidateHelpers ?? true;
         _includeResponseHeaders = options?.IncludeResponseHeaders == true;
+        _exactJsonNumbers = options?.ExactJsonNumbers == true;
     }
 
     /// <summary>
@@ -148,6 +152,11 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
             ClientInlineConstructedTypes(operation),
             hasParams: operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0,
             hasNamedSchemaParse: Validation.ClientResponseSchemas.ValidatedResponses(operation).Any()));
+
+        if (_exactJsonNumbers && (operation.RequestBody is { IsJson: true }
+                || hasResultType && !operation.HttpMethod.Equals("HEAD", StringComparison.OrdinalIgnoreCase))
+            && !imports.Any(import => import.From == TypeScriptExactJson.PackageName))
+            imports.Add(TypeScriptExactJson.Import());
 
         if (hasParameters)
             imports.Add(new ImportNode(
@@ -388,7 +397,9 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
 
         var bodyJson = new CastExpressionNode(
             Simple("unknown", isPrimitive: true),
-            new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty)),
+            _exactJsonNumbers
+                ? TypeScriptExactJson.DecodeFetchResponse(Id("response"))
+                : new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty)),
             useAsOperator: true);
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"),
@@ -490,7 +501,8 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         if (operation.RequestBody != null && sources.BodySource != null)
         {
             ExpressionNode bodyExpression = operation.RequestBody.IsJson
-                ? new CallExpressionNode(Member(Id("JSON"), "stringify"), ImmutableList.Create<ExpressionNode>(sources.BodySource))
+                ? new CallExpressionNode(_exactJsonNumbers ? TypeScriptExactJson.Runtime("stringify") : Member(Id("JSON"), "stringify"),
+                    ImmutableList.Create<ExpressionNode>(sources.BodySource))
                 : new CastExpressionNode(Simple("string", isPrimitive: true),
                     new CastExpressionNode(Simple("unknown", isPrimitive: true), sources.BodySource, useAsOperator: true), useAsOperator: true);
 

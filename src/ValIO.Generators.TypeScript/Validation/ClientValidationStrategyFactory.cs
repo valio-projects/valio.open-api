@@ -17,7 +17,8 @@ internal static class ClientValidationStrategyFactory
             TypeScriptOptionIds.Validation.Zod3 =>
                 new ZodValidationStrategy(new ZodSchemaExpressionBuilder(options.UuidFormat), "zod"),
             TypeScriptOptionIds.Validation.Zod4 =>
-                new ZodValidationStrategy(new ZodSchemaExpressionBuilder(options.UuidFormat), "zod/v4"),
+                new ZodValidationStrategy(new ZodSchemaExpressionBuilder(options.UuidFormat, options.ExactJsonNumbers),
+                    "zod/v4", options.ExactJsonNumbers),
             TypeScriptOptionIds.Validation.Valibot =>
                 new ValibotValidationStrategy(new ValibotAstBuilder(options.UuidFormat)),
             TypeScriptOptionIds.Validation.TypeBox =>

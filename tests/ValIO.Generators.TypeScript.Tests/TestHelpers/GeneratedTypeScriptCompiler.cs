@@ -96,9 +96,13 @@ internal sealed class GeneratedTypeScriptTestWorkspace : IDisposable
 
     /// <summary>Creates a unique owned directory after validating the explicitly configured dependency environment.</summary>
     /// <remarks>An absent environment variable skips optional Node integration; an invalid configured value fails.</remarks>
-    public GeneratedTypeScriptTestWorkspace()
+    /// <param name="requiredPackages">Additional npm packages required by this scenario.</param>
+    public GeneratedTypeScriptTestWorkspace(params string[] requiredPackages)
     {
         Modules = NodeModulesDirectory();
+        foreach (var package in requiredPackages)
+            File.Exists(Path.Combine(Modules, package, "package.json")).Should().BeTrue(
+                "the configured dependency directory must contain {0} for this scenario", package);
         _temporaryRoot = Path.TrimEndingDirectorySeparator(Path.GetFullPath(Path.GetTempPath()));
         Root = Path.Combine(_temporaryRoot, $"valio-typescript-{Guid.NewGuid():N}");
         Directory.CreateDirectory(Root);

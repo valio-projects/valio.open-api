@@ -646,6 +646,9 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     
     private TypeNode BuildPrimitiveType(IrPrimitiveType primitiveType)
     {
+        if (_options?.ExactJsonNumbers == true && TypeScriptExactJson.IsExact(primitiveType))
+            return new RawTypeNode(TypeScriptExactJson.LosslessNumberType);
+
         var typeName = MapPrimitiveToTypeScript(primitiveType.PrimitiveKind);
         return new SimpleTypeNode(
             name: new IdentifierNode(typeName),
@@ -969,6 +972,26 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
                 $"{transport} client for the {operation.MethodName} operation."));
     }
 
+    /// <summary>Adds the transport codec import unless an inline Zod schema already imported it.</summary>
+    /// <param name="imports">The imports already collected for the endpoint file.</param>
+    /// <param name="operation">The endpoint contract.</param>
+    /// <param name="needsResponseCodec">Whether the endpoint decodes a JSON response.</param>
+    private void AddExactJsonImport(List<ImportNode> imports, IrOperation operation, bool needsResponseCodec)
+    {
+        if (_options?.ExactJsonNumbers == true
+            && (operation.RequestBody is { IsJson: true } || needsResponseCodec)
+            && !imports.Any(import => import.From == TypeScriptExactJson.PackageName))
+            imports.Add(TypeScriptExactJson.Import());
+    }
+
+    /// <summary>Identifies Axios operations whose response body can be read as JSON text.</summary>
+    /// <param name="operation">The endpoint contract.</param>
+    /// <returns>Whether a JSON decoder is needed and the adapter does not expect binary data.</returns>
+    private static bool HasExactAxiosResponse(IrOperation operation) =>
+        operation.Responses.Any(response => response.Type != null)
+        && !operation.HttpMethod.Equals("HEAD", StringComparison.OrdinalIgnoreCase)
+        && !operation.Responses.Any(Axios.Ast.Builders.AxiosAstBuilder.IsBinarySuccessResponse);
+
     /// <summary>
     /// Resolves the configured Axios default without allowing an exported name to shadow generated parameters.
     /// </summary>
@@ -1026,7 +1049,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             isTypeOnly: true));
 
         AddCommonEndpointImports(result, operation, fileOrganization);
-
+        AddExactJsonImport(result, operation, needsResponseCodec: HasExactAxiosResponse(operation));
         result.AddRange(existingImports);
         return result;
     }
@@ -1042,7 +1065,8 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         var result = new List<ImportNode>();
 
         AddCommonEndpointImports(result, operation, fileOrganization);
-
+        AddExactJsonImport(result, operation, needsResponseCodec: operation.Responses.Any(r => r.Type != null)
+            && !operation.HttpMethod.Equals("HEAD", StringComparison.OrdinalIgnoreCase));
         result.AddRange(existingImports);
         return result;
     }
@@ -1264,7 +1288,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
 
         var paramsSource = new Axios.Models.AxiosConfigParamsSource(routeSource, querySource, bodySource, headersSource);
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(DocumentContext, _namingConverter, BuildType);
-        var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource);
+        var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource, _options?.ExactJsonNumbers == true);
 
         // Используем unknown — не добавляем импорт модели body, работаем с params
         var bodyTypeNode = new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true);
@@ -1301,6 +1325,20 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             new(placeholderId, optionsSpread, isSpread: true),
             new(placeholderId, signalSpread, isSpread: true)
         };
+        if (_options?.ExactJsonNumbers == true)
+        {
+            if (operation.RequestBody is { IsJson: true })
+                mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("transformRequest"),
+                    new ArrayLiteralExpressionNode([TypeScriptExactJson.AxiosRequestTransform()])));
+            if (HasExactAxiosResponse(operation))
+            {
+                mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("responseType"),
+                    new LiteralExpressionNode("text", LiteralKind.String)));
+                mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("transformResponse"),
+                    new ArrayLiteralExpressionNode([TypeScriptExactJson.AxiosResponseTransform()])));
+            }
+        }
+
         if (useResultType)
         {
             mergedConfigProps.Add(new PropertyAssignmentNode(

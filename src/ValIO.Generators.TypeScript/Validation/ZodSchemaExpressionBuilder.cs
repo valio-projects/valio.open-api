@@ -9,6 +9,7 @@ using ValIO.Core.IR.Types;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Zod.Ast.Builders;
 using static ValIO.Generators.TypeScript.Validation.ValidationAst;
 
@@ -23,12 +24,16 @@ internal sealed class ZodSchemaExpressionBuilder
 {
     /// <summary>The configured UUID validation mode shared by parameter and response schemas.</summary>
     private readonly string _uuidFormat;
+    /// <summary>Whether generated primitive schemas preserve exact numeric tokens.</summary>
+    private readonly bool _exactJsonNumbers;
 
     /// <summary>Creates a schema builder for a configured UUID representation.</summary>
     /// <param name="uuidFormat">The UUID validation mode, or the default when absent.</param>
-    public ZodSchemaExpressionBuilder(string? uuidFormat = null)
+    /// <param name="exactJsonNumbers">Whether schemas receive tokens from the lossless JSON codec.</param>
+    public ZodSchemaExpressionBuilder(string? uuidFormat = null, bool exactJsonNumbers = false)
     {
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+        _exactJsonNumbers = exactJsonNumbers;
     }
 
     /// <summary>
@@ -52,8 +57,8 @@ internal sealed class ZodSchemaExpressionBuilder
         if (type is IrPrimitiveType constrainedPrimitive && constrainedPrimitive.Constraints is { } local
             && constraints is not null && !ValidationConstraints.Equivalent(local, constraints))
             return Call(Member(Id("z"), "intersection"),
-                BuildPrimitive(constrainedPrimitive.PrimitiveKind, coerceParams, local, constraintsRef: null),
-                BuildPrimitive(constrainedPrimitive.PrimitiveKind, coerceParams, constraints, constraintsRef));
+                BuildPrimitive(constrainedPrimitive, coerceParams, local, constraintsRef: null),
+                BuildPrimitive(constrainedPrimitive, coerceParams, constraints, constraintsRef));
         return type switch
         {
             IrModelReference reference => Id($"{reference.ModelName}Schema"),
@@ -64,7 +69,7 @@ internal sealed class ZodSchemaExpressionBuilder
             IrOptionalType optional => Call(Member(Build(optional.InnerType, coerceParams, constraints, constraintsRef), "optional")),
             IrUnionType union => BuildUnion(union.Types, coerceParams, constraints, constraintsRef, union.Kind == IrUnionKind.OneOf),
             IrIntersectionType intersection => BuildIntersection(intersection.Types, coerceParams, constraints, constraintsRef),
-            IrPrimitiveType primitive => BuildPrimitive(primitive.PrimitiveKind, coerceParams, constraints, constraintsRef),
+            IrPrimitiveType primitive => BuildPrimitive(primitive, coerceParams, constraints, constraintsRef),
             _ => Call(Member(Id("z"), "unknown"))
         };
     }
@@ -89,7 +94,19 @@ internal sealed class ZodSchemaExpressionBuilder
                     schema = Call(Member(schema, "optional"));
                 // `.default(x)` after `.optional()` so an undefined param is replaced by the OpenAPI default.
                 if (TryDefaultLiteral(parameter.DefaultValue, out var defaultLiteral))
-                    schema = Call(Member(schema, "default"), defaultLiteral!);
+                {
+                    if (_exactJsonNumbers && TypeScriptExactJson.ExactPrimitive(parameter.Type) != null)
+                    {
+                        var text = Convert.ToString(defaultLiteral!.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
+                        var token = new CallExpressionNode(TypeScriptExactJson.Runtime("LosslessNumber"),
+                            [new LiteralExpressionNode(text, LiteralKind.String)], isNewExpression: true);
+                        schema = Call(Member(schema, "prefault"), token);
+                    }
+                    else
+                    {
+                        schema = Call(Member(schema, "default"), defaultLiteral!);
+                    }
+                }
                 if (!string.IsNullOrWhiteSpace(parameter.Description))
                     schema = Call(Member(schema, "describe"),
                         new LiteralExpressionNode(parameter.Description!, LiteralKind.String));
@@ -179,13 +196,13 @@ internal sealed class ZodSchemaExpressionBuilder
     }
 
     /// <summary>Builds primitives using the same format and constraint rules as model schemas.</summary>
-    /// <param name="kind">The primitive IR kind.</param>
+    /// <param name="primitive">The primitive IR type and its format.</param>
     /// <param name="coerce">Whether parameter input is coerced.</param>
     /// <param name="constraints">Constraints on the primitive value.</param>
     /// <param name="constraintsRef">An optional reference to exported constraints.</param>
     /// <returns>The primitive schema expression.</returns>
-    private ExpressionNode BuildPrimitive(IrPrimitiveKind kind, bool coerce, IrPropertyConstraints? constraints, string? constraintsRef) =>
-        kind switch
+    private ExpressionNode BuildPrimitive(IrPrimitiveType primitive, bool coerce, IrPropertyConstraints? constraints, string? constraintsRef) =>
+        primitive.PrimitiveKind switch
         {
             IrPrimitiveKind.Boolean when coerce => BuildBooleanParameter(),
             IrPrimitiveKind.Binary =>
@@ -195,8 +212,9 @@ internal sealed class ZodSchemaExpressionBuilder
             IrPrimitiveKind.File =>
                 Call(Member(Id("z"), "instanceof"), Id("File")),
             IrPrimitiveKind.Any => Call(Member(Id("z"), "unknown")),
-            _ => ZodExpressionBuilder.BuildPrimitiveExpression(kind, useBigInt: false,
-                constraints, constraintsRef, _uuidFormat, coerceNumbers: coerce).Expression
+            _ => ZodExpressionBuilder.BuildPrimitiveExpression(primitive.PrimitiveKind, useBigInt: false,
+                constraints, constraintsRef, _uuidFormat, coerceNumbers: coerce,
+                exactJsonType: _exactJsonNumbers ? primitive : null).Expression
         };
 
     /// <summary>Parses OpenAPI boolean strings without treating the nonempty string "false" as true.</summary>

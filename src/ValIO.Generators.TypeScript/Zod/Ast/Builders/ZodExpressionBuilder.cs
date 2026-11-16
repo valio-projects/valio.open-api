@@ -4,6 +4,8 @@ using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
+using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 using ValIO.Generators.TypeScript.Options;
@@ -27,6 +29,7 @@ public static class ZodExpressionBuilder
     /// <param name="uuidFormat">The configured UUID validation mode.</param>
     /// <param name="description">An optional description attached as schema metadata.</param>
     /// <param name="coerceNumbers">Whether numeric input may be coerced to its runtime representation.</param>
+    /// <param name="exactJsonType">The original primitive type when exact JSON numbers are enabled.</param>
     /// <returns>The complete schema expression.</returns>
     public static ZodExpressionSchemaNode BuildPrimitiveExpression(
         IrPrimitiveKind primitiveKind,
@@ -35,11 +38,22 @@ public static class ZodExpressionBuilder
         string? constraintsRef = null,
         string? uuidFormat = null,
         string? description = null,
-        bool coerceNumbers = false)
+        bool coerceNumbers = false,
+        IrPrimitiveType? exactJsonType = null)
     {
-        var expr = BuildBasePrimitive(primitiveKind, useBigInt, coerceNumbers);
-        expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
-        expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
+        ExpressionNode expr;
+        if (exactJsonType is not null && TypeScriptExactJson.IsExact(exactJsonType))
+        {
+            expr = TypeScriptExactJson.ExactSchema(exactJsonType, constraints);
+        }
+        else
+        {
+            expr = BuildBasePrimitive(primitiveKind, useBigInt, coerceNumbers);
+            expr = ApplyConstraints(expr, primitiveKind, constraints, constraintsRef);
+            expr = ApplyFormatRefinements(expr, primitiveKind, TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat));
+            if (exactJsonType is not null && TypeScriptExactJson.UsesNumberCodec(exactJsonType))
+                expr = TypeScriptExactJson.OrdinaryNumberSchema(expr, integer: primitiveKind != IrPrimitiveKind.Number);
+        }
         // Carry the OpenAPI property description into the schema as Zod metadata (.describe(...)).
         if (!string.IsNullOrWhiteSpace(description))
         {

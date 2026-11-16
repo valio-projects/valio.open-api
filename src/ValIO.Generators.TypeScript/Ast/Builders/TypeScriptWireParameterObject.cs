@@ -24,12 +24,14 @@ public static class TypeScriptWireParameterObject
     /// <param name="source">The optional header parameter group.</param>
     /// <param name="sourceMayBeUndefined">Whether the parameter group may be absent.</param>
     /// <param name="includeJsonContentType">Whether this transport requires an explicit JSON content type.</param>
+    /// <param name="exactJsonNumbers">Whether exact numeric DTO values require conversion to wire text.</param>
     /// <returns>The header object with unavailable values omitted.</returns>
     public static ObjectLiteralExpressionNode BuildHeaders(
         IrOperation operation,
         ExpressionNode? source,
         bool sourceMayBeUndefined,
-        bool includeJsonContentType = false)
+        bool includeJsonContentType = false,
+        bool exactJsonNumbers = false)
     {
         var contentType = DefaultContentType(operation.RequestBody, includeJsonContentType);
         var headerParameters = operation.HeaderParameters;
@@ -40,7 +42,7 @@ public static class TypeScriptWireParameterObject
             : headerParameters.Where(parameter => parameter != contentTypeParameter).ToList();
         var wireHeaders = source == null
             ? EmptyObject()
-            : BuildFromSource(remaining, source, sourceMayBeUndefined, omitUndefinedValues: true);
+            : BuildFromSource(remaining, source, sourceMayBeUndefined, omitUndefinedValues: true, exactJsonNumbers);
         if (contentType == null)
             return wireHeaders;
 
@@ -78,6 +80,7 @@ public static class TypeScriptWireParameterObject
     /// Whether optional or unavailable values are emitted through conditional spreads so they are absent from the
     /// resulting object instead of being assigned <c>undefined</c>.
     /// </param>
+    /// <param name="exactJsonNumbers">Whether exact numeric DTO values require conversion to wire text.</param>
     /// <returns>A multiline object literal suitable for a transport's query or headers configuration.</returns>
     /// <exception cref="ArgumentNullException">
     /// <paramref name="parameters"/> or <paramref name="source"/> is <see langword="null"/>.
@@ -86,14 +89,19 @@ public static class TypeScriptWireParameterObject
         IReadOnlyList<IrParameter> parameters,
         ExpressionNode source,
         bool sourceMayBeUndefined,
-        bool omitUndefinedValues)
+        bool omitUndefinedValues,
+        bool exactJsonNumbers = false)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         ArgumentNullException.ThrowIfNull(source);
 
         return Build(
             parameters,
-            parameter => TypeScriptRequestPath.BuildParameterAccess(source, parameter.Name, sourceMayBeUndefined),
+            parameter =>
+            {
+                var value = TypeScriptRequestPath.BuildParameterAccess(source, parameter.Name, sourceMayBeUndefined);
+                return exactJsonNumbers ? TypeScriptExactJson.TextParameter(parameter.Type, value) : value;
+            },
             sourceMayBeUndefined,
             omitUndefinedValues);
     }

@@ -24,6 +24,8 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
     private readonly string _uuidFormat;
+    /// <summary>Whether exact schemas embed original bound tokens instead of numeric constraint constants.</summary>
+    private readonly bool _exactJsonNumbers;
 
 
     /// <summary>Creates a TypeScriptParamsSchemasAstBuilder for one finalized IR document.</summary>
@@ -31,14 +33,16 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
     /// <param name="namingConverter">The generated identifier naming policy.</param>
     /// <param name="validation">The configured runtime validation strategy.</param>
     /// <param name="uuidFormat">The configured UUID format policy.</param>
+    /// <param name="exactJsonNumbers">Whether exact numeric parameters retain their original bound tokens.</param>
     /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
     internal TypeScriptParamsSchemasAstBuilder(IrDocumentContext documentContext,
-        INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat = null)
+        INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat = null, bool exactJsonNumbers = false)
         : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+        _exactJsonNumbers = exactJsonNumbers;
     }
 
     /// <summary>Имя константы схемы route-параметров: <c>{Op}RouteParamsSchema</c>.</summary>
@@ -94,7 +98,8 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
         string? ConstraintsPrefix(IReadOnlyList<IrParameter> parameters, string constName)
         {
             if (!_validation.UsesConstraintConstants
-                || !parameters.Any(p => p.Constraints != null && TypeScriptConstraints.HasAnyConstraint(p.Constraints)))
+                || !parameters.Any(p => p.Constraints != null && TypeScriptConstraints.HasAnyConstraint(p.Constraints)
+                    && (!_exactJsonNumbers || TypeScriptExactJson.ExactPrimitive(p.Type) == null)))
                 return null;
             constraintConstNames.Add(constName);
             return constName;

@@ -1,5 +1,6 @@
 using ValIO.Core.Plugins;
 using ValIO.Generators.TypeScript.Options;
+using ValIO.Generators.TypeScript.Ast.Builders;
 
 namespace ValIO.Generators.TypeScript.Steps;
 
@@ -43,13 +44,25 @@ public sealed class TypeScriptTransportResolutionStep : ICodeGenerationStep
             return false;
         if (context.PluginOptions is not TypeScriptGenerationOptions opts)
             return false;
-        return !string.IsNullOrWhiteSpace(opts.QueryWrapper) || !string.IsNullOrWhiteSpace(opts.QueryTransport);
+        return opts.ExactJsonNumbers || !string.IsNullOrWhiteSpace(opts.QueryWrapper)
+            || !string.IsNullOrWhiteSpace(opts.QueryTransport);
     }
 
     /// <inheritdoc/>
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         if (context.PluginOptions is not TypeScriptGenerationOptions opts)
+            return Task.CompletedTask;
+
+        if (opts.ExactJsonNumbers)
+        {
+            var errors = new TypeScriptOptionsDescriptor().ValidateOptions(opts);
+            if (errors.Count > 0)
+                throw new InvalidOperationException(string.Join(" ", errors));
+            TypeScriptExactJson.ValidateOperations(context.DocumentContext, opts.Transports);
+        }
+
+        if (string.IsNullOrWhiteSpace(opts.QueryWrapper) && string.IsNullOrWhiteSpace(opts.QueryTransport))
             return Task.CompletedTask;
 
         var desired = TypeScriptClientTransport.ResolveHookClientSuffix(opts);

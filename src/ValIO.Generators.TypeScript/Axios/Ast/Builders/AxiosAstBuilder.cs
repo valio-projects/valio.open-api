@@ -73,10 +73,12 @@ public class AxiosAstBuilder : AstBuilderBase
     /// </summary>
     /// <param name="operation">The operation whose request is generated.</param>
     /// <param name="paramsSource">The expressions that provide route, query, body, and header values.</param>
+    /// <param name="exactJsonNumbers">Whether exact numeric DTO values require conversion to wire text.</param>
     /// <returns>An Axios configuration AST node preserving OpenAPI wire names.</returns>
     public AxiosConfigNode BuildAxiosConfigWithParams(
         IrOperation operation,
-        AxiosConfigParamsSource paramsSource)
+        AxiosConfigParamsSource paramsSource,
+        bool exactJsonNumbers = false)
     {
         var method = _httpBuilder.BuildHttpMethod(operation.HttpMethod);
         var url = BuildUrlWithSource(operation, paramsSource.RouteParamsSource);
@@ -113,7 +115,8 @@ public class AxiosAstBuilder : AstBuilderBase
                     operation.QueryParameters,
                     paramsSource.QueryParamsSource,
                     parameterModel.QueryMayBeUndefined,
-                    omitUndefinedValues: true)));
+                    omitUndefinedValues: true,
+                    exactJsonNumbers)));
         }
 
         if (paramsSource.HeadersSource != null || operation.RequestBody is { IsFormUrlEncoded: true })
@@ -124,7 +127,7 @@ public class AxiosAstBuilder : AstBuilderBase
                 new IdentifierNode("AxiosRequestConfig[\"headers\"]"),
                 isPrimitive: false);
             var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
-                operation, paramsSource.HeadersSource, parameterModel.HeadersMayBeUndefined);
+                operation, paramsSource.HeadersSource, parameterModel.HeadersMayBeUndefined, exactJsonNumbers: exactJsonNumbers);
             var headersCast = new CastExpressionNode(
                 headersAsAxiosType,
                 wireHeaders,
@@ -157,7 +160,7 @@ public class AxiosAstBuilder : AstBuilderBase
             properties: properties.ToImmutableList());
     }
 
-    private static bool IsBinarySuccessResponse(IrResponse response)
+    internal static bool IsBinarySuccessResponse(IrResponse response)
     {
         if (!int.TryParse(response.StatusCode, out var statusCode) || statusCode is < 200 or >= 300)
             return false;

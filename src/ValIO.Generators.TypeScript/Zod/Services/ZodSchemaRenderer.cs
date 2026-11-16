@@ -31,6 +31,8 @@ public class ZodSchemaRenderer : AstBuilderBase
     private readonly string _zodImportPath;
     private readonly string _modelsPath;
     private readonly string _uuidFormat;
+    /// <summary>Whether generated schemas decode lossless numeric tokens.</summary>
+    private readonly bool _exactJsonNumbers;
 
     /// <summary>Creates a renderer bound to one finalized document context.</summary>
     /// <param name="documentContext">The shared immutable declaration indexes.</param>
@@ -40,6 +42,7 @@ public class ZodSchemaRenderer : AstBuilderBase
     /// <param name="zodVersion">The selected Zod major version.</param>
     /// <param name="modelsPath">The configured model output directory.</param>
     /// <param name="uuidFormat">The selected UUID validation mode.</param>
+    /// <param name="exactJsonNumbers">Whether the profile preserves exact JSON numbers.</param>
     /// <exception cref="ArgumentNullException">A required dependency is null.</exception>
     public ZodSchemaRenderer(
         IrDocumentContext documentContext,
@@ -48,7 +51,8 @@ public class ZodSchemaRenderer : AstBuilderBase
         bool useBigInt = false,
         string zodVersion = "zod3",
         string modelsPath = "models",
-        string? uuidFormat = null)
+        string? uuidFormat = null,
+        bool exactJsonNumbers = false)
         : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
@@ -57,6 +61,7 @@ public class ZodSchemaRenderer : AstBuilderBase
         _zodImportPath = zodVersion == "zod4" ? "zod/v4" : "zod";
         _modelsPath = string.IsNullOrWhiteSpace(modelsPath) ? "models" : modelsPath;
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
+        _exactJsonNumbers = exactJsonNumbers;
     }
 
     // `ZodSchema` — только тип: под `verbatimModuleSyntax` его импортируем type-only (иначе TS1485),
@@ -114,7 +119,8 @@ public class ZodSchemaRenderer : AstBuilderBase
             ? $"{NormalizePath(importPath)}/{modelFileName}/{modelFileName}"
             : BuildModelImportPathFromSchema(currentFileName, schemasPath, modelFileName);
 
-        var hasConstraints = model.Properties.Any(p => p.Constraints != null && HasAnyConstraint(p.Constraints));
+        var hasConstraints = model.Properties.Any(p => p.Constraints != null && HasAnyConstraint(p.Constraints)
+            && (!_exactJsonNumbers || TypeScriptExactJson.ExactPrimitive(p.Type) == null));
         if (hasConstraints)
         {
             sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
@@ -128,6 +134,10 @@ public class ZodSchemaRenderer : AstBuilderBase
         // Shared UUID regex constant (regex mode): schema sits in {schemas}/{name}/ → ../formats.
         if (UsesUuidRegex && UuidFormatSupport.ModelUsesUuid(model))
             sb.AppendLine(FormatsImportLine(".."));
+
+        if (_exactJsonNumbers && (model.Properties.Any(p => TypeScriptExactJson.UsesNumberCodec(p.Type))
+            || model.Composition?.Types.Any(TypeScriptExactJson.UsesNumberCodec) == true))
+            sb.AppendLine(TypeScriptExactJson.ImportLine);
 
         var dependencies = ExtractDependencies(model);
         if (dependencies.Count > 0)
@@ -146,7 +156,7 @@ public class ZodSchemaRenderer : AstBuilderBase
             CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
         }
         
-        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
+        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat, _exactJsonNumbers);
         var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
         
         var zodRenderer = new ZodAstRenderer();
@@ -203,6 +213,9 @@ public class ZodSchemaRenderer : AstBuilderBase
             return sb.ToString();
         }
 
+        if (_exactJsonNumbers)
+            sb.AppendLine(TypeScriptExactJson.ImportLine);
+
         // Числовые enum: z.enum работает только со строками, поэтому строим схему через ZodAstBuilder.
         // Массив значений {Name}Values здесь НЕ объявляем и НЕ реэкспортируем — единственный источник
         // в модели enum (models/{enum}/{enum}.ts). Иначе баррел index.ts реэкспортирует {Name}Values
@@ -217,7 +230,9 @@ public class ZodSchemaRenderer : AstBuilderBase
         var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
         var zodEnum = zodBuilder.BuildZodEnum(enumModel);
         var zodRenderer = new ZodAstRenderer();
-        var zodEnumCode = zodRenderer.VisitZodEnum(zodEnum);
+        var zodEnumCode = _exactJsonNumbers
+            ? zodRenderer.RenderSchema(new ZodExpressionSchemaNode(TypeScriptExactJson.OrdinaryNumberSchema(zodEnum, integer: true)))
+            : zodRenderer.VisitZodEnum(zodEnum);
 
         CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: {SchemaType(typeName)} = {zodEnumCode};");
 

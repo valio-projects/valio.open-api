@@ -9,10 +9,11 @@ internal static class GeneratedTypeScriptRuntime
     /// <summary>Transpiles generated modules and executes assertions against their runtime behavior.</summary>
     /// <param name="context">The completed generation pipeline result.</param>
     /// <param name="runtimeScript">JavaScript assertions with root, path, assert, and require available.</param>
+    /// <param name="requiredPackages">Additional packages required only by this scenario.</param>
     /// <returns>The process output after successful execution.</returns>
-    public static async Task<string> Run(GenerationContext context, string runtimeScript)
+    public static async Task<string> Run(GenerationContext context, string runtimeScript, params string[] requiredPackages)
     {
-        using var workspace = new GeneratedTypeScriptTestWorkspace();
+        using var workspace = new GeneratedTypeScriptTestWorkspace(requiredPackages);
         var files = context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
         var sourcePaths = await workspace.WriteSources(files);
         var script = Bootstrap(workspace.Root, workspace.Modules, sourcePaths) + Environment.NewLine + runtimeScript;

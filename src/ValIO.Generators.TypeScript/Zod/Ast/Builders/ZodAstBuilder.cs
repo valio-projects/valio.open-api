@@ -24,6 +24,8 @@ public class ZodAstBuilder : AstBuilderBase
     private readonly INamingConverter _namingConverter;
     private readonly Func<IrType, TypeNode> _typeBuilder;
     private readonly bool _useBigInt;
+    /// <summary>Whether primitive schemas receive numeric tokens from the lossless codec.</summary>
+    private readonly bool _exactJsonNumbers;
     private readonly string? _uuidFormat;
 
     /// <summary>
@@ -34,19 +36,22 @@ public class ZodAstBuilder : AstBuilderBase
     /// <param name="typeBuilder">The conversion from an IR type to a TypeScript type node.</param>
     /// <param name="useBigInt">Whether int64 schemas validate bigint values.</param>
     /// <param name="uuidFormat">The selected UUID validation mode.</param>
+    /// <param name="exactJsonNumbers">Whether schemas validate numeric tokens before any floating-point conversion.</param>
     /// <exception cref="ArgumentNullException">A required dependency is null.</exception>
     public ZodAstBuilder(
         IrDocumentContext documentContext,
         INamingConverter namingConverter,
         Func<IrType, TypeNode> typeBuilder,
         bool useBigInt = false,
-        string? uuidFormat = null)
+        string? uuidFormat = null,
+        bool exactJsonNumbers = false)
         : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _typeBuilder = typeBuilder ?? throw new ArgumentNullException(nameof(typeBuilder));
         _useBigInt = useBigInt;
         _uuidFormat = uuidFormat;
+        _exactJsonNumbers = exactJsonNumbers;
     }
     
     /// <summary>
@@ -271,7 +276,8 @@ public class ZodAstBuilder : AstBuilderBase
         if (kind is IrPrimitiveKind.File)
             return BuildZodInstanceOf("File");
 
-        return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef, _uuidFormat, description);
+        return ZodExpressionBuilder.BuildPrimitiveExpression(kind, _useBigInt, constraints, constraintsRef, _uuidFormat, description,
+            exactJsonType: _exactJsonNumbers ? primitiveType : null);
     }
 
     /// <summary>Builds an instance validator matching the generated runtime binary type.</summary>

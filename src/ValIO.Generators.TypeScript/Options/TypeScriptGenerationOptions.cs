@@ -10,6 +10,10 @@ public sealed class TypeScriptGenerationOptions
     /// <value>False to retain the default result shape.</value>
     public bool IncludeResponseHeaders { get; set; }
 
+    /// <summary>Whether to preserve decimal and 64-bit integer tokens in JSON requests and responses.</summary>
+    /// <value>False unless the project selects the lossless JSON codec.</value>
+    public bool ExactJsonNumbers { get; set; }
+
     public List<string> Transports { get; set; } = ["fetch"];
     public string EnumFormat { get; set; } = "union";
     public string? ValidationLibrary { get; set; }

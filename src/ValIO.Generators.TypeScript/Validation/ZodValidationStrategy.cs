@@ -5,6 +5,7 @@ using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.TypeScript.Ast.Builders;
 using static ValIO.Generators.TypeScript.Validation.ValidationAst;
 
 namespace ValIO.Generators.TypeScript.Validation;
@@ -15,10 +16,18 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
     private readonly ZodSchemaExpressionBuilder _schema;
     private readonly string _importPath;
 
-    public ZodValidationStrategy(ZodSchemaExpressionBuilder schema, string importPath)
+    /// <summary>Whether inline Zod schemas decode numeric tokens before validating them.</summary>
+    private readonly bool _exactJsonNumbers;
+
+    /// <summary>Creates the validation strategy for a generated client's selected Zod version.</summary>
+    /// <param name="schema">The inline expression builder.</param>
+    /// <param name="importPath">The package import path for the selected Zod major version.</param>
+    /// <param name="exactJsonNumbers">Whether numeric schemas use the lossless JSON codec.</param>
+    public ZodValidationStrategy(ZodSchemaExpressionBuilder schema, string importPath, bool exactJsonNumbers = false)
     {
         _schema = schema;
         _importPath = importPath;
+        _exactJsonNumbers = exactJsonNumbers;
     }
 
     public bool IsEnabled => true;
@@ -43,14 +52,20 @@ internal sealed class ZodValidationStrategy : IClientValidationStrategy
         // `z` нужен только когда строится inline `z.*` (union/array/... в теле запроса);
         // `{Schema}.parse` (модели, параметры zod, вынесенные result-схемы) в `z` не нуждаются.
         inlineConstructedTypes.Any(ValidationTypes.NeedsConstructedSchema)
-            ? [ZodImport()]
+            ? _exactJsonNumbers && inlineConstructedTypes.Any(TypeScriptExactJson.UsesNumberCodec)
+                ? [ZodImport(), TypeScriptExactJson.Import()]
+                : [ZodImport()]
             : [];
 
     public IReadOnlyList<ImportNode> SchemaDefinitionImports(IReadOnlyCollection<IrType> definedTypes) =>
         // A schema-declaring file uses `z` (value) to build the schema and `ZodSchema` (type) to annotate the
         // const type (`export const XSchema: ZodSchema<X> = ...`). `ZodSchema` — только тип, поэтому под
         // `verbatimModuleSyntax` его нужно импортировать type-only (иначе TS1485), отдельной строкой от `z`.
-        definedTypes.Count > 0 ? [ZodImport(), ZodSchemaTypeImport()] : [];
+        definedTypes.Count > 0
+            ? _exactJsonNumbers && definedTypes.Any(TypeScriptExactJson.UsesNumberCodec)
+                ? [ZodImport(), ZodSchemaTypeImport(), TypeScriptExactJson.Import()]
+                : [ZodImport(), ZodSchemaTypeImport()]
+            : [];
 
     /// <inheritdoc/>
     public TypeNode? SchemaTypeAnnotation(string validatedTypeName) =>

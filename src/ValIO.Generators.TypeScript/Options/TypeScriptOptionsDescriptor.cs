@@ -1,5 +1,6 @@
 using System.Text.Json;
 using ValIO.Core.Plugins;
+using ValIO.Generators.TypeScript.Steps;
 
 namespace ValIO.Generators.TypeScript.Options;
 
@@ -93,6 +94,14 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
                 errorList.Add("Option 'includeResponseHeaders' must be a boolean");
         }
 
+        if (rawOptions.TryGetValue("exactJsonNumbers", out var exactJsonNumbers))
+        {
+            if (exactJsonNumbers.ValueKind is JsonValueKind.True or JsonValueKind.False)
+                opts.ExactJsonNumbers = exactJsonNumbers.GetBoolean();
+            else
+                errorList.Add("Option 'exactJsonNumbers' must be a boolean");
+        }
+
         if (rawOptions.TryGetValue("transports", out var transports))
         {
             if (transports.ValueKind == JsonValueKind.Array)
@@ -183,6 +192,7 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             opts.NextJs = nextOpts;
         }
 
+        errorList.AddRange(ValidateExactJsonNumbers(opts));
         errors = errorList.AsReadOnly();
         return opts;
     }
@@ -192,7 +202,30 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
         if (options is not TypeScriptGenerationOptions opts) return ["Invalid options type"];
         var errors = new List<string>();
         if (opts.Transports.Count == 0) errors.Add("At least one transport must be specified");
+        errors.AddRange(ValidateExactJsonNumbers(opts));
         return errors.AsReadOnly();
+    }
+
+    /// <summary>Checks that every selected consumer can use lossless JSON.</summary>
+    /// <param name="options">Normalized TypeScript generation options.</param>
+    /// <returns>Errors for incompatible options.</returns>
+    private static IEnumerable<string> ValidateExactJsonNumbers(TypeScriptGenerationOptions options)
+    {
+        if (!options.ExactJsonNumbers)
+            yield break;
+
+        if (options.ValidationLibrary != TypeScriptOptionIds.Validation.Zod4)
+            yield return "Option 'exactJsonNumbers' requires Zod 4";
+
+        if (options.Transports.Any(transport => transport is not ("axios" or "nextjs" or "fetch"))
+            || TypeScriptClientTransport.ResolveHookClientSuffix(options) == TypeScriptOptionIds.Transport.Ky)
+            yield return "Option 'exactJsonNumbers' supports only Axios, Next.js, and Fetch transports";
+
+        if (options.MockLibrary != null)
+            yield return "Option 'exactJsonNumbers' does not support generated mock handlers";
+
+        if (options.GenerateDefaultValues)
+            yield return "Option 'exactJsonNumbers' does not support generated model default value constants";
     }
 
     /// <inheritdoc />
@@ -200,6 +233,8 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
     [
         new(Name: "generateDefaultValues", Description: "Export explicitly specified non-null OpenAPI default values.",
             DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Models"),
+        new(Name: "exactJsonNumbers", Description: "Preserve decimal and int64 JSON numbers with lossless-json. Requires Zod 4.",
+            DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Clients"),
         new(Name: "includeResponseHeaders", Description: "Expose received headers on typed Axios and Next.js results using lowercase names.",
             DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Clients"),
         new(

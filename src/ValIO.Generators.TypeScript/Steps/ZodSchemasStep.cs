@@ -40,7 +40,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         var astBuilder = new TypeScriptAstBuilder(documentContext, _namingConverter, opts);
 
         var renderer = new ZodSchemaRenderer(documentContext, _namingConverter, astBuilder.BuildType, zodVersion: zodVersion,
-            modelsPath: modelsPath, uuidFormat: opts?.UuidFormat);
+            modelsPath: modelsPath, uuidFormat: opts?.UuidFormat, exactJsonNumbers: opts?.ExactJsonNumbers == true);
 
         foreach (var model in documentContext.ModelsInDependencyOrder)
         {
