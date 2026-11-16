@@ -176,4 +176,24 @@ public class TanStackQueryCacheKeyTests
         keys.Content.Should().Contain("`api:apartments:${params.route.id}`");
         keys.Content.Should().Contain("`api:apartments:${params.route.id}:investor`");
     }
+
+    /// <summary>Preserves the cache-tag callable shape when only the query-key factory uses filters.</summary>
+    /// <returns>The asynchronous generated-signature check.</returns>
+    [Test]
+    public async Task CacheTags_QueryOnly_UsesCompatibleUnusedParameterName()
+    {
+        var document = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var context = await _harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = ["nextjs", "axios"],
+            QueryWrapper = "tanstack-react",
+        });
+
+        var keys = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("listApartments.query-keys.ts", StringComparison.Ordinal));
+        keys.Content.Should().Contain("getListApartmentsCacheTags = (_params: ListApartmentsParams)");
+        keys.Content.Should().Contain("getListApartmentsQueryKey = (params: ListApartmentsParams)");
+
+        var nextJs = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("listApartments.nextjs.ts", StringComparison.Ordinal));
+        nextJs.Content.Should().Contain("getListApartmentsCacheTags(params)");
+    }
 }

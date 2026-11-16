@@ -24,25 +24,19 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
     private readonly INamingConverter _namingConverter;
     private readonly IClientValidationStrategy _validation;
     private readonly string _uuidFormat;
-    /// <summary>Whether exact schemas embed original bound tokens instead of numeric constraint constants.</summary>
-    private readonly bool _exactJsonNumbers;
-
-
     /// <summary>Creates a TypeScriptParamsSchemasAstBuilder for one finalized IR document.</summary>
     /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
     /// <param name="namingConverter">The generated identifier naming policy.</param>
     /// <param name="validation">The configured runtime validation strategy.</param>
     /// <param name="uuidFormat">The configured UUID format policy.</param>
-    /// <param name="exactJsonNumbers">Whether exact numeric parameters retain their original bound tokens.</param>
     /// <exception cref="ArgumentNullException">A required context or collaborator is null.</exception>
     internal TypeScriptParamsSchemasAstBuilder(IrDocumentContext documentContext,
-        INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat = null, bool exactJsonNumbers = false)
+        INamingConverter namingConverter, IClientValidationStrategy validation, string? uuidFormat = null)
         : base(documentContext)
     {
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
         _validation = validation ?? throw new ArgumentNullException(nameof(validation));
         _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
-        _exactJsonNumbers = exactJsonNumbers;
     }
 
     /// <summary>Имя константы схемы route-параметров: <c>{Op}RouteParamsSchema</c>.</summary>
@@ -53,10 +47,10 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
     public string QueryParamsSchemaName(string operationName)
         => $"{_namingConverter.ToPascalCase(operationName)}QueryParamsSchema";
 
-    /// <summary>
-    /// Строит файл со схемами параметров. Возвращает <c>null</c>, если валидация выключена или у
-    /// операции нет route/query параметров.
-    /// </summary>
+    /// <summary>Builds the route and query validation schemas and imports the constants they reference.</summary>
+    /// <param name="operation">The operation whose input is validated.</param>
+    /// <param name="fileOrganization">The configured output directories and grouping.</param>
+    /// <returns>The schema source file, or <see langword="null"/> when no parameter schemas are generated.</returns>
     public SourceFileNode? BuildParamsSchemasSourceFile(IrOperation operation, FileOrganization? fileOrganization)
     {
         if (!_validation.IsEnabled)
@@ -92,35 +86,28 @@ public sealed class TypeScriptParamsSchemasAstBuilder : AstBuilderBase
             return annotation;
         }
 
-        // Records constraint-constant names to import from ./{op}.params, and returns the ref prefix to pass to
-        // the validator — only when this validator references constants (Zod) and the group has constrained params.
         var constraintConstNames = new List<string>();
-        string? ConstraintsPrefix(IReadOnlyList<IrParameter> parameters, string constName)
+        var declarations = new List<DeclarationNode>();
+        void AddSchema(string name, IReadOnlyList<IrParameter> parameters, string summary, string interfaceName, string constName)
         {
-            if (!_validation.UsesConstraintConstants
-                || !parameters.Any(p => p.Constraints != null && TypeScriptConstraints.HasAnyConstraint(p.Constraints)
-                    && (!_exactJsonNumbers || TypeScriptExactJson.ExactPrimitive(p.Type) == null)))
-                return null;
-            constraintConstNames.Add(constName);
-            return constName;
+            var declaration = BuildParamsSchemaDeclaration(name, parameters, summary, Annotate(interfaceName),
+                _validation.UsesConstraintConstants ? constName : null);
+            declarations.Add(declaration);
+            if (TypeScriptIdentifierUsage.References(declaration, constName))
+                constraintConstNames.Add(constName);
         }
 
-        var declarations = new List<DeclarationNode>();
         if (hasRoute)
         {
             var routeInterface = useFlatOnly ? $"{opPascal}Params" : $"{opPascal}RouteParams";
-            declarations.Add(BuildParamsSchemaDeclaration(
-                RouteParamsSchemaName(operation.MethodName), operation.PathParameters,
-                "Route (path) parameter validation schema.", Annotate(routeInterface),
-                ConstraintsPrefix(operation.PathParameters, $"{opPascal}RouteParamsConstraints")));
+            AddSchema(RouteParamsSchemaName(operation.MethodName), operation.PathParameters,
+                "Route (path) parameter validation schema.", routeInterface, $"{opPascal}RouteParamsConstraints");
         }
         if (hasQuery)
         {
             var queryInterface = useFlatOnly ? $"{opPascal}Params" : $"{opPascal}QueryParams";
-            declarations.Add(BuildParamsSchemaDeclaration(
-                QueryParamsSchemaName(operation.MethodName), operation.QueryParameters,
-                "Query parameter validation schema.", Annotate(queryInterface),
-                ConstraintsPrefix(operation.QueryParameters, $"{opPascal}QueryParamsConstraints")));
+            AddSchema(QueryParamsSchemaName(operation.MethodName), operation.QueryParameters,
+                "Query parameter validation schema.", queryInterface, $"{opPascal}QueryParamsConstraints");
         }
 
         var paramTypes = operation.PathParameters.Concat(operation.QueryParameters).Select(p => p.Type).ToList();

@@ -122,4 +122,43 @@ public class ZodSchemasStepTests
             .And.Contain("z.union([CatSchema, DogSchema])");
         petSchema.Content.Should().NotContain("z.discriminatedUnion(");
     }
+
+    /// <summary>Imports constraint constants only where the generated validator reads them.</summary>
+    /// <returns>The asynchronous generated-import check.</returns>
+    [Test]
+    public async Task ZodSchemas_ImportUsedBoundsAndInlinePatterns()
+    {
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync("""
+            {
+              "openapi":"3.1.0",
+              "info":{"title":"Constraints","version":"1"},
+              "paths":{"/items/{id}":{"get":{
+                "operationId":"getItem",
+                "parameters":[
+                  {"in":"path","name":"id","required":true,"schema":{"type":"integer","minimum":1}},
+                  {"in":"query","name":"code","schema":{"type":"string","pattern":"^[a-z]+$"}}
+                ],
+                "responses":{"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/PatternOnly"}}}}}
+              }}},
+              "components":{"schemas":{
+                "PatternOnly":{"type":"object","properties":{"code":{"type":"string","pattern":"^[a-z]+$"}}},
+                "Bounded":{"type":"object","properties":{"code":{"type":"string","minLength":2,"pattern":"^[a-z]+$"}}}
+              }}
+            }
+            """);
+        var context = await _harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = ["nextjs"],
+            ValidationLibrary = "zod4",
+        });
+
+        var patternOnly = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("patternOnly.schema.ts", StringComparison.Ordinal));
+        patternOnly.Content.Should().Contain("new RegExp(").And.NotContain("PatternOnlyConstraints");
+
+        var bounded = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("bounded.schema.ts", StringComparison.Ordinal));
+        bounded.Content.Should().Contain("import { BoundedConstraints }").And.Contain("BoundedConstraints.code.minLength");
+
+        var parameters = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("getItem.params.schema.ts", StringComparison.Ordinal));
+        parameters.Content.Should().Contain("GetItemRouteParamsConstraints.id.min").And.NotContain("GetItemQueryParamsConstraints");
+    }
 }

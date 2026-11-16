@@ -62,26 +62,25 @@ public sealed class TypeScriptQueryKeysAstBuilder
         ArgumentNullException.ThrowIfNull(operation);
 
         var hookBaseName = _namingConverter.ToPascalCase(operation.MethodName);
-        var hasParams = HasParameters(operation);
-        var paramsTypeName = hasParams ? $"{hookBaseName}Params" : null;
+        var paramsTypeName = HasParameters(operation) ? $"{hookBaseName}Params" : null;
         var model = TypeScriptParameterModel.Create(operation);
 
         var declarations = new List<DeclarationNode>();
 
         if (includeQueryKeys)
         {
-            declarations.Add(BuildKeyFn($"get{hookBaseName}InfiniteQueryKey", operation, model, hasParams, paramsTypeName, includeInfinite: true));
-            declarations.Add(BuildKeyFn($"get{hookBaseName}QueryKey", operation, model, hasParams, paramsTypeName, includeInfinite: false));
+            declarations.Add(BuildKeyFn($"get{hookBaseName}InfiniteQueryKey", operation, model, paramsTypeName, includeInfinite: true));
+            declarations.Add(BuildKeyFn($"get{hookBaseName}QueryKey", operation, model, paramsTypeName, includeInfinite: false));
         }
 
         if (includeCacheTags)
         {
             declarations.Add(BuildBroadTagConst(operationFileName));
-            declarations.Add(BuildCacheTagsFn(operation, hookBaseName, operationFileName, model, hasParams, paramsTypeName));
+            declarations.Add(BuildCacheTagsFn(operation, hookBaseName, operationFileName, model, paramsTypeName));
         }
 
         var imports = new List<ImportNode>();
-        if (hasParams && paramsTypeName != null)
+        if (paramsTypeName != null)
             imports.Add(new ImportNode(
                 items: new[] { new IdentifierNode(paramsTypeName) }.ToImmutableList(),
                 from: $"./{operationFileName}.params",
@@ -103,7 +102,6 @@ public sealed class TypeScriptQueryKeysAstBuilder
     /// <param name="name">The exported function name (e.g. <c>getGetPetByIdQueryKey</c>).</param>
     /// <param name="operation">The IR operation.</param>
     /// <param name="model">The parameter model.</param>
-    /// <param name="hasParams">Whether the operation has params (drives the required <c>params</c> argument).</param>
     /// <param name="paramsTypeName">The params interface name, or <see langword="null"/> when absent.</param>
     /// <param name="includeInfinite">Whether this is the infinite-query key variant.</param>
     /// <returns>The exported arrow-function declaration.</returns>
@@ -111,21 +109,15 @@ public sealed class TypeScriptQueryKeysAstBuilder
         string name,
         IrOperation operation,
         TypeScriptParameterModel model,
-        bool hasParams,
         string? paramsTypeName,
         bool includeInfinite)
     {
         var elements = TypeScriptCacheKey.BuildKeyElements(operation, model, includeInfinite);
 
-        // params is required: the key inlines params.route.id / params.query, which cannot be reached when undefined.
-        var parameters = hasParams && paramsTypeName != null
-            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true) }.ToImmutableList()
-            : ImmutableList<ParameterDeclarationNode>.Empty;
-
         return new FunctionDeclarationNode(
             new IdentifierNode(name),
             returnType: new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true), isReadOnly: true),
-            parameters: parameters,
+            parameters: BuildKeyParameters(paramsTypeName, elements),
             body: new BlockNode(new StatementNode[]
             {
                 new ReturnStatementNode(new ArrayLiteralExpressionNode(elements.ToImmutableList(), preferMultilineFormat: true))
@@ -159,7 +151,6 @@ public sealed class TypeScriptQueryKeysAstBuilder
     /// <param name="hookBaseName">The PascalCase hook base name.</param>
     /// <param name="operationFileName">The camelCase operation file-name stem (broad-tag const name stem).</param>
     /// <param name="model">The parameter model.</param>
-    /// <param name="hasParams">Whether the operation has params.</param>
     /// <param name="paramsTypeName">The params interface name, or <see langword="null"/> when absent.</param>
     /// <returns>The exported arrow-function declaration returning <c>string[]</c>.</returns>
     private FunctionDeclarationNode BuildCacheTagsFn(
@@ -167,7 +158,6 @@ public sealed class TypeScriptQueryKeysAstBuilder
         string hookBaseName,
         string operationFileName,
         TypeScriptParameterModel model,
-        bool hasParams,
         string? paramsTypeName)
     {
         var elements = new List<ExpressionNode>
@@ -176,14 +166,10 @@ public sealed class TypeScriptQueryKeysAstBuilder
         };
         elements.AddRange(TypeScriptCacheKey.BuildTagExpressions(operation, model));
 
-        var parameters = hasParams && paramsTypeName != null
-            ? new[] { new ParameterDeclarationNode(new IdentifierNode("params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true) }.ToImmutableList()
-            : ImmutableList<ParameterDeclarationNode>.Empty;
-
         return new FunctionDeclarationNode(
             new IdentifierNode($"get{hookBaseName}CacheTags"),
             returnType: new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true)),
-            parameters: parameters,
+            parameters: BuildKeyParameters(paramsTypeName, elements),
             body: new BlockNode(new StatementNode[]
             {
                 new ReturnStatementNode(new ArrayLiteralExpressionNode(elements.ToImmutableList(), preferMultilineFormat: true))
@@ -192,6 +178,19 @@ public sealed class TypeScriptQueryKeysAstBuilder
             isAsync: false,
             documentation: new CommentNode("Next.js cache tags for this operation (broad tag + hierarchical resource tags; use with revalidateTag).", CommentKind.JSDoc),
             isExported: true);
+    }
+
+    /// <summary>Preserves the callable signature and marks a compatibility argument as intentionally unused.</summary>
+    /// <param name="paramsTypeName">The generated argument type, or <see langword="null"/> for a parameterless operation.</param>
+    /// <param name="elements">The emitted query-key or cache-tag expressions.</param>
+    /// <returns>The zero or one parameter declarations for the generated helper.</returns>
+    private static ImmutableList<ParameterDeclarationNode> BuildKeyParameters(string? paramsTypeName, IReadOnlyList<ExpressionNode> elements)
+    {
+        if (paramsTypeName == null)
+            return ImmutableList<ParameterDeclarationNode>.Empty;
+
+        var name = elements.Any(element => TypeScriptIdentifierUsage.References(element, "params")) ? "params" : "_params";
+        return [new ParameterDeclarationNode(new IdentifierNode(name), new SimpleTypeNode(new IdentifierNode(paramsTypeName), isPrimitive: false), isRequired: true)];
     }
 
     /// <summary>Mirror of <see cref="TypeScriptParamsAstBuilder.HasParameters"/> without a type-builder dependency.</summary>

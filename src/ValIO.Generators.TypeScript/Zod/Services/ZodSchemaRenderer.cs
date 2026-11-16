@@ -4,7 +4,6 @@ using System.Text;
 using ValIO.Core.Ast.Builders;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
-using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Utilities;
@@ -119,17 +118,12 @@ public class ZodSchemaRenderer : AstBuilderBase
             ? $"{NormalizePath(importPath)}/{modelFileName}/{modelFileName}"
             : BuildModelImportPathFromSchema(currentFileName, schemasPath, modelFileName);
 
-        var hasConstraints = model.Properties.Any(p => p.Constraints != null && HasAnyConstraint(p.Constraints)
-            && (!_exactJsonNumbers || TypeScriptExactJson.ExactPrimitive(p.Type) == null));
-        if (hasConstraints)
-        {
-            sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
-            sb.AppendLine($"import {{ {model.Name}Constraints }} from \"{modelImportPath}\";");
-        }
-        else
-        {
-            sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
-        }
+        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat, _exactJsonNumbers);
+        var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
+        var constraintsName = $"{model.Name}Constraints";
+        sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
+        if (TypeScriptIdentifierUsage.References(zodSchema, constraintsName))
+            sb.AppendLine($"import {{ {constraintsName} }} from \"{modelImportPath}\";");
 
         // Shared UUID regex constant (regex mode): schema sits in {schemas}/{name}/ → ../formats.
         if (UsesUuidRegex && UuidFormatSupport.ModelUsesUuid(model))
@@ -155,9 +149,6 @@ public class ZodSchemaRenderer : AstBuilderBase
         {
             CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
         }
-        
-        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat, _exactJsonNumbers);
-        var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
         
         var zodRenderer = new ZodAstRenderer();
         var zodSchemaCode = zodRenderer.RenderSchema(zodSchema);
@@ -245,15 +236,6 @@ public class ZodSchemaRenderer : AstBuilderBase
     private string SchemaType(string outputName) => new TypeScriptAstRenderer().Visit(
         ZodSchemaTypes.Build(new SimpleTypeNode(new IdentifierNode(outputName)), _zodImportPath));
     
-    /// <summary>
-    /// Извлекает зависимости из IR модели
-    /// </summary>
-    private static bool HasAnyConstraint(IrPropertyConstraints c)
-    {
-        return c.Min.HasValue || c.Max.HasValue || c.ExclusiveMin.HasValue || c.ExclusiveMax.HasValue
-            || c.MinLength.HasValue || c.MaxLength.HasValue || !string.IsNullOrEmpty(c.Pattern);
-    }
-
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
         var dependencies = new HashSet<string>();

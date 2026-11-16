@@ -41,12 +41,12 @@ public sealed class TypeScriptParamsSchemasStep : ICodeGenerationStep
         return ClientValidationStrategyFactory.Create(opts).IsEnabled;
     }
 
+    /// <inheritdoc/>
     public Task ExecuteAsync(GenerationContext context, CancellationToken ct = default)
     {
         var opts = context.PluginOptions as TypeScriptGenerationOptions;
         var validation = ClientValidationStrategyFactory.Create(opts);
-        var builder = new TypeScriptParamsSchemasAstBuilder(context.DocumentContext, _namingConverter, validation, opts?.UuidFormat,
-            opts?.ExactJsonNumbers == true);
+        var builder = new TypeScriptParamsSchemasAstBuilder(context.DocumentContext, _namingConverter, validation, opts?.UuidFormat);
 
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";
