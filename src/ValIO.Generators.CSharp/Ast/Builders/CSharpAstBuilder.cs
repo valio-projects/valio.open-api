@@ -926,9 +926,13 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         IReadOnlyList<AttributeNode>? enumAttributes = null;
         if (isStringEnum)
         {
+            var converterType = _options.StrictStringEnums
+                ? (TypeNode)new GenericTypeNode(new IdentifierNode("ValioStrictStringEnumConverter"),
+                    [BuildSimpleType(enumModel.Name)])
+                : BuildSimpleType("JsonStringEnumConverter");
             var jsonConverterAttribute = new AttributeNode(
                 new IdentifierNode("JsonConverter"),
-                new ExpressionNode[] { new TypeOfExpressionNode(BuildSimpleType("JsonStringEnumConverter")) }.ToImmutableList());
+                new ExpressionNode[] { new TypeOfExpressionNode(converterType) }.ToImmutableList());
             enumAttributes = new[] { jsonConverterAttribute }.ToImmutableList();
         }
 

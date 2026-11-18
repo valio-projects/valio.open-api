@@ -3,6 +3,7 @@ using NUnit.Framework;
 using ValIO.Core.IR;
 using ValIO.Generators.CSharp.Ast.Builders;
 using ValIO.Generators.CSharp.Ast.Renderers;
+using ValIO.Generators.CSharp.Options;
 using ValIO.Generators.CSharp.Services;
 
 namespace ValIO.Generators.CSharp.Tests.Builders;
@@ -42,6 +43,24 @@ public class CSharpAstBuilderEnumSerializationTests
 
         code.Should().Contain("using System.Text.Json.Serialization;");
         code.Should().Contain("[JsonConverter(typeof(JsonStringEnumConverter))]");
+    }
+
+    /// <summary>Uses the strict converter only when the output profile asks to reject numeric input.</summary>
+    [Test]
+    public void StringEnum_UsesStrictConverterWhenEnabled()
+    {
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []),
+            new CSharpGenerationOptions { StrictStringEnums = true });
+        var enumIr = new IrEnum
+        {
+            Name = "OrderStatus",
+            BaseType = IrEnumBaseType.String,
+            Values = [new IrEnumValue { Name = "InProgress", Value = "in_progress" }],
+        };
+
+        var code = _renderer.Render(builder.BuildCompilationUnit(enumIr, "Test.Ns"));
+
+        code.Should().Contain("[JsonConverter(typeof(ValioStrictStringEnumConverter<OrderStatus>))]");
     }
 
     [Test]

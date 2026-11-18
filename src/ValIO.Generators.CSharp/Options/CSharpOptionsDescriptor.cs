@@ -56,6 +56,8 @@ public sealed class CSharpOptionsDescriptor : IGeneratorOptionsDescriptor
             Kind: OptionKind.Bool, Group: "Models"),
         new("useSealed", "Seal terminal model classes while keeping generated base classes open.", "false", false,
             Kind: OptionKind.Bool, Group: "Models"),
+        new("strictStringEnums", "Reject numeric input for string enum schemas.", "false", false,
+            Kind: OptionKind.Bool, Group: "Models"),
         new("modelType", "Model declaration kind; currently only Class is implemented.", "Class", false,
             Kind: OptionKind.String, Group: "Models"),
         new("generateEqualityMembers", "Generate null-safe typed equality and hashing methods.", "true", false,
