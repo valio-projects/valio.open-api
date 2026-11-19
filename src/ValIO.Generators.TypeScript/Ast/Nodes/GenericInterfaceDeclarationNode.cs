@@ -3,7 +3,7 @@ using ValIO.Core.Ast.Nodes;
 
 namespace ValIO.Generators.TypeScript.Ast.Nodes;
 
-/// <summary>Preserves a TypeScript interface declaration while introducing scoped type parameters.</summary>
+/// <summary>Represents a TypeScript interface with type parameters scoped to its declaration.</summary>
 public sealed class GenericInterfaceDeclarationNode : InterfaceDeclarationNode
 {
     /// <summary>Creates an exported interface with the specified type parameter defaults and members.</summary>

@@ -133,7 +133,7 @@ public sealed class TanStackQueryTypeBuilder
     /// <param name="dataType">The wire response envelope.</param>
     /// <param name="isInfinite">Whether the observer reads accumulated pages.</param>
     /// <param name="additionalMembers">Operation-specific options beside the query and request options.</param>
-    /// <returns>The generic options interface with its original default data type.</returns>
+    /// <returns>The options interface with its default observer data type.</returns>
     public InterfaceDeclarationNode BuildQueryOptionsParamsInterface(
         string hookBaseName,
         TypeNode dataType,
@@ -175,9 +175,9 @@ public sealed class TanStackQueryTypeBuilder
         return new TypeAliasDeclarationNode(new IdentifierNode(name), type, genericParameters: BuildQueryDataParameters(dataType, isInfinite));
     }
 
-    /// <summary>Declares the selected value, defaulting to the original untransformed observer result.</summary>
+    /// <summary>Declares the selected value, defaulting to the wire response or the accumulated pages.</summary>
     /// <param name="dataType">The wire response envelope.</param>
-    /// <param name="isInfinite">Whether the original result contains accumulated pages.</param>
+    /// <param name="isInfinite">Whether the observer reads accumulated pages.</param>
     /// <returns>The single declaration for the observer's <c>TData</c>.</returns>
     public static IReadOnlyList<GenericParameterNode> BuildQueryDataParameters(TypeNode dataType, bool isInfinite = false) =>
         [new(new IdentifierNode("TData"), @default: isInfinite ? InfiniteData(dataType) : dataType)];
