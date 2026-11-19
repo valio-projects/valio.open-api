@@ -7,9 +7,9 @@ using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
+using ValIO.Core.IR.Utilities;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
-using ValIO.Core.IR.Utilities;
 using ValIO.Generators.TypeScript.Zod.Ast.Enums;
 using ValIO.Generators.TypeScript.Zod.Ast.Nodes;
 using ValIO.Generators.TypeScript.Validation;
@@ -77,12 +77,11 @@ public class ZodAstBuilder : AstBuilderBase
                     var allOfSchemas = model.Composition.Types
                         .Select(t => BuildZodSchemaFromIrType(t, model.Name))
                         .ToList();
-                    // Свойства базы приходят из BaseSchema (первый член intersection); собственный object
-                    // не переобъявляет их, иначе выведенный тип object не совпадает с интерфейсом (TS2322).
-                    var allOfOwnProps = IrInheritanceResolver.ExcludeInheritedProperties(model, model.Properties, ModelsByName);
-                    if (allOfOwnProps.Count > 0)
+                    // Preserve local narrowing while avoiding duplicate inherited validation.
+                    var ownProperties = ExcludeIdenticalInheritedProperties(model);
+                    if (ownProperties.Count > 0)
                     {
-                        var ownPropsSchema = BuildZodObject(model, allOfOwnProps);
+                        var ownPropsSchema = BuildZodObject(model, ownProperties);
                         allOfSchemas.Add(ownPropsSchema);
                     }
                     if (allOfSchemas.Count == 0)
@@ -95,6 +94,49 @@ public class ZodAstBuilder : AstBuilderBase
 
         return BuildZodObject(model);
     }
+
+    /// <summary>Исключает унаследованные свойства, только если все соответствующие объявления в базовых типах имеют одинаковые правила проверки.</summary>
+    /// <param name="model">Модель allOf, локальные свойства которой проверяются.</param>
+    /// <returns>Локальные свойства, добавляющие или изменяющие правила проверки.</returns>
+    private IReadOnlyList<IrProperty> ExcludeIdenticalInheritedProperties(IrModel model)
+    {
+        var inherited = new Dictionary<string, List<IrProperty>>(StringComparer.Ordinal);
+        var visited = new HashSet<string>(StringComparer.Ordinal) { model.Name };
+        var pending = new Stack<IrModel>();
+        pending.Push(model);
+        while (pending.TryPop(out var current))
+        {
+            if (current.Composition is not { Kind: IrCompositionKind.AllOf } composition)
+                continue;
+            foreach (var reference in composition.Types.OfType<IrModelReference>())
+            {
+                if (!visited.Add(reference.ModelName) || !ModelsByName.TryGetValue(reference.ModelName, out var parent))
+                    continue;
+                foreach (var property in parent.Properties)
+                {
+                    if (!inherited.TryGetValue(property.OriginalName, out var matches))
+                        inherited[property.OriginalName] = matches = [];
+                    matches.Add(property);
+                }
+                pending.Push(parent);
+            }
+        }
+
+        return model.Properties.Where(property =>
+            !inherited.TryGetValue(property.OriginalName, out var matches) ||
+            !matches.All(parent => SameValidation(property, parent))).ToArray();
+    }
+
+    /// <summary>Сравнивает обязательность свойства, тип значения и ограничения проверки.</summary>
+    /// <param name="first">Локальное объявление.</param>
+    /// <param name="second">Унаследованное объявление.</param>
+    /// <returns>True, если оба объявления задают одинаковые правила проверки.</returns>
+    private static bool SameValidation(IrProperty first, IrProperty second) =>
+        first.IsRequired == second.IsRequired &&
+        IrTypeComparer.AreSemanticallyEqual(first.Type, second.Type, ignorePresence: false) &&
+        (first.Constraints == second.Constraints ||
+            first.Constraints is not null && second.Constraints is not null &&
+            ValidationConstraints.Equivalent(first.Constraints, second.Constraints));
 
     /// <summary>
     /// Строит ZodObjectNode из IrModel (только properties, без composition)
@@ -117,9 +159,9 @@ public class ZodAstBuilder : AstBuilderBase
         return new ZodObjectNode(props);
     }
 
-    /// <summary>
-    /// Строит ZodObjectNode из списка IrParameter (для route/query params)
-    /// </summary>
+    /// <summary>Создаёт схему объекта для параметров маршрута или запроса.</summary>
+    /// <param name="parameters">Преобразуемые определения параметров.</param>
+    /// <returns>Схема объекта Zod, сохраняющая необязательность и допустимость null для параметров.</returns>
     public ZodObjectNode BuildZodObjectFromParameters(IReadOnlyList<IrParameter> parameters)
     {
         var properties = parameters
@@ -337,21 +379,14 @@ public class ZodAstBuilder : AstBuilderBase
         return new ZodArrayNode(elementSchema);
     }
     
-    /// <summary>
-    /// Builds a record schema that validates both keys and values, preserving recursive references.
-    /// </summary>
-    /// <param name="dictionaryType">The dictionary type to validate.</param>
-    /// <param name="currentModelName">The containing model, used for lazy self references.</param>
-    /// <returns>A record expression compatible with Zod 3 and Zod 4.</returns>
+    /// <summary>Создаёт запись со строковыми ключами, сохраняя схему значений и контекст рекурсивной модели.</summary>
+    /// <param name="dictionaryType">Преобразуемый тип словаря.</param>
+    /// <param name="currentModelName">Содержащая модель для отложенного разрешения ссылок на себя.</param>
+    /// <returns>Схема записи Zod с преобразованным типом значения.</returns>
     private ZodSchemaNode BuildZodDictionary(IrDictionaryType dictionaryType, string? currentModelName)
     {
-        return new ZodExpressionSchemaNode(new CallExpressionNode(
-            new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode("z")),
-                new IdentifierNode("record")),
-            ImmutableList.Create<ExpressionNode>(
-                BuildZodSchemaFromIrType(dictionaryType.KeyType, currentModelName),
-                BuildZodSchemaFromIrType(dictionaryType.ValueType, currentModelName))));
+        var valueSchema = BuildZodSchemaFromIrType(dictionaryType.ValueType, currentModelName);
+        return new ZodRecordNode(BuildZodSchemaFromIrType(dictionaryType.KeyType, currentModelName), valueSchema);
     }
     
     /// <summary>

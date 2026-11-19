@@ -139,7 +139,7 @@ public static class TypeScriptWireParameterObject
         {
             var value = valueFactory(parameter);
             var assignment = new PropertyAssignmentNode(WireKey(parameter.OriginalName), value);
-            var mayBeUndefined = sourceMayBeUndefined || !parameter.IsRequired;
+            var mayBeUndefined = sourceMayBeUndefined || TypeScriptParameterModel.IsOptional(parameter);
 
             if (!omitUndefinedValues || !mayBeUndefined)
             {

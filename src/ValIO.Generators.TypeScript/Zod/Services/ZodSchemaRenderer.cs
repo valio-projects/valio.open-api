@@ -61,7 +61,9 @@ public class ZodSchemaRenderer : AstBuilderBase
 
     // `ZodSchema` — только тип: под `verbatimModuleSyntax` его импортируем type-only (иначе TS1485),
     // отдельной строкой от значения `z`.
-    private string ZodImportLine => $"import {{ z }} from '{_zodImportPath}';\nimport type {{ ZodSchema }} from '{_zodImportPath}';";
+    /// <summary>Формирует импорты значений и типов с разделителем строк текущей платформы.</summary>
+    /// <value>Два объявления импорта Zod.</value>
+    private string ZodImportLine => $"import {{ z }} from '{_zodImportPath}';{Environment.NewLine}import type {{ ZodSchema }} from '{_zodImportPath}';";
 
     private bool UsesUuidRegex => _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex;
 
