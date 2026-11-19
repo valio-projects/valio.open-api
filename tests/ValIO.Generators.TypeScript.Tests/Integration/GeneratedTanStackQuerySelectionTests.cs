@@ -11,7 +11,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [Category("NodeIntegration")]
 public sealed class GeneratedTanStackQuerySelectionTests
 {
-    /// <summary>Verifies selected results, raw cache callbacks, and compatibility with untransformed calls.</summary>
+    /// <summary>Checks observer projections, cache callback types, and the response type for calls without a selector.</summary>
     /// <param name="transport">The generated transport backing the hook.</param>
     /// <returns>The generation and strict TypeScript compilation task.</returns>
     [TestCase("fetch")]
@@ -37,9 +37,9 @@ public sealed class GeneratedTanStackQuerySelectionTests
 
             declare const queryClient: QueryClient;
 
-            const legacyOptions: GetGetUsersQueryOptionsParams = { query: { enabled: true } };
-            const legacyResult: UseQueryResult<GetUsersQueryResult, Error> = useGetUsers(legacyOptions);
-            const rawResult: GetUsersQueryResult | undefined = legacyResult.data;
+            const optionsWithoutSelect: GetGetUsersQueryOptionsParams = { query: { enabled: true } };
+            const unselectedResult: UseQueryResult<GetUsersQueryResult, Error> = useGetUsers(optionsWithoutSelect);
+            const rawResult: GetUsersQueryResult | undefined = unselectedResult.data;
 
             const projected = useGetUsers({ query: {
                 select: response => response.isSuccessful ? response.status : 0,

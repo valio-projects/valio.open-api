@@ -384,7 +384,7 @@ public sealed class TanStackQueryHookAstBuilder : AstBuilderBase
             new[] { new ParameterDeclarationNode(new IdentifierNode("context"), contextType, isRequired: true) }.ToImmutableList(),
             queryFnExpr);
 
-        // Only the generated transport and cache identity take precedence over caller options.
+        // The transport uses the generated query function. An explicit query key overrides the operation key.
         var returnObjProps = new List<PropertyAssignmentNode>
         {
             new(new IdentifierNode("query"), queryOptsRef, isSpread: true),
