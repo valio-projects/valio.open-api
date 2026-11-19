@@ -4,10 +4,8 @@ using ValIO.Core.Ast.Visitors;
 
 namespace ValIO.Core.Ast.Nodes;
 
-/// <summary>
-/// Узел объявления интерфейса (общий для C# и TypeScript)
-/// </summary>
-public sealed class InterfaceDeclarationNode : TypeDeclarationNode
+/// <summary>Describes an interface declaration shared by C# and TypeScript renderers.</summary>
+public class InterfaceDeclarationNode : TypeDeclarationNode
 {
     
     /// <summary>
