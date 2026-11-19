@@ -15,8 +15,8 @@
 - ✅ Обновлены все query functions (useQuery, useInfiniteQuery, prefetch) - теперь queryFn принимает `{ signal }` и передает signal в клиентский метод
 
 ### 3. useInfiniteQuery
-- ✅ Добавлены `initialPageParam: 0` и `getNextPageParam: (lastPage) => lastPage.nextCursor` (обязательные параметры в TanStack Query v5)
-- ✅ queryFn правильно принимает `{ signal }` и передает его в клиентский метод
+- По умолчанию запрос читает одну страницу. Приложение задаёт номер первой страницы в `query.initialPageParam` и вычисляет следующую в `query.getNextPageParam` по контракту конкретного сервиса.
+- Для операции с query-параметрами `getPageQuery(pageParam)` сопоставляет числовой параметр страницы с объявленными полями запроса. Транспорт сохраняет исходные фильтры, параметры маршрута и `AbortSignal` из TanStack Query.
 
 ### 4. Query Key функция
 - ✅ Query key функция корректно формирует массив с path и параметрами
@@ -117,28 +117,20 @@ export function useXxx<TData = XxxAwaitedReturnType, TError = Error>(
 ```
 
 ### Infinite Query Hook
+
+В тестовой схеме Apartments параметры `city` и `page` принадлежат query. Сервер возвращает массив квартир. В этом примере приложение ожидает максимум 20 квартир на странице.
+
 ```typescript
-export function useXxxInfinite<TData = InfiniteData<XxxAwaitedReturnType, unknown>, TError = Error>(
-  id: string,
-  params?: XxxParams,
-  options?: {
-    query?: UseInfiniteQueryOptions<...>;
-  }
-) : UseInfiniteQueryResult<TData, TError> {
-  const queryKey = getXxxQueryKey(id, params);
-  const queryFn: QueryFunction<XxxAwaitedReturnType, QueryKey, unknown> = ({ signal }) => {
-    return xxx(id, params, signal, timeout, axiosInstance);
-  };
-  
-  return useInfiniteQuery<XxxAwaitedReturnType, TError, TData, QueryKey, unknown>({
-    queryKey,
-    queryFn,
-    initialPageParam: 0,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    enabled: true,
-    ...options
-  });
-}
+const apartments = useListApartmentsInfinite({ city: 'Oslo' }, {
+  getPageQuery: page => ({ page }),
+  query: {
+    initialPageParam: 1,
+    getNextPageParam: (last, _, page) =>
+      last.isSuccessful && Array.isArray(last.body) && last.body.length === 20
+        ? page + 1
+        : undefined,
+  },
+});
 ```
 
 ## Сравнение со старой реализацией
