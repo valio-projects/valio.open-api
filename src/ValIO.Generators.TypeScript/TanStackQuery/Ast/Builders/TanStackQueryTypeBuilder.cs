@@ -128,62 +128,86 @@ public sealed class TanStackQueryTypeBuilder
         return new TypeAliasDeclarationNode(new IdentifierNode($"Get{hookBaseName}MutationOptionsResult"), type);
     }
 
+    /// <summary>Declares the options override with a selectable observer data type.</summary>
+    /// <param name="hookBaseName">The PascalCase operation name.</param>
+    /// <param name="dataType">The wire response envelope.</param>
+    /// <param name="isInfinite">Whether the observer reads accumulated pages.</param>
+    /// <param name="additionalMembers">Operation-specific options beside the query and request options.</param>
+    /// <returns>The generic options interface with its original default data type.</returns>
     public InterfaceDeclarationNode BuildQueryOptionsParamsInterface(
         string hookBaseName,
         TypeNode dataType,
-        bool isInfinite)
+        bool isInfinite,
+        IReadOnlyList<DeclarationNode>? additionalMembers = null)
     {
-        var queryKeyType = BuildQueryKeyReturnType();
-        // UseQueryOptions<TQueryFnData, TError, TData, TQueryKey> - 4 params
-        // UseInfiniteQueryOptions<TQueryFnData, TError, TData, TQueryKey, TPageParam> - 5 params
-        TypeNode queryPropType = isInfinite
-            ? Partial(GenericType("UseInfiniteQueryOptions", dataType, SimpleType("Error"), InfiniteData(dataType), queryKeyType, SimpleType("number", isPrimitive: true)))
-            : Partial(GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, queryKeyType));
-        return new InterfaceDeclarationNode(
+        var selectedData = SimpleType("TData");
+        var queryType = isInfinite ? BuildUseInfiniteQueryOptionsType(dataType, selectedData) : BuildUseQueryOptionsType(dataType, selectedData);
+        var members = new List<DeclarationNode>
+        {
+            new PropertySignatureNode(new IdentifierNode("query"), Partial(queryType), isRequired: false),
+            new PropertySignatureNode(
+                new IdentifierNode("request"),
+                SimpleType(_hookUsesAxios ? "AxiosRequestConfig" : "RequestInit"),
+                isRequired: false)
+        };
+        if (additionalMembers != null)
+            members.AddRange(additionalMembers);
+
+        return new GenericInterfaceDeclarationNode(
             name: new IdentifierNode($"Get{hookBaseName}{(isInfinite ? "Infinite" : "")}QueryOptionsParams"),
-            accessModifier: AccessModifier.Public,
-            baseTypes: ImmutableList<TypeNode>.Empty,
-            members: new List<DeclarationNode>
-            {
-                new PropertySignatureNode(
-                    new IdentifierNode("query"),
-                    queryPropType,
-                    isRequired: false),
-                new PropertySignatureNode(
-                    new IdentifierNode("request"),
-                    SimpleType(_hookUsesAxios ? "AxiosRequestConfig" : "RequestInit"),
-                    isRequired: false)
-            }.ToImmutableList());
+            genericParameters: BuildQueryDataParameters(dataType, isInfinite),
+            members: members);
     }
 
+    /// <summary>Declares the full TanStack options returned by an operation's options factory.</summary>
+    /// <param name="hookBaseName">The PascalCase operation name.</param>
+    /// <param name="dataType">The wire response envelope.</param>
+    /// <param name="isInfinite">Whether the observer reads accumulated pages.</param>
+    /// <returns>The result alias with its own scoped observer data parameter.</returns>
     public TypeAliasDeclarationNode BuildQueryOptionsResultTypeAlias(
         string hookBaseName,
         TypeNode dataType,
         bool isInfinite)
     {
         var name = $"Get{hookBaseName}{(isInfinite ? "Infinite" : "")}QueryOptionsResult";
-        var queryKeyType = BuildQueryKeyReturnType();
-        var type = isInfinite
-            ? GenericType("UseInfiniteQueryOptions", dataType, SimpleType("Error"), InfiniteData(dataType), queryKeyType, SimpleType("number", isPrimitive: true))
-            : GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, queryKeyType);
-        return new TypeAliasDeclarationNode(new IdentifierNode(name), type);
+        var selectedData = SimpleType("TData");
+        var type = isInfinite ? BuildUseInfiniteQueryOptionsType(dataType, selectedData) : BuildUseQueryOptionsType(dataType, selectedData);
+        return new TypeAliasDeclarationNode(new IdentifierNode(name), type, genericParameters: BuildQueryDataParameters(dataType, isInfinite));
     }
 
-    /// <summary>UseQueryOptions для getXxxQueryOptions (4 params: TQueryFnData, TError, TData, TQueryKey)</summary>
-    public TypeNode BuildUseQueryOptionsType(TypeNode dataType) =>
-        GenericType("UseQueryOptions", dataType, SimpleType("Error"), dataType, BuildQueryKeyReturnType());
+    /// <summary>Declares the selected value, defaulting to the original untransformed observer result.</summary>
+    /// <param name="dataType">The wire response envelope.</param>
+    /// <param name="isInfinite">Whether the original result contains accumulated pages.</param>
+    /// <returns>The single declaration for the observer's <c>TData</c>.</returns>
+    public static IReadOnlyList<GenericParameterNode> BuildQueryDataParameters(TypeNode dataType, bool isInfinite = false) =>
+        [new(new IdentifierNode("TData"), @default: isInfinite ? InfiniteData(dataType) : dataType)];
 
-    /// <summary>UseInfiniteQueryOptions для getXxxInfiniteQueryOptions (TQueryFnData=page, TPageParam=number)</summary>
-    public TypeNode BuildUseInfiniteQueryOptionsType(TypeNode dataType)
-    {
-        return GenericType("UseInfiniteQueryOptions", dataType, SimpleType("Error"), InfiniteData(dataType), BuildQueryKeyReturnType(), SimpleType("number", isPrimitive: true));
-    }
+    /// <summary>Builds ordinary query options with independent wire and selected data types.</summary>
+    /// <param name="dataType">The wire response envelope used by the query function and cache callbacks.</param>
+    /// <param name="selectedDataType">The observer projection, or null to keep the wire envelope.</param>
+    /// <returns>The TanStack ordinary query options type.</returns>
+    public TypeNode BuildUseQueryOptionsType(TypeNode dataType, TypeNode? selectedDataType = null) =>
+        GenericType("UseQueryOptions", dataType, SimpleType("Error"), selectedDataType ?? dataType, BuildQueryKeyReturnType());
 
+    /// <summary>Builds infinite options with numeric page parameters and independent observer data.</summary>
+    /// <param name="dataType">The wire response envelope for one page.</param>
+    /// <param name="selectedDataType">The observer projection, or null to keep the accumulated pages.</param>
+    /// <returns>The TanStack infinite query options type.</returns>
+    public TypeNode BuildUseInfiniteQueryOptionsType(TypeNode dataType, TypeNode? selectedDataType = null) =>
+        GenericType("UseInfiniteQueryOptions", dataType, SimpleType("Error"), selectedDataType ?? InfiniteData(dataType), BuildQueryKeyReturnType(), SimpleType("number", isPrimitive: true));
+
+    /// <summary>Builds the ordinary observer result exposed to the hook caller.</summary>
+    /// <param name="dataType">The observer data type after any selection.</param>
+    /// <returns>The TanStack ordinary query result type.</returns>
     public TypeNode BuildUseQueryResultType(TypeNode dataType) =>
         GenericType("UseQueryResult", dataType, SimpleType("Error"));
 
-    public TypeNode BuildUseInfiniteQueryResultType(TypeNode dataType) =>
-        GenericType("UseInfiniteQueryResult", InfiniteData(dataType), SimpleType("Error"));
+    /// <summary>Builds the infinite observer result exposed to the hook caller.</summary>
+    /// <param name="dataType">The wire response envelope for one page.</param>
+    /// <param name="selectedDataType">The observer projection, or null to keep the accumulated pages.</param>
+    /// <returns>The TanStack infinite query result type.</returns>
+    public TypeNode BuildUseInfiniteQueryResultType(TypeNode dataType, TypeNode? selectedDataType = null) =>
+        GenericType("UseInfiniteQueryResult", selectedDataType ?? InfiniteData(dataType), SimpleType("Error"));
 
     public TypeNode BuildUseMutationResultType(TypeNode dataType, TypeNode variablesType) =>
         GenericType("UseMutationResult", dataType, SimpleType("Error"), variablesType);

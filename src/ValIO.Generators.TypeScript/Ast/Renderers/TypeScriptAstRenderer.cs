@@ -743,6 +743,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         return declaration.Accept(this);
     }
 
+    /// <summary>Renders an interface and its optional TypeScript type parameter declarations.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The interface declaration.</param>
+    /// <param name="indentLevel">The declaration indentation level.</param>
     private void RenderInterface(StringBuilder sb, InterfaceDeclarationNode node, int indentLevel)
     {
         // JSDoc комментарий
@@ -755,7 +759,8 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // Для TypeScript interface всегда export
         var exportKeyword = "export "; // Всегда экспортируем интерфейсы
         var baseTypes = node.BaseTypes.Count > 0 ? $" extends {string.Join(", ", node.BaseTypes.Select(RenderType))}" : "";
-        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}interface {node.Name.Name}{baseTypes} {{");
+        var genericParameters = node is GenericInterfaceDeclarationNode generic ? RenderGenericParameters(generic.GenericParameters) : "";
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}interface {node.Name.Name}{genericParameters}{baseTypes} {{");
         
         // Члены interface
         foreach (var member in node.Members)
@@ -773,6 +778,10 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         CodeFormatter.AppendLine(sb, indentLevel, "}");
     }
 
+    /// <summary>Renders a TypeScript alias, including the type parameters scoped to its right-hand side.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The type alias declaration.</param>
+    /// <param name="indentLevel">The declaration indentation level.</param>
     private void RenderTypeAlias(StringBuilder sb, TypeAliasDeclarationNode node, int indentLevel)
     {
         // JSDoc комментарий
@@ -785,8 +794,14 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // Для TypeScript type alias всегда export
         var exportKeyword = "export "; // Всегда экспортируем type aliases
         var type = RenderType(node.Type);
-        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name} = {type};");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}type {node.Name.Name}{RenderGenericParameters(node.GenericParameters)} = {type};");
     }
+
+    /// <summary>Formats declared parameters with their constraints and defaults.</summary>
+    /// <param name="parameters">The type parameters in declaration order.</param>
+    /// <returns>The angle-bracketed declarations, or an empty string if none are present.</returns>
+    private string RenderGenericParameters(IReadOnlyList<GenericParameterNode> parameters) =>
+        parameters.Count > 0 ? "<" + string.Join(", ", parameters.Select(VisitGenericParameter)) + ">" : "";
 
     /// <summary>Renders a function declaration and its JSDoc annotations.</summary>
     /// <param name="sb">The output buffer.</param>
@@ -872,9 +887,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var exportKeyword = node.IsExported ? "export " : "";
         var asyncKeyword = node.IsAsync ? "async " : "";
         var functionKeyword = node.IsArrowFunction ? "" : "function ";
-        var genericParamsStr = node.GenericParameters.Count > 0
-            ? "<" + string.Join(", ", node.GenericParameters.Select(VisitGenericParameter)) + ">"
-            : "";
+        var genericParamsStr = RenderGenericParameters(node.GenericParameters);
         var useMultilineParams = node.Parameters.Count >= 2;
         var paramsIndent = new string(' ', (indentLevel + 1) * 4);
         var parametersStr = useMultilineParams
@@ -914,11 +927,11 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
             if (node.Body != null && node.Body.Statements.Count == 1 && node.Body.Statements[0] is ReturnStatementNode returnStmt && returnStmt.Value != null)
             {
                 var bodyExpression = Visit(returnStmt.Value);
-                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {genericParamsStr}{asyncKeyword}({parametersStr}){returnType} => {bodyExpression};");
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}{genericParamsStr}({parametersStr}){returnType} => {bodyExpression};");
             }
             else
             {
-                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {genericParamsStr}{asyncKeyword}({parametersStr}){returnType} => {{");
+                CodeFormatter.AppendLine(sb, indentLevel, $"{exportKeyword}const {node.Name.Name} = {asyncKeyword}{genericParamsStr}({parametersStr}){returnType} => {{");
                 if (node.Body != null && node.Body.Statements.Count > 0)
                 {
                     var savedIndent = _indentLevel;
