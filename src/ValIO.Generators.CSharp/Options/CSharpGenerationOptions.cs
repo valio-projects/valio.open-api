@@ -26,8 +26,8 @@ public sealed class CSharpGenerationOptions
     /// <value>Whether to prevent inheritance from models with no generated descendants.</value>
     public bool UseSealed { get; set; }
 
-    /// <summary>Gets or sets whether generated string enums reject numeric JSON and numeric spellings.</summary>
-    /// <value>True to keep the JSON representation restricted to string enum members.</value>
+    /// <summary>Gets or sets whether string enum JSON is restricted to the declared OpenAPI wire strings.</summary>
+    /// <value>True to require ordinal matching and reject undeclared values.</value>
     public bool StrictStringEnums { get; set; }
 
     /// <summary>Gets or sets the requested model declaration kind.</summary>

@@ -1,4 +1,5 @@
 using ValIO.Core.Interfaces;
+using ValIO.Core.Models;
 using ValIO.Core.Plugins;
 using ValIO.Generators.CSharp.Ast.Builders;
 using ValIO.Generators.CSharp.Ast.Renderers;
@@ -39,7 +40,10 @@ public sealed class CSharpModelsStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as CSharpGenerationOptions;
         var ns = opts?.Namespace ?? context.Configuration.Namespace ?? "Generated";
-        var builder = new CSharpAstBuilder(_namingConverter, context.DocumentContext, opts);
+        var builder = new CSharpAstBuilder(_namingConverter, context.DocumentContext, opts)
+        {
+            UsePascalCaseProperties = context.Configuration.NamingConvention.Properties == NamingConvention.PascalCase
+        };
 
         foreach (var model in context.DocumentContext.ModelsInDependencyOrder)
             AddModelFile(context, builder, model, ns);

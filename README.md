@@ -89,6 +89,13 @@ public sealed class PetStoreClient(HttpClient http)
 }
 ```
 
+To generate PascalCase C# properties with exact JSON field names, set
+`namingConvention.properties` to `PascalCase` in the C# project in `valio.config.json`.
+Every property in that profile carries its original OpenAPI name as `JsonPropertyName`.
+Set `options.strictStringEnums` to `true` for ordinal matching of the declared string enum values.
+The generated client XML documentation includes the operation summary, parameter
+and request-body descriptions, and the successful response description.
+
 ## Architecture
 
 ```

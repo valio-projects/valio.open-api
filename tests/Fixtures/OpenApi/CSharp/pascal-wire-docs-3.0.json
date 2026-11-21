@@ -1,0 +1,144 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Delivery contracts",
+    "version": "1.0"
+  },
+  "paths": {
+    "/deliveries/{id}": {
+      "post": {
+        "tags": [
+          "Deliveries"
+        ],
+        "operationId": "CreateDelivery",
+        "summary": "Creates a delivery.",
+        "description": "Keeps the submitted address <code> & style.\nUses the current tenant.",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "description": "The delivery identifier.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cancellationToken",
+            "description": "The upstream token.\nIts value may include < & >.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Route",
+            "description": "The desired route.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "The submitted delivery request.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Delivery"
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "A delivery error."
+          },
+          "204": {
+            "description": "No delivery content."
+          },
+          "201": {
+            "description": "The created delivery.\nIncludes the resolved route.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Delivery"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Deliveries"
+        ],
+        "operationId": "DeleteDelivery",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The delivery was deleted."
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DeliveryBase": {
+        "type": "object",
+        "required": [
+          "Id"
+        ],
+        "description": "Base delivery metadata.",
+        "properties": {
+          "Id": {
+            "type": "string",
+            "description": "The exact delivery identifier."
+          }
+        }
+      },
+      "Delivery": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/DeliveryBase"
+          },
+          {
+            "type": "object",
+            "required": [
+              "route-name",
+              "state"
+            ],
+            "properties": {
+              "route-name": {
+                "type": "string"
+              },
+              "state": {
+                "$ref": "#/components/schemas/DeliveryState"
+              }
+            }
+          }
+        ]
+      },
+      "DeliveryState": {
+        "type": "string",
+        "description": "The delivery status.",
+        "enum": [
+          "Ready",
+          "in-progress",
+          "0"
+        ]
+      }
+    }
+  }
+}

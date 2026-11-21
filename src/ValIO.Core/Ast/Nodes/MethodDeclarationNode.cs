@@ -14,6 +14,14 @@ public sealed class MethodDeclarationNode : DeclarationNode
     /// Возвращаемый тип
     /// </summary>
     public TypeNode? ReturnType { get; }
+
+    /// <summary>Gets the detailed documentation that complements the method summary.</summary>
+    /// <value>Additional operation details, when supplied.</value>
+    public string? RemarksDocumentation { get; init; }
+
+    /// <summary>Gets documentation for the result of completing the method.</summary>
+    /// <value>The return value or successful completion description, when supplied.</value>
+    public string? ReturnsDocumentation { get; init; }
     
     /// <summary>
     /// Параметры метода
@@ -143,6 +151,7 @@ public sealed class MethodDeclarationNode : DeclarationNode
         return visitor.VisitMethodDeclaration(this);
     }
     
+    /// <inheritdoc />
     public override AstNode Clone()
     {
         return new MethodDeclarationNode(
@@ -163,7 +172,11 @@ public sealed class MethodDeclarationNode : DeclarationNode
             IsVirtual,
             IsAbstract,
             IsConst,
-            Noexcept);
+            Noexcept)
+        {
+            RemarksDocumentation = RemarksDocumentation,
+            ReturnsDocumentation = ReturnsDocumentation
+        };
     }
     
     public override string ToString()

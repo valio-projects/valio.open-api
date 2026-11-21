@@ -35,6 +35,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <summary>Identifies the namespace used to qualify enum defaults that can shadow property names.</summary>
     private string? _modelNamespace;
 
+    /// <summary>Gets whether model properties use PascalCase and carry explicit JSON names.</summary>
+    /// <value>True when the C# profile opts into PascalCase property naming.</value>
+    internal bool UsePascalCaseProperties { get; init; }
+
     /// <summary>Initializes a builder with validated language options and shared naming rules.</summary>
     /// <param name="namingConverter">The C# identifier converter.</param>
     /// <param name="documentContext">The immutable indexes shared by this document's generation steps.</param>
@@ -118,8 +122,17 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             : null;
         
         var inheritance = IrInheritancePlan.Resolve(model, ModelsByName);
-        var effectiveModel = model with { Properties = inheritance.EffectiveProperties };
-        var properties = inheritance.EffectiveProperties
+        var effectiveProperties = inheritance.EffectiveProperties;
+        if (UsePascalCaseProperties)
+        {
+            ValidatePascalCasePropertyNames(model);
+            effectiveProperties = effectiveProperties
+                .Select(property => property with { Name = GetPascalCasePropertyName(property) })
+                .ToArray();
+        }
+
+        var effectiveModel = model with { Properties = effectiveProperties };
+        var properties = effectiveProperties
             .Select(property => BuildProperty(property, effectiveModel))
             .ToList<DeclarationNode>();
         var baseTypes = new List<TypeNode>();
@@ -166,6 +179,36 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             documentation: comment);
     }
     
+    /// <summary>Converts an OpenAPI property to a valid PascalCase C# identifier.</summary>
+    /// <param name="property">The property carrying its exact wire name.</param>
+    /// <returns>The language identifier used for the property.</returns>
+    private string GetPascalCasePropertyName(IrProperty property) =>
+        _namingConverter.SanitizeIdentifier(_namingConverter.ToPascalCase(property.OriginalName));
+
+    /// <summary>Validates names across all properties visible on the generated model.</summary>
+    /// <param name="model">The model whose inherited and own properties must be distinguishable.</param>
+    /// <exception cref="InvalidOperationException">A property conflicts with the class or another member name.</exception>
+    private void ValidatePascalCasePropertyNames(IrModel model)
+    {
+        var names = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var property in IrInheritancePlan.FlattenProperties(model, ModelsByName))
+        {
+            var identifier = GetPascalCasePropertyName(property);
+            if (identifier == model.Name)
+                throw new InvalidOperationException(
+                    $"C# PascalCase property '{property.OriginalName}' conflicts with model '{model.Name}'.");
+            if (!names.TryAdd(identifier, property.OriginalName))
+                throw new InvalidOperationException(
+                    $"C# PascalCase properties '{names[identifier]}' and '{property.OriginalName}' in model '{model.Name}' both map to '{identifier}'.");
+        }
+    }
+
+    /// <summary>Determines whether the property needs explicit protection from serializer naming policies.</summary>
+    /// <param name="property">The generated property to annotate.</param>
+    /// <returns>True when the source and wire names differ or the C# profile pins all JSON names.</returns>
+    private bool RequiresJsonPropertyName(IrProperty property) =>
+        UsePascalCaseProperties || property.Name != property.OriginalName;
+
     /// <summary>Builds a typed property with wire metadata, validation, and safe initialization.</summary>
     /// <param name="property">The normalized schema property.</param>
     /// <param name="model">The containing model used for validation metadata.</param>
@@ -192,8 +235,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Собираем атрибуты
         var attributes = new List<AttributeNode>();
         
-        // Добавляем JsonPropertyName атрибут с оригинальным именем, если имя изменилось
-        if (property.Name != property.OriginalName)
+        if (RequiresJsonPropertyName(property))
         {
             var jsonPropertyNameAttr = new AttributeNode(
                 name: new IdentifierNode("JsonPropertyName"),
@@ -1001,15 +1043,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Используем только системные типы и типы из других namespace'ов, если они нужны
         var dependencies = new HashSet<string>();
         
-        // Проверяем, используется ли JsonPropertyName атрибут
-        foreach (var property in model.Properties)
-        {
-            if (property.Name != property.OriginalName)
-            {
-                dependencies.Add("System.Text.Json.Serialization");
-                break; // Достаточно одного использования
-            }
-        }
+        if (model.Properties.Any(RequiresJsonPropertyName))
+            dependencies.Add("System.Text.Json.Serialization");
         
         // Добавляем using для атрибутов валидации, если они используются
         if (_options.GenerateValidationAttributes)
@@ -1314,58 +1349,65 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <returns>A method declaration containing documentation and an executable body.</returns>
     public MethodDeclarationNode BuildMethod(IrOperation operation)
     {
-        return BuildMethod(operation, includeBody: true, includeDocumentation: true);
+        return BuildMethod(operation, includeBody: true, useInheritDoc: false);
     }
-    
-    /// <summary>
-    /// Builds a client method while allowing interface and implementation projections to share one path.
-    /// </summary>
+
+    /// <summary>Builds a client method while allowing interface and implementation projections to share one path.</summary>
     /// <param name="operation">The normalized operation contract.</param>
     /// <param name="includeBody">Whether to emit the executable HTTP body.</param>
-    /// <param name="includeDocumentation">Whether to emit operation documentation.</param>
+    /// <param name="useInheritDoc">Whether the interface supplies the method documentation.</param>
     /// <returns>The projected method declaration.</returns>
-    private MethodDeclarationNode BuildMethod(IrOperation operation, bool includeBody, bool includeDocumentation)
+    private MethodDeclarationNode BuildMethod(IrOperation operation, bool includeBody, bool useInheritDoc)
     {
         operation = ResolveMethodParameterCollisions(operation);
-        var name = new IdentifierNode(operation.MethodName);
-        
-        // Определяем тип возвращаемого значения из responses
-        var returnType = ExtractReturnType(operation.Responses);
-        
-        CommentNode? comment = null;
-        if (includeDocumentation)
-        {
-            comment = !string.IsNullOrEmpty(operation.Description)
-                ? new CommentNode(operation.Description, CommentKind.Xml)
-                : !string.IsNullOrEmpty(operation.Summary)
-                    ? new CommentNode(operation.Summary, CommentKind.Xml)
-                    : null;
-        }
-        
-        var parameters = BuildMethodParameters(operation);
-        var body = includeBody ? BuildMethodBody(operation) : null;
-        
+        var response = SelectSuccessResponse(operation.Responses);
         return new MethodDeclarationNode(
-            name: name,
-            returnType: returnType,
-            parameters: parameters,
-            body: body,
+            name: new IdentifierNode(operation.MethodName),
+            returnType: BuildOperationReturnType(response),
+            parameters: BuildMethodParameters(operation),
+            body: includeBody ? BuildMethodBody(operation) : null,
             accessModifier: AccessModifier.Public,
             isAsync: true,
-            documentation: comment,
-            metadata: null,
+            documentation: useInheritDoc ? null : BuildOperationSummary(operation),
             isInterfaceMethod: !includeBody,
-            useInheritDoc: false);
+            useInheritDoc: useInheritDoc)
+        {
+            RemarksDocumentation = useInheritDoc ? null : GetOperationRemarks(operation),
+            ReturnsDocumentation = useInheritDoc ? null : GetOperationReturns(response)
+        };
     }
-    
-    /// <summary>
-    /// Строит MethodDeclarationNode для интерфейса (без тела)
-    /// </summary>
-    private MethodDeclarationNode BuildInterfaceMethod(IrOperation operation)
+
+    /// <summary>Builds the summary from the operation summary or its most specific available description.</summary>
+    /// <param name="operation">The operation documented by the generated method.</param>
+    /// <returns>OpenAPI documentation, falling back to the verb and route.</returns>
+    private static CommentNode BuildOperationSummary(IrOperation operation)
     {
-        return BuildMethod(operation, includeBody: false, includeDocumentation: true);
+        var text = !string.IsNullOrWhiteSpace(operation.Summary) ? operation.Summary
+            : !string.IsNullOrWhiteSpace(operation.Description) ? operation.Description
+            : $"Sends {operation.HttpMethod} {operation.Path}.";
+        return new CommentNode(text, CommentKind.Xml);
     }
-    
+
+    /// <summary>Preserves the description when the operation supplies a distinct summary.</summary>
+    /// <param name="operation">The operation carrying the source documentation.</param>
+    /// <returns>The supplementary description, if present and distinct.</returns>
+    private static string? GetOperationRemarks(IrOperation operation) =>
+        !string.IsNullOrWhiteSpace(operation.Summary) && operation.Description != operation.Summary
+            ? operation.Description : null;
+
+    /// <summary>Documents the successful response selected for the generated return type.</summary>
+    /// <param name="response">The selected success response, if available.</param>
+    /// <returns>The schema's response description or the result's transport meaning.</returns>
+    private static string GetOperationReturns(IrResponse? response) =>
+        !string.IsNullOrWhiteSpace(response?.Description) ? response.Description
+            : response?.Type is null ? "A task that completes when the request succeeds." : "The successful response body.";
+
+    /// <summary>Builds a documented interface method without an implementation body.</summary>
+    /// <param name="operation">The normalized operation contract.</param>
+    /// <returns>The interface declaration for the HTTP operation.</returns>
+    private MethodDeclarationNode BuildInterfaceMethod(IrOperation operation) =>
+        BuildMethod(operation, includeBody: false, useInheritDoc: false);
+
     /// <summary>Builds source for the document whose indexes were supplied at construction.</summary>
     /// <param name="document">The normalized document to generate.</param>
     /// <param name="namespace">The optional generated namespace.</param>
@@ -1673,7 +1715,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     {
         operation = ResolveMethodParameterCollisions(operation);
         var name = new IdentifierNode(operation.MethodName);
-        var returnType = ExtractReturnType(operation.Responses);
+        var response = SelectSuccessResponse(operation.Responses);
+        var returnType = BuildOperationReturnType(response);
         var resultType = ExtractReturnTypeGenericArgument(returnType);
         var parameters = BuildMethodParameters(operation);
         var usedNames = parameters.Select(parameter => parameter.Name.Name).ToHashSet(StringComparer.Ordinal);
@@ -1736,7 +1779,13 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 _options.GenerateTraces ? new IdentifierNode(exceptionName) : null) }.ToImmutableList(),
             new BlockNode(finallyStatements.ToImmutableList())));
         return new MethodDeclarationNode(name, returnType, parameters, new BlockNode(statements.ToImmutableList()),
-            isAsync: true, accessModifier: AccessModifier.Public);
+            isAsync: true, accessModifier: AccessModifier.Public,
+            documentation: _options.GenerateInterfaces ? null : BuildOperationSummary(operation),
+            useInheritDoc: _options.GenerateInterfaces)
+        {
+            RemarksDocumentation = _options.GenerateInterfaces ? null : GetOperationRemarks(operation),
+            ReturnsDocumentation = _options.GenerateInterfaces ? null : GetOperationReturns(response)
+        };
     }
 
     // Приватные вспомогательные методы для IR операций
@@ -1777,9 +1826,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             parameters.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode(param.Name),
                 type: type,
-                isRequired: true));
+                isRequired: true,
+                documentation: BuildParameterDocumentation(param.Description, $"Path parameter {param.OriginalName}.")));
         }
-        
+
         // Query parameters
         foreach (var param in operation.QueryParameters)
         {
@@ -1789,9 +1839,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             parameters.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode(param.Name),
                 type: nullableType,
-                isRequired: param.IsRequired));
+                isRequired: param.IsRequired,
+                documentation: BuildParameterDocumentation(param.Description, $"Query parameter {param.OriginalName}.")));
         }
-        
+
         // Header parameters
         foreach (var param in operation.HeaderParameters)
         {
@@ -1800,9 +1851,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             parameters.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode(param.Name),
                 type: nullableType,
-                isRequired: param.IsRequired));
+                isRequired: param.IsRequired,
+                documentation: BuildParameterDocumentation(param.Description, $"HTTP header {param.OriginalName}.")));
         }
-        
+
         // Request body
         if (operation.RequestBody != null)
         {
@@ -1815,7 +1867,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             parameters.Add(new ParameterDeclarationNode(
                 name: new IdentifierNode("request"),
                 type: nullableType,
-                isRequired: operation.RequestBody.IsRequired));
+                isRequired: operation.RequestBody.IsRequired,
+                documentation: BuildParameterDocumentation(operation.RequestBody.Description, "The request body.")));
         }
         
         // CancellationToken с default value
@@ -1825,10 +1878,18 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             name: new IdentifierNode("cancellationToken"),
             type: cancellationTokenType,
             isRequired: false,
-            defaultValue: defaultCancellationToken));
-        
+            defaultValue: defaultCancellationToken,
+            documentation: new CommentNode("A token to cancel the HTTP request.", CommentKind.Xml)));
+
         return parameters.ToImmutableList();
     }
+
+    /// <summary>Documents a parameter using its description or its role on the wire.</summary>
+    /// <param name="description">The OpenAPI description.</param>
+    /// <param name="fallback">The parameter role if the schema omits its description.</param>
+    /// <returns>Documentation for the actual emitted argument.</returns>
+    private static CommentNode BuildParameterDocumentation(string? description, string fallback) =>
+        new(string.IsNullOrWhiteSpace(description) ? fallback : description, CommentKind.Xml);
     
     /// <summary>Builds an HTTP implementation with allocated locals and typed transport boundaries.</summary>
     /// <param name="operation">The operation with unique C# parameter names.</param>
@@ -2561,12 +2622,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     }
 
     /// <summary>Wraps the selected operation result in the appropriate asynchronous C# return type.</summary>
-    /// <param name="responses">The declared operation responses.</param>
+    /// <param name="successResponse">The selected successful response, if available.</param>
     /// <returns>Task or Task of the selected body type.</returns>
-    private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
+    private TypeNode BuildOperationReturnType(IrResponse? successResponse)
     {
-        var successResponse = SelectSuccessResponse(responses);
-
         if (successResponse?.Type != null)
         {
             // Для async методов оборачиваем тип в Task<T>
@@ -2607,6 +2666,9 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             documentation: comment);
     }
     
+    /// <summary>Builds the HTTP implementation of the generated client.</summary>
+    /// <param name="client">The normalized client and its operations.</param>
+    /// <returns>A client with full method documentation when no interface is generated.</returns>
     private ClassDeclarationNode BuildClientClass(IrClient client)
     {
         var name = new IdentifierNode(client.Name);
@@ -2656,28 +2718,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             accessModifier: AccessModifier.Public);
         members.Add(constructor);
         
-        // Добавляем методы (без документации, будет inheritdoc)
         var methods = client.Operations
-            .Select(op =>
-            {
-                var method = BuildMethod(op, includeBody: true, includeDocumentation: false);
-                
-                // Создаем новый метод с UseInheritDoc = true
-                return new MethodDeclarationNode(
-                    name: method.Name,
-                    returnType: method.ReturnType,
-                    parameters: method.Parameters,
-                    body: method.Body,
-                    isAsync: method.IsAsync,
-                    accessModifier: method.AccessModifier,
-                    documentation: method.Documentation,
-                    attributes: method.Attributes,
-                    metadata: method.Metadata,
-                    isInterfaceMethod: method.IsInterfaceMethod,
-                    useInheritDoc: true);
-            })
+            .Select(operation => BuildMethod(operation, includeBody: true, useInheritDoc: _options.GenerateInterfaces))
             .ToList<DeclarationNode>();
-        
+
         members.AddRange(methods);
         
         return new ClassDeclarationNode(

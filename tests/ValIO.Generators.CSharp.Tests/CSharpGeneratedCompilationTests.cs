@@ -76,6 +76,141 @@ public sealed class CSharpGeneratedCompilationTests
         result.Output.Should().Contain("CSharp nullable references passed");
     }
 
+    /// <summary>Checks exact wire keys and string enums in compiled PascalCase models and clients.</summary>
+    /// <param name="separateInterface">Whether the source contract documentation belongs to a separate interface.</param>
+    /// <returns>The source generation, XML documentation compilation, and JSON runtime checks.</returns>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task PascalCaseProfilePreservesWireContractAndOpenApiDocumentation(bool separateInterface)
+    {
+        var context = await GenerateDeliveryContract(NamingConvention.PascalCase, separateInterface);
+        var model = context.GeneratedFiles.Single(file => file.RelativePath == "Models/Delivery.cs").Content;
+        var baseModel = context.GeneratedFiles.Single(file => file.RelativePath == "Models/DeliveryBase.cs").Content;
+        var enumModel = context.GeneratedFiles.Single(file => file.RelativePath == "Models/DeliveryState.cs").Content;
+        var client = context.GeneratedFiles.Single(file => file.RelativePath.StartsWith("Api/Deliveries", StringComparison.Ordinal)).Content;
+        var docs = separateInterface
+            ? context.GeneratedFiles.Single(file => file.RelativePath.StartsWith("Api/IDeliveries", StringComparison.Ordinal)).Content
+            : client;
+
+        model.Should().Contain("string RouteName").And.Contain("[JsonPropertyName(\"route-name\")]");
+        baseModel.Should().Contain("string Id").And.Contain("[JsonPropertyName(\"Id\")]");
+        enumModel.Should().Contain("[JsonStringEnumMemberName(\"Ready\")]")
+            .And.Contain("[JsonStringEnumMemberName(\"in-progress\")]");
+        context.IrDocument.Models.Single(item => item.Name == "Delivery").Properties
+            .Should().Contain(property => property.Name == "route_name");
+        docs.Should().Contain("/// Creates a delivery.").And.Contain("/// <remarks>")
+            .And.Contain("/// Keeps the submitted address &lt;code&gt; &amp; style.")
+            .And.Contain("/// <param name=\"id\">The delivery identifier.</param>")
+            .And.Contain("/// <param name=\"cancellationToken_\">").And.Contain("/// The upstream token.")
+            .And.Contain("/// Its value may include &lt; &amp; &gt;.")
+            .And.Contain("The desired route.</param>")
+            .And.Contain("/// <param name=\"request\">The submitted delivery request.</param>")
+            .And.Contain("/// <param name=\"cancellationToken\">A token to cancel the HTTP request.</param>")
+            .And.Contain("/// The created delivery.").And.Contain("/// Includes the resolved route.")
+            .And.Contain("/// <returns>The delivery was deleted.</returns>")
+            .And.NotContain("A delivery error.").And.NotContain("No delivery content.");
+        if (separateInterface)
+            client.Should().Contain("/// <inheritdoc />");
+
+        var directory = Path.Combine(Path.GetTempPath(), "ValIO.CSharp.PascalWire", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        await File.WriteAllTextAsync(Path.Combine(directory, "Smoke.csproj"), """
+            <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors><GenerateDocumentationFile>true</GenerateDocumentationFile><NoWarn>1591</NoWarn></PropertyGroup></Project>
+            """);
+        await File.WriteAllTextAsync(Path.Combine(directory, "NuGet.Config"), "<configuration><packageSources><clear /></packageSources></configuration>");
+        foreach (var file in context.GeneratedFiles)
+        {
+            var destination = Path.Combine(directory, file.RelativePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            await File.WriteAllTextAsync(destination, file.Content);
+        }
+        await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), """"
+            using Generated.Contracts;
+            using System.Text.Json;
+
+            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+            var request = JsonSerializer.Deserialize<Delivery>("""{"Id":"42","route-name":"north","state":"in-progress"}""", options)!;
+            if (request.Id != "42" || request.RouteName != "north") throw new Exception("Input property names changed.");
+            var wire = JsonSerializer.SerializeToElement(request, options);
+            if (wire.GetProperty("Id").GetString() != "42" || wire.TryGetProperty("id", out _) ||
+                wire.GetProperty("route-name").GetString() != "north" || wire.GetProperty("state").GetString() != "in-progress")
+                throw new Exception("Output property names or enum wire value changed.");
+
+            foreach (var valid in new[] { "Ready", "in-progress", "0" })
+            {
+                var json = JsonSerializer.Serialize(valid);
+                var value = JsonSerializer.Deserialize<DeliveryState>(json);
+                if (JsonSerializer.Serialize(value) != json) throw new Exception("A declared enum value failed to round-trip.");
+                var dictionary = new Dictionary<DeliveryState, int> { [value] = 1 };
+                var encoded = JsonSerializer.SerializeToElement(dictionary);
+                if (encoded.GetProperty(valid).GetInt32() != 1 ||
+                    JsonSerializer.Deserialize<Dictionary<DeliveryState, int>>(encoded)![value] != 1)
+                    throw new Exception("An enum dictionary key failed to round-trip.");
+            }
+            foreach (var invalid in new[] { """ "ready" """, """ " Ready " """, """ "in_progress" """,
+                """ "in-progress, Ready" """, """ "1" """, "0", "null" })
+            {
+                try { JsonSerializer.Deserialize<DeliveryState>(invalid); throw new Exception("Accepted " + invalid); }
+                catch (JsonException) { }
+            }
+            try { JsonSerializer.Serialize((DeliveryState)123); throw new Exception("Wrote an undefined enum."); }
+            catch (JsonException) { }
+            Console.WriteLine("PascalCase wire contract passed");
+            """");
+        var result = await RunGeneratedProject(directory);
+        result.ExitCode.Should().Be(0, "generated code and its XML docs must compile and JSON must round-trip: {0}\n{1}", directory, result.Output);
+        result.Output.Should().Contain("PascalCase wire contract passed");
+    }
+
+    /// <summary>Preserves source naming and the existing enum converter for default C# profiles.</summary>
+    /// <returns>The default generation and its assertions.</returns>
+    [Test]
+    public async Task DefaultProfilePreservesItsPropertyAndEnumNaming()
+    {
+        var context = await GenerateDeliveryContract(NamingConvention.CamelCase, separateInterface: false);
+        var model = context.GeneratedFiles.Single(file => file.RelativePath == "Models/Delivery.cs").Content;
+        var baseModel = context.GeneratedFiles.Single(file => file.RelativePath == "Models/DeliveryBase.cs").Content;
+        var enumModel = context.GeneratedFiles.Single(file => file.RelativePath == "Models/DeliveryState.cs").Content;
+
+        model.Should().Contain("string route_name").And.Contain("[JsonPropertyName(\"route-name\")]");
+        baseModel.Should().Contain("string Id").And.NotContain("JsonPropertyName");
+        enumModel.Should().Contain("[JsonConverter(typeof(JsonStringEnumConverter))]");
+        context.GeneratedFiles.Should().NotContain(file => file.RelativePath.Contains("ValioStrictStringEnumConverter"));
+    }
+
+    /// <summary>Runs the C# steps over a single OpenAPI contract with independently configured naming.</summary>
+    /// <param name="namingConvention">The CLR model property convention configured in the profile.</param>
+    /// <param name="separateInterface">Whether client interfaces are generated in separate files.</param>
+    /// <returns>The generated source together with its original IR.</returns>
+    private static async Task<GenerationContext> GenerateDeliveryContract(NamingConvention namingConvention, bool separateInterface)
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CSharp/pascal-wire-docs-3.0.json")));
+        var parsed = await OpenApiDocument.LoadAsync(input, "json");
+        var document = parsed.Document!;
+        var context = new GenerationContext
+        {
+            IrDocument = new IrBuilder(new SchemaResolver(document), new NamingConverter()).BuildFromOpenApi(document),
+            Configuration = new GenerationConfiguration
+            {
+                Namespace = "Generated.Contracts",
+                NamingConvention = new NamingConventions { Properties = namingConvention }
+            },
+            PluginOptions = new CSharpGenerationOptions
+            {
+                StrictStringEnums = namingConvention == NamingConvention.PascalCase,
+                GenerateInterfaces = separateInterface,
+                InterfaceFileStrategy = InterfaceFileStrategy.SeparateFile,
+                UseRequired = true
+            }
+        };
+        var naming = new CSharpNamingConverter();
+        var renderer = new CSharpAstRenderer();
+        await new CSharpModelsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpEnumsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpClientStep(naming, renderer).ExecuteAsync(context);
+        return context;
+    }
+
     /// <summary>Verifies generated models, enums, HTTP requests, interfaces, and telemetry compile together.</summary>
     /// <param name="traces">Whether the fixture generates tracing.</param>
     /// <param name="metrics">Whether the fixture generates metrics.</param>

@@ -879,16 +879,15 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     /// <param name="indentLevel">The enclosing indentation depth.</param>
     private void RenderMethod(StringBuilder sb, MethodDeclarationNode node, int indentLevel)
     {
-        // XML комментарий
         if (node.UseInheritDoc)
         {
-            // Используем inheritdoc для методов класса
             CodeFormatter.AppendLine(sb, indentLevel, "/// <inheritdoc />");
         }
-        else if (node.Documentation != null)
+        else if (node.Documentation != null || node.RemarksDocumentation != null || node.ReturnsDocumentation != null)
         {
             var paramDocs = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
-            CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation.Text, paramDocs, null);
+            CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation?.Text,
+                paramDocs, node.ReturnsDocumentation, node.RemarksDocumentation);
         }
         
         // Атрибуты

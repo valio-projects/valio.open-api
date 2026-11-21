@@ -1,5 +1,5 @@
+using System.Security;
 using System.Text;
-using ValIO.Core.Utilities;
 
 namespace ValIO.Core.Utilities;
 
@@ -29,48 +29,66 @@ public static class CommentGenerator
         CodeFormatter.AppendLine(sb, indentLevel, "/// </summary>");
     }
     
-    /// <summary>
-    /// Генерирует XML комментарий с параметрами для C#
-    /// </summary>
-    public static void GenerateXmlCommentWithParams(StringBuilder sb, int indentLevel, string? description, IReadOnlyList<(string Name, string? Description)>? parameters = null, string? returns = null)
+    /// <summary>Writes XML documentation for a declaration with arguments and an optional return value.</summary>
+    /// <param name="sb">The generated source buffer.</param>
+    /// <param name="indentLevel">The enclosing indentation depth.</param>
+    /// <param name="description">The declaration summary.</param>
+    /// <param name="parameters">The emitted parameter names and descriptions.</param>
+    /// <param name="returns">The return value description.</param>
+    public static void GenerateXmlCommentWithParams(StringBuilder sb, int indentLevel, string? description,
+        IReadOnlyList<(string Name, string? Description)>? parameters = null, string? returns = null) =>
+        GenerateXmlCommentWithParams(sb, indentLevel, description, parameters, returns, remarks: null);
+
+    /// <summary>Writes declaration documentation and preserves multiline OpenAPI descriptions.</summary>
+    /// <param name="sb">The generated source buffer.</param>
+    /// <param name="indentLevel">The enclosing indentation depth.</param>
+    /// <param name="description">The declaration summary.</param>
+    /// <param name="parameters">The emitted parameter names and descriptions.</param>
+    /// <param name="returns">The return value description.</param>
+    /// <param name="remarks">Additional details accompanying the summary.</param>
+    public static void GenerateXmlCommentWithParams(StringBuilder sb, int indentLevel, string? description,
+        IReadOnlyList<(string Name, string? Description)>? parameters, string? returns, string? remarks)
     {
-        if (string.IsNullOrEmpty(description) && (parameters == null || parameters.Count == 0) && string.IsNullOrEmpty(returns))
-            return;
-        
-        CodeFormatter.AppendLine(sb, indentLevel, "/// <summary>");
-        if (!string.IsNullOrEmpty(description))
+        if (!string.IsNullOrWhiteSpace(description))
+            AppendXmlElement(sb, indentLevel, "<summary>", "</summary>", description, multiline: true);
+        if (!string.IsNullOrWhiteSpace(remarks))
+            AppendXmlElement(sb, indentLevel, "<remarks>", "</remarks>", remarks, multiline: true);
+        if (parameters is not null)
         {
-            // Разбиваем многострочные комментарии на отдельные строки
-            var lines = description.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-            foreach (var line in lines)
+            foreach (var (name, text) in parameters)
             {
-                var escapedLine = CodeEscapeHelper.EscapeXmlComment(line);
-                CodeFormatter.AppendLine(sb, indentLevel, $"/// {escapedLine}");
+                var identifier = SecurityElement.Escape(name.TrimStart('@'));
+                AppendXmlElement(sb, indentLevel, $"<param name=\"{identifier}\">", "</param>", text ?? "");
             }
         }
-        CodeFormatter.AppendLine(sb, indentLevel, "/// </summary>");
-        
-        if (parameters != null && parameters.Count > 0)
-        {
-            foreach (var param in parameters)
-            {
-                if (!string.IsNullOrEmpty(param.Description))
-                {
-                    CodeFormatter.AppendLine(sb, indentLevel, $"/// <param name=\"{param.Name}\">{CodeEscapeHelper.EscapeXmlComment(param.Description)}</param>");
-                }
-                else
-                {
-                    CodeFormatter.AppendLine(sb, indentLevel, $"/// <param name=\"{param.Name}\"></param>");
-                }
-            }
-        }
-        
-        if (!string.IsNullOrEmpty(returns))
-        {
-            CodeFormatter.AppendLine(sb, indentLevel, $"/// <returns>{CodeEscapeHelper.EscapeXmlComment(returns)}</returns>");
-        }
+
+        if (!string.IsNullOrWhiteSpace(returns))
+            AppendXmlElement(sb, indentLevel, "<returns>", "</returns>", returns);
     }
-    
+
+    /// <summary>Emits escaped XML text with a comment prefix on each physical line.</summary>
+    /// <param name="sb">The generated source buffer.</param>
+    /// <param name="indentLevel">The enclosing indentation depth.</param>
+    /// <param name="openingTag">The formatted opening XML tag.</param>
+    /// <param name="closingTag">The matching closing XML tag.</param>
+    /// <param name="text">The OpenAPI text to place inside the element.</param>
+    /// <param name="multiline">Whether to put the tags on separate lines even for single-line text.</param>
+    private static void AppendXmlElement(StringBuilder sb, int indentLevel, string openingTag, string closingTag,
+        string text, bool multiline = false)
+    {
+        var lines = text.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+        if (!multiline && lines.Length == 1)
+        {
+            CodeFormatter.AppendLine(sb, indentLevel, $"/// {openingTag}{SecurityElement.Escape(text)}{closingTag}");
+            return;
+        }
+
+        CodeFormatter.AppendLine(sb, indentLevel, $"/// {openingTag}");
+        foreach (var line in lines)
+            CodeFormatter.AppendLine(sb, indentLevel, $"/// {SecurityElement.Escape(line)}");
+        CodeFormatter.AppendLine(sb, indentLevel, $"/// {closingTag}");
+    }
+
     /// <summary>
     /// Генерирует JSDoc комментарий для TypeScript
     /// </summary>
