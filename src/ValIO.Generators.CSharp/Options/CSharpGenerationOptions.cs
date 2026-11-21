@@ -30,6 +30,18 @@ public sealed class CSharpGenerationOptions
     /// <value>True to require ordinal matching and reject undeclared values.</value>
     public bool StrictStringEnums { get; set; }
 
+    /// <summary>Gets or sets whether C# enum member identifiers follow PascalCase.</summary>
+    /// <value>True to format member declarations and references while retaining their wire values.</value>
+    public bool PascalCaseEnumMembers { get; set; }
+
+    /// <summary>Gets or sets whether string enum members expose their wire literals to XmlSerializer.</summary>
+    /// <value>True to generate an XmlEnum attribute on each string enum member.</value>
+    public bool GenerateXmlEnumAttributes { get; set; }
+
+    /// <summary>Gets or sets whether string enums opt in to the DataContractSerializer contract.</summary>
+    /// <value>True to mark the enum type with DataContract so its existing EnumMember values are used.</value>
+    public bool GenerateDataContractAttributes { get; set; }
+
     /// <summary>Gets or sets the requested model declaration kind.</summary>
     /// <value>The model kind; unsupported kinds are rejected before generation.</value>
     public ModelType ModelType { get; set; } = ModelType.Class;

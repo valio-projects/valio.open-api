@@ -2,6 +2,7 @@ using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Models;
@@ -82,6 +83,44 @@ public sealed class CSharpOptionsTests
         errors.Should().NotBeEmpty();
     }
 
+    /// <summary>Checks independent XML settings from profile parsing to attributes on string enums.</summary>
+    /// <param name="xmlEnum">Whether XmlSerializer uses the enum's declared literals.</param>
+    /// <param name="dataContract">Whether DataContractSerializer uses the enum's declared literals.</param>
+    [TestCase(false, false)]
+    [TestCase(false, true)]
+    [TestCase(true, false)]
+    [TestCase(true, true)]
+    public void EnumAttributeOptions_AffectOnlyTheirSerializer(bool xmlEnum, bool dataContract)
+    {
+        var raw = new Dictionary<string, JsonElement>
+        {
+            ["generateXmlEnumAttributes"] = JsonSerializer.SerializeToElement(xmlEnum),
+            ["generateDataContractAttributes"] = JsonSerializer.SerializeToElement(dataContract)
+        };
+        var parsed = new CSharpOptionsDescriptor().ParseOptions(raw, out var errors);
+        errors.Should().BeEmpty();
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []),
+            parsed.Should().BeOfType<CSharpGenerationOptions>().Subject);
+        var renderer = new CSharpAstRenderer();
+        var state = new IrEnum
+        {
+            Name = "State", BaseType = IrEnumBaseType.String,
+            Values = [new IrEnumValue { Name = "InProgress", Value = "in-progress" }]
+        };
+        var code = renderer.Render(builder.BuildCompilationUnit(state));
+        code.Contains("[XmlEnum(\"in-progress\")]", StringComparison.Ordinal).Should().Be(xmlEnum);
+        code.Contains("[DataContract]", StringComparison.Ordinal).Should().Be(dataContract);
+        code.Should().Contain("[EnumMember(Value = \"in-progress\")]").And.Contain("[JsonStringEnumMemberName(\"in-progress\")]");
+
+        var numeric = state with
+        {
+            BaseType = IrEnumBaseType.Integer,
+            Values = [new IrEnumValue { Name = "Started", Value = 7 }]
+        };
+        renderer.Render(builder.BuildCompilationUnit(numeric)).Should().Contain("Started = 7")
+            .And.NotContain("XmlEnum").And.NotContain("DataContract").And.NotContain("JsonStringEnumMemberName");
+    }
+
     /// <summary>Enforces the same unsupported-mode contract for direct AST builder consumers.</summary>
     [Test]
     public void DirectBuilder_RejectsUnsupportedModelKinds()
@@ -90,5 +129,37 @@ public sealed class CSharpOptionsTests
             new CSharpGenerationOptions { ModelType = ModelType.Record });
 
         construct.Should().Throw<ArgumentException>().WithMessage("*modelType=Class*");
+    }
+
+    /// <summary>Checks the profile option in model defaults and rejects ambiguous member declarations.</summary>
+    [Test]
+    public void PascalCaseEnumMembers_UseTheSameNameForDefaultsAndDetectCollisions()
+    {
+        var raw = new Dictionary<string, JsonElement> { ["pascalCaseEnumMembers"] = JsonSerializer.SerializeToElement(true) };
+        var parsed = new CSharpOptionsDescriptor().ParseOptions(raw, out var errors);
+        errors.Should().BeEmpty();
+        var state = new IrEnum
+        {
+            Name = "State", BaseType = IrEnumBaseType.String,
+            Values = [new IrEnumValue { Name = "player", Value = "player" }]
+        };
+        var model = new IrModel
+        {
+            Name = "Session",
+            Properties = [new IrProperty
+            {
+                Name = "state", OriginalName = "state", IsRequired = false, Type = new IrModelReference { ModelName = "State" },
+                Constraints = new IrPropertyConstraints { DefaultValue = "player" }
+            }]
+        };
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([model], [state]),
+            parsed.Should().BeOfType<CSharpGenerationOptions>().Subject);
+        var renderer = new CSharpAstRenderer();
+        renderer.Render(builder.BuildCompilationUnit(model, "Example")).Should().Contain("global::Example.State.Player");
+        renderer.Render(builder.BuildCompilationUnit(state, "Example")).Should().Contain("[JsonStringEnumMemberName(\"player\")]")
+            .And.Contain("    Player");
+        var collision = state with { Values = [.. state.Values, new IrEnumValue { Name = "Player", Value = "Player" }] };
+        var generate = () => builder.BuildCompilationUnit(collision);
+        generate.Should().Throw<InvalidOperationException>().WithMessage("*'State'*'player'*'Player'*");
     }
 }

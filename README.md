@@ -93,6 +93,16 @@ To generate PascalCase C# properties with exact JSON field names, set
 `namingConvention.properties` to `PascalCase` in the C# project in `valio.config.json`.
 Every property in that profile carries its original OpenAPI name as `JsonPropertyName`.
 Set `options.strictStringEnums` to `true` for ordinal matching of the declared string enum values.
+Set `options.pascalCaseEnumMembers` to `true` to generate C# members such as `Player` and
+`InProgress` for `"player"` and `"in-progress"`. The option defaults to `false` and applies
+to declarations and model defaults. Generation reports conflicting literals if two would
+produce the same C# identifier.
+For string enums, `options.generateXmlEnumAttributes` emits `[XmlEnum("wire-value")]` for
+`XmlSerializer`. Independently, `options.generateDataContractAttributes` emits `[DataContract]`
+on the enum so `DataContractSerializer` uses its `[EnumMember(Value = "wire-value")]` fields.
+Both options default to `false`. To document individual values, set `x-enum-descriptions`
+on the schema to an object keyed by exact wire literals or to an array in the same order and
+of the same length as `enum`. Each supplied string becomes the member's XML summary in C#.
 The generated client XML documentation includes the operation summary, parameter
 and request-body descriptions, and the successful response description.
 

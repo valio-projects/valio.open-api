@@ -886,6 +886,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         {
             dependencies.Add("System.Runtime.Serialization");
             dependencies.Add("System.Text.Json.Serialization");
+            if (_options.GenerateXmlEnumAttributes)
+                dependencies.Add("System.Xml.Serialization");
         }
 
         var usings = BuildUsingDirectives(dependencies.ToList());
@@ -896,6 +898,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <param name="enumModel">The normalized enum declaration.</param>
     /// <returns>The enum with a sufficient underlying integer type.</returns>
     /// <exception cref="NotSupportedException">A numeric value is fractional or outside signed 64-bit range.</exception>
+    /// <exception cref="InvalidOperationException">Distinct enum literals would generate the same PascalCase member.</exception>
     public EnumDeclarationNode BuildEnum(IrEnum enumModel)
     {
         var name = new IdentifierNode(enumModel.Name);
@@ -915,9 +918,14 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             : null;
         
         var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
+        var pascalNames = _options.PascalCaseEnumMembers ? new Dictionary<string, object>(StringComparer.Ordinal) : null;
 
         var members = enumModel.Values.Select(v =>
         {
+            var memberName = GetEnumMemberName(v);
+            if (pascalNames is not null && !pascalNames.TryAdd(memberName, v.Value))
+                throw new InvalidOperationException(
+                    $"C# enum '{enumModel.Name}' values '{pascalNames[memberName]}' and '{v.Value}' both map to '{memberName}'.");
             ExpressionNode? value = null;
             IReadOnlyList<AttributeNode>? attributes = null;
 
@@ -944,6 +952,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                     new IdentifierNode("JsonStringEnumMemberName"),
                     new[] { (ExpressionNode)new LiteralExpressionNode(originalValue, LiteralKind.String) }.ToImmutableList()));
 
+                if (_options.GenerateXmlEnumAttributes)
+                    memberAttributes.Add(new AttributeNode(new IdentifierNode("XmlEnum"),
+                        [new LiteralExpressionNode(originalValue, LiteralKind.String)]));
+
                 attributes = memberAttributes.ToImmutableList();
             }
             else
@@ -954,7 +966,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             }
 
             return new EnumMemberDeclarationNode(
-                name: new IdentifierNode(v.Name),
+                name: new IdentifierNode(memberName),
                 value: value,
                 documentation: !string.IsNullOrEmpty(v.Description)
                     ? new CommentNode(v.Description, CommentKind.Xml)
@@ -975,7 +987,9 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             var jsonConverterAttribute = new AttributeNode(
                 new IdentifierNode("JsonConverter"),
                 new ExpressionNode[] { new TypeOfExpressionNode(converterType) }.ToImmutableList());
-            enumAttributes = new[] { jsonConverterAttribute }.ToImmutableList();
+            enumAttributes = _options.GenerateDataContractAttributes
+                ? [jsonConverterAttribute, new AttributeNode(new IdentifierNode("DataContract"))]
+                : [jsonConverterAttribute];
         }
 
         return new EnumDeclarationNode(
@@ -986,6 +1000,13 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             documentation: comment,
             attributes: enumAttributes);
     }
+
+    /// <summary>Formats an enum identifier consistently for declarations and model default expressions.</summary>
+    /// <param name="member">The source member with its language-independent identifier.</param>
+    /// <returns>The C# member identifier for the active profile.</returns>
+    private string GetEnumMemberName(IrEnumValue member) => _options.PascalCaseEnumMembers
+        ? _namingConverter.SanitizeIdentifier(_namingConverter.ToPascalCase(member.Name))
+        : member.Name;
     
     // Приватные вспомогательные методы для IR
     
@@ -1198,7 +1219,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 ? $"global::{reference.ModelName}"
                 : $"global::{_modelNamespace}.{reference.ModelName}";
             return member is null ? null : new MemberAccessExpressionNode(
-                new IdentifierExpressionNode(new IdentifierNode(enumTypeName)), new IdentifierNode(member.Name));
+                new IdentifierExpressionNode(new IdentifierNode(enumTypeName)), new IdentifierNode(GetEnumMemberName(member)));
         }
 
         return BuildTypedLiteral(rawDefault, GetDefaultValueTargetKind(property.Type));

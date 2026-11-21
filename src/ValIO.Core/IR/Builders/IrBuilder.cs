@@ -1084,9 +1084,10 @@ public class IrBuilder
         return enums;
     }
     
-    /// <summary>
-    /// Строит enum из схемы
-    /// </summary>
+    /// <summary>Builds the enum and associates optional member descriptions with their declared wire values.</summary>
+    /// <param name="name">The normalized enum type name.</param>
+    /// <param name="schema">The source enum schema and its optional x-enum-descriptions extension.</param>
+    /// <returns>The language-independent enum declaration.</returns>
     private IrEnum BuildEnum(string name, IOpenApiSchema schema)
     {
         var values = new List<IrEnumValue>();
@@ -1096,13 +1097,22 @@ public class IrBuilder
         
         if (schema.Enum != null)
         {
+            var descriptions = schema.Extensions?.TryGetValue("x-enum-descriptions", out var extension) == true
+                && extension is JsonNodeExtension json ? json.Node : null;
             foreach (var enumValue in schema.Enum)
             {
-                var valueName = _namingConverter.SanitizeIdentifier(enumValue.ToString() ?? "Unknown");
+                var wireName = enumValue.ToString() ?? "Unknown";
+                var description = descriptions switch
+                {
+                    JsonObject byValue => byValue[wireName],
+                    JsonArray ordered when ordered.Count == schema.Enum.Count => ordered[values.Count],
+                    _ => null
+                };
                 values.Add(new IrEnumValue
                 {
-                    Name = valueName,
-                    Value = enumValue
+                    Name = _namingConverter.SanitizeIdentifier(wireName),
+                    Value = enumValue,
+                    Description = description is JsonValue text && text.TryGetValue<string>(out var summary) ? summary : null
                 });
             }
         }

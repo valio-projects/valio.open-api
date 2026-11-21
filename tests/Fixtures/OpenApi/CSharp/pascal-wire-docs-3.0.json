@@ -133,6 +133,10 @@
       "DeliveryState": {
         "type": "string",
         "description": "The delivery status.",
+        "x-enum-descriptions": {
+          "in-progress": "The delivery is between pickup & arrival.",
+          "Ready": "The delivery can start."
+        },
         "enum": [
           "Ready",
           "in-progress",

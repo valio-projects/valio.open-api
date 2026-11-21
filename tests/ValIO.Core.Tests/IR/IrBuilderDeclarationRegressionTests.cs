@@ -13,6 +13,20 @@ namespace ValIO.Core.Tests.IR;
 [TestFixture]
 public sealed class IrBuilderDeclarationRegressionTests
 {
+    /// <summary>Associates positional enum descriptions only when the extension covers the full declaration.</summary>
+    /// <returns>The parsed numeric enum and its descriptions in declaration order.</returns>
+    [Test]
+    public async Task EnumDescriptions_AlignWithNumericDeclarations()
+    {
+        var ir = await IrTestHarness.BuildIrFromSchemasAsync("3.0.3",
+            ("Priority", """{"type":"integer","enum":[10,30],"x-enum-descriptions":["Regular","Urgent"]}"""),
+            ("Partial", """{"type":"integer","enum":[10,30],"x-enum-descriptions":["Ambiguous"]}"""));
+
+        ir.Enums.Single(item => item.Name == "Priority").Values.Select(member => member.Description)
+            .Should().Equal("Regular", "Urgent");
+        ir.Enums.Single(item => item.Name == "Partial").Values.Should().OnlyContain(member => member.Description == null);
+    }
+
     /// <summary>Ensures nested alternatives inside model allOf remain semantic type members and dependency edges.</summary>
     /// <returns>The asynchronous assertion operation.</returns>
     [Test]

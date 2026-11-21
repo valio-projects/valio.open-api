@@ -83,7 +83,7 @@ public sealed class CSharpGeneratedCompilationTests
     [TestCase(true)]
     public async Task PascalCaseProfilePreservesWireContractAndOpenApiDocumentation(bool separateInterface)
     {
-        var context = await GenerateDeliveryContract(NamingConvention.PascalCase, separateInterface);
+        var context = await GenerateDeliveryContract(NamingConvention.PascalCase, separateInterface, xmlContracts: true);
         var model = context.GeneratedFiles.Single(file => file.RelativePath == "Models/Delivery.cs").Content;
         var baseModel = context.GeneratedFiles.Single(file => file.RelativePath == "Models/DeliveryBase.cs").Content;
         var enumModel = context.GeneratedFiles.Single(file => file.RelativePath == "Models/DeliveryState.cs").Content;
@@ -95,7 +95,10 @@ public sealed class CSharpGeneratedCompilationTests
         model.Should().Contain("string RouteName").And.Contain("[JsonPropertyName(\"route-name\")]");
         baseModel.Should().Contain("string Id").And.Contain("[JsonPropertyName(\"Id\")]");
         enumModel.Should().Contain("[JsonStringEnumMemberName(\"Ready\")]")
-            .And.Contain("[JsonStringEnumMemberName(\"in-progress\")]");
+            .And.Contain("[JsonStringEnumMemberName(\"in-progress\")]")
+            .And.Contain("/// The delivery is between pickup &amp; arrival.");
+        context.IrDocument.Enums.Single(item => item.Name == "DeliveryState").Values.Select(member => member.Description)
+            .Should().Equal("The delivery can start.", "The delivery is between pickup & arrival.", null);
         context.IrDocument.Models.Single(item => item.Name == "Delivery").Properties
             .Should().Contain(property => property.Name == "route_name");
         docs.Should().Contain("/// Creates a delivery.").And.Contain("/// <remarks>")
@@ -126,11 +129,15 @@ public sealed class CSharpGeneratedCompilationTests
         }
         await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), """"
             using Generated.Contracts;
+            using System.Runtime.Serialization;
             using System.Text.Json;
+            using System.Xml.Linq;
+            using System.Xml.Serialization;
 
             var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
             var request = JsonSerializer.Deserialize<Delivery>("""{"Id":"42","route-name":"north","state":"in-progress"}""", options)!;
-            if (request.Id != "42" || request.RouteName != "north") throw new Exception("Input property names changed.");
+            if (request.Id != "42" || request.RouteName != "north" || request.State != DeliveryState.InProgress)
+                throw new Exception("Input property or enum member names changed.");
             var wire = JsonSerializer.SerializeToElement(request, options);
             if (wire.GetProperty("Id").GetString() != "42" || wire.TryGetProperty("id", out _) ||
                 wire.GetProperty("route-name").GetString() != "north" || wire.GetProperty("state").GetString() != "in-progress")
@@ -141,6 +148,19 @@ public sealed class CSharpGeneratedCompilationTests
                 var json = JsonSerializer.Serialize(valid);
                 var value = JsonSerializer.Deserialize<DeliveryState>(json);
                 if (JsonSerializer.Serialize(value) != json) throw new Exception("A declared enum value failed to round-trip.");
+                var xmlSerializer = new XmlSerializer(typeof(DeliveryState));
+                using var text = new StringWriter();
+                xmlSerializer.Serialize(text, value);
+                if (XElement.Parse(text.ToString()).Value != valid ||
+                    !value.Equals(xmlSerializer.Deserialize(new StringReader(text.ToString()))))
+                    throw new Exception("XmlSerializer lost the declared enum literal.");
+                var dataContract = new DataContractSerializer(typeof(DeliveryState));
+                using var bytes = new MemoryStream();
+                dataContract.WriteObject(bytes, value);
+                bytes.Position = 0;
+                if (XElement.Load(bytes).Value != valid) throw new Exception("DataContractSerializer lost the enum literal.");
+                bytes.Position = 0;
+                if (!value.Equals(dataContract.ReadObject(bytes))) throw new Exception("DataContractSerializer enum read failed.");
                 var dictionary = new Dictionary<DeliveryState, int> { [value] = 1 };
                 var encoded = JsonSerializer.SerializeToElement(dictionary);
                 if (encoded.GetProperty(valid).GetInt32() != 1 ||
@@ -174,15 +194,18 @@ public sealed class CSharpGeneratedCompilationTests
 
         model.Should().Contain("string route_name").And.Contain("[JsonPropertyName(\"route-name\")]");
         baseModel.Should().Contain("string Id").And.NotContain("JsonPropertyName");
-        enumModel.Should().Contain("[JsonConverter(typeof(JsonStringEnumConverter))]");
+        enumModel.Should().Contain("[JsonConverter(typeof(JsonStringEnumConverter))]")
+            .And.NotContain("[XmlEnum(").And.NotContain("[DataContract]");
         context.GeneratedFiles.Should().NotContain(file => file.RelativePath.Contains("ValioStrictStringEnumConverter"));
     }
 
     /// <summary>Runs the C# steps over a single OpenAPI contract with independently configured naming.</summary>
     /// <param name="namingConvention">The CLR model property convention configured in the profile.</param>
     /// <param name="separateInterface">Whether client interfaces are generated in separate files.</param>
+    /// <param name="xmlContracts">Whether both XML serializers must preserve the declared string enum values.</param>
     /// <returns>The generated source together with its original IR.</returns>
-    private static async Task<GenerationContext> GenerateDeliveryContract(NamingConvention namingConvention, bool separateInterface)
+    private static async Task<GenerationContext> GenerateDeliveryContract(
+        NamingConvention namingConvention, bool separateInterface, bool xmlContracts = false)
     {
         await using var input = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CSharp/pascal-wire-docs-3.0.json")));
         var parsed = await OpenApiDocument.LoadAsync(input, "json");
@@ -198,6 +221,9 @@ public sealed class CSharpGeneratedCompilationTests
             PluginOptions = new CSharpGenerationOptions
             {
                 StrictStringEnums = namingConvention == NamingConvention.PascalCase,
+                PascalCaseEnumMembers = namingConvention == NamingConvention.PascalCase,
+                GenerateXmlEnumAttributes = xmlContracts,
+                GenerateDataContractAttributes = xmlContracts,
                 GenerateInterfaces = separateInterface,
                 InterfaceFileStrategy = InterfaceFileStrategy.SeparateFile,
                 UseRequired = true
