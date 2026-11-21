@@ -182,8 +182,16 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <summary>Converts an OpenAPI property to a valid PascalCase C# identifier.</summary>
     /// <param name="property">The property carrying its exact wire name.</param>
     /// <returns>The language identifier used for the property.</returns>
-    private string GetPascalCasePropertyName(IrProperty property) =>
-        _namingConverter.SanitizeIdentifier(_namingConverter.ToPascalCase(property.OriginalName));
+    private string GetPascalCasePropertyName(IrProperty property)
+    {
+        var identifier = _namingConverter.SanitizeIdentifier(_namingConverter.ToPascalCase(property.OriginalName));
+        return identifier switch
+        {
+            "Equals" or "GetHashCode" or "GetType" or "ToString" or "ReferenceEquals" or "MemberwiseClone" or "Finalize"
+                => identifier + "Value",
+            _ => identifier
+        };
+    }
 
     /// <summary>Validates names across all properties visible on the generated model.</summary>
     /// <param name="model">The model whose inherited and own properties must be distinguishable.</param>
@@ -401,7 +409,9 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             foreach (var property in GetAllPropertiesIncludingInherited(
                 baseModel with { Properties = plan.EffectiveProperties }, inheritedBases))
             {
-                properties[property.OriginalName] = property;
+                properties[property.OriginalName] = UsePascalCaseProperties
+                    ? property with { Name = GetPascalCasePropertyName(property) }
+                    : property;
             }
         }
 
@@ -2384,15 +2394,33 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Success branch: десериализуем в success type и помещаем в промежуточную переменную response
         if (successType != null)
         {
-            // Пустое тело на успешном статусе (напр. 204 No Content или 200 без body) — не пытаемся
-            // десериализовать (иначе JsonException «input does not contain any JSON tokens»); возвращаем
-            // null. Возвращаемый тип метода — nullable success type, поэтому default! корректен.
+            var acceptedResponse = operation.Responses.FirstOrDefault(response => response.StatusCode == "202")
+                ?? operation.Responses.FirstOrDefault(response => response.StatusCode.Equals("2XX", StringComparison.OrdinalIgnoreCase));
+            var emptySuccessStatements = new List<StatementNode>();
+            if (acceptedResponse?.Type is not null)
+            {
+                // A typed acceptance carries the receipt that callers need to continue the operation.
+                emptySuccessStatements.Add(new IfStatementNode(
+                    condition: new BinaryExpressionNode(
+                        new IdentifierExpressionNode(new IdentifierNode(Local("statusCodeInt"))),
+                        BinaryOperator.Equal, new LiteralExpressionNode("202", LiteralKind.Number)),
+                    thenBlock: new BlockNode([new ThrowStatementNode(BuildApiExceptionCall(
+                        requestUri: new IdentifierExpressionNode(new IdentifierNode(Local("requestUri"))),
+                        httpMethod: new IdentifierExpressionNode(new IdentifierNode(Local("httpMethod"))),
+                        statusCode: new IdentifierExpressionNode(new IdentifierNode(Local("statusCode"))),
+                        reasonPhrase: new IdentifierExpressionNode(new IdentifierNode(Local("reasonPhrase"))),
+                        version: new IdentifierExpressionNode(new IdentifierNode(Local("version"))),
+                        content: new IdentifierExpressionNode(new IdentifierNode(Local("responseContent"))),
+                        message: new LiteralExpressionNode("Accepted response body is required", LiteralKind.String),
+                        innerException: null))]),
+                    elseBlock: null));
+            }
+
+            // Preserve the existing empty-success behavior for other response statuses.
+            emptySuccessStatements.Add(new ReturnStatementNode(new DefaultExpressionNode(suppressNullableWarning: true)));
             ifStatements.Add(new IfStatementNode(
                 condition: BuildResponseContentIsEmptyExpression(Local("responseContent")),
-                thenBlock: new BlockNode(new StatementNode[]
-                {
-                    new ReturnStatementNode(new DefaultExpressionNode(suppressNullableWarning: true))
-                }.ToImmutableList()),
+                thenBlock: new BlockNode(emptySuccessStatements.ToImmutableList()),
                 elseBlock: null));
 
             var deserializeAccess = new MemberAccessExpressionNode(

@@ -1,8 +1,10 @@
+using System.Text.Json;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
+using ValIO.Core.IR;
 using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 
@@ -12,11 +14,25 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 internal static class TypeScriptResponseHeaders
 {
     /// <summary>Declares the normalized header map on a shared result variant.</summary>
+    /// <param name="declaredHeaders">The headers named by the documented status, when available.</param>
     /// <returns>A type signature that also admits transports that do not expose headers.</returns>
-    internal static PropertySignatureNode Signature() =>
-        new(new IdentifierNode("headers"), new GenericTypeNode(new IdentifierNode("Readonly"), [RecordType()]),
+    internal static PropertySignatureNode Signature(IReadOnlyList<IrResponseHeader>? declaredHeaders = null)
+    {
+        TypeNode headerType = RecordType();
+        if (declaredHeaders is { Count: > 0 })
+        {
+            // A declared header may still be unavailable to browser code, for example after CORS filtering.
+            var namedHeaders = declaredHeaders.Select(header => header.Name.ToLowerInvariant())
+                .Distinct(StringComparer.Ordinal)
+                .Select(name => new TypeLiteralMember(JsonSerializer.Serialize(name), Primitive("string"), isOptional: true))
+                .ToArray();
+            headerType = new IntersectionTypeNode([headerType, new TypeLiteralNode(namedHeaders)]);
+        }
+
+        return new PropertySignatureNode(new IdentifierNode("headers"), new GenericTypeNode(new IdentifierNode("Readonly"), [headerType]),
             isRequired: false,
             documentation: new CommentNode("Received HTTP headers with lowercase names, when exposed by the transport."));
+    }
 
     /// <summary>Adds the collected response headers to a returned object.</summary>
     /// <param name="result">The transport result object.</param>

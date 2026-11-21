@@ -1,5 +1,8 @@
 using System.Security;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Xml;
+using System.Xml.Linq;
 
 namespace ValIO.Core.Utilities;
 
@@ -8,6 +11,11 @@ namespace ValIO.Core.Utilities;
 /// </summary>
 public static class CommentGenerator
 {
+    /// <summary>Recognizes complete inline documentation elements without accepting arbitrary XML markup.</summary>
+    private static readonly Regex InlineXmlDocumentation = new(
+        @"<(?:see|seealso|paramref|typeparamref)\s+[^<>]*/>|<c>[^<]*</c>|<code>[^<]*</code>",
+        RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
+
     /// <summary>
     /// Генерирует XML комментарий для C#
     /// </summary>
@@ -76,17 +84,44 @@ public static class CommentGenerator
     private static void AppendXmlElement(StringBuilder sb, int indentLevel, string openingTag, string closingTag,
         string text, bool multiline = false)
     {
-        var lines = text.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+        var escapedText = EscapeXmlDocumentationText(text);
+        var lines = escapedText.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
         if (!multiline && lines.Length == 1)
         {
-            CodeFormatter.AppendLine(sb, indentLevel, $"/// {openingTag}{SecurityElement.Escape(text)}{closingTag}");
+            CodeFormatter.AppendLine(sb, indentLevel, $"/// {openingTag}{escapedText}{closingTag}");
             return;
         }
 
         CodeFormatter.AppendLine(sb, indentLevel, $"/// {openingTag}");
         foreach (var line in lines)
-            CodeFormatter.AppendLine(sb, indentLevel, $"/// {SecurityElement.Escape(line)}");
+            CodeFormatter.AppendLine(sb, indentLevel, $"/// {line}");
         CodeFormatter.AppendLine(sb, indentLevel, $"/// {closingTag}");
+    }
+
+    /// <summary>Preserves complete inline XML documentation elements and escapes the surrounding OpenAPI text.</summary>
+    /// <param name="text">Documentation that may contain inline tags or literal angle brackets.</param>
+    /// <returns>Well-formed XML content suitable for a documentation element.</returns>
+    private static string EscapeXmlDocumentationText(string text)
+    {
+        var escaped = new StringBuilder();
+        var start = 0;
+        foreach (Match match in InlineXmlDocumentation.Matches(text))
+        {
+            escaped.Append(SecurityElement.Escape(text[start..match.Index]));
+            try
+            {
+                var element = XElement.Parse(match.Value, LoadOptions.PreserveWhitespace);
+                escaped.Append(element.ToString(SaveOptions.DisableFormatting));
+            }
+            catch (XmlException)
+            {
+                escaped.Append(SecurityElement.Escape(match.Value));
+            }
+
+            start = match.Index + match.Length;
+        }
+
+        return escaped.Append(SecurityElement.Escape(text[start..])).ToString();
     }
 
     /// <summary>

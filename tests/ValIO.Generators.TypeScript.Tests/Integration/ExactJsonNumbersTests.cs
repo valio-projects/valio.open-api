@@ -96,7 +96,7 @@ public sealed class ExactJsonNumbersTests
               assert.equal(result.body.state, 0);
               assert.equal(result.body.otherAmount, null);
               assert.equal(result.body.omitted, undefined);
-              if (transport !== 'fetch') assert.equal(result.headers.etag, '"version"');
+              assert.equal(result.headers.etag, '"version"');
 
               expectedAfter = '9007199254740995';
               await save({ ...request, query: undefined }, undefined, signal, client);

@@ -404,7 +404,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"),
             type: null,
-            initializer: TypeScriptResponseBody.Read(operation, Member(Id("response"), "status"), bodyJson)));
+            initializer: TypeScriptResponseBody.ReadFetch(operation, Id("response"), bodyJson)));
         if (_includeResponseHeaders)
             statements.AddRange(TypeScriptResponseHeaders.ReadFetch(Member(Id("response"), "headers")));
 

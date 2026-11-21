@@ -1296,6 +1296,8 @@ public class IrBuilder
                 {
                     StatusCode = statusCode,
                     Type = responseType,
+                    ContentTypes = response.Content?.Keys.ToArray() ?? [],
+                    Headers = ExtractResponseHeaders(response),
                     Description = response.Description
                 });
             }
@@ -1567,12 +1569,13 @@ public class IrBuilder
         };
     }
     
-    /// <summary>
-    /// Извлекает тип ответа из OpenAPI response
-    /// </summary>
+    /// <summary>Extracts the existing payload type without changing the response representation selected by earlier generators.</summary>
+    /// <param name="response">The OpenAPI response for the current status.</param>
+    /// <param name="statusCode">The declared response status.</param>
+    /// <param name="document">The OpenAPI document used to resolve the payload schema.</param>
+    /// <returns>The type of the first representation, if it has a schema.</returns>
     private IrType? ExtractResponseType(IOpenApiResponse response, string statusCode, OpenApiDocument document)
     {
-        // Берем первый content type
         var content = response.Content?.FirstOrDefault();
         var schema = content.HasValue ? content.Value.Value?.Schema : null;
 
@@ -1583,6 +1586,18 @@ public class IrBuilder
             _ctx with { Role = SchemaRole.Response, StatusCode = statusCode, ContentType = content?.Key },
             () => BuildType(schema, document));
     }
+
+    /// <summary>Extracts status-specific response headers while retaining their wire spelling.</summary>
+    /// <param name="response">The OpenAPI response supplying the header declarations.</param>
+    /// <returns>The declared headers, excluding Content-Type which is defined by the response content keys.</returns>
+    private static IReadOnlyList<IrResponseHeader> ExtractResponseHeaders(IOpenApiResponse response) =>
+        response.Headers?.Where(header => !string.Equals(header.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
+            .Select(header => new IrResponseHeader
+            {
+                Name = header.Key,
+                Description = header.Value.Description ?? header.Value.Schema?.Description,
+                IsRequired = header.Value.Required,
+            }).ToArray() ?? [];
     
     /// <summary>
     /// Reserves an inline model name without overwriting another inline or declared type.

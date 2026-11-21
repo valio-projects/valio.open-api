@@ -1,0 +1,41 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Report responses", "version": "1" },
+  "paths": {
+    "/reports": {
+      "get": {
+        "operationId": "readReport",
+        "responses": {
+          "200": {
+            "description": "The report as JSON.",
+            "content": { "application/json": { "schema": { "type": "string" } } }
+          },
+          "202": {
+            "description": "A text receipt with the location of the report.",
+            "headers": {
+              "Location": {
+                "description": "The URL for reading the completed report.",
+                "required": true,
+                "schema": { "type": "string" }
+              }
+            },
+            "content": { "text/plain": { "schema": { "type": "string" } } }
+          },
+          "204": {
+            "description": "There is no report body.",
+            "headers": {
+              "X-Request-ID": { "schema": { "type": "string", "description": "The request correlation identifier." } }
+            }
+          },
+          "400": {
+            "description": "The report could not be read.",
+            "content": {
+              "application/json": { "schema": { "type": "integer", "format": "int32" } },
+              "text/plain": { "schema": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

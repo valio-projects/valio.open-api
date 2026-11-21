@@ -94,6 +94,8 @@ public sealed class CSharpGeneratedCompilationTests
 
         model.Should().Contain("string RouteName").And.Contain("[JsonPropertyName(\"route-name\")]");
         baseModel.Should().Contain("string Id").And.Contain("[JsonPropertyName(\"Id\")]");
+        model.Should().Contain("GetHashCodeValue").And.Contain("[JsonPropertyName(\"getHashCode\")]");
+        baseModel.Should().Contain("EqualsValue").And.Contain("[JsonPropertyName(\"equals\")]");
         enumModel.Should().Contain("[JsonStringEnumMemberName(\"Ready\")]")
             .And.Contain("[JsonStringEnumMemberName(\"in-progress\")]")
             .And.Contain("/// The delivery is between pickup &amp; arrival.");
@@ -103,6 +105,7 @@ public sealed class CSharpGeneratedCompilationTests
             .Should().Contain(property => property.Name == "route_name");
         docs.Should().Contain("/// Creates a delivery.").And.Contain("/// <remarks>")
             .And.Contain("/// Keeps the submitted address &lt;code&gt; &amp; style.")
+            .And.Contain("<see cref=\"Delivery\" />")
             .And.Contain("/// <param name=\"id\">The delivery identifier.</param>")
             .And.Contain("/// <param name=\"cancellationToken_\">").And.Contain("/// The upstream token.")
             .And.Contain("/// Its value may include &lt; &amp; &gt;.")
@@ -110,6 +113,7 @@ public sealed class CSharpGeneratedCompilationTests
             .And.Contain("/// <param name=\"request\">The submitted delivery request.</param>")
             .And.Contain("/// <param name=\"cancellationToken\">A token to cancel the HTTP request.</param>")
             .And.Contain("/// The created delivery.").And.Contain("/// Includes the resolved route.")
+            .And.Contain("<c>route-name</c>")
             .And.Contain("/// <returns>The delivery was deleted.</returns>")
             .And.NotContain("A delivery error.").And.NotContain("No delivery content.");
         if (separateInterface)
@@ -135,13 +139,23 @@ public sealed class CSharpGeneratedCompilationTests
             using System.Xml.Serialization;
 
             var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-            var request = JsonSerializer.Deserialize<Delivery>("""{"Id":"42","route-name":"north","state":"in-progress"}""", options)!;
-            if (request.Id != "42" || request.RouteName != "north" || request.State != DeliveryState.InProgress)
+            const string requestJson = """{"Id":"42","route-name":"north","state":"in-progress","equals":"base","getHashCode":3}""";
+            var request = JsonSerializer.Deserialize<Delivery>(requestJson, options)!;
+            if (request.Id != "42" || request.RouteName != "north" || request.State != DeliveryState.InProgress ||
+                request.EqualsValue != "base" || request.GetHashCodeValue != 3)
                 throw new Exception("Input property or enum member names changed.");
             var wire = JsonSerializer.SerializeToElement(request, options);
             if (wire.GetProperty("Id").GetString() != "42" || wire.TryGetProperty("id", out _) ||
-                wire.GetProperty("route-name").GetString() != "north" || wire.GetProperty("state").GetString() != "in-progress")
+                wire.GetProperty("route-name").GetString() != "north" || wire.GetProperty("state").GetString() != "in-progress" ||
+                wire.GetProperty("equals").GetString() != "base" || wire.GetProperty("getHashCode").GetInt32() != 3)
                 throw new Exception("Output property names or enum wire value changed.");
+
+            var changedBase = JsonSerializer.Deserialize<Delivery>(requestJson.Replace("base", "changed"), options)!;
+            if (request.Equals(changedBase)) throw new Exception("Generated equality ignored a renamed base property.");
+            var documentation = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Smoke.xml"));
+            if (!documentation.Descendants("see").Any(element => (string?)element.Attribute("cref") == "T:Generated.Contracts.Delivery") ||
+                !documentation.Descendants("c").Any(element => element.Value == "route-name"))
+                throw new Exception("The compiled XML documentation lost inline markup.");
 
             foreach (var valid in new[] { "Ready", "in-progress", "0" })
             {
@@ -490,6 +504,15 @@ public sealed class CSharpGeneratedCompilationTests
                     Type = new IrModelReference { ModelName = "Combined" }, IsRequired = true, ContentType = "application/json"
                 },
                 Responses = [new IrResponse { StatusCode = "200", Type = Primitive(IrPrimitiveKind.Integer) }]
+            }, new IrOperation
+            {
+                MethodName = "Accept", HttpMethod = "POST", Path = "/accept",
+                PathParameters = [], QueryParameters = [], HeaderParameters = [],
+                Responses =
+                [
+                    new IrResponse { StatusCode = "202", Type = Primitive(IrPrimitiveKind.Integer) },
+                    new IrResponse { StatusCode = "204" }
+                ]
             }] }],
             TypeDependencies = new IrTypeDependencyGraph
             {
@@ -575,6 +598,29 @@ public sealed class CSharpGeneratedCompilationTests
         }
         handler.ReturnError = false;
         await client.Ping();
+        handler.AcceptedResponseContent = "7";
+        if (await client.Accept() != 7)
+            throw new InvalidOperationException("The typed 202 receipt was not decoded.");
+        handler.AcceptedResponseContent = "";
+        try
+        {
+            await client.Accept();
+            throw new InvalidOperationException("An empty typed 202 was treated as a receipt.");
+        }
+        catch (ApiException error) when (error.StatusCode == HttpStatusCode.Accepted && error.Content == "")
+        {
+        }
+        handler.AcceptedResponseContent = "{";
+        try
+        {
+            await client.Accept();
+            throw new InvalidOperationException("A malformed typed 202 was treated as a receipt.");
+        }
+        catch (JsonException)
+        {
+        }
+        handler.AcceptedResponseContent = null;
+        await client.Accept();
         // TELEMETRY_CHECKS
         await HttpPipelineChecks.Run();
         Console.WriteLine("CSharp generated runtime passed");
@@ -592,6 +638,8 @@ public sealed class CSharpGeneratedCompilationTests
             internal string? Body { get; private set; }
             /// <summary>Gets or sets whether the next response simulates a non-JSON gateway error.</summary>
             internal bool ReturnError { get; set; }
+            /// <summary>Gets or sets the 202 receipt content. Null selects the declared bodyless 204.</summary>
+            internal string? AcceptedResponseContent { get; set; }
             /// <inheritdoc/>
             protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
@@ -599,6 +647,10 @@ public sealed class CSharpGeneratedCompilationTests
                 Header = request.Headers.TryGetValues("X.Trace", out var values) ? values.Single() : null;
                 HadContent = request.Content != null;
                 Body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+                if (Uri?.AbsolutePath == "/accept")
+                    return AcceptedResponseContent is { } content
+                        ? new HttpResponseMessage(HttpStatusCode.Accepted) { Content = new StringContent(content) }
+                        : new HttpResponseMessage(HttpStatusCode.NoContent);
                 return new HttpResponseMessage(ReturnError ? HttpStatusCode.BadGateway : HttpStatusCode.OK)
                 {
                     Content = new StringContent(ReturnError ? "<html>gateway failure</html>" : "7")

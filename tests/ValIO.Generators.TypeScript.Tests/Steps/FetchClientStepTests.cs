@@ -83,14 +83,18 @@ public class FetchClientStepTests
         updateForm.Content.Should().Contain("params.query?.");
     }
 
+    /// <summary>Checks that operation headers are merged with the caller's native fetch headers.</summary>
+    /// <returns>The asynchronous generation check.</returns>
     [Test]
-    public async Task FetchClient_HeadersAreCast_ToHeadersInit()
+    public async Task FetchClient_MergesOperationAndCallerHeaders()
     {
         var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var deletePet = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith("deletePet.fetch.ts", StringComparison.Ordinal));
-        deletePet.Content.Should().Contain("as HeadersInit");
+        deletePet.Content.Should().Contain("new Headers(options?.headers)")
+            .And.Contain("requestHeaders.set(")
+            .And.Contain("headers: requestHeaders");
     }
 }

@@ -163,7 +163,7 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
                         documentation: new CommentNode(isSuccess ? "False — response is 2xx" : "True — response is not 2xx"))
                 };
                 if (IncludeResponseHeaders)
-                    members.Add(TypeScriptResponseHeaders.Signature());
+                    members.Add(TypeScriptResponseHeaders.Signature(response.Headers));
 
                 var variantInterface = new InterfaceDeclarationNode(
                     name: new IdentifierNode(variantInterfaceName),

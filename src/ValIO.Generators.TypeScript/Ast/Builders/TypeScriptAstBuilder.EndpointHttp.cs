@@ -152,19 +152,6 @@ public partial class TypeScriptAstBuilder
     /// <returns>The string literal expression.</returns>
     private static LiteralExpressionNode Str(string value) => new(value, LiteralKind.String);
 
-    /// <summary>Converts a generated wire-header object to the native fetch HeadersInit boundary type.</summary>
-    /// <param name="source">The generated header object.</param>
-    /// <returns>The fetch-compatible header expression.</returns>
-    private static CastExpressionNode CastToHeadersInit(ExpressionNode source)
-    {
-        // {Op}HeaderParams интерфейс не имеет index-signature, а HeadersInit
-        // требует Record<string, string>. Делаем `as HeadersInit`-cast.
-        return new CastExpressionNode(
-            new SimpleTypeNode(new IdentifierNode("HeadersInit"), isPrimitive: false),
-            source,
-            useAsOperator: true);
-    }
-
     /// <summary>Builds the plain fetch client function body for an operation.</summary>
     /// <param name="operation">The operation whose request and response flow is generated.</param>
     /// <returns>The generated function body.</returns>
@@ -198,19 +185,11 @@ public partial class TypeScriptAstBuilder
         };
 
         ExpressionNode? normalizedHeaders = null;
-        if (exactJsonNumbers)
+        if (ctx.HeadersSource != null || TypeScriptWireParameterObject.DefaultContentType(operation.RequestBody, includeJson: true) != null)
         {
-            if (ctx.HeadersSource != null || TypeScriptWireParameterObject.DefaultContentType(operation.RequestBody, includeJson: true) != null)
-                normalizedHeaders = TypeScriptFetchHeaders.Build(
-                    operation, ctx.HeadersSource, parameterModel.HeadersMayBeUndefined,
-                    new MemberAccessExpressionNode(Id("options"), new IdentifierNode("headers"), useOptionalChaining: true), statements);
-        }
-        else
-        {
-            var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
-                operation, ctx.HeadersSource, parameterModel.HeadersMayBeUndefined, includeJsonContentType: true);
-            if (wireHeaders.Properties.Count > 0)
-                initProps.Add(new PropertyAssignmentNode(new IdentifierNode("headers"), CastToHeadersInit(wireHeaders)));
+            normalizedHeaders = TypeScriptFetchHeaders.Build(
+                operation, ctx.HeadersSource, parameterModel.HeadersMayBeUndefined,
+                new MemberAccessExpressionNode(Id("options"), new IdentifierNode("headers"), useOptionalChaining: true), statements);
         }
 
         if (operation.RequestBody != null && operation.RequestBody.IsJson && ctx.BodySource != null)
@@ -284,27 +263,36 @@ public partial class TypeScriptAstBuilder
         var operationReturnType = useResultType
             ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false)
             : ExtractReturnType(operation.Responses);
+        statements.Add(new VariableDeclarationStatementNode(
+            new IdentifierNode("response"), type: null, initializer: new AwaitExpressionNode(fetchCall)));
         if (!useResultType && operationReturnType is SimpleTypeNode { Name.Name: "void" })
         {
-            statements.Add(new ExpressionStatementNode(new AwaitExpressionNode(fetchCall)));
+            var message = new TemplateLiteralExpressionNode([
+                new TemplateLiteralPart("HTTP "),
+                new TemplateLiteralPart(Member(Id("response"), "status"))
+            ]);
+            statements.Add(new IfStatementNode(
+                new UnaryExpressionNode(UnaryOperator.LogicalNot, Member(Id("response"), "ok")),
+                new BlockNode([new ThrowStatementNode(new CallExpressionNode(Id("Error"), [message], isNewExpression: true))])));
             return new BlockNode(statements.ToImmutableList());
         }
 
-        statements.Add(new VariableDeclarationStatementNode(
-            new IdentifierNode("response"), type: null, initializer: new AwaitExpressionNode(fetchCall)));
         statements.Add(CreateBlankLineStatement());
 
-        var responseStatus = Member(Id("response"), "status");
         var decodeBody = exactJsonNumbers
             ? TypeScriptExactJson.DecodeFetchResponse(Id("response"))
             : new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty));
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"), type: null,
-            initializer: TypeScriptResponseBody.Read(operation, responseStatus, decodeBody)));
+            initializer: TypeScriptResponseBody.ReadFetch(operation, Id("response"), decodeBody)));
         statements.Add(CreateBlankLineStatement());
 
         if (useResultType)
         {
+            var includeResponseHeaders = _options?.IncludeResponseHeaders == true;
+            if (includeResponseHeaders)
+                statements.AddRange(TypeScriptResponseHeaders.ReadFetch(Member(Id("response"), "headers")));
+
             var responseStatusRef = new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("status"));
@@ -335,12 +323,12 @@ public partial class TypeScriptAstBuilder
 
                 statements.Add(new IfStatementNode(
                     condition,
-                    new BlockNode(new[] { new ReturnStatementNode(returnObj) }.ToImmutableList()),
+                    new BlockNode([new ReturnStatementNode(TypeScriptResponseHeaders.Attach(returnObj, includeResponseHeaders))]),
                     null));
             }
 
             statements.Add(new ReturnStatementNode(
-                new ObjectLiteralExpressionNode(new[]
+                TypeScriptResponseHeaders.Attach(new ObjectLiteralExpressionNode(new[]
                 {
                     new PropertyAssignmentNode(new IdentifierNode("status"), responseStatusRef),
                     new PropertyAssignmentNode(new IdentifierNode("body"), responseDataRef),
@@ -350,7 +338,7 @@ public partial class TypeScriptAstBuilder
                         new LiteralExpressionNode(false, LiteralKind.Boolean)),
                     new PropertyAssignmentNode(new IdentifierNode("isFailed"),
                         new LiteralExpressionNode(true, LiteralKind.Boolean))
-                }.ToImmutableList())));
+                }.ToImmutableList()), includeResponseHeaders)));
         }
         else if (operationReturnType is not SimpleTypeNode { Name.Name: "void" })
         {

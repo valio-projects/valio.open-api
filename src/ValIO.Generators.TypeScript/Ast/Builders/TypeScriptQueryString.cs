@@ -12,8 +12,7 @@ using ValIO.Generators.TypeScript.Ast.Nodes.Expressions;
 namespace ValIO.Generators.TypeScript.Ast.Builders;
 
 /// <summary>
-/// Builds the query-string portion of a request URL for transports that fold parameters into the URL itself
-/// (the plain <c>fetch</c> client and the Next.js App Router client), using an explicit
+/// Builds the query-string parameters of a request for Fetch, Next.js, and Axios using an explicit
 /// <see cref="System.Collections.Specialized.NameValueCollection">URLSearchParams</see> builder with a presence
 /// check per optional parameter.
 /// </summary>
@@ -79,9 +78,7 @@ public static class TypeScriptQueryString
         foreach (var parameter in operation.QueryParameters)
         {
             var access = TypeScriptRequestPath.BuildParameterAccess(querySource, parameter.Name, queryMayBeUndefined);
-            if ((parameter.Style ?? IrParameterStyle.Form) == IrParameterStyle.Form
-                && (parameter.Explode ?? true)
-                && IrTypeQueries.UnwrapNullableOptional(parameter.Type) is IrArrayType)
+            if (IsFormArray(parameter) && (parameter.Explode ?? true))
             {
                 var items = new BinaryExpressionNode(access, BinaryOperator.NullishCoalescing, new ArrayLiteralExpressionNode([]));
                 statements.Add(new ForEachStatementNode(new IdentifierNode("item"), items,
@@ -105,6 +102,13 @@ public static class TypeScriptQueryString
             Str(string.Empty));
         return new BinaryExpressionNode(urlExpr, BinaryOperator.Add, queryTail);
     }
+
+    /// <summary>Identifies a query array whose wire format is determined by OpenAPI form expansion.</summary>
+    /// <param name="parameter">The query parameter to inspect.</param>
+    /// <returns>Whether the parameter is an array with explicit or default form style.</returns>
+    internal static bool IsFormArray(IrParameter parameter) =>
+        (parameter.Style ?? IrParameterStyle.Form) == IrParameterStyle.Form
+        && IrTypeQueries.UnwrapNullableOptional(parameter.Type) is IrArrayType;
 
     /// <summary>Writes a query value under its original OpenAPI parameter name.</summary>
     /// <param name="method">The URLSearchParams method to use for a single or repeated value.</param>

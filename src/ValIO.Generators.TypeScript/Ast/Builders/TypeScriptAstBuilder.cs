@@ -1288,7 +1288,20 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
 
         var paramsSource = new Axios.Models.AxiosConfigParamsSource(routeSource, querySource, bodySource, headersSource);
         var axiosBuilder = new Axios.Ast.Builders.AxiosAstBuilder(DocumentContext, _namingConverter, BuildType);
-        var configNode = axiosBuilder.BuildAxiosConfigWithParams(operation, paramsSource, _options?.ExactJsonNumbers == true);
+        var formArrays = operation.QueryParameters.Where(TypeScriptQueryString.IsFormArray).ToArray();
+        var axiosOperation = operation;
+        ExpressionNode? requestUrl = null;
+        if (formArrays.Length > 0)
+        {
+            requestUrl = TypeScriptQueryString.AppendQueryToUrl(operation with { QueryParameters = formArrays },
+                axiosBuilder.BuildUrlWithSource(operation, routeSource), querySource, ctx.QueryMayBeUndefined, statements);
+            axiosOperation = operation with
+            {
+                QueryParameters = operation.QueryParameters.Where(parameter => !TypeScriptQueryString.IsFormArray(parameter)).ToArray()
+            };
+        }
+        var configNode = axiosBuilder.BuildAxiosConfigWithParams(axiosOperation, paramsSource,
+            _options?.ExactJsonNumbers == true, requestUrl);
 
         // Используем unknown — не добавляем импорт модели body, работаем с params
         var bodyTypeNode = new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true);
@@ -1325,6 +1338,16 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             new(placeholderId, optionsSpread, isSpread: true),
             new(placeholderId, signalSpread, isSpread: true)
         };
+        if (Axios.Ast.Builders.AxiosAstBuilder.HasOperationHeaders(operation))
+        {
+            mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("headers"),
+                new ObjectLiteralExpressionNode([
+                    new PropertyAssignmentNode(placeholderId, Member(Id("baseConfig"), "headers"), isSpread: true),
+                    new PropertyAssignmentNode(placeholderId,
+                        new MemberAccessExpressionNode(optionsRef, new IdentifierNode("headers"), useOptionalChaining: true),
+                        isSpread: true)
+                ])));
+        }
         if (_options?.ExactJsonNumbers == true)
         {
             if (operation.RequestBody is { IsJson: true })

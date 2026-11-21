@@ -209,13 +209,36 @@ public sealed record IrResponse
     /// </summary>
     public required string StatusCode { get; init; }
     
-    /// <summary>
-    /// Тип ответа (если есть)
-    /// </summary>
+    /// <summary>Gets the payload type of the first declared media type for existing generators.</summary>
+    /// <value>The selected payload type, or <see langword="null"/> when it has no schema.</value>
     public IrType? Type { get; init; }
+
+    /// <summary>Gets every media type declared for this response status in document order.</summary>
+    /// <value>The declared response content keys, or an empty list for a bodyless response.</value>
+    public IReadOnlyList<string> ContentTypes { get; init; } = [];
+
+    /// <summary>Gets the HTTP headers declared for this response status.</summary>
+    /// <value>The wire declarations, excluding the Content-Type header described by <see cref="ContentTypes"/>.</value>
+    public IReadOnlyList<IrResponseHeader> Headers { get; init; } = [];
     
     /// <summary>
     /// Описание
     /// </summary>
     public string? Description { get; init; }
+}
+
+/// <summary>Describes a declared HTTP response header independently of its runtime presence.</summary>
+public sealed record IrResponseHeader
+{
+    /// <summary>Gets the original header name from the OpenAPI document.</summary>
+    /// <value>The case-preserving wire name.</value>
+    public required string Name { get; init; }
+
+    /// <summary>Gets the source description of the header.</summary>
+    /// <value>The header documentation, when supplied.</value>
+    public string? Description { get; init; }
+
+    /// <summary>Gets whether the source contract declares the header required.</summary>
+    /// <value>True when an implementing server must send the header.</value>
+    public bool IsRequired { get; init; }
 }

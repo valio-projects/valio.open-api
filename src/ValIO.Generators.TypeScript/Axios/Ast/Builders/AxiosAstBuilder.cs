@@ -78,10 +78,22 @@ public class AxiosAstBuilder : AstBuilderBase
     public AxiosConfigNode BuildAxiosConfigWithParams(
         IrOperation operation,
         AxiosConfigParamsSource paramsSource,
-        bool exactJsonNumbers = false)
+        bool exactJsonNumbers = false) => BuildAxiosConfigWithParams(operation, paramsSource, exactJsonNumbers, null);
+
+    /// <summary>Builds Axios configuration with an optional URL containing encoded form-style arrays.</summary>
+    /// <param name="operation">The operation whose request is generated.</param>
+    /// <param name="paramsSource">The expressions for route, query, body, and header values.</param>
+    /// <param name="exactJsonNumbers">Whether exact numeric DTO values require conversion to wire text.</param>
+    /// <param name="requestUrl">The URL with form arrays already serialized, when available.</param>
+    /// <returns>An Axios configuration AST node preserving OpenAPI wire names.</returns>
+    internal AxiosConfigNode BuildAxiosConfigWithParams(
+        IrOperation operation,
+        AxiosConfigParamsSource paramsSource,
+        bool exactJsonNumbers,
+        ExpressionNode? requestUrl)
     {
         var method = _httpBuilder.BuildHttpMethod(operation.HttpMethod);
-        var url = BuildUrlWithSource(operation, paramsSource.RouteParamsSource);
+        var url = requestUrl ?? BuildUrlWithSource(operation, paramsSource.RouteParamsSource);
 
         var queryParameters = operation.QueryParameters
             .Select(p => _httpBuilder.BuildQueryParameter(p, _typeBuilder))
@@ -119,7 +131,7 @@ public class AxiosAstBuilder : AstBuilderBase
                     exactJsonNumbers)));
         }
 
-        if (paramsSource.HeadersSource != null || operation.RequestBody is { IsFormUrlEncoded: true })
+        if (HasOperationHeaders(operation))
         {
             // Axios expects Record<string, AxiosHeaderValue> or AxiosHeaders. The generated narrow header params
             // interface has no index signature, so cast the remapped wire object to the Axios header type.
@@ -159,6 +171,12 @@ public class AxiosAstBuilder : AstBuilderBase
             body: body,
             properties: properties.ToImmutableList());
     }
+
+    /// <summary>Identifies when the generated request needs to merge operation headers with caller options.</summary>
+    /// <param name="operation">The operation whose request headers are generated.</param>
+    /// <returns>Whether there are declared headers or a form URL-encoded content type.</returns>
+    internal static bool HasOperationHeaders(IrOperation operation) =>
+        operation.HeaderParameters.Count > 0 || operation.RequestBody is { IsFormUrlEncoded: true };
 
     internal static bool IsBinarySuccessResponse(IrResponse response)
     {

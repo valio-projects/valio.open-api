@@ -106,18 +106,22 @@ public sealed class TransportRuntimeIntegrationTests
         }
         """;
 
-    /// <summary>Verifies that native fetch clients repeat form arrays and preserve explicitly delimited arrays.</summary>
-    /// <param name="transport">The generated native fetch transport.</param>
+    /// <summary>Verifies repeated and comma-delimited arrays using each transport's actual URL serialization.</summary>
+    /// <param name="transport">The generated HTTP transport.</param>
+    /// <param name="exactJsonNumbers">Whether to include an int64 array element that exceeds JavaScript's safe integer range.</param>
     /// <returns>The asynchronous generated-code runtime check.</returns>
-    [TestCase("fetch")]
-    [TestCase("nextjs")]
-    public async Task QueryArrays_UseOpenApiFormDefaultsAndRespectExplodeOverride(string transport)
+    [TestCase("fetch", false)]
+    [TestCase("nextjs", false)]
+    [TestCase("axios", false)]
+    [TestCase("axios", true)]
+    public async Task QueryArrays_UseOpenApiFormDefaultsAndRespectExplodeOverride(string transport, bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
         var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(QueryArrayDocument);
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],
+            ExactJsonNumbers = exactJsonNumbers,
             ValidationLibrary = "zod4",
             NextJs = new TypeScriptNextJsOptions { GenerateRevalidateHelpers = false },
         });
@@ -126,22 +130,34 @@ public sealed class TransportRuntimeIntegrationTests
 
         var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
             const transport = {{JsonSerializer.Serialize(transport)}};
+            const exact = {{JsonSerializer.Serialize(exactJsonNumbers)}};
             const { list } = require(path.join(root, 'api', 'list', 'list.' + transport + '.js'));
             let requestUrl;
-            const client = async url => {
-              requestUrl = url;
-              return new Response(null, { status: 204 });
-            };
+            const axios = require('axios');
+            const client = transport === 'axios'
+              ? axios.create({ adapter: async config => {
+                  requestUrl = axios.getUri(config);
+                  return { config, status: 204, data: undefined, headers: {} };
+                } })
+              : async url => {
+                  requestUrl = url;
+                  return new Response(null, { status: 204 });
+                };
             (async () => {
-              await list({ ids: ['a,b', 'space + π'], explicit: [0, 2], csv: [1, 3] }, undefined, undefined, client);
-              assert.equal(requestUrl, '/items?ids=a%2Cb&ids=space+%2B+%CF%80&explicit=0&explicit=2&csv=1%2C3');
+              const precise = exact ? ['9007199254740993', '9007199254740995']
+                .map(value => new (require('lossless-json').LosslessNumber)(value)) : undefined;
+              const filter = transport === 'axios' ? { term: 'kept' } : undefined;
+              await list({ ids: ['a,b', 'space + π'], explicit: [0, 2], csv: [1, 3], precise, preciseCsv: precise, filter }, undefined, undefined, client);
+              assert.equal(requestUrl.split('&filter')[0], '/items?ids=a%2Cb&ids=space+%2B+%CF%80&explicit=0&explicit=2&csv=1%2C3'
+                + (exact ? '&precise=9007199254740993&precise=9007199254740995&preciseCsv=9007199254740993%2C9007199254740995' : ''));
+              if (filter) assert.equal(new URL(requestUrl, 'https://fixture.invalid').searchParams.get('filter[term]'), 'kept');
               await list({ ids: [], explicit: null }, undefined, undefined, client);
               assert.equal(requestUrl, '/items');
               await list({}, undefined, undefined, client);
               assert.equal(requestUrl, '/items');
               console.log('query array serialization passed');
             })().catch(error => { console.error(error); process.exitCode = 1; });
-            """);
+            """, "lossless-json");
 
         output.Should().Contain("query array serialization passed");
     }
@@ -158,7 +174,10 @@ public sealed class TransportRuntimeIntegrationTests
                 "parameters": [
                   { "name": "ids", "in": "query", "schema": { "type": "array", "items": { "type": "string" } } },
                   { "name": "explicit", "in": "query", "style": "form", "explode": true, "schema": { "type": ["array", "null"], "items": { "type": "integer" } } },
-                  { "name": "csv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer" } } }
+                  { "name": "csv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer" } } },
+                  { "name": "precise", "in": "query", "schema": { "type": "array", "items": { "type": "integer", "format": "int64" } } },
+                  { "name": "preciseCsv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer", "format": "int64" } } },
+                  { "name": "filter", "in": "query", "style": "deepObject", "explode": true, "schema": { "type": "object", "properties": { "term": { "type": "string" } } } }
                 ],
                 "responses": { "204": { "description": "No content" } }
               }
@@ -242,9 +261,12 @@ public sealed class TransportRuntimeIntegrationTests
             (async () => {
               const form = { file: new Blob(['picture']), metadata: { published: true }, tags: ['one', null, 'two'],
                              bytes: new Uint8Array([0, 255]), [{{JsonSerializer.Serialize(captionName)}}]: 'wire caption' };
-              await endpoint('upload')({ form, headers: { X_Request_ID: 'request-42' } });
+              const mergeHeaders = ['fetch', 'axios', 'nextjs'].includes(transport);
+              await endpoint('upload')({ form, headers: { X_Request_ID: 'request-42' } },
+                mergeHeaders ? { headers: { 'X-Extra': 'extra' } } : undefined);
               assert(captured.body instanceof FormData, transport + ' did not send FormData');
               assert.equal(headers().get('X-Request-ID'), 'request-42');
+              if (mergeHeaders) assert.equal(headers().get('X-Extra'), 'extra');
               assert.equal(headers().has('X-Trace-ID'), false);
               assert.equal(headers().has('Content-Type'), false, 'multipart boundary must be generated by the transport');
               assert.equal(await captured.body.get('file').text(), 'picture');
@@ -288,16 +310,25 @@ public sealed class TransportRuntimeIntegrationTests
         output.Should().Contain("transport runtime passed");
     }
 
-    /// <summary>Verifies that a Next.js mutation with no response body still reports HTTP failures.</summary>
+    /// <summary>Verifies that a fetch transport reports HTTP failures for a bodyless mutation.</summary>
+    /// <param name="transport">The generated fetch-based transport.</param>
+    /// <param name="exactJsonNumbers">Whether the lossless response decoder is enabled.</param>
     /// <returns>The asynchronous generated-code runtime check.</returns>
-    [Test]
-    public async Task NextJsVoidMutation_ResolvesForNoContentAndRejectsHttpFailure()
+    [TestCase("nextjs", false)]
+    [TestCase("fetch", false)]
+    [TestCase("fetch", true)]
+    public async Task VoidMutation_ResolvesForNoContentAndRejectsHttpFailure(string transport, bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
         var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Document());
-        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
-        var output = await GeneratedTypeScriptRuntime.Run(context, """
-            const { uploadOptional } = require(path.join(root, 'api', 'uploadOptional', 'uploadOptional.nextjs.js'));
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = [transport],
+            ExactJsonNumbers = exactJsonNumbers,
+        });
+        var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
+            const endpoint = 'uploadOptional.' + {{JsonSerializer.Serialize(transport)}} + '.js';
+            const { uploadOptional } = require(path.join(root, 'api', 'uploadOptional', endpoint));
             const controller = new AbortController();
             (async () => {
               const status = code => async (url, options) => {
@@ -305,22 +336,24 @@ public sealed class TransportRuntimeIntegrationTests
                 return new Response(null, { status: code });
               };
               assert.equal(await uploadOptional({}, undefined, controller.signal, status(204)), undefined);
+              await assert.rejects(uploadOptional({}, undefined, controller.signal, status(401)), /HTTP 401/);
               await assert.rejects(uploadOptional({}, undefined, controller.signal, status(500)), /HTTP 500/);
 
               controller.abort();
               const abortedFetch = async (url, options) => options.signal.throwIfAborted();
               await assert.rejects(uploadOptional({}, undefined, controller.signal, abortedFetch), { name: 'AbortError' });
-              console.log('Next.js void response runtime passed');
+              console.log('void response runtime passed');
             })().catch(error => { console.error(error); process.exitCode = 1; });
-            """);
+            """, "lossless-json");
 
-        output.Should().Contain("Next.js void response runtime passed");
+        output.Should().Contain("void response runtime passed");
     }
 
     /// <summary>Checks that header exposure preserves a typed 202 result and a typed 404 result.</summary>
     /// <param name="transport">The generated transport whose response headers are exposed.</param>
     /// <returns>The asynchronous generated-code runtime check.</returns>
     [TestCase("axios")]
+    [TestCase("fetch")]
     [TestCase("nextjs")]
     public async Task TypedResponse_ExposesLocationAndPreservesDocumentedFailures(string transport)
     {
@@ -340,7 +373,7 @@ public sealed class TransportRuntimeIntegrationTests
             const { mixed } = require(path.join(root, 'api', 'mixed', 'mixed.' + transport + '.js'));
             const axios = transport === 'axios' ? require('axios') : undefined;
             const headers = { Location: '/jobs/42', 'X-Request-ID': 'request-42' };
-            const client = (status, body, headers) => transport === 'nextjs'
+            const client = (status, body, headers) => transport !== 'axios'
               ? async () => Response.json(body, { status, headers })
               : axios.create({ adapter: async config => {
                   assert.equal(config.validateStatus(status), true);
@@ -368,6 +401,53 @@ public sealed class TransportRuntimeIntegrationTests
             """);
 
         output.Should().Contain("typed response headers runtime passed");
+    }
+
+    /// <summary>Checks plain text, JSON, and headers on distinct documented statuses in fetch transports.</summary>
+    /// <param name="transport">The generated Fetch or Next.js transport.</param>
+    /// <param name="exactJsonNumbers">Whether the JSON status uses lossless decoding.</param>
+    /// <returns>The asynchronous generated-code assertions.</returns>
+    [TestCase("fetch", false)]
+    [TestCase("fetch", true)]
+    [TestCase("nextjs", false)]
+    [TestCase("nextjs", true)]
+    public async Task ResponseMetadata_ExposesDeclaredHeadersAndReadsTextByStatus(string transport, bool exactJsonNumbers)
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/response-metadata-3.0.json"));
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = [transport],
+            IncludeResponseHeaders = true,
+            ExactJsonNumbers = exactJsonNumbers,
+            ValidationLibrary = "zod4",
+        });
+        var results = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("readReport.results.ts", StringComparison.Ordinal));
+        results.Content.Should().Contain("\"location\"?: string").And.Contain("\"x-request-id\"?: string");
+        var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
+            const endpoint = 'readReport.' + {{JsonSerializer.Serialize(transport)}} + '.js';
+            const { readReport } = require(path.join(root, 'api', 'readReport', endpoint));
+            (async () => {
+              const json = await readReport(undefined, undefined, async () => Response.json('report'));
+              assert.equal(json.body, 'report');
+
+              const accepted = await readReport(undefined, undefined,
+                async () => new Response('accepted without JSON quoting', {
+                  status: 202, headers: { 'Content-Type': 'text/plain; charset=utf-8', Location: '/reports/42' }
+                }));
+              assert.equal(accepted.status, 202);
+              assert.equal(accepted.body, 'accepted without JSON quoting');
+              assert.equal(accepted.headers.location, '/reports/42');
+
+              const bodyless = await readReport(undefined, undefined,
+                async () => new Response(null, { status: 204, headers: { 'X-Request-ID': 'report-42' } }));
+              assert.equal(bodyless.body, undefined);
+              assert.equal(bodyless.headers['x-request-id'], 'report-42');
+              console.log('response metadata passed');
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """, "zod", "lossless-json");
+
+        output.Should().Contain("response metadata passed");
     }
 
     /// <summary>Creates multipart, optional multipart, and mixed typed/no-body response contracts.</summary>

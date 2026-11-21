@@ -12,7 +12,7 @@
         ],
         "operationId": "CreateDelivery",
         "summary": "Creates a delivery.",
-        "description": "Keeps the submitted address <code> & style.\nUses the current tenant.",
+        "description": "Keeps the submitted address <code> & style.\nUses the current tenant and returns a <see cref=\"Delivery\"/>.",
         "parameters": [
           {
             "in": "path",
@@ -59,7 +59,7 @@
             "description": "No delivery content."
           },
           "201": {
-            "description": "The created delivery.\nIncludes the resolved route.",
+            "description": "The created delivery.\nIncludes the resolved route.\nThe response preserves <c>route-name</c>.",
             "content": {
               "application/json": {
                 "schema": {
@@ -105,6 +105,9 @@
           "Id": {
             "type": "string",
             "description": "The exact delivery identifier."
+          },
+          "equals": {
+            "type": "string"
           }
         }
       },
@@ -125,6 +128,10 @@
               },
               "state": {
                 "$ref": "#/components/schemas/DeliveryState"
+              },
+              "getHashCode": {
+                "type": "integer",
+                "format": "int32"
               }
             }
           }

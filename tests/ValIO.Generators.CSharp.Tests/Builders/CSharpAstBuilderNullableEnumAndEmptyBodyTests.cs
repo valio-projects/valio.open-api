@@ -113,6 +113,37 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
         code.Should().Contain("return default!;");
     }
 
+    /// <summary>Checks that a typed 202 rejects an empty receipt, including a wildcard success contract.</summary>
+    /// <param name="status">The explicit Accepted status or the wildcard success status.</param>
+    [TestCase("202")]
+    [TestCase("2XX")]
+    public void TypedAcceptedResponse_RejectsEmptyReceipt(string status)
+    {
+        var operation = OperationWith(
+            new IrResponse { StatusCode = status, Type = new IrModelReference { ModelName = "GetItemResponse" } },
+            new IrResponse { StatusCode = "204" });
+
+        var code = _renderer.Render(_builder.BuildMethod(operation));
+
+        code.Should().Contain("if (string.IsNullOrWhiteSpace(responseContent))")
+            .And.Contain("statusCodeInt == 202")
+            .And.Contain("throw new ApiException(requestUri, httpMethod, statusCode, reasonPhrase, version, responseContent, \"Accepted response body is required\", null)")
+            .And.Contain("return default!;");
+    }
+
+    /// <summary>Checks that an explicit bodyless acceptance takes precedence over a typed success range.</summary>
+    [Test]
+    public void BodylessAcceptedResponse_OverridesTypedWildcard()
+    {
+        var operation = OperationWith(
+            new IrResponse { StatusCode = "2XX", Type = new IrModelReference { ModelName = "GetItemResponse" } },
+            new IrResponse { StatusCode = "202" });
+
+        var code = _renderer.Render(_builder.BuildMethod(operation));
+
+        code.Should().NotContain("Accepted response body is required").And.Contain("return default!;");
+    }
+
     [Test]
     public void ErrorBranch_GuardsEmptyBody_ThrowsApiExceptionInsteadOfDeserializing()
     {
