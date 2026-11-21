@@ -12,6 +12,100 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [Category("NodeIntegration")]
 public sealed class TransportRuntimeIntegrationTests
 {
+    /// <summary>Exercises Next.js bodyless response decoding alongside a JSON receipt with the same status.</summary>
+    /// <param name="exactJsonNumbers">Whether to use the lossless JSON decoder.</param>
+    /// <returns>The asynchronous generated-code runtime check.</returns>
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task NextJs_RespectsDeclaredBodylessStatusesAndDecodesJsonAccepted(bool exactJsonNumbers)
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(AcceptedResponsesDocument);
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = ["nextjs"],
+            ExactJsonNumbers = exactJsonNumbers,
+            ValidationLibrary = "zod4",
+        });
+
+        var output = await GeneratedTypeScriptRuntime.Run(context, """
+            const { submit } = require(path.join(root, 'api', 'submit', 'submit.nextjs.js'));
+            const { submitWithReceipt } = require(path.join(root, 'api', 'submitWithReceipt', 'submitWithReceipt.nextjs.js'));
+            (async () => {
+              for (const status of [202, 204, 205, 304]) {
+                const result = await submit(undefined, undefined, async () => new Response(null, { status }));
+                assert.equal(result.status, status);
+                assert.equal(result.body, undefined);
+                assert.equal(result.isSuccessful, status < 300);
+              }
+              const error = await submit(undefined, undefined,
+                async () => Response.json({ message: 'invalid' }, { status: 400 }));
+              assert.deepEqual(error.body, { message: 'invalid' });
+              assert.equal(error.isSuccessful, false);
+              const receipt = await submitWithReceipt(undefined, undefined,
+                async () => Response.json({ receipt: 'accepted' }, { status: 202 }));
+              assert.equal(receipt.status, 202);
+              assert.equal(receipt.isSuccessful, true);
+              assert.deepEqual(receipt.body, { receipt: 'accepted' });
+              console.log('next response decoding passed');
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """, "zod", "lossless-json");
+
+        output.Should().Contain("next response decoding passed");
+    }
+
+    /// <summary>Describes bodyless follow-up responses and a separate JSON acceptance receipt.</summary>
+    private const string AcceptedResponsesDocument = """
+        {
+          "openapi": "3.1.0",
+          "info": { "title": "Accepted responses", "version": "1" },
+          "paths": {
+            "/submit": {
+              "post": {
+                "operationId": "submit",
+                "responses": {
+                  "202": { "description": "Accepted" },
+                  "204": { "description": "No content" },
+                  "205": { "description": "Reset content" },
+                  "304": { "description": "Not modified" },
+                  "400": {
+                    "description": "Bad request",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": ["message"],
+                          "properties": { "message": { "type": "string" } }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "/submit-with-receipt": {
+              "post": {
+                "operationId": "submitWithReceipt",
+                "responses": {
+                  "202": {
+                    "description": "Accepted",
+                    "content": {
+                      "application/json": {
+                        "schema": {
+                          "type": "object",
+                          "required": ["receipt"],
+                          "properties": { "receipt": { "type": "string" } }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """;
+
     /// <summary>Verifies that native fetch clients repeat form arrays and preserve explicitly delimited arrays.</summary>
     /// <param name="transport">The generated native fetch transport.</param>
     /// <returns>The asynchronous generated-code runtime check.</returns>
