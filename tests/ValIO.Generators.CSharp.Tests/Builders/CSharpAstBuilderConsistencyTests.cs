@@ -253,6 +253,92 @@ public sealed class CSharpAstBuilderConsistencyTests
         build.Should().Throw<NotSupportedException>().WithMessage("*explicit result union*");
     }
 
+    /// <summary>Uses declared JSON media even when the first response representation is text.</summary>
+    [Test]
+    public void EquivalentSuccessRepresentations_AdvertiseJsonMedia()
+    {
+        var type = new IrModelReference { ModelName = "Receipt" };
+        var operation = OperationWithResponses(new IrResponse
+        {
+            StatusCode = "201",
+            Type = type,
+            MediaTypes =
+            [
+                new() { Name = "text/plain", Type = type },
+                new() { Name = "application/vnd.winzone.receipt+json", Type = type },
+                new() { Name = "application/json", Type = type }
+            ]
+        });
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
+
+        var code = _renderer.Render(builder.BuildMethod(operation));
+
+        code.Should().Contain("Task<Receipt> GetItem")
+            .And.Contain("MediaTypeWithQualityHeaderValue(\"application/vnd.winzone.receipt+json\")")
+            .And.Contain("MediaTypeWithQualityHeaderValue(\"application/json\")")
+            .And.NotContain("MediaTypeWithQualityHeaderValue(\"text/plain\")");
+    }
+
+    /// <summary>Refuses to generate a single JSON result for incompatible schemas at one status.</summary>
+    [Test]
+    public void IncompatibleMediaAtOneStatus_RequireAnExplicitResultUnion()
+    {
+        var text = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
+        var operation = OperationWithResponses(new IrResponse
+        {
+            StatusCode = "200",
+            Type = text,
+            MediaTypes =
+            [
+                new() { Name = "text/plain", Type = text },
+                new() { Name = "application/json", Type = new IrModelReference { ModelName = "Receipt" } }
+            ]
+        });
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
+
+        var build = () => builder.BuildMethod(operation);
+
+        build.Should().Throw<NotSupportedException>().WithMessage("*incompatible media schemas for HTTP 200*");
+    }
+
+    /// <summary>Serializes array query and header values using the declared delimiters.</summary>
+    [Test]
+    public void ParameterArrays_PreserveQueryExpansionAndHeaderWireNames()
+    {
+        var array = new IrArrayType { ElementType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } };
+        var operation = OperationWithResponses(new IrResponse { StatusCode = "204" }) with
+        {
+            QueryParameters =
+            [
+                new() { Name = "ids", OriginalName = "filter.ids", IsRequired = false, Type = array, Explode = false },
+                new() { Name = "tag", IsRequired = false, Type = array, Explode = true }
+            ],
+            HeaderParameters = [new() { Name = "kinds", OriginalName = "X-Kinds", IsRequired = false, Type = array }]
+        };
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
+
+        var code = _renderer.Render(builder.BuildMethod(operation));
+
+        code.Should().Contain("\"filter.ids=\" + HttpWireValueFormatter.JoinValues(ids, \",\", true)")
+            .And.Contain("foreach (var item in tag)")
+            .And.Contain("TryAddWithoutValidation(\"X-Kinds\", HttpWireValueFormatter.JoinValues(kinds, \",\", false))");
+    }
+
+    /// <summary>Distinguishes required presence from null and empty-string validation.</summary>
+    [Test]
+    public void RequiredValidation_DoesNotRejectAllowedNullOrEmptyString()
+    {
+        var value = Property("label", "Label");
+        var optional = Property("note", "Note") with { Type = new IrNullableType { InnerType = value.Type } };
+        var model = new IrModel { Name = "Receipt", Properties = [value, optional] };
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([model], []),
+            new CSharpGenerationOptions { UseRequired = true, GenerateValidationAttributes = true });
+
+        _renderer.Render(builder.BuildProperty(value, model)).Should().Contain("[Required(").And.Contain("AllowEmptyStrings");
+        _renderer.Render(builder.BuildProperty(optional, model)).Should()
+            .Contain("required string? Note").And.NotContain("[Required");
+    }
+
     /// <summary>Preserves raw HTTP errors without interpreting arbitrary payloads as the first error schema.</summary>
     [Test]
     public void ErrorResponses_DoNotDeserializeUnrelatedPayloads()

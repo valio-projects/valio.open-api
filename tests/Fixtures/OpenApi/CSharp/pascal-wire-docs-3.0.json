@@ -104,7 +104,7 @@
         "properties": {
           "Id": {
             "type": "string",
-            "description": "The exact delivery identifier."
+            "description": "The exact delivery identifier, for example <c>42</c>."
           },
           "equals": {
             "type": "string"
@@ -142,7 +142,7 @@
         "description": "The delivery status.",
         "x-enum-descriptions": {
           "in-progress": "The delivery is between pickup & arrival.",
-          "Ready": "The delivery can start."
+          "Ready": "The delivery can start with <c>Ready</c>."
         },
         "enum": [
           "Ready",

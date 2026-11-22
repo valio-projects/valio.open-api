@@ -100,7 +100,7 @@ public sealed class CSharpGeneratedCompilationTests
             .And.Contain("[JsonStringEnumMemberName(\"in-progress\")]")
             .And.Contain("/// The delivery is between pickup &amp; arrival.");
         context.IrDocument.Enums.Single(item => item.Name == "DeliveryState").Values.Select(member => member.Description)
-            .Should().Equal("The delivery can start.", "The delivery is between pickup & arrival.", null);
+            .Should().Equal("The delivery can start with <c>Ready</c>.", "The delivery is between pickup & arrival.", null);
         context.IrDocument.Models.Single(item => item.Name == "Delivery").Properties
             .Should().Contain(property => property.Name == "route_name");
         docs.Should().Contain("/// Creates a delivery.").And.Contain("/// <remarks>")
@@ -154,7 +154,9 @@ public sealed class CSharpGeneratedCompilationTests
             if (request.Equals(changedBase)) throw new Exception("Generated equality ignored a renamed base property.");
             var documentation = XDocument.Load(Path.Combine(AppContext.BaseDirectory, "Smoke.xml"));
             if (!documentation.Descendants("see").Any(element => (string?)element.Attribute("cref") == "T:Generated.Contracts.Delivery") ||
-                !documentation.Descendants("c").Any(element => element.Value == "route-name"))
+                !documentation.Descendants("c").Any(element => element.Value == "route-name") ||
+                !documentation.Descendants("c").Any(element => element.Value == "42") ||
+                !documentation.Descendants("c").Any(element => element.Value == "Ready"))
                 throw new Exception("The compiled XML documentation lost inline markup.");
 
             foreach (var valid in new[] { "Ready", "in-progress", "0" })
@@ -480,6 +482,8 @@ public sealed class CSharpGeneratedCompilationTests
             RequestBody = new IrRequestBody { Type = new IrModelReference { ModelName = "UploadForm" }, IsRequired = false, ContentType = "multipart/form-data" },
             Responses = [new IrResponse { StatusCode = "200", Type = Primitive(IrPrimitiveKind.Integer) }]
         };
+        var money = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Number, Format = "decimal" };
+        const string moneyMediaType = "application/vnd.winzone.money+json";
         return new IrDocument
         {
             Metadata = new IrDocumentMetadata(),
@@ -512,6 +516,39 @@ public sealed class CSharpGeneratedCompilationTests
                 [
                     new IrResponse { StatusCode = "202", Type = Primitive(IrPrimitiveKind.Integer) },
                     new IrResponse { StatusCode = "204" }
+                ]
+            }, new IrOperation
+            {
+                MethodName = "SendExactMoney", HttpMethod = "POST", Path = "/money",
+                PathParameters = [],
+                QueryParameters =
+                [
+                    new IrParameter
+                    {
+                        Name = "names", OriginalName = "filter.names", Type = new IrArrayType { ElementType = text },
+                        IsRequired = true, Style = IrParameterStyle.Form, Explode = false
+                    }
+                ],
+                HeaderParameters =
+                [
+                    new IrParameter
+                    {
+                        Name = "kinds", OriginalName = "X-Kinds", Type = new IrArrayType { ElementType = text },
+                        IsRequired = true, Style = IrParameterStyle.Simple
+                    }
+                ],
+                RequestBody = new IrRequestBody { Type = money, IsRequired = true, ContentType = moneyMediaType },
+                Responses =
+                [
+                    new IrResponse
+                    {
+                        StatusCode = "200", Type = money,
+                        MediaTypes =
+                        [
+                            new() { Name = "text/plain", Type = money },
+                            new() { Name = moneyMediaType, Type = money }
+                        ]
+                    }
                 ]
             }] }],
             TypeDependencies = new IrTypeDependencyGraph
@@ -621,6 +658,12 @@ public sealed class CSharpGeneratedCompilationTests
         }
         handler.AcceptedResponseContent = null;
         await client.Accept();
+        var money = await client.SendExactMoney(["a,b", "x y"], ["one", "two"], 999999999999999999.9999999999m);
+        if (money != 999999999999999999.9999999999m || handler.Body != "999999999999999999.9999999999" ||
+            handler.Uri?.Query != "?filter.names=a%2Cb,x%20y" || handler.ArrayHeader != "one,two" ||
+            handler.RequestMediaType != "application/vnd.winzone.money+json" ||
+            handler.AcceptMediaType != "application/vnd.winzone.money+json")
+            throw new InvalidOperationException("Exact decimal, query/header list, or media negotiation failed.");
         // TELEMETRY_CHECKS
         await HttpPipelineChecks.Run();
         Console.WriteLine("CSharp generated runtime passed");
@@ -632,6 +675,12 @@ public sealed class CSharpGeneratedCompilationTests
             internal Uri? Uri { get; private set; }
             /// <summary>Gets the last custom header value.</summary>
             internal string? Header { get; private set; }
+            /// <summary>Gets the last array header serialized by the client.</summary>
+            internal string? ArrayHeader { get; private set; }
+            /// <summary>Gets the last outgoing body media type.</summary>
+            internal string? RequestMediaType { get; private set; }
+            /// <summary>Gets the last advertised response media type.</summary>
+            internal string? AcceptMediaType { get; private set; }
             /// <summary>Gets whether the last request contained a body.</summary>
             internal bool HadContent { get; private set; }
             /// <summary>Gets the last serialized request body.</summary>
@@ -645,8 +694,17 @@ public sealed class CSharpGeneratedCompilationTests
             {
                 Uri = request.RequestUri;
                 Header = request.Headers.TryGetValues("X.Trace", out var values) ? values.Single() : null;
+                ArrayHeader = request.Headers.TryGetValues("X-Kinds", out var kinds) ? kinds.Single() : null;
+                RequestMediaType = request.Content?.Headers.ContentType?.MediaType;
+                AcceptMediaType = request.Headers.Accept.SingleOrDefault()?.MediaType;
                 HadContent = request.Content != null;
                 Body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
+                if (Uri?.AbsolutePath == "/money")
+                    return new HttpResponseMessage(HttpStatusCode.OK)
+                    {
+                        Content = new StringContent("999999999999999999.9999999999", System.Text.Encoding.UTF8,
+                            "application/vnd.winzone.money+json")
+                    };
                 if (Uri?.AbsolutePath == "/accept")
                     return AcceptedResponseContent is { } content
                         ? new HttpResponseMessage(HttpStatusCode.Accepted) { Content = new StringContent(content) }

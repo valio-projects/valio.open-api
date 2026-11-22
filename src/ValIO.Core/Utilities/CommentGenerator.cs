@@ -16,25 +16,14 @@ public static class CommentGenerator
         @"<(?:see|seealso|paramref|typeparamref)\s+[^<>]*/>|<c>[^<]*</c>|<code>[^<]*</code>",
         RegexOptions.CultureInvariant | RegexOptions.NonBacktracking);
 
-    /// <summary>
-    /// Генерирует XML комментарий для C#
-    /// </summary>
+    /// <summary>Writes a model or member summary while preserving inline XML documentation.</summary>
+    /// <param name="sb">The generated source buffer.</param>
+    /// <param name="indentLevel">The enclosing indentation depth.</param>
+    /// <param name="description">The schema description to write as a summary.</param>
     public static void GenerateXmlComment(StringBuilder sb, int indentLevel, string? description)
     {
-        if (string.IsNullOrEmpty(description))
-            return;
-        
-        CodeFormatter.AppendLine(sb, indentLevel, "/// <summary>");
-        
-        // Разбиваем многострочные комментарии на отдельные строки
-        var lines = description.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-        foreach (var line in lines)
-        {
-            var escapedLine = CodeEscapeHelper.EscapeXmlComment(line);
-            CodeFormatter.AppendLine(sb, indentLevel, $"/// {escapedLine}");
-        }
-        
-        CodeFormatter.AppendLine(sb, indentLevel, "/// </summary>");
+        if (!string.IsNullOrWhiteSpace(description))
+            AppendXmlElement(sb, indentLevel, "<summary>", "</summary>", description, multiline: true);
     }
     
     /// <summary>Writes XML documentation for a declaration with arguments and an optional return value.</summary>

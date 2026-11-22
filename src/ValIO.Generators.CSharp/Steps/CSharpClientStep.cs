@@ -124,19 +124,27 @@ public sealed class CSharpClientStep : ICodeGenerationStep
             {
                 ArgumentNullException.ThrowIfNull(request);
                 var content = new MultipartFormDataContent();
-                foreach (var property in typeof(TRequest).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+                try
                 {
-                    var value = property.GetValue(request);
-                    if (value is null)
+                    foreach (var property in typeof(TRequest).GetProperties(BindingFlags.Instance | BindingFlags.Public))
                     {
-                        continue;
+                        var value = property.GetValue(request);
+                        if (value is null)
+                        {
+                            continue;
+                        }
+
+                        var name = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
+                        AddValue(content, name, value);
                     }
 
-                    var name = property.GetCustomAttribute<JsonPropertyNameAttribute>()?.Name ?? property.Name;
-                    AddValue(content, name, value);
+                    return content;
                 }
-
-                return content;
+                catch
+                {
+                    content.Dispose();
+                    throw;
+                }
             }
 
             /// <summary>Adds one scalar, file, or repeated value to the multipart payload.</summary>
@@ -195,7 +203,9 @@ public sealed class CSharpClientStep : ICodeGenerationStep
     /// <returns>A standalone runtime helper honoring enum wire names and invariant formats.</returns>
     private static string BuildHttpWireValueFormatter(string ns) => $$"""
         using System;
+        using System.Collections.Generic;
         using System.Globalization;
+        using System.Linq;
         using System.Reflection;
         using System.Text.Json.Serialization;
 
@@ -222,6 +232,19 @@ public sealed class CSharpClientStep : ICodeGenerationStep
                 IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture) ?? string.Empty,
                 _ => throw new NotSupportedException($"The HTTP scalar type {value.GetType().Name} is not supported."),
             };
+
+            /// <summary>Formats an HTTP collection with separators outside the optional per-item escaping.</summary>
+            /// <typeparam name="T">The generated scalar item type.</typeparam>
+            /// <param name="values">The collection to format.</param>
+            /// <param name="separator">The delimiter between adjacent items.</param>
+            /// <param name="escape">Whether to percent-encode the individual items.</param>
+            /// <returns>The formatted values, separated by the declared delimiter.</returns>
+            internal static string JoinValues<T>(IEnumerable<T> values, string separator, bool escape) =>
+                string.Join(separator, values.Select(value =>
+                {
+                    var text = Format(value);
+                    return escape ? Uri.EscapeDataString(text) : text;
+                }));
 
             /// <summary>Uses declared string wire names and underlying numeric values for enum fields.</summary>
             /// <param name="value">The declared enum member.</param>

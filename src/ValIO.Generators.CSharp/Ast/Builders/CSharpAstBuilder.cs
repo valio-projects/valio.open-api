@@ -255,6 +255,15 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Добавляем атрибуты валидации, если включено
         if (_options.GenerateValidationAttributes && model != null)
         {
+            if (property.IsRequired && type is not NullableTypeNode)
+            {
+                var required = UnwrapNullableOrOptional(property.Type) is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.String }
+                    ? new AttributeNode(new IdentifierNode("Required"),
+                        [new BinaryExpressionNode(new IdentifierExpressionNode(new IdentifierNode("AllowEmptyStrings")),
+                            BinaryOperator.Assign, new LiteralExpressionNode(true, LiteralKind.Boolean), isNamedArgument: true)])
+                    : new AttributeNode(new IdentifierNode("Required"));
+                attributes.Add(required);
+            }
             AddValidationAttributes(property, model, attributes);
         }
         
@@ -302,12 +311,6 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         {
             var propertyNamePascalCase = _namingConverter.ToPascalCase(property.OriginalName);
             constantsClassName = $"{propertyNamePascalCase}Constants";
-        }
-
-        // Required атрибут для обязательных свойств
-        if (property.IsRequired)
-        {
-            attributes.Add(new AttributeNode(new IdentifierNode("Required")));
         }
 
         // MinLength / MaxLength для строк
@@ -1193,6 +1196,31 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             arguments: new[] { text }.ToImmutableList());
     }
 
+    /// <summary>Joins a collection using invariant HTTP scalars with optional per-item URL encoding.</summary>
+    /// <param name="value">The generated collection expression.</param>
+    /// <param name="delimiter">The separator placed between the formatted values.</param>
+    /// <param name="escape">Whether to percent-encode each item before inserting separators.</param>
+    /// <returns>The generated collection formatting call.</returns>
+    private static ExpressionNode BuildJoinedParameterExpression(ExpressionNode value, string delimiter, bool escape) =>
+        new CallExpressionNode(
+            new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("HttpWireValueFormatter")),
+                new IdentifierNode("JoinValues")),
+            [value, new LiteralExpressionNode(delimiter, LiteralKind.String), new LiteralExpressionNode(escape, LiteralKind.Boolean)]);
+
+    /// <summary>Resolves supported query-array separators and distinguishes expanded form arrays.</summary>
+    /// <param name="parameter">The query parameter with optional OpenAPI serialization metadata.</param>
+    /// <returns>Null for repeated form entries, otherwise the separator for one query value.</returns>
+    /// <exception cref="NotSupportedException">The array uses a style that cannot be sent as a flat query string.</exception>
+    private static string? GetQueryArrayDelimiter(IrParameter parameter) =>
+        (parameter.Style ?? IrParameterStyle.Form, parameter.Explode) switch
+        {
+            (IrParameterStyle.Form, false) => ",",
+            (IrParameterStyle.Form, _) => null,
+            (IrParameterStyle.SpaceDelimited, not true) => "%20",
+            (IrParameterStyle.PipeDelimited, not true) => "%7C",
+            _ => throw new NotSupportedException($"C# query array '{parameter.OriginalName}' uses an unsupported style or explode value.")
+        };
+
     /// <summary>Executes statements only when an optional input or activity is present.</summary>
     /// <param name="paramName">The identifier tested for null.</param>
     /// <param name="statements">The guarded statements.</param>
@@ -1408,7 +1436,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     private MethodDeclarationNode BuildMethod(IrOperation operation, bool includeBody, bool useInheritDoc)
     {
         operation = ResolveMethodParameterCollisions(operation);
-        var response = SelectSuccessResponse(operation.Responses);
+        var response = SelectSuccessResponse(GetSuccessResponses(operation));
         return new MethodDeclarationNode(
             name: new IdentifierNode(operation.MethodName),
             returnType: BuildOperationReturnType(response),
@@ -1763,7 +1791,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     {
         operation = ResolveMethodParameterCollisions(operation);
         var name = new IdentifierNode(operation.MethodName);
-        var response = SelectSuccessResponse(operation.Responses);
+        var response = SelectSuccessResponse(GetSuccessResponses(operation));
         var returnType = BuildOperationReturnType(response);
         var resultType = ExtractReturnTypeGenericArgument(returnType);
         var parameters = BuildMethodParameters(operation);
@@ -1974,7 +2002,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                     member: new IdentifierNode("ThrowIfCancellationRequested"))))
         };
 
-        var successResponse = SelectSuccessResponse(operation.Responses);
+        var successResponses = GetSuccessResponses(operation);
+        var successResponse = SelectSuccessResponse(successResponses);
         var successType = successResponse?.Type is { } responseType ? BuildType(responseType) : null;
 
         // Подсчитываем capacity для StringBuilder
@@ -2064,9 +2093,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             }
         }
         
-        // Добавляем query parameters — только непустые (null-safe: опциональные параметры не должны
-        // попадать в URL как "null"/бросать NRE), массивы разворачиваются в повторяющиеся пары
-        // key=v1&key=v2 (form/explode=true style, как ждёт ASP.NET model binding).
+        // Preserve original query names and the declared array expansion.
         if (operation.QueryParameters.Count > 0)
         {
             var queryPartsType = new GenericTypeNode(
@@ -2089,8 +2116,9 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             foreach (var queryParam in operation.QueryParameters)
             {
                 var unwrappedType = UnwrapNullableOrOptional(queryParam.Type);
+                var arrayDelimiter = unwrappedType is IrArrayType ? GetQueryArrayDelimiter(queryParam) : null;
 
-                if (unwrappedType is IrArrayType arrayType)
+                if (unwrappedType is IrArrayType && arrayDelimiter is null)
                 {
                     var itemVar = new IdentifierNode(Local("item"));
                     var itemExpr = new IdentifierExpressionNode(itemVar);
@@ -2124,7 +2152,9 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                         // идентификатор метода (Paging_Offset): иначе ASP.NET model binding не находит его.
                         left: new LiteralExpressionNode($"{Uri.EscapeDataString(queryParam.OriginalName)}=", LiteralKind.String),
                         @operator: BinaryOperator.Add,
-                        right: BuildQueryValueExpression(paramExpr));
+                        right: arrayDelimiter is null
+                            ? BuildQueryValueExpression(paramExpr)
+                            : BuildJoinedParameterExpression(paramExpr, arrayDelimiter, escape: true));
 
                     var addStatement = new ExpressionStatementNode(new CallExpressionNode(
                         target: queryPartsAdd,
@@ -2201,7 +2231,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Создаем блок для using statement requestMessage
         var requestMessageUsingBodyStatements = new List<StatementNode>();
         
-        // 3. Устанавливаем Headers (Accept: application/json)
+        // Advertise only the response representations the generated client can deserialize.
         var requestMessageHeaders = new MemberAccessExpressionNode(
             @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
             member: new IdentifierNode("Headers"));
@@ -2211,26 +2241,40 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         var acceptAdd = new MemberAccessExpressionNode(
             @object: acceptHeader,
             member: new IdentifierNode("Add"));
-        var mediaTypeJson = new IdentifierExpressionNode(new IdentifierNode("MediaTypeWithQualityHeaderValue"));
-        var mediaTypeJsonCtor = new CallExpressionNode(
-            target: mediaTypeJson,
-            arguments: new ExpressionNode[] { new LiteralExpressionNode("application/json", LiteralKind.String) }.ToImmutableList(),
-            isNewExpression: true);
-        var acceptAddCall = new CallExpressionNode(
-            target: acceptAdd,
-            arguments: new[] { mediaTypeJsonCtor }.ToImmutableList());
-        requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(acceptAddCall));
+        var responseMedia = successResponses
+            .Where(response => response.Type is not null)
+            .SelectMany(response => response.ContentTypes.DefaultIfEmpty("application/json"))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .DefaultIfEmpty("application/json");
+        foreach (var media in responseMedia)
+        {
+            var acceptMedia = new CallExpressionNode(
+                target: new IdentifierExpressionNode(new IdentifierNode("MediaTypeWithQualityHeaderValue")),
+                arguments: new ExpressionNode[] { new LiteralExpressionNode(media, LiteralKind.String) }.ToImmutableList(),
+                isNewExpression: true);
+            requestMessageUsingBodyStatements.Add(new ExpressionStatementNode(new CallExpressionNode(
+                target: acceptAdd,
+                arguments: new[] { acceptMedia }.ToImmutableList())));
+        }
 
         foreach (var parameter in operation.HeaderParameters)
         {
             var addHeader = new MemberAccessExpressionNode(
                 @object: requestMessageHeaders,
                 member: new IdentifierNode("TryAddWithoutValidation"));
-            var value = new CallExpressionNode(
+            var headerParameter = new IdentifierExpressionNode(new IdentifierNode(parameter.Name));
+            ExpressionNode value = new CallExpressionNode(
                 target: new MemberAccessExpressionNode(
                     @object: new IdentifierExpressionNode(new IdentifierNode("HttpWireValueFormatter")),
                     member: new IdentifierNode("Format")),
-                arguments: new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(parameter.Name)) }.ToImmutableList());
+                arguments: new ExpressionNode[] { headerParameter }.ToImmutableList());
+            if (UnwrapNullableOrOptional(parameter.Type) is IrArrayType)
+            {
+                if (parameter.Style is not (null or IrParameterStyle.Simple))
+                    throw new NotSupportedException($"C# header array '{parameter.OriginalName}' requires simple style.");
+
+                value = BuildJoinedParameterExpression(headerParameter, ",", escape: false);
+            }
             var add = new ExpressionStatementNode(new CallExpressionNode(
                 target: addHeader,
                 arguments: new ExpressionNode[] { new LiteralExpressionNode(parameter.OriginalName, LiteralKind.String), value }.ToImmutableList()));
@@ -2262,6 +2306,20 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             }
             else
             {
+                var contentType = operation.RequestBody.ContentType;
+                if (contentType is not null && !IsJsonMediaType(contentType))
+                    throw new NotSupportedException($"C# operation '{operation.MethodName}' has unsupported request media type '{contentType}'.");
+
+                ExpressionNode mediaType = string.IsNullOrEmpty(contentType) ||
+                    contentType.Equals("application/json", StringComparison.OrdinalIgnoreCase)
+                    ? new CastExpressionNode(
+                        new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("MediaTypeHeaderValue"), isPrimitive: false)),
+                        new LiteralExpressionNode(null, LiteralKind.Null))
+                    : new CallExpressionNode(
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("MediaTypeHeaderValue")),
+                            new IdentifierNode("Parse")),
+                        [new LiteralExpressionNode(contentType, LiteralKind.String)]);
+
                 // JsonContent defers serialization until the token-aware HTTP content write.
                 var jsonContent = new CallExpressionNode(
                     target: new MemberAccessExpressionNode(
@@ -2270,9 +2328,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                     arguments: new ExpressionNode[]
                     {
                         requestBodyParam,
-                        new CastExpressionNode(
-                            new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("MediaTypeHeaderValue"), isPrimitive: false)),
-                            new LiteralExpressionNode(null, LiteralKind.Null)),
+                        mediaType,
                         new MemberAccessExpressionNode(
                             new IdentifierExpressionNode(new IdentifierNode("JsonSerializerOptions")),
                             new IdentifierNode("Default"))
@@ -2411,8 +2467,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Success branch: десериализуем в success type и помещаем в промежуточную переменную response
         if (successType != null)
         {
-            var acceptedResponse = operation.Responses.FirstOrDefault(response => response.StatusCode == "202")
-                ?? operation.Responses.FirstOrDefault(response => response.StatusCode.Equals("2XX", StringComparison.OrdinalIgnoreCase));
+            var acceptedResponse = successResponses.FirstOrDefault(response => response.StatusCode == "202")
+                ?? successResponses.FirstOrDefault(response => response.StatusCode.Equals("2XX", StringComparison.OrdinalIgnoreCase));
             var emptySuccessStatements = new List<StatementNode>();
             if (acceptedResponse?.Type is not null)
             {
@@ -2672,19 +2728,76 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             }.ToImmutableList());
     }
 
+    /// <summary>Resolves the JSON representations that can share the generated C# response signature.</summary>
+    /// <param name="operation">The operation whose successful responses are exposed by the client.</param>
+    /// <returns>Successful statuses with their selected JSON types and media names.</returns>
+    /// <exception cref="NotSupportedException">A typed status has no JSON representation or has incompatible body types.</exception>
+    private static IReadOnlyList<IrResponse> GetSuccessResponses(IrOperation operation)
+    {
+        var result = new List<IrResponse>();
+        foreach (var response in operation.Responses)
+        {
+            if (!response.StatusCode.Equals("2XX", StringComparison.OrdinalIgnoreCase) &&
+                !(int.TryParse(response.StatusCode, out var code) && code is >= 200 and < 300))
+            {
+                continue;
+            }
+
+            if (operation.HttpMethod.Equals("HEAD", StringComparison.OrdinalIgnoreCase) || response.StatusCode is "204" or "205")
+            {
+                result.Add(response with { Type = null, ContentTypes = [] });
+                continue;
+            }
+
+            if (response.MediaTypes.Count == 0 || response.MediaTypes.All(media => media.Type is null))
+            {
+                result.Add(response);
+                continue;
+            }
+
+            var json = response.MediaTypes.Where(media => media.Type is not null && IsJsonMediaType(media.Name)).ToArray();
+            if (json.Length == 0)
+                throw new NotSupportedException($"C# operation '{operation.MethodName}' has no supported JSON response for HTTP {response.StatusCode}.");
+
+            var type = json[0].Type!;
+            if (response.MediaTypes.Any(media => media.Type is not null &&
+                    !IrTypeComparer.AreSemanticallyEqual(type, media.Type, ignorePresence: false)))
+            {
+                throw new NotSupportedException(
+                    $"C# operation '{operation.MethodName}' has incompatible media schemas for HTTP {response.StatusCode}. An explicit result union is required.");
+            }
+
+            result.Add(response with
+            {
+                Type = type,
+                ContentTypes = json.Select(media => media.Name.Split(';', 2)[0].Trim()).ToArray()
+            });
+        }
+
+        return result;
+    }
+
+    /// <summary>Recognizes a concrete JSON media type understood by the generated serializer.</summary>
+    /// <param name="value">The declared media name, optionally followed by parameters.</param>
+    /// <returns>Whether the media type can be used to read or send JSON.</returns>
+    private static bool IsJsonMediaType(string value)
+    {
+        var name = value.Split(';', 2)[0].Trim();
+        return !name.Contains('*') && (name.Equals("application/json", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("text/json", StringComparison.OrdinalIgnoreCase)
+            || name.EndsWith("+json", StringComparison.OrdinalIgnoreCase));
+    }
+
     /// <summary>Selects the shared body type from successful responses independently of schema order.</summary>
     /// <param name="responses">The operation's declared responses.</param>
     /// <returns>The first typed success response, or a bodyless success when no body is declared.</returns>
     /// <exception cref="NotSupportedException">Successful responses have incompatible result types.</exception>
     private static IrResponse? SelectSuccessResponse(IReadOnlyList<IrResponse> responses)
     {
-        var successes = responses.Where(response =>
-            string.Equals(response.StatusCode, "2XX", StringComparison.OrdinalIgnoreCase) ||
-            int.TryParse(response.StatusCode, out var code) && code is >= 200 and < 300).ToArray();
-        var typed = successes.Where(response => response.Type is not null).ToArray();
+        var typed = responses.Where(response => response.Type is not null).ToArray();
         if (typed.Skip(1).Any(response => !IrTypeComparer.AreSemanticallyEqual(typed[0].Type, response.Type, ignorePresence: false)))
             throw new NotSupportedException("C# operations with different success body types require an explicit result union, which is not implemented.");
-        return typed.FirstOrDefault() ?? successes.FirstOrDefault();
+        return typed.FirstOrDefault() ?? responses.FirstOrDefault();
     }
 
     /// <summary>Wraps the selected operation result in the appropriate asynchronous C# return type.</summary>
