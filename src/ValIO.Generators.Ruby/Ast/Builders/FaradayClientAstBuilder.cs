@@ -13,16 +13,8 @@ namespace ValIO.Generators.Ruby.Ast.Builders;
 /// becomes a <c>def</c> with body lines that issue a Faraday request and
 /// return the parsed response body.
 /// </summary>
-public sealed class FaradayClientAstBuilder
+public sealed class FaradayClientAstBuilder(INamingConverter namingConverter, RubyIrTypeMapper typeMapper)
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly RubyIrTypeMapper _typeMapper;
-
-    public FaradayClientAstBuilder(INamingConverter namingConverter, RubyIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     public RubyFileNode BuildFile(IrClient client)
     {
@@ -59,12 +51,12 @@ public sealed class FaradayClientAstBuilder
 
     private RubyMethodNode BuildOperationMethod(IrOperation op)
     {
-        var methodName = _namingConverter.ToSnakeCase(op.MethodName);
+        var methodName = namingConverter.ToSnakeCase(op.MethodName);
         var parameters = new List<string>();
 
         foreach (var p in op.PathParameters)
         {
-            parameters.Add(_namingConverter.ToSnakeCase(p.Name));
+            parameters.Add(namingConverter.ToSnakeCase(p.Name));
         }
 
         if (op.RequestBody != null)
@@ -74,7 +66,7 @@ public sealed class FaradayClientAstBuilder
 
         foreach (var p in op.QueryParameters)
         {
-            var snake = _namingConverter.ToSnakeCase(p.Name);
+            var snake = namingConverter.ToSnakeCase(p.Name);
             // All query params get a `nil` default to keep the call site flexible.
             parameters.Add($"{snake}: nil");
         }
@@ -109,7 +101,7 @@ public sealed class FaradayClientAstBuilder
         var pathTemplate = op.Path;
         foreach (var p in op.PathParameters)
         {
-            var snake = _namingConverter.ToSnakeCase(p.Name);
+            var snake = namingConverter.ToSnakeCase(p.Name);
             pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "#{" + snake + "}", StringComparison.Ordinal);
         }
 
@@ -124,7 +116,7 @@ public sealed class FaradayClientAstBuilder
         {
             foreach (var p in op.QueryParameters)
             {
-                var snake = _namingConverter.ToSnakeCase(p.Name);
+                var snake = namingConverter.ToSnakeCase(p.Name);
                 var wireName = EscapeSingleQuoted(p.Name);
                 lines.Add($"  req.params['{wireName}'] = {snake} unless {snake}.nil?");
             }
@@ -157,7 +149,7 @@ public sealed class FaradayClientAstBuilder
 
     private string ToServiceClassName(string clientName)
     {
-        var pascal = _namingConverter.ToPascalCase(clientName);
+        var pascal = namingConverter.ToPascalCase(clientName);
         return pascal.EndsWith("Service", StringComparison.Ordinal) ? pascal : pascal + "Service";
     }
 

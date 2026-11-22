@@ -12,29 +12,21 @@ namespace ValIO.Generators.Dart.Ast.Builders;
 /// (<c>final</c> fields + a single named-args constructor). Maps optional
 /// properties to nullable fields.
 /// </summary>
-public sealed class DartModelAstBuilder
+public sealed class DartModelAstBuilder(INamingConverter namingConverter, DartIrTypeMapper typeMapper)
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly DartIrTypeMapper _typeMapper;
-
-    public DartModelAstBuilder(INamingConverter namingConverter, DartIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     public DartFileNode BuildFile(IrModel model)
     {
-        var className = _namingConverter.ToPascalCase(model.Name);
+        var className = namingConverter.ToPascalCase(model.Name);
         var fields = new List<DartFieldNode>(model.Properties.Count);
         var ctorParams = new List<DartParameterNode>(model.Properties.Count);
 
         foreach (var prop in model.Properties)
         {
-            var fieldName = _namingConverter.ToCamelCase(prop.Name);
+            var fieldName = namingConverter.ToCamelCase(prop.Name);
             var safe = DartReservedNames.Avoid(fieldName);
-            var mapped = _typeMapper.MapType(prop.Type);
-            var isOptional = _typeMapper.IsOptionalInLanguage(prop);
+            var mapped = typeMapper.MapType(prop.Type);
+            var isOptional = typeMapper.IsOptionalInLanguage(prop);
 
             fields.Add(new DartFieldNode(
                 new IdentifierNode(safe),

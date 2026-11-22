@@ -17,14 +17,9 @@ namespace ValIO.Generators.TypeScript.TypeBox.Ast.Builders;
 /// <summary>
 /// Builds TypeBox schema expression AST from IR types.
 /// </summary>
-public sealed class TypeBoxAstBuilder
+public sealed class TypeBoxAstBuilder(string? uuidFormat = null)
 {
-    private readonly string _uuidFormat;
-
-    public TypeBoxAstBuilder(string? uuidFormat = null)
-    {
-        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
-    }
+    private readonly string _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
 
     /// <summary>Builds a model schema, applying sibling properties to every union or intersection arm.</summary>
     /// <param name="model">The model being validated.</param>

@@ -12,14 +12,9 @@ namespace ValIO.Generators.Ruby;
 /// Maps IR types to Ruby AST type nodes. Ruby is duck-typed, so the rendered
 /// type strings are mostly used for YARD-style documentation comments.
 /// </summary>
-public sealed class RubyIrTypeMapper : IIrTypeMapper
+public sealed class RubyIrTypeMapper(RubyGenerationOptions? options = null) : IIrTypeMapper
 {
-    private readonly RubyGenerationOptions _options;
-
-    public RubyIrTypeMapper(RubyGenerationOptions? options = null)
-    {
-        _options = options ?? new RubyGenerationOptions();
-    }
+    private readonly RubyGenerationOptions _options = options ?? new RubyGenerationOptions();
 
     public TypeNode MapType(IrType irType) => irType switch
     {

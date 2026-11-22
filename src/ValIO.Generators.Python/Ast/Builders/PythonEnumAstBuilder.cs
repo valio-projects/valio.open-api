@@ -9,14 +9,8 @@ namespace ValIO.Generators.Python.Ast.Builders;
 /// <summary>
 /// Строит Python <c>StrEnum</c> / <c>IntEnum</c> модуль из IR-enum.
 /// </summary>
-public sealed class PythonEnumAstBuilder
+public sealed class PythonEnumAstBuilder(INamingConverter namingConverter)
 {
-    private readonly INamingConverter _namingConverter;
-
-    public PythonEnumAstBuilder(INamingConverter namingConverter)
-    {
-        _namingConverter = namingConverter;
-    }
 
     public PythonModuleNode BuildModule(IrEnum irEnum)
     {
@@ -56,7 +50,7 @@ public sealed class PythonEnumAstBuilder
 
     private string ToScreamingSnakeCase(string name)
     {
-        var snake = _namingConverter.ToSnakeCase(name);
+        var snake = namingConverter.ToSnakeCase(name);
         return string.IsNullOrEmpty(snake) ? "_" : snake.ToUpperInvariant();
     }
 

@@ -13,21 +13,10 @@ namespace ValIO.Generators.Kotlin.Ast.Builders;
 /// <summary>
 /// Builds an OkHttp + coroutines service class for one <see cref="IrClient"/>.
 /// </summary>
-public sealed class OkHttpClientAstBuilder
+/// <param name="namingConverter">The source identifier converter.</param>
+/// <param name="typeMapper">The Kotlin type mapper.</param>
+public sealed class OkHttpClientAstBuilder(INamingConverter namingConverter, KotlinIrTypeMapper typeMapper)
 {
-    /// <summary>Converts operation and argument names into Kotlin identifiers.</summary>
-    private readonly INamingConverter _namingConverter;
-    /// <summary>Maps operation payload types into Kotlin values.</summary>
-    private readonly KotlinIrTypeMapper _typeMapper;
-
-    /// <summary>Creates the client builder using the shared naming and type services.</summary>
-    /// <param name="namingConverter">The source identifier converter.</param>
-    /// <param name="typeMapper">The Kotlin type mapper.</param>
-    public OkHttpClientAstBuilder(INamingConverter namingConverter, KotlinIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     /// <summary>Builds a caller-owned OkHttp service with coroutine-aware native request cancellation.</summary>
     /// <param name="client">The operation group.</param>
@@ -124,15 +113,15 @@ public sealed class OkHttpClientAstBuilder
         IrOperation op,
         KotlinTypeImportScanner.Result importScan)
     {
-        var methodName = KotlinReservedNames.Avoid(_namingConverter.ToCamelCase(op.MethodName));
+        var methodName = KotlinReservedNames.Avoid(namingConverter.ToCamelCase(op.MethodName));
         var parameters = new List<KotlinParameterNode>();
 
         foreach (var p in op.PathParameters)
         {
             KotlinTypeImportScanner.Walk(p.Type, importScan);
             parameters.Add(new KotlinParameterNode(
-                new IdentifierNode(KotlinReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name))),
-                _typeMapper.MapType(p.Type)));
+                new IdentifierNode(KotlinReservedNames.Avoid(namingConverter.ToCamelCase(p.Name))),
+                typeMapper.MapType(p.Type)));
         }
 
         if (op.RequestBody != null)
@@ -140,13 +129,13 @@ public sealed class OkHttpClientAstBuilder
             KotlinTypeImportScanner.Walk(op.RequestBody.Type, importScan);
             parameters.Add(new KotlinParameterNode(
                 new IdentifierNode("body"),
-                _typeMapper.MapType(op.RequestBody.Type)));
+                typeMapper.MapType(op.RequestBody.Type)));
         }
 
         foreach (var p in op.QueryParameters)
         {
             KotlinTypeImportScanner.Walk(p.Type, importScan);
-            var annotation = _typeMapper.MapType(p.Type);
+            var annotation = typeMapper.MapType(p.Type);
             string? defaultValue = null;
             if (!p.IsRequired)
             {
@@ -154,7 +143,7 @@ public sealed class OkHttpClientAstBuilder
                 defaultValue = "null";
             }
             parameters.Add(new KotlinParameterNode(
-                new IdentifierNode(KotlinReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name))),
+                new IdentifierNode(KotlinReservedNames.Avoid(namingConverter.ToCamelCase(p.Name))),
                 annotation,
                 defaultValue));
         }
@@ -169,7 +158,7 @@ public sealed class OkHttpClientAstBuilder
         if (successResponse?.Type != null)
         {
             KotlinTypeImportScanner.Walk(successResponse.Type, importScan);
-            returnType = _typeMapper.MapType(successResponse.Type);
+            returnType = typeMapper.MapType(successResponse.Type);
             responseModelName = TryGetSimpleModelName(successResponse.Type);
             responseModelNameForList = TryGetArrayOfSimpleModelName(successResponse.Type);
             isBinaryReturn = successResponse.Type is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File };
@@ -240,7 +229,7 @@ public sealed class OkHttpClientAstBuilder
         var pathTemplate = op.Path;
         foreach (var p in op.PathParameters)
         {
-            var camel = KotlinReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name));
+            var camel = KotlinReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
             pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "${" + camel + "}", StringComparison.Ordinal);
         }
         var trimmedPath = pathTemplate.TrimStart('/');
@@ -249,7 +238,7 @@ public sealed class OkHttpClientAstBuilder
         // Query parameters.
         foreach (var p in op.QueryParameters)
         {
-            var camel = KotlinReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name));
+            var camel = KotlinReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
             if (p.IsRequired)
                 lines.Add($"{Inner}urlBuilder.addQueryParameter(\"{EscapeStringLiteral(p.Name)}\", {camel}.toString())");
             else
@@ -353,7 +342,7 @@ public sealed class OkHttpClientAstBuilder
     /// <returns>The Kotlin API class name.</returns>
     private string ToClassName(string clientName)
     {
-        var pascal = _namingConverter.ToPascalCase(clientName);
+        var pascal = namingConverter.ToPascalCase(clientName);
         return pascal.EndsWith("Api", StringComparison.Ordinal) ? pascal : pascal + "Api";
     }
 

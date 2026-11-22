@@ -14,16 +14,8 @@ namespace ValIO.Generators.Swift.Ast.Builders;
 /// Builds a Swift <c>public final class</c> wrapping URLSession + async/await
 /// for one <see cref="IrClient"/>.
 /// </summary>
-public sealed class URLSessionClientAstBuilder
+public sealed class URLSessionClientAstBuilder(INamingConverter namingConverter, SwiftIrTypeMapper typeMapper)
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly SwiftIrTypeMapper _typeMapper;
-
-    public URLSessionClientAstBuilder(INamingConverter namingConverter, SwiftIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     public SwiftFileNode BuildFile(IrClient client)
     {
@@ -129,15 +121,15 @@ public sealed class URLSessionClientAstBuilder
         IrOperation op,
         SwiftTypeImportScanner.Result importScan)
     {
-        var methodName = SwiftReservedNames.Avoid(_namingConverter.ToCamelCase(op.MethodName));
+        var methodName = SwiftReservedNames.Avoid(namingConverter.ToCamelCase(op.MethodName));
         var parameters = new List<SwiftParameterNode>();
 
         foreach (var p in op.PathParameters)
         {
             SwiftTypeImportScanner.Walk(p.Type, importScan);
             parameters.Add(new SwiftParameterNode(
-                new IdentifierNode(SwiftReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name))),
-                _typeMapper.MapType(p.Type)));
+                new IdentifierNode(SwiftReservedNames.Avoid(namingConverter.ToCamelCase(p.Name))),
+                typeMapper.MapType(p.Type)));
         }
 
         if (op.RequestBody != null)
@@ -145,13 +137,13 @@ public sealed class URLSessionClientAstBuilder
             SwiftTypeImportScanner.Walk(op.RequestBody.Type, importScan);
             parameters.Add(new SwiftParameterNode(
                 new IdentifierNode("body"),
-                _typeMapper.MapType(op.RequestBody.Type)));
+                typeMapper.MapType(op.RequestBody.Type)));
         }
 
         foreach (var p in op.QueryParameters)
         {
             SwiftTypeImportScanner.Walk(p.Type, importScan);
-            var mapped = _typeMapper.MapType(p.Type);
+            var mapped = typeMapper.MapType(p.Type);
             string? defaultValue = null;
             if (!p.IsRequired)
             {
@@ -159,7 +151,7 @@ public sealed class URLSessionClientAstBuilder
                 defaultValue = "nil";
             }
             parameters.Add(new SwiftParameterNode(
-                new IdentifierNode(SwiftReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name))),
+                new IdentifierNode(SwiftReservedNames.Avoid(namingConverter.ToCamelCase(p.Name))),
                 mapped,
                 defaultValue));
         }
@@ -172,7 +164,7 @@ public sealed class URLSessionClientAstBuilder
         if (successResponse?.Type != null)
         {
             SwiftTypeImportScanner.Walk(successResponse.Type, importScan);
-            returnType = _typeMapper.MapType(successResponse.Type);
+            returnType = typeMapper.MapType(successResponse.Type);
             isBinaryReturn = successResponse.Type is IrPrimitiveType
             {
                 PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
@@ -223,7 +215,7 @@ public sealed class URLSessionClientAstBuilder
         var pathLiteral = EscapeStringLiteral(rawPath);
         foreach (var p in op.PathParameters)
         {
-            var camel = SwiftReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name));
+            var camel = SwiftReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
             pathLiteral = pathLiteral.Replace("{" + p.Name + "}", "\\(" + camel + ")", StringComparison.Ordinal);
         }
         lines.Add($"var components = URLComponents(url: baseURL.appendingPathComponent(\"{pathLiteral}\"), resolvingAgainstBaseURL: false)");
@@ -234,7 +226,7 @@ public sealed class URLSessionClientAstBuilder
             lines.Add("var queryItems: [URLQueryItem] = []");
             foreach (var p in op.QueryParameters)
             {
-                var camel = SwiftReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name));
+                var camel = SwiftReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
                 var wireName = EscapeStringLiteral(p.Name);
                 if (p.IsRequired)
                 {
@@ -304,7 +296,7 @@ public sealed class URLSessionClientAstBuilder
 
     private string ToClassName(string clientName)
     {
-        var pascal = _namingConverter.ToPascalCase(clientName);
+        var pascal = namingConverter.ToPascalCase(clientName);
         return pascal.EndsWith("Api", StringComparison.Ordinal) ? pascal : pascal + "Api";
     }
 

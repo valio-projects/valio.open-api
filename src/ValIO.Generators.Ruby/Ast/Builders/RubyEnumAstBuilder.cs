@@ -11,14 +11,8 @@ namespace ValIO.Generators.Ruby.Ast.Builders;
 /// IR enum value. Ruby has no <c>enum</c> keyword; this is the canonical
 /// representation in idiomatic Ruby gem code.
 /// </summary>
-public sealed class RubyEnumAstBuilder
+public sealed class RubyEnumAstBuilder(INamingConverter namingConverter)
 {
-    private readonly INamingConverter _namingConverter;
-
-    public RubyEnumAstBuilder(INamingConverter namingConverter)
-    {
-        _namingConverter = namingConverter;
-    }
 
     public RubyFileNode BuildFile(IrEnum irEnum)
     {
@@ -37,7 +31,7 @@ public sealed class RubyEnumAstBuilder
                     : null));
         }
 
-        var className = _namingConverter.ToPascalCase(irEnum.Name);
+        var className = namingConverter.ToPascalCase(irEnum.Name);
         var classNode = new RubyClassNode(
             new IdentifierNode(className),
             parentClass: null,
@@ -51,7 +45,7 @@ public sealed class RubyEnumAstBuilder
 
     private string ToScreamingSnakeCase(string name)
     {
-        var snake = _namingConverter.ToSnakeCase(name);
+        var snake = namingConverter.ToSnakeCase(name);
         return string.IsNullOrEmpty(snake) ? "_" : snake.ToUpperInvariant();
     }
 

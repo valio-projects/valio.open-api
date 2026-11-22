@@ -12,16 +12,8 @@ namespace ValIO.Generators.Rust.Ast.Builders;
 /// Builds a Rust <c>pub struct</c> deriving <c>Debug, Clone, Serialize, Deserialize</c>
 /// for one <see cref="IrModel"/>. Optional properties become <c>Option&lt;T&gt;</c>.
 /// </summary>
-public sealed class RustModelAstBuilder
+public sealed class RustModelAstBuilder(INamingConverter namingConverter, RustIrTypeMapper typeMapper)
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly RustIrTypeMapper _typeMapper;
-
-    public RustModelAstBuilder(INamingConverter namingConverter, RustIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     public RustFileNode BuildFile(IrModel model)
     {
@@ -33,9 +25,9 @@ public sealed class RustModelAstBuilder
 
         foreach (var prop in model.Properties)
         {
-            var snakeName = RustReservedNames.Avoid(_namingConverter.ToSnakeCase(prop.Name));
-            var mappedType = _typeMapper.MapType(prop.Type);
-            var isOptional = _typeMapper.IsOptionalInLanguage(prop);
+            var snakeName = RustReservedNames.Avoid(namingConverter.ToSnakeCase(prop.Name));
+            var mappedType = typeMapper.MapType(prop.Type);
+            var isOptional = typeMapper.IsOptionalInLanguage(prop);
             var finalType = isOptional ? EnsureOption(mappedType) : mappedType;
 
             // Add use directive for chrono types if applicable (scan the rendered tree).
@@ -56,7 +48,7 @@ public sealed class RustModelAstBuilder
         }
 
         var structNode = new RustStructNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(model.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(model.Name)),
             fields,
             derives: null, // default Debug, Clone, Serialize, Deserialize
             documentation: !string.IsNullOrWhiteSpace(model.Description)

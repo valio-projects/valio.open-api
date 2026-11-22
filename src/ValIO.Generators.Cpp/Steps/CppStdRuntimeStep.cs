@@ -8,14 +8,9 @@ namespace ValIO.Generators.Cpp.Steps;
 /// <summary>
 /// Emits only runtime layers actually required by the selected model, serializer, and client outputs.
 /// </summary>
-public sealed class CppStdRuntimeStep : CppStdStepBase
+/// <param name="renderer">The C++ syntax renderer.</param>
+public sealed class CppStdRuntimeStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
 {
-    /// <summary>Creates the generation step with the renderer for its output files.</summary>
-    /// <param name="renderer">The C++ syntax renderer.</param>
-    public CppStdRuntimeStep(ICppAstRenderer renderer) : base(renderer)
-    {
-    }
-
     /// <inheritdoc />
     public override string Name => "cpp-std-runtime";
     /// <inheritdoc />

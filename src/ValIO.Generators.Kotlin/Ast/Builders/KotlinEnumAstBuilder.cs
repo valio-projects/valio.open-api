@@ -10,14 +10,8 @@ namespace ValIO.Generators.Kotlin.Ast.Builders;
 /// Builds a Kotlin <c>enum class</c> with <c>@Serializable</c> + per-member
 /// <c>@SerialName</c> for an IR enum.
 /// </summary>
-public sealed class KotlinEnumAstBuilder
+public sealed class KotlinEnumAstBuilder(INamingConverter namingConverter)
 {
-    private readonly INamingConverter _namingConverter;
-
-    public KotlinEnumAstBuilder(INamingConverter namingConverter)
-    {
-        _namingConverter = namingConverter;
-    }
 
     public KotlinFileNode BuildFile(IrEnum irEnum, string modelsPackage)
     {
@@ -47,7 +41,7 @@ public sealed class KotlinEnumAstBuilder
         }
 
         var enumDecl = new KotlinEnumDeclarationNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(irEnum.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(irEnum.Name)),
             members,
             annotations: [new KotlinAnnotationNode("Serializable")],
             documentation: !string.IsNullOrWhiteSpace(irEnum.Description)
@@ -66,7 +60,7 @@ public sealed class KotlinEnumAstBuilder
 
     private string ToScreamingSnakeCase(string name)
     {
-        var snake = _namingConverter.ToSnakeCase(name);
+        var snake = namingConverter.ToSnakeCase(name);
         return string.IsNullOrEmpty(snake) ? "_" : snake.ToUpperInvariant();
     }
 

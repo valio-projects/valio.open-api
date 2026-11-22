@@ -13,14 +13,9 @@ namespace ValIO.Generators.Rust;
 /// Maps IR types to Rust AST type nodes. Nullable/optional values are expressed
 /// as <c>Option&lt;T&gt;</c> via a <see cref="GenericTypeNode"/>.
 /// </summary>
-public sealed class RustIrTypeMapper : IIrTypeMapper
+public sealed class RustIrTypeMapper(RustGenerationOptions? options = null) : IIrTypeMapper
 {
-    private readonly RustGenerationOptions _options;
-
-    public RustIrTypeMapper(RustGenerationOptions? options = null)
-    {
-        _options = options ?? new RustGenerationOptions();
-    }
+    private readonly RustGenerationOptions _options = options ?? new RustGenerationOptions();
 
     public TypeNode MapType(IrType irType) => irType switch
     {

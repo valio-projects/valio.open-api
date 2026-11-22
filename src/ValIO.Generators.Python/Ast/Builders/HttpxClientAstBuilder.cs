@@ -17,23 +17,11 @@ namespace ValIO.Generators.Python.Ast.Builders;
 /// <summary>
 /// Builds HTTPX client facades that borrow the application's configured transport and authentication pipeline.
 /// </summary>
-public sealed class HttpxClientAstBuilder : AstBuilderBase
+/// <param name="documentContext">The finalized document context shared by the generation request.</param>
+/// <param name="namingConverter">The converter for generated identifiers.</param>
+/// <param name="typeMapper">The mapper for request and response annotations.</param>
+public sealed class HttpxClientAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, PythonIrTypeMapper typeMapper) : AstBuilderBase(documentContext)
 {
-    /// <summary>Converts source operation and parameter names into Python identifiers.</summary>
-    private readonly INamingConverter _namingConverter;
-    /// <summary>Maps shared request and response types into Python annotations.</summary>
-    private readonly PythonIrTypeMapper _typeMapper;
-
-    /// <summary>Initializes the client builder with Python naming and type services.</summary>
-    /// <param name="documentContext">The finalized document context shared by the generation request.</param>
-    /// <param name="namingConverter">The converter for generated identifiers.</param>
-    /// <param name="typeMapper">The mapper for request and response annotations.</param>
-    public HttpxClientAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, PythonIrTypeMapper typeMapper)
-        : base(documentContext)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     /// <summary>Builds a client module using runtime imports for request and response validation.</summary>
     /// <param name="client">The grouped operations to generate.</param>
@@ -151,7 +139,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
         ref bool uuidNeeded,
         ref bool anyNeeded)
     {
-        var methodName = _namingConverter.ToSnakeCase(op.MethodName);
+        var methodName = namingConverter.ToSnakeCase(op.MethodName);
         methodName = PythonKeywords.Avoid(methodName);
 
         var parameters = new List<PythonParameterNode>
@@ -161,17 +149,17 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
 
         foreach (var p in op.PathParameters)
         {
-            var annotation = _typeMapper.MapType(p.Type);
+            var annotation = typeMapper.MapType(p.Type);
             ScanForImports(p.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             parameters.Add(new PythonParameterNode(
-                new IdentifierNode(PythonKeywords.Avoid(_namingConverter.ToSnakeCase(p.Name))),
+                new IdentifierNode(PythonKeywords.Avoid(namingConverter.ToSnakeCase(p.Name))),
                 annotation));
         }
 
         if (op.RequestBody is { IsRequired: true })
         {
-            var annotation = _typeMapper.MapType(op.RequestBody.Type);
+            var annotation = typeMapper.MapType(op.RequestBody.Type);
             ScanForImports(op.RequestBody.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             parameters.Add(new PythonParameterNode(
@@ -181,7 +169,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
 
         foreach (var p in op.QueryParameters.Concat(op.HeaderParameters).OrderBy(parameter => !parameter.IsRequired))
         {
-            var annotation = _typeMapper.MapType(p.Type);
+            var annotation = typeMapper.MapType(p.Type);
             ScanForImports(p.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             string? defaultValue = null;
@@ -191,14 +179,14 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
                 defaultValue = "None";
             }
             parameters.Add(new PythonParameterNode(
-                new IdentifierNode(PythonKeywords.Avoid(_namingConverter.ToSnakeCase(p.Name))),
+                new IdentifierNode(PythonKeywords.Avoid(namingConverter.ToSnakeCase(p.Name))),
                 annotation,
                 defaultValue));
         }
 
         if (op.RequestBody is { IsRequired: false } optionalBody)
         {
-            var annotation = AddNone(_typeMapper.MapType(optionalBody.Type));
+            var annotation = AddNone(typeMapper.MapType(optionalBody.Type));
             ScanForImports(optionalBody.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             parameters.Add(new PythonParameterNode(new IdentifierNode("body"), annotation, "None"));
@@ -213,7 +201,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
         string? responseModelName = null;
         if (successResponse?.Type != null)
         {
-            returnType = _typeMapper.MapType(successResponse.Type);
+            returnType = typeMapper.MapType(successResponse.Type);
             ScanForImports(successResponse.Type, modelImports,
                 datetimeImports, ref uuidNeeded, ref anyNeeded);
             var referencedName = TryGetSimpleModelName(successResponse.Type);
@@ -278,7 +266,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
             lines.Add("params = {}");
             foreach (var p in op.QueryParameters)
             {
-                var pyName = PythonKeywords.Avoid(_namingConverter.ToSnakeCase(p.Name));
+                var pyName = PythonKeywords.Avoid(namingConverter.ToSnakeCase(p.Name));
                 if (p.IsRequired)
                     lines.Add($"params[{JsonSerializer.Serialize(p.OriginalName)}] = {pyName}");
                 else
@@ -292,7 +280,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
             lines.Add("headers = {}");
             foreach (var parameter in op.HeaderParameters)
             {
-                var parameterName = PythonKeywords.Avoid(_namingConverter.ToSnakeCase(parameter.Name));
+                var parameterName = PythonKeywords.Avoid(namingConverter.ToSnakeCase(parameter.Name));
                 var assignment = $"headers[{JsonSerializer.Serialize(parameter.OriginalName)}] = str({parameterName})";
                 lines.Add(parameter.IsRequired ? assignment : $"if {parameterName} is not None: {assignment}");
             }
@@ -390,7 +378,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
         var result = path;
         foreach (var p in pathParams)
         {
-            var snake = PythonKeywords.Avoid(_namingConverter.ToSnakeCase(p.Name));
+            var snake = PythonKeywords.Avoid(namingConverter.ToSnakeCase(p.Name));
             var value = IrTypeQueries.UnwrapNullableOptional(p.Type) is IrPrimitiveType
                 { PrimitiveKind: IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number }
                 ? snake : $"quote(str({snake}), safe='')";
@@ -425,7 +413,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
                 }
                 break;
             case IrModelReference r:
-                if (PythonDeclarationImports.TryGetModulePath(DocumentContext, _namingConverter, r.ModelName, "..models.", out var module))
+                if (PythonDeclarationImports.TryGetModulePath(DocumentContext, namingConverter, r.ModelName, "..models.", out var module))
                     modelImports[r.ModelName] = module;
                 break;
             case IrArrayType a:
@@ -455,7 +443,7 @@ public sealed class HttpxClientAstBuilder : AstBuilderBase
     /// <returns>A PascalCase identifier ending in Api.</returns>
     private string ToClassName(string clientName)
     {
-        var pascal = _namingConverter.ToPascalCase(clientName);
+        var pascal = namingConverter.ToPascalCase(clientName);
         return pascal.EndsWith("Api", StringComparison.Ordinal) ? pascal : pascal + "Api";
     }
 }

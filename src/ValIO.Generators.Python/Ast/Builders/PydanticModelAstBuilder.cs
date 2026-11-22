@@ -15,23 +15,11 @@ namespace ValIO.Generators.Python.Ast.Builders;
 /// <summary>
 /// Builds Pydantic v2 declarations with deferred cross-module references and wire aliases.
 /// </summary>
-public sealed class PydanticModelAstBuilder : AstBuilderBase
+/// <param name="documentContext">The finalized document context shared by the generation request.</param>
+/// <param name="namingConverter">The converter for Python property identifiers.</param>
+/// <param name="typeMapper">The mapper for schema type annotations.</param>
+public sealed class PydanticModelAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, PythonIrTypeMapper typeMapper) : AstBuilderBase(documentContext)
 {
-    /// <summary>Converts property identifiers into safe Python names.</summary>
-    private readonly INamingConverter _namingConverter;
-    /// <summary>Maps shared schema types into Python type annotations.</summary>
-    private readonly PythonIrTypeMapper _typeMapper;
-
-    /// <summary>Initializes the model builder with language naming and type services.</summary>
-    /// <param name="documentContext">The finalized document context shared by the generation request.</param>
-    /// <param name="namingConverter">The converter for Python property identifiers.</param>
-    /// <param name="typeMapper">The mapper for schema type annotations.</param>
-    public PydanticModelAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, PythonIrTypeMapper typeMapper)
-        : base(documentContext)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     /// <summary>Builds a model module whose forward references are completed by the models package.</summary>
     /// <param name="model">The model with any inherited properties already resolved.</param>
@@ -54,8 +42,8 @@ public sealed class PydanticModelAstBuilder : AstBuilderBase
 
         foreach (var property in model.Properties)
         {
-            var mappedType = _typeMapper.MapType(property.Type);
-            var isOptional = _typeMapper.IsOptionalInLanguage(property);
+            var mappedType = typeMapper.MapType(property.Type);
+            var isOptional = typeMapper.IsOptionalInLanguage(property);
 
             // Keep runtime imports out of individual model modules to support cyclic references.
             CollectModelReferences(property.Type, typeCheckingTargets, model.Name);
@@ -117,7 +105,7 @@ public sealed class PydanticModelAstBuilder : AstBuilderBase
     /// <param name="name">The generated IR property identifier.</param>
     /// <returns>A safe snake_case identifier.</returns>
     private string SanitizePropertyName(string name) =>
-        _namingConverter.ToSnakeCase(name) is var snake && !string.IsNullOrEmpty(snake)
+        namingConverter.ToSnakeCase(name) is var snake && !string.IsNullOrEmpty(snake)
             ? PythonKeywords.Avoid(snake)
             : "_";
 
@@ -163,7 +151,7 @@ public sealed class PydanticModelAstBuilder : AstBuilderBase
         switch (type)
         {
             case IrModelReference r when r.ModelName != selfName:
-                if (PythonDeclarationImports.TryGetModulePath(DocumentContext, _namingConverter, r.ModelName, ".", out var module))
+                if (PythonDeclarationImports.TryGetModulePath(DocumentContext, namingConverter, r.ModelName, ".", out var module))
                     targets[r.ModelName] = module;
                 break;
             case IrArrayType a:

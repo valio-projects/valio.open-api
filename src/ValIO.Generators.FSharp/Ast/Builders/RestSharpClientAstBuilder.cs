@@ -13,21 +13,10 @@ namespace ValIO.Generators.FSharp.Ast.Builders;
 /// Builds an F# module of RestSharp-based functions (one let-binding per operation)
 /// for one <see cref="IrClient"/>.
 /// </summary>
-public sealed class RestSharpClientAstBuilder
+/// <param name="namingConverter">The operation identifier converter.</param>
+/// <param name="typeMapper">The F# type mapper.</param>
+public sealed class RestSharpClientAstBuilder(INamingConverter namingConverter, FSharpIrTypeMapper typeMapper)
 {
-    /// <summary>Converts operation and parameter names into F# identifiers.</summary>
-    private readonly INamingConverter _namingConverter;
-    /// <summary>Maps operation payload types into F# values.</summary>
-    private readonly FSharpIrTypeMapper _typeMapper;
-
-    /// <summary>Initializes the operation builder with shared naming and type services.</summary>
-    /// <param name="namingConverter">The operation identifier converter.</param>
-    /// <param name="typeMapper">The F# type mapper.</param>
-    public RestSharpClientAstBuilder(INamingConverter namingConverter, FSharpIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     /// <summary>Builds asynchronous functions using the caller-owned RestClient pipeline.</summary>
     /// <param name="client">The operations grouped into the generated API module.</param>
@@ -60,7 +49,7 @@ public sealed class RestSharpClientAstBuilder
     /// <returns>The F# function declaration.</returns>
     private FSharpFunctionNode BuildFunction(IrOperation op)
     {
-        var methodName = FSharpReservedNames.Avoid(_namingConverter.ToCamelCase(op.MethodName));
+        var methodName = FSharpReservedNames.Avoid(namingConverter.ToCamelCase(op.MethodName));
         var parameters = new List<FSharpFunctionNode.Parameter>
         {
             // First parameter is always the RestSharp client instance.
@@ -70,24 +59,24 @@ public sealed class RestSharpClientAstBuilder
         foreach (var p in op.PathParameters)
         {
             parameters.Add(new FSharpFunctionNode.Parameter(
-                FSharpReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name)),
-                _typeMapper.MapType(p.Type)));
+                FSharpReservedNames.Avoid(namingConverter.ToCamelCase(p.Name)),
+                typeMapper.MapType(p.Type)));
         }
 
         if (op.RequestBody != null)
         {
             parameters.Add(new FSharpFunctionNode.Parameter(
                 "body",
-                _typeMapper.MapType(op.RequestBody.Type)));
+                typeMapper.MapType(op.RequestBody.Type)));
         }
 
         foreach (var p in op.QueryParameters.Concat(op.HeaderParameters))
         {
-            var mapped = _typeMapper.MapType(p.Type);
+            var mapped = typeMapper.MapType(p.Type);
             if (!p.IsRequired && mapped is not NullableTypeNode)
                 mapped = new NullableTypeNode(mapped);
             parameters.Add(new FSharpFunctionNode.Parameter(
-                FSharpReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name)),
+                FSharpReservedNames.Avoid(namingConverter.ToCamelCase(p.Name)),
                 mapped));
         }
 
@@ -96,7 +85,7 @@ public sealed class RestSharpClientAstBuilder
             (int.TryParse(response.StatusCode, out var code) && code is >= 200 and < 300 || response.StatusCode == "2XX") && response.Type != null);
         var payload = successResponse?.Type == null
             ? new SimpleTypeNode(new IdentifierNode("unit"))
-            : _typeMapper.MapType(successResponse.Type);
+            : typeMapper.MapType(successResponse.Type);
         TypeNode returnType = new GenericTypeNode(new IdentifierNode("Task"), [payload]);
 
         var bodyLines = BuildFunctionBody(op, successResponse?.Type);
@@ -120,13 +109,13 @@ public sealed class RestSharpClientAstBuilder
         lines.Add($"    let req = RestRequest(\"{EscapeStringLiteral(op.Path)}\", Method.{httpMethod})");
         foreach (var parameter in op.PathParameters)
         {
-            var camel = FSharpReservedNames.Avoid(_namingConverter.ToCamelCase(parameter.Name));
+            var camel = FSharpReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name));
             lines.Add($"    req.AddUrlSegment(\"{EscapeStringLiteral(parameter.OriginalName)}\", string {camel}) |> ignore");
         }
 
         foreach (var p in op.QueryParameters)
         {
-            var camel = FSharpReservedNames.Avoid(_namingConverter.ToCamelCase(p.Name));
+            var camel = FSharpReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
             var wireName = EscapeStringLiteral(p.OriginalName);
             if (p.IsRequired)
             {
@@ -142,7 +131,7 @@ public sealed class RestSharpClientAstBuilder
 
         foreach (var parameter in op.HeaderParameters)
         {
-            var camel = FSharpReservedNames.Avoid(_namingConverter.ToCamelCase(parameter.Name));
+            var camel = FSharpReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name));
             var wireName = EscapeStringLiteral(parameter.OriginalName);
             if (parameter.IsRequired)
                 lines.Add($"    req.AddHeader(\"{wireName}\", string {camel}) |> ignore");
@@ -163,7 +152,7 @@ public sealed class RestSharpClientAstBuilder
             lines.Add("    let! response = client.ExecuteAsync(req, cancellationToken)");
         else
         {
-            var renderedType = new Renderers.FSharpAstRenderer().Visit(_typeMapper.MapType(responseType));
+            var renderedType = new Renderers.FSharpAstRenderer().Visit(typeMapper.MapType(responseType));
             lines.Add($"    let! response = client.ExecuteAsync<{renderedType}>(req, cancellationToken)");
         }
         lines.Add("    cancellationToken.ThrowIfCancellationRequested()");

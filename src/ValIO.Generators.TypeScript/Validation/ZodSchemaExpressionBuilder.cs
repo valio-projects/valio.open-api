@@ -20,21 +20,12 @@ namespace ValIO.Generators.TypeScript.Validation;
 /// ссылки на модель → <c>{Model}Schema</c>, union → <c>z.union([...])</c>, array → <c>z.array(...)</c> и т.д.
 /// Член-схемы ссылаются по имени <c>{Model}Schema</c> и импортируются отдельно.
 /// </summary>
-internal sealed class ZodSchemaExpressionBuilder
+/// <param name="uuidFormat">The UUID validation mode, or the default when absent.</param>
+/// <param name="exactJsonNumbers">Whether schemas receive tokens from the lossless JSON codec.</param>
+internal sealed class ZodSchemaExpressionBuilder(string? uuidFormat = null, bool exactJsonNumbers = false)
 {
     /// <summary>The configured UUID validation mode shared by parameter and response schemas.</summary>
-    private readonly string _uuidFormat;
-    /// <summary>Whether generated primitive schemas preserve exact numeric tokens.</summary>
-    private readonly bool _exactJsonNumbers;
-
-    /// <summary>Creates a schema builder for a configured UUID representation.</summary>
-    /// <param name="uuidFormat">The UUID validation mode, or the default when absent.</param>
-    /// <param name="exactJsonNumbers">Whether schemas receive tokens from the lossless JSON codec.</param>
-    public ZodSchemaExpressionBuilder(string? uuidFormat = null, bool exactJsonNumbers = false)
-    {
-        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
-        _exactJsonNumbers = exactJsonNumbers;
-    }
+    private readonly string _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
 
     /// <summary>
     /// Builds a Zod schema expression from an <see cref="IrType"/>.
@@ -95,7 +86,7 @@ internal sealed class ZodSchemaExpressionBuilder
                 // `.default(x)` after `.optional()` so an undefined param is replaced by the OpenAPI default.
                 if (TryDefaultLiteral(parameter.DefaultValue, out var defaultLiteral))
                 {
-                    if (_exactJsonNumbers && TypeScriptExactJson.ExactPrimitive(parameter.Type) != null)
+                    if (exactJsonNumbers && TypeScriptExactJson.ExactPrimitive(parameter.Type) != null)
                     {
                         var text = Convert.ToString(defaultLiteral!.Value, System.Globalization.CultureInfo.InvariantCulture) ?? "";
                         var token = new CallExpressionNode(TypeScriptExactJson.Runtime("LosslessNumber"),
@@ -220,7 +211,7 @@ internal sealed class ZodSchemaExpressionBuilder
             IrPrimitiveKind.Any => Call(Member(Id("z"), "unknown")),
             _ => ZodExpressionBuilder.BuildPrimitiveExpression(primitive.PrimitiveKind, useBigInt: false,
                 constraints, constraintsRef, _uuidFormat, coerceNumbers: coerce,
-                exactJsonType: _exactJsonNumbers ? primitive : null).Expression
+                exactJsonType: exactJsonNumbers ? primitive : null).Expression
         };
 
     /// <summary>Parses OpenAPI boolean strings without treating the nonempty string "false" as true.</summary>

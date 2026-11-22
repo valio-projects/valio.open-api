@@ -18,14 +18,9 @@ namespace ValIO.Generators.TypeScript.Valibot.Ast.Builders;
 /// <summary>
 /// Builds Valibot schema expression AST from IR types.
 /// </summary>
-public sealed class ValibotAstBuilder
+public sealed class ValibotAstBuilder(string? uuidFormat = null)
 {
-    private readonly string _uuidFormat;
-
-    public ValibotAstBuilder(string? uuidFormat = null)
-    {
-        _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
-    }
+    private readonly string _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
 
     /// <summary>Builds a model schema with sibling properties applied to every composition alternative.</summary>
     /// <param name="model">The model being validated.</param>

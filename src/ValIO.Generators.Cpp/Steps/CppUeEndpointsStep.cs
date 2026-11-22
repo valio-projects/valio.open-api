@@ -9,14 +9,9 @@ namespace ValIO.Generators.Cpp.Steps;
 /// (Public/Endpoints/{OpId}/) и endpoint .h/.cpp. Пути строятся по ORIGINAL имени
 /// операции, чтобы не менялись при affix-преобразованиях (тот же контракт, что у CppAstBuilder.Build).
 /// </summary>
-public sealed class CppUeEndpointsStep : CppUeStepBase
+/// <param name="renderer">The C++ syntax renderer.</param>
+public sealed class CppUeEndpointsStep(ICppAstRenderer renderer) : CppUeStepBase(renderer)
 {
-    /// <summary>Creates the generation step with the renderer for its output files.</summary>
-    /// <param name="renderer">The C++ syntax renderer.</param>
-    public CppUeEndpointsStep(ICppAstRenderer renderer) : base(renderer)
-    {
-    }
-
     /// <inheritdoc />
     public override string Name => "cpp-ue-endpoints";
     /// <inheritdoc />

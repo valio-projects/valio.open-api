@@ -13,24 +13,12 @@ namespace ValIO.Generators.Kotlin.Ast.Builders;
 /// Builds a Kotlin <c>data class</c> + <c>@Serializable</c> for an IR model.
 /// Emits one <see cref="KotlinFileNode"/> per model.
 /// </summary>
-public sealed class KotlinDataClassAstBuilder : AstBuilderBase
+/// <param name="documentContext">The finalized document context shared by the generation request.</param>
+/// <param name="namingConverter">The converter for generated property identifiers.</param>
+/// <param name="typeMapper">The mapper for Kotlin type annotations.</param>
+public sealed class KotlinDataClassAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, KotlinIrTypeMapper typeMapper) : AstBuilderBase(documentContext)
 {
-    /// <summary>Converts source property identifiers into Kotlin names.</summary>
-    private readonly INamingConverter _namingConverter;
 
-    /// <summary>Maps shared schema types into Kotlin type annotations.</summary>
-    private readonly KotlinIrTypeMapper _typeMapper;
-
-    /// <summary>Initializes model generation with the document's shared declaration indexes.</summary>
-    /// <param name="documentContext">The finalized document context shared by the generation request.</param>
-    /// <param name="namingConverter">The converter for generated property identifiers.</param>
-    /// <param name="typeMapper">The mapper for Kotlin type annotations.</param>
-    public KotlinDataClassAstBuilder(IrDocumentContext documentContext, INamingConverter namingConverter, KotlinIrTypeMapper typeMapper)
-        : base(documentContext)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     /// <summary>Builds a serializable data class with imports resolved against the shared document indexes.</summary>
     /// <param name="model">The model whose inherited properties have already been resolved.</param>
@@ -45,9 +33,9 @@ public sealed class KotlinDataClassAstBuilder : AstBuilderBase
         {
             KotlinTypeImportScanner.Walk(prop.Type, importScan);
 
-            var camelName = _namingConverter.ToCamelCase(prop.Name);
+            var camelName = namingConverter.ToCamelCase(prop.Name);
             var safeName = KotlinReservedNames.Avoid(camelName);
-            var mappedType = _typeMapper.MapType(prop.Type);
+            var mappedType = typeMapper.MapType(prop.Type);
 
             var annotations = new List<KotlinAnnotationNode>();
             // Emit @SerialName only when the wire name differs from the Kotlin identifier.
@@ -58,7 +46,7 @@ public sealed class KotlinDataClassAstBuilder : AstBuilderBase
                     [$"\"{EscapeStringLiteral(prop.OriginalName)}\""]));
             }
 
-            var isOptional = _typeMapper.IsOptionalInLanguage(prop);
+            var isOptional = typeMapper.IsOptionalInLanguage(prop);
             var finalType = isOptional ? EnsureNullable(mappedType) : mappedType;
             var defaultValue = isOptional ? "null" : null;
 
@@ -101,7 +89,7 @@ public sealed class KotlinDataClassAstBuilder : AstBuilderBase
         }
 
         var classNode = new KotlinDataClassNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(model.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(model.Name)),
             properties,
             classAnnotations,
             documentation: !string.IsNullOrWhiteSpace(model.Description)

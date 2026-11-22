@@ -13,14 +13,9 @@ namespace ValIO.Generators.Dart;
 /// Nullability is expressed via <see cref="NullableTypeNode"/> which the
 /// renderer emits as <c>T?</c>.
 /// </summary>
-public sealed class DartIrTypeMapper : IIrTypeMapper
+public sealed class DartIrTypeMapper(DartGenerationOptions? options = null) : IIrTypeMapper
 {
-    private readonly DartGenerationOptions _options;
-
-    public DartIrTypeMapper(DartGenerationOptions? options = null)
-    {
-        _options = options ?? new DartGenerationOptions();
-    }
+    private readonly DartGenerationOptions _options = options ?? new DartGenerationOptions();
 
     public TypeNode MapType(IrType irType) => irType switch
     {

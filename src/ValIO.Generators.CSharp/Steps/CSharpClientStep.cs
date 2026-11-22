@@ -10,27 +10,16 @@ namespace ValIO.Generators.CSharp.Steps;
 /// <summary>
 /// Generates typed C# HTTP clients and their shared runtime support files from the normalized IR.
 /// </summary>
-public sealed class CSharpClientStep : ICodeGenerationStep
+/// <param name="namingConverter">The converter used for generated identifiers.</param>
+/// <param name="renderer">The renderer used for C# source output.</param>
+public sealed class CSharpClientStep(INamingConverter namingConverter, ICSharpAstRenderer renderer) : ICodeGenerationStep
 {
-    /// <summary>Converts wire and schema names into valid C# identifiers.</summary>
-    private readonly INamingConverter _namingConverter;
 
-    /// <summary>Renders the generated C# abstract syntax tree.</summary>
-    private readonly ICSharpAstRenderer _renderer;
 
     /// <inheritdoc/>
     public string Name => "csharp-client";
     /// <inheritdoc/>
     public int Order => 40;
-
-    /// <summary>Initializes the client generation step.</summary>
-    /// <param name="namingConverter">The converter used for generated identifiers.</param>
-    /// <param name="renderer">The renderer used for C# source output.</param>
-    public CSharpClientStep(INamingConverter namingConverter, ICSharpAstRenderer renderer)
-    {
-        _namingConverter = namingConverter;
-        _renderer = renderer;
-    }
 
     /// <inheritdoc/>
     public bool ShouldExecute(GenerationContext context)
@@ -41,14 +30,14 @@ public sealed class CSharpClientStep : ICodeGenerationStep
     {
         var opts = context.PluginOptions as CSharpGenerationOptions;
         var ns = opts?.Namespace ?? context.Configuration.Namespace ?? "Generated";
-        var builder = new CSharpAstBuilder(_namingConverter, context.DocumentContext, opts);
+        var builder = new CSharpAstBuilder(namingConverter, context.DocumentContext, opts);
 
         if (opts?.GenerateMetrics == true && context.IrDocument.Clients.Count > 0)
         {
             context.GeneratedFiles.Add(new GeneratedFile("Api/IHttpClientMetrics.cs",
-                _renderer.Render(builder.BuildCompilationUnitForIHttpClientMetrics(ns))));
+                renderer.Render(builder.BuildCompilationUnitForIHttpClientMetrics(ns))));
             context.GeneratedFiles.Add(new GeneratedFile("Api/HttpClientMetrics.cs",
-                _renderer.Render(builder.BuildCompilationUnitForHttpClientMetrics(ns))));
+                renderer.Render(builder.BuildCompilationUnitForHttpClientMetrics(ns))));
         }
 
         if (opts?.GenerateResponseMetadata == true)
@@ -74,17 +63,17 @@ public sealed class CSharpClientStep : ICodeGenerationStep
         foreach (var client in context.IrDocument.Clients)
         {
             var compilationUnit = builder.BuildCompilationUnit(client, ns);
-            var content = _renderer.Render(compilationUnit);
+            var content = renderer.Render(compilationUnit);
             var clientName = string.IsNullOrWhiteSpace(client.Name) ? "ApiClient" : client.Name;
             var relativePath = $"Api/{clientName}Client.cs";
             context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
 
             if (opts?.GenerateInterfaces == true && opts.InterfaceFileStrategy == InterfaceFileStrategy.SeparateFile)
                 context.GeneratedFiles.Add(new GeneratedFile($"Api/I{clientName}.cs",
-                    _renderer.Render(builder.BuildCompilationUnitForInterface(client, ns))));
+                    renderer.Render(builder.BuildCompilationUnitForInterface(client, ns))));
             if (opts?.GenerateTraces == true || opts?.GenerateMetrics == true)
                 context.GeneratedFiles.Add(new GeneratedFile($"Api/{clientName}OpenTelemetryDecorator.cs",
-                    _renderer.Render(builder.BuildCompilationUnitForDecorator(client, ns))));
+                    renderer.Render(builder.BuildCompilationUnitForDecorator(client, ns))));
         }
 
         if (context.IrDocument.Clients.SelectMany(client => client.Operations).Any(operation =>
@@ -98,7 +87,7 @@ public sealed class CSharpClientStep : ICodeGenerationStep
         if (context.IrDocument.Clients.Count > 0)
         {
             var apiExceptionUnit = builder.BuildCompilationUnitApiException(ns);
-            var apiExceptionContent = _renderer.Render(apiExceptionUnit);
+            var apiExceptionContent = renderer.Render(apiExceptionUnit);
             context.GeneratedFiles.Add(new GeneratedFile("Api/ApiException.cs", apiExceptionContent));
         }
 

@@ -10,14 +10,8 @@ namespace ValIO.Generators.Swift.Ast.Builders;
 /// Builds a Swift <c>public enum</c> conforming to <c>Codable, Sendable</c>
 /// (string- or Int-backed) for one <see cref="IrEnum"/>.
 /// </summary>
-public sealed class SwiftEnumAstBuilder
+public sealed class SwiftEnumAstBuilder(INamingConverter namingConverter)
 {
-    private readonly INamingConverter _namingConverter;
-
-    public SwiftEnumAstBuilder(INamingConverter namingConverter)
-    {
-        _namingConverter = namingConverter;
-    }
 
     public SwiftFileNode BuildFile(IrEnum irEnum)
     {
@@ -26,7 +20,7 @@ public sealed class SwiftEnumAstBuilder
 
         foreach (var v in irEnum.Values)
         {
-            var caseName = SwiftReservedNames.Avoid(_namingConverter.ToCamelCase(v.Name));
+            var caseName = SwiftReservedNames.Avoid(namingConverter.ToCamelCase(v.Name));
             string? rawLiteral = null;
             if (isString)
             {
@@ -49,7 +43,7 @@ public sealed class SwiftEnumAstBuilder
         var rawType = isString ? "String" : "Int";
 
         var enumDecl = new SwiftEnumDeclarationNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(irEnum.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(irEnum.Name)),
             members,
             conformances: ["Codable", "Sendable"],
             rawType: rawType,

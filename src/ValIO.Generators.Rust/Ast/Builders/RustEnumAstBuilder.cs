@@ -11,14 +11,8 @@ namespace ValIO.Generators.Rust.Ast.Builders;
 /// Builds a Rust <c>pub enum</c> deriving <c>Debug, Clone, Serialize, Deserialize</c>
 /// with <c>#[serde(rename_all = "camelCase")]</c> for one <see cref="IrEnum"/>.
 /// </summary>
-public sealed class RustEnumAstBuilder
+public sealed class RustEnumAstBuilder(INamingConverter namingConverter)
 {
-    private readonly INamingConverter _namingConverter;
-
-    public RustEnumAstBuilder(INamingConverter namingConverter)
-    {
-        _namingConverter = namingConverter;
-    }
 
     public RustFileNode BuildFile(IrEnum irEnum)
     {
@@ -26,7 +20,7 @@ public sealed class RustEnumAstBuilder
 
         foreach (var v in irEnum.Values)
         {
-            var variantName = RustReservedNames.Avoid(_namingConverter.ToPascalCase(v.Name));
+            var variantName = RustReservedNames.Avoid(namingConverter.ToPascalCase(v.Name));
             variants.Add(new RustEnumVariantNode(
                 new IdentifierNode(variantName),
                 payload: null,
@@ -36,7 +30,7 @@ public sealed class RustEnumAstBuilder
         }
 
         var enumNode = new RustEnumNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(irEnum.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(irEnum.Name)),
             variants,
             derives: null,
             serdeRenameAll: "camelCase",

@@ -11,16 +11,8 @@ namespace ValIO.Generators.Swift.Ast.Builders;
 /// Builds a Swift <c>public struct</c> conforming to <c>Codable, Sendable</c>
 /// for one <see cref="IrModel"/>. Emits one <see cref="SwiftFileNode"/> per model.
 /// </summary>
-public sealed class SwiftStructAstBuilder
+public sealed class SwiftStructAstBuilder(INamingConverter namingConverter, SwiftIrTypeMapper typeMapper)
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly SwiftIrTypeMapper _typeMapper;
-
-    public SwiftStructAstBuilder(INamingConverter namingConverter, SwiftIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     public SwiftFileNode BuildFile(IrModel model)
     {
@@ -31,11 +23,11 @@ public sealed class SwiftStructAstBuilder
         {
             SwiftTypeImportScanner.Walk(prop.Type, importScan);
 
-            var camelName = _namingConverter.ToCamelCase(prop.Name);
+            var camelName = namingConverter.ToCamelCase(prop.Name);
             var safeName = SwiftReservedNames.Avoid(camelName);
-            var mappedType = _typeMapper.MapType(prop.Type);
+            var mappedType = typeMapper.MapType(prop.Type);
 
-            var isOptional = _typeMapper.IsOptionalInLanguage(prop);
+            var isOptional = typeMapper.IsOptionalInLanguage(prop);
             var finalType = isOptional ? EnsureNullable(mappedType) : mappedType;
             var defaultValue = isOptional ? "nil" : null;
 
@@ -61,7 +53,7 @@ public sealed class SwiftStructAstBuilder
             .ToList();
 
         var structNode = new SwiftStructDeclarationNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(model.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(model.Name)),
             properties,
             conformances: ["Codable", "Sendable"],
             accessModifier: "public",

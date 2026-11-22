@@ -12,21 +12,10 @@ namespace ValIO.Generators.FSharp.Ast.Builders;
 /// Builds an F# record (or a discriminated union when the model is oneOf/anyOf-composed)
 /// for one <see cref="IrModel"/>. Emits a single <see cref="FSharpFileNode"/> per model.
 /// </summary>
-public sealed class FSharpModelAstBuilder
+/// <param name="namingConverter">The declaration name converter.</param>
+/// <param name="typeMapper">The F# type mapper.</param>
+public sealed class FSharpModelAstBuilder(INamingConverter namingConverter, FSharpIrTypeMapper typeMapper)
 {
-    /// <summary>Converts source names into F# declaration identifiers.</summary>
-    private readonly INamingConverter _namingConverter;
-    /// <summary>Maps source value types to F# record and union field types.</summary>
-    private readonly FSharpIrTypeMapper _typeMapper;
-
-    /// <summary>Creates a model builder using the shared naming and type services.</summary>
-    /// <param name="namingConverter">The declaration name converter.</param>
-    /// <param name="typeMapper">The F# type mapper.</param>
-    public FSharpModelAstBuilder(INamingConverter namingConverter, FSharpIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     /// <summary>Builds a standalone module and imports every referenced model or enum module.</summary>
     /// <param name="model">The effective model with inherited fields resolved.</param>
@@ -64,16 +53,16 @@ public sealed class FSharpModelAstBuilder
         var fields = new List<FSharpRecordNode.Field>(model.Properties.Count);
         foreach (var prop in model.Properties)
         {
-            var pascalName = _namingConverter.ToPascalCase(prop.Name);
+            var pascalName = namingConverter.ToPascalCase(prop.Name);
             var safeName = FSharpReservedNames.Avoid(pascalName);
-            var mapped = _typeMapper.MapType(prop.Type);
-            var isOptional = _typeMapper.IsOptionalInLanguage(prop);
+            var mapped = typeMapper.MapType(prop.Type);
+            var isOptional = typeMapper.IsOptionalInLanguage(prop);
             var finalType = isOptional ? EnsureNullable(mapped) : mapped;
             fields.Add(new FSharpRecordNode.Field(safeName, finalType));
         }
 
         return new FSharpRecordNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(model.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(model.Name)),
             fields,
             documentation: !string.IsNullOrWhiteSpace(model.Description)
                 ? new CommentNode(model.Description!, CommentKind.MultiLine)
@@ -93,12 +82,12 @@ public sealed class FSharpModelAstBuilder
         {
             index++;
             var caseName = ChooseCaseName(t, index);
-            var payload = _typeMapper.MapType(t);
+            var payload = typeMapper.MapType(t);
             cases.Add(new FSharpDuNode.Case(caseName, payload));
         }
 
         return new FSharpDuNode(
-            new IdentifierNode(_namingConverter.ToPascalCase(model.Name)),
+            new IdentifierNode(namingConverter.ToPascalCase(model.Name)),
             cases,
             documentation: !string.IsNullOrWhiteSpace(model.Description)
                 ? new CommentNode(model.Description!, CommentKind.MultiLine)
@@ -111,7 +100,7 @@ public sealed class FSharpModelAstBuilder
     /// <returns>The generated case identifier.</returns>
     private string ChooseCaseName(IrType t, int index) => t switch
     {
-        IrModelReference r => _namingConverter.ToPascalCase(r.ModelName),
+        IrModelReference r => namingConverter.ToPascalCase(r.ModelName),
         _ => $"Case{index}",
     };
 

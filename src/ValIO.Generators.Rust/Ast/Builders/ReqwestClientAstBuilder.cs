@@ -14,16 +14,8 @@ namespace ValIO.Generators.Rust.Ast.Builders;
 /// Builds one Rust async fn per IR operation, using <c>reqwest::Client</c>.
 /// Each function returns <c>Result&lt;ReturnType, reqwest::Error&gt;</c>.
 /// </summary>
-public sealed class ReqwestClientAstBuilder
+public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, RustIrTypeMapper typeMapper)
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly RustIrTypeMapper _typeMapper;
-
-    public ReqwestClientAstBuilder(INamingConverter namingConverter, RustIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     public RustFileNode BuildFile(IrClient client)
     {
@@ -44,7 +36,7 @@ public sealed class ReqwestClientAstBuilder
 
     private RustFunctionNode BuildOperationFunction(IrOperation op, SortedSet<string> uses)
     {
-        var methodName = RustReservedNames.Avoid(_namingConverter.ToSnakeCase(op.MethodName));
+        var methodName = RustReservedNames.Avoid(namingConverter.ToSnakeCase(op.MethodName));
         var parameters = new List<RustParameter>
         {
             new("client", new SimpleTypeNode(new IdentifierNode("&Client"), isPrimitive: true)),
@@ -55,8 +47,8 @@ public sealed class ReqwestClientAstBuilder
         {
             ScanForUses(p.Type, uses);
             parameters.Add(new RustParameter(
-                RustReservedNames.Avoid(_namingConverter.ToSnakeCase(p.Name)),
-                _typeMapper.MapType(p.Type)));
+                RustReservedNames.Avoid(namingConverter.ToSnakeCase(p.Name)),
+                typeMapper.MapType(p.Type)));
         }
 
         if (op.RequestBody != null)
@@ -64,17 +56,17 @@ public sealed class ReqwestClientAstBuilder
             ScanForUses(op.RequestBody.Type, uses);
             parameters.Add(new RustParameter(
                 "body",
-                _typeMapper.MapType(op.RequestBody.Type)));
+                typeMapper.MapType(op.RequestBody.Type)));
         }
 
         foreach (var p in op.QueryParameters)
         {
             ScanForUses(p.Type, uses);
-            var mapped = _typeMapper.MapType(p.Type);
+            var mapped = typeMapper.MapType(p.Type);
             if (!p.IsRequired)
                 mapped = EnsureOption(mapped);
             parameters.Add(new RustParameter(
-                RustReservedNames.Avoid(_namingConverter.ToSnakeCase(p.Name)),
+                RustReservedNames.Avoid(namingConverter.ToSnakeCase(p.Name)),
                 mapped));
         }
 
@@ -86,7 +78,7 @@ public sealed class ReqwestClientAstBuilder
         if (successResponse?.Type != null)
         {
             ScanForUses(successResponse.Type, uses);
-            successType = _typeMapper.MapType(successResponse.Type);
+            successType = typeMapper.MapType(successResponse.Type);
             isBinaryReturn = successResponse.Type is IrPrimitiveType
             {
                 PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File,
@@ -127,7 +119,7 @@ public sealed class ReqwestClientAstBuilder
         var formatArgs = new List<string>();
         foreach (var p in op.PathParameters)
         {
-            var snake = RustReservedNames.Avoid(_namingConverter.ToSnakeCase(p.Name));
+            var snake = RustReservedNames.Avoid(namingConverter.ToSnakeCase(p.Name));
             pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "{" + snake + "}", StringComparison.Ordinal);
             formatArgs.Add($"{snake} = {snake}");
         }
@@ -156,7 +148,7 @@ public sealed class ReqwestClientAstBuilder
             lines.Add("let mut query: Vec<(&str, String)> = Vec::new();");
             foreach (var p in op.QueryParameters)
             {
-                var snake = RustReservedNames.Avoid(_namingConverter.ToSnakeCase(p.Name));
+                var snake = RustReservedNames.Avoid(namingConverter.ToSnakeCase(p.Name));
                 var wireName = EscapeStringLiteral(p.Name);
                 if (p.IsRequired)
                 {

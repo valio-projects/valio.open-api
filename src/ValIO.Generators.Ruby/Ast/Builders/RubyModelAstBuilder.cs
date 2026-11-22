@@ -10,16 +10,8 @@ namespace ValIO.Generators.Ruby.Ast.Builders;
 /// Builds a Ruby <c>class</c> with one <c>attr_accessor</c> per IR property and
 /// an <c>initialize</c> method that takes all attributes as keyword args.
 /// </summary>
-public sealed class RubyModelAstBuilder
+public sealed class RubyModelAstBuilder(INamingConverter namingConverter, RubyIrTypeMapper typeMapper)
 {
-    private readonly INamingConverter _namingConverter;
-    private readonly RubyIrTypeMapper _typeMapper;
-
-    public RubyModelAstBuilder(INamingConverter namingConverter, RubyIrTypeMapper typeMapper)
-    {
-        _namingConverter = namingConverter;
-        _typeMapper = typeMapper;
-    }
 
     public RubyFileNode BuildFile(IrModel model)
     {
@@ -28,8 +20,8 @@ public sealed class RubyModelAstBuilder
 
         foreach (var prop in model.Properties)
         {
-            var snakeName = _namingConverter.ToSnakeCase(prop.Name);
-            var mappedType = _typeMapper.MapType(prop.Type);
+            var snakeName = namingConverter.ToSnakeCase(prop.Name);
+            var mappedType = typeMapper.MapType(prop.Type);
             attributeNames.Add(snakeName);
 
             members.Add(new RubyAttributeNode(
@@ -53,7 +45,7 @@ public sealed class RubyModelAstBuilder
                 body: null));
         }
 
-        var className = _namingConverter.ToPascalCase(model.Name);
+        var className = namingConverter.ToPascalCase(model.Name);
         var classNode = new RubyClassNode(
             new IdentifierNode(className),
             parentClass: null,

@@ -10,18 +10,12 @@ namespace ValIO.Generators.Dart.Ast.Builders;
 /// <summary>
 /// Builds a Dart enum for one <see cref="IrEnum"/>.
 /// </summary>
-public sealed class DartEnumAstBuilder
+public sealed class DartEnumAstBuilder(INamingConverter namingConverter)
 {
-    private readonly INamingConverter _namingConverter;
-
-    public DartEnumAstBuilder(INamingConverter namingConverter)
-    {
-        _namingConverter = namingConverter;
-    }
 
     public DartFileNode BuildFile(IrEnum enumModel)
     {
-        var enumName = _namingConverter.ToPascalCase(enumModel.Name);
+        var enumName = namingConverter.ToPascalCase(enumModel.Name);
         var isStringBacked = enumModel.BaseType == IrEnumBaseType.String;
         var backing = isStringBacked
             ? (TypeNode)new SimpleTypeNode(new IdentifierNode("String"), isPrimitive: true)
@@ -30,7 +24,7 @@ public sealed class DartEnumAstBuilder
         var members = new List<DartEnumMemberNode>(enumModel.Values.Count);
         foreach (var v in enumModel.Values)
         {
-            var memberName = _namingConverter.ToCamelCase(v.Name);
+            var memberName = namingConverter.ToCamelCase(v.Name);
             var safe = DartReservedNames.Avoid(memberName);
             var lit = v.Value switch
             {

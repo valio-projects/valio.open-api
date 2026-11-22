@@ -12,14 +12,9 @@ namespace ValIO.Generators.Swift;
 /// Maps IR types to Swift AST type nodes. Nullability is expressed via
 /// <see cref="NullableTypeNode"/> which the renderer emits as <c>T?</c>.
 /// </summary>
-public sealed class SwiftIrTypeMapper : IIrTypeMapper
+public sealed class SwiftIrTypeMapper(SwiftGenerationOptions? options = null) : IIrTypeMapper
 {
-    private readonly SwiftGenerationOptions _options;
-
-    public SwiftIrTypeMapper(SwiftGenerationOptions? options = null)
-    {
-        _options = options ?? new SwiftGenerationOptions();
-    }
+    private readonly SwiftGenerationOptions _options = options ?? new SwiftGenerationOptions();
 
     public TypeNode MapType(IrType irType) => irType switch
     {
