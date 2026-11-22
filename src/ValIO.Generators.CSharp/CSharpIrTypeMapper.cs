@@ -52,7 +52,7 @@ public sealed class CSharpIrTypeMapper : IIrTypeMapper
         IrPrimitiveKind.Uuid     => new SimpleTypeNode(new IdentifierNode("Guid"), isPrimitive: true),
         IrPrimitiveKind.Binary   => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
         IrPrimitiveKind.ByteArray => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
-        IrPrimitiveKind.File     => new SimpleTypeNode(new IdentifierNode("Stream"), isPrimitive: true),
+        IrPrimitiveKind.File     => new SimpleTypeNode(new IdentifierNode("MultipartFile"), isPrimitive: false),
         IrPrimitiveKind.Any      => new SimpleTypeNode(new IdentifierNode("object")),
         IrPrimitiveKind.Void     => new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true),
         IrPrimitiveKind.Null     => new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("object"))),

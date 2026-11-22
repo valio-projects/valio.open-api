@@ -82,16 +82,81 @@ public sealed class CSharpClientStep : ICodeGenerationStep
             context.GeneratedFiles.Add(new GeneratedFile("Api/ApiException.cs", apiExceptionContent));
         }
 
-        if (context.IrDocument.Clients
-            .SelectMany(client => client.Operations)
-            .Any(operation => operation.RequestBody?.IsMultipartFormData == true))
+        if (HasMultipartOperations(context))
         {
+            AddMultipartFileType(context, ns);
             context.GeneratedFiles.Add(new GeneratedFile(
                 "Api/MultipartFormDataContentFactory.cs",
                 BuildMultipartFormDataContentFactory(ns)));
         }
 
         return Task.CompletedTask;
+    }
+
+    /// <summary>Finds whether any operation requires multipart request support.</summary>
+    /// <param name="context">The document and configuration for one generated project.</param>
+    /// <returns>Whether the document includes a form-data operation.</returns>
+    internal static bool HasMultipartOperations(GenerationContext context) => context.IrDocument.Clients
+        .SelectMany(client => client.Operations)
+        .Any(operation => operation.RequestBody?.IsMultipartFormData == true);
+
+    /// <summary>Emits the borrowed file descriptor for model-only and client generation.</summary>
+    /// <param name="context">The output collection and its schema declarations.</param>
+    /// <param name="ns">The namespace of the request models.</param>
+    /// <exception cref="InvalidOperationException">A schema declaration already uses the generated descriptor name.</exception>
+    internal static void AddMultipartFileType(GenerationContext context, string ns)
+    {
+        const string path = "Models/MultipartFile.cs";
+        if (context.IrDocument.Models.Any(model => model.Name == "MultipartFile") ||
+            context.IrDocument.Enums.Any(model => model.Name == "MultipartFile"))
+            throw new InvalidOperationException("Schema name 'MultipartFile' conflicts with the C# multipart file descriptor.");
+
+        if (context.GeneratedFiles.Any(file => file.RelativePath == path))
+            return;
+
+        context.GeneratedFiles.Add(new GeneratedFile(path, $$"""
+            using System;
+            using System.IO;
+
+            namespace {{ns}};
+
+            /// <summary>Describes one file part with a caller-owned readable stream.</summary>
+            /// <remarks>The request reads from the current position. Keep the stream open until the
+            /// awaited call completes. The caller disposes the stream and controls its position.</remarks>
+            public sealed class MultipartFile
+            {
+                /// <summary>Creates a file part with its transmitted name and media type.</summary>
+                /// <param name="content">The caller-owned stream positioned at the first byte to send.</param>
+                /// <param name="fileName">The file name written to Content-Disposition.</param>
+                /// <param name="contentType">The media type written to this part's Content-Type.</param>
+                /// <exception cref="ArgumentNullException">An argument is null.</exception>
+                /// <exception cref="ArgumentException">The stream is unreadable or a metadata value is blank.</exception>
+                public MultipartFile(Stream content, string fileName, string contentType = "application/octet-stream")
+                {
+                    ArgumentNullException.ThrowIfNull(content);
+                    ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
+                    ArgumentException.ThrowIfNullOrWhiteSpace(contentType);
+                    if (!content.CanRead)
+                        throw new ArgumentException("The file stream must be readable.", nameof(content));
+
+                    Content = content;
+                    FileName = fileName;
+                    ContentType = contentType;
+                }
+
+                /// <summary>Gets the source of the part's bytes.</summary>
+                /// <value>A readable stream that remains owned by the caller.</value>
+                public Stream Content { get; }
+
+                /// <summary>Gets the transmitted file name.</summary>
+                /// <value>The name used in the part's Content-Disposition header.</value>
+                public string FileName { get; }
+
+                /// <summary>Gets the transmitted file media type.</summary>
+                /// <value>The media type used in the part's Content-Type header.</value>
+                public string ContentType { get; }
+            }
+            """));
     }
 
     /// <summary>
@@ -102,13 +167,14 @@ public sealed class CSharpClientStep : ICodeGenerationStep
     private static string BuildMultipartFormDataContentFactory(string ns) => $$"""
         using System;
         using System.Collections;
-        using System.Globalization;
         using System.IO;
         using System.Net.Http;
         using System.Net.Http.Headers;
         using System.Reflection;
         using System.Text;
         using System.Text.Json.Serialization;
+        using System.Threading;
+        using System.Threading.Tasks;
 
         namespace {{ns}};
 
@@ -118,7 +184,7 @@ public sealed class CSharpClientStep : ICodeGenerationStep
             /// <summary>Creates form-data parts using generated JSON property names as wire names.</summary>
             /// <typeparam name="TRequest">The generated request model type.</typeparam>
             /// <param name="request">The populated typed request model.</param>
-            /// <returns>Multipart content owned by the generated HTTP request.</returns>
+            /// <returns>Multipart content owned by the generated HTTP request, borrowing any file streams.</returns>
             /// <exception cref="ArgumentNullException">Thrown when <paramref name="request"/> is null.</exception>
             internal static MultipartFormDataContent Create<TRequest>(TRequest request)
             {
@@ -166,33 +232,92 @@ public sealed class CSharpClientStep : ICodeGenerationStep
                     return;
                 }
 
-                HttpContent part;
-                var isFile = false;
                 switch (value)
                 {
+                    case MultipartFile file:
+                        AddFile(content, name, new StreamContent(new BorrowedReadStream(file.Content)), file.FileName, file.ContentType);
+                        break;
                     case Stream stream:
-                        part = new StreamContent(stream);
-                        isFile = true;
+                        AddFile(content, name, new StreamContent(new BorrowedReadStream(stream)), name, "application/octet-stream");
                         break;
                     case byte[] bytes:
-                        part = new ByteArrayContent(bytes);
-                        isFile = true;
+                        AddFile(content, name, new ByteArrayContent(bytes), name, "application/octet-stream");
                         break;
                     default:
-                        var text = HttpWireValueFormatter.Format(value);
-                        part = new StringContent(text, Encoding.UTF8);
+                        content.Add(new StringContent(HttpWireValueFormatter.Format(value), Encoding.UTF8), name);
                         break;
                 }
+            }
 
-                if (isFile)
+            /// <summary>Adds a named file part and releases its HTTP content if adding it fails.</summary>
+            /// <param name="content">The multipart message that takes ownership on success.</param>
+            /// <param name="name">The exact wire field name, shared by repeated parts.</param>
+            /// <param name="part">The HTTP content for one file.</param>
+            /// <param name="fileName">The transmitted file name.</param>
+            /// <param name="contentType">The media type for this file part.</param>
+            /// <exception cref="FormatException">The supplied media type is invalid.</exception>
+            private static void AddFile(MultipartFormDataContent content, string name, HttpContent part, string fileName, string contentType)
+            {
+                try
                 {
-                    part.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-                    content.Add(part, name, name);
+                    part.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+                    content.Add(part, name, fileName);
                 }
-                else
+                catch
                 {
-                    content.Add(part, name);
+                    part.Dispose();
+                    throw;
                 }
+            }
+
+            /// <summary>Lets StreamContent dispose its wrapper without taking ownership of the source stream.</summary>
+            /// <param name="source">The readable stream owned by the request caller.</param>
+            private sealed class BorrowedReadStream(Stream source) : Stream
+            {
+                /// <inheritdoc />
+                public override bool CanRead => source.CanRead;
+
+                /// <inheritdoc />
+                public override bool CanSeek => source.CanSeek;
+
+                /// <inheritdoc />
+                public override bool CanWrite => false;
+
+                /// <inheritdoc />
+                public override long Length => source.Length;
+
+                /// <inheritdoc />
+                public override long Position { get => source.Position; set => source.Position = value; }
+
+                /// <inheritdoc />
+                public override void Flush() { }
+
+                /// <inheritdoc />
+                public override int Read(byte[] buffer, int offset, int count) => source.Read(buffer, offset, count);
+
+                /// <inheritdoc />
+                public override int Read(Span<byte> buffer) => source.Read(buffer);
+
+                /// <inheritdoc />
+                public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+                    source.ReadAsync(buffer, offset, count, cancellationToken);
+
+                /// <inheritdoc />
+                public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+                    source.ReadAsync(buffer, cancellationToken);
+
+                /// <inheritdoc />
+                public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken) =>
+                    source.CopyToAsync(destination, bufferSize, cancellationToken);
+
+                /// <inheritdoc />
+                public override long Seek(long offset, SeekOrigin origin) => source.Seek(offset, origin);
+
+                /// <inheritdoc />
+                public override void SetLength(long value) => throw new NotSupportedException();
+
+                /// <inheritdoc />
+                public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
             }
 
         }

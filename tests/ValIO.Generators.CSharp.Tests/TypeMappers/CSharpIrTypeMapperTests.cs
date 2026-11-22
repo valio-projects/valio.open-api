@@ -37,7 +37,7 @@ public class CSharpIrTypeMapperTests
     [TestCase(IrPrimitiveKind.DateTime,  "DateTime")]
     [TestCase(IrPrimitiveKind.Time,      "TimeOnly")]
     [TestCase(IrPrimitiveKind.Uuid,      "Guid")]
-    [TestCase(IrPrimitiveKind.File,      "Stream")]
+    [TestCase(IrPrimitiveKind.File,      "MultipartFile")]
     [TestCase(IrPrimitiveKind.Any,       "object")]
     [TestCase(IrPrimitiveKind.Void,      "void")]
     public void Primitives_MapToExpectedCSharpType(IrPrimitiveKind kind, string expected)

@@ -218,10 +218,14 @@ public class IrBuilder
         };
     }
     
-    /// <summary>
-    /// Извлекает свойства из схемы
-    /// </summary>
-    private IReadOnlyList<IrProperty> ExtractProperties(IOpenApiSchema schema, OpenApiDocument document, string? parentModelName = null)
+    /// <summary>Builds properties in schema order using the representation appropriate to their enclosing body.</summary>
+    /// <param name="schema">The schema declaring the properties.</param>
+    /// <param name="document">The source document used when resolving member types.</param>
+    /// <param name="parentModelName">The optional declaring model used in inline type names.</param>
+    /// <param name="multipart">Whether these properties are named multipart parts.</param>
+    /// <returns>Member declarations preserving their original wire names and validation metadata.</returns>
+    private IReadOnlyList<IrProperty> ExtractProperties(IOpenApiSchema schema, OpenApiDocument document, string? parentModelName = null,
+        bool multipart = false)
     {
         var properties = new List<IrProperty>();
         
@@ -232,13 +236,17 @@ public class IrBuilder
         {
             var sanitizedName = _namingConverter.SanitizeIdentifier(propertyName);
             var safeName = _namingConverter.SanitizeReservedKeyword(sanitizedName);
+            var isFilePart = multipart && ContainsMultipartFile(propertySchema);
+            var typeSchema = isFilePart ? _schemaResolver.ResolveSchema(propertySchema) : propertySchema;
             var propertyType = WithContext(
                 _ctx with { PropertyPath = AppendPath(_ctx.PropertyPath, propertyName) },
-                () => BuildType(propertySchema, document, propertyContext: new PropertyContext
+                () => BuildType(typeSchema, document, propertyContext: new PropertyContext
                 {
                     PropertyName = propertyName,
                     ParentModelName = parentModelName
                 }));
+            if (isFilePart)
+                propertyType = LowerMultipartFile(propertyType, typeSchema, document);
             var isRequired = schema.Required?.Contains(propertyName) ?? false;
             var constraints = ExtractConstraints(propertySchema);
             
@@ -1555,7 +1563,7 @@ public class IrBuilder
     /// <returns>The body contract whose required flag is independent of its model's required properties.</returns>
     private IrRequestBody BuildRequestBody(IOpenApiRequestBody requestBody, OpenApiDocument document, string? operationId = null)
     {
-        // Берем первый content type (обычно application/json)
+        // Keep the selected representation consistent with existing request-body consumers.
         var contentType = requestBody.Content?.Keys.FirstOrDefault();
         var content = contentType != null && requestBody.Content != null
             ? requestBody.Content[contentType]
@@ -1563,19 +1571,17 @@ public class IrBuilder
         
         var schema = content?.Schema;
         
-        // Определяем, является ли это формой (multipart/form-data или application/x-www-form-urlencoded)
         var isForm = contentType == "multipart/form-data" || contentType == "application/x-www-form-urlencoded";
-        
+        var propertyContext = isForm && !string.IsNullOrEmpty(operationId)
+            ? new PropertyContext { IsForm = true, OperationId = operationId }
+            : null;
+
         var type = schema != null
             ? WithContext(
                 _ctx with { Role = SchemaRole.RequestBody, ContentType = contentType },
-                () => BuildType(schema!, document, propertyContext: isForm && !string.IsNullOrEmpty(operationId)
-                    ? new PropertyContext
-                    {
-                        IsForm = true,
-                        OperationId = operationId
-                    }
-                    : null))
+                () => contentType == "multipart/form-data"
+                    ? BuildMultipartRequestType(schema, document, propertyContext)
+                    : BuildType(schema, document, propertyContext))
             : new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String };
         
         return new IrRequestBody
@@ -1586,6 +1592,90 @@ public class IrBuilder
             Description = requestBody.Description
         };
     }
+
+    /// <summary>Builds a form-specific model when top-level parts contain files.</summary>
+    /// <param name="schema">The inline or referenced multipart request schema.</param>
+    /// <param name="document">The document declaring referenced form members.</param>
+    /// <param name="propertyContext">The operation naming context for the form model.</param>
+    /// <returns>A reference to the form-specific model, or the ordinary type for a form without file parts.</returns>
+    /// <exception cref="InvalidOperationException">A composed form redeclares a field or has cyclic inheritance.</exception>
+    private IrType BuildMultipartRequestType(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext)
+    {
+        var declarations = MultipartDeclarations(schema, new HashSet<IOpenApiSchema>(ReferenceEqualityComparer.Instance)).ToArray();
+        if (!declarations.Any(declaration => declaration.Properties?.Values.Any(ContainsMultipartFile) == true))
+            return BuildType(schema, document, propertyContext);
+
+        var name = GenerateInlineModelNameFromContext(propertyContext);
+        var fields = declarations.SelectMany(declaration => ExtractProperties(declaration, document, name, multipart: true)).ToArray();
+        var duplicate = fields.GroupBy(field => field.OriginalName, StringComparer.Ordinal).FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+            throw new InvalidOperationException($"Multipart field '{duplicate.Key}' is declared more than once — at {_ctx.Describe()}");
+
+        _inlineModels.Add(name, new IrModel
+        {
+            Name = name,
+            Description = schema.Description ?? _schemaResolver.ResolveSchema(schema).Description,
+            Properties = fields,
+            OriginalSchema = schema
+        });
+        var type = new IrModelReference { ModelName = name };
+        return SchemaAllowsJsonNull(_schemaResolver.ResolveSchema(schema)) ? IrCompositionNormalizer.WrapNullable(type) : type;
+    }
+
+    /// <summary>Enumerates top-level field declarations before flattening the multipart form.</summary>
+    /// <param name="schema">The current structural declaration or reference.</param>
+    /// <param name="ancestors">The resolved schemas along the current inheritance path.</param>
+    /// <returns>The declarations in composition order, ending with the current declaration.</returns>
+    /// <exception cref="InvalidOperationException">The same resolved schema recurs within its inheritance path.</exception>
+    private IEnumerable<IOpenApiSchema> MultipartDeclarations(IOpenApiSchema schema, HashSet<IOpenApiSchema> ancestors)
+    {
+        var declaration = _schemaResolver.ResolveSchema(schema);
+        if (!ancestors.Add(declaration))
+            throw new InvalidOperationException($"Cyclic multipart form inheritance — at {_ctx.Describe()}");
+
+        foreach (var parent in declaration.AllOf ?? [])
+        {
+            foreach (var inherited in MultipartDeclarations(parent, ancestors))
+                yield return inherited;
+        }
+
+        ancestors.Remove(declaration);
+        yield return declaration;
+    }
+
+    /// <summary>Detects a binary file part or an array of binary file parts, including schema references.</summary>
+    /// <param name="schema">The OpenAPI schema for a named multipart field.</param>
+    /// <returns>Whether this field carries files rather than ordinary JSON or scalar values.</returns>
+    private bool ContainsMultipartFile(IOpenApiSchema schema)
+    {
+        var part = _schemaResolver.ResolveSchema(schema);
+        var type = part.Type & ~JsonSchemaType.Null;
+        if (type == JsonSchemaType.Array && part.Items is { } item)
+        {
+            part = _schemaResolver.ResolveSchema(item);
+            type = part.Type & ~JsonSchemaType.Null;
+        }
+
+        return type == JsonSchemaType.String && NormalizePrimitiveFormat(part.Format) == "binary";
+    }
+
+    /// <summary>Changes binary multipart values into file values while retaining array and nullability metadata.</summary>
+    /// <param name="type">The preexisting structural type of the field.</param>
+    /// <param name="schema">The resolved part schema used to resolve array item aliases.</param>
+    /// <param name="document">The source document for array item schemas.</param>
+    /// <returns>The file type, or the equivalent array or nullable wrapper around it.</returns>
+    private IrType LowerMultipartFile(IrType type, IOpenApiSchema schema, OpenApiDocument document) => type switch
+    {
+        IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary } binary => binary with { PrimitiveKind = IrPrimitiveKind.File },
+        IrArrayType array when schema.Items is { } item => array with
+        {
+            ElementType = LowerMultipartFile(
+                array.ElementType is IrModelReference ? BuildType(_schemaResolver.ResolveSchema(item), document) : array.ElementType,
+                _schemaResolver.ResolveSchema(item), document)
+        },
+        IrNullableType nullable => nullable with { InnerType = LowerMultipartFile(nullable.InnerType, schema, document) },
+        _ => type
+    };
     
     /// <summary>Extracts the existing payload type without changing the response representation selected by earlier generators.</summary>
     /// <param name="response">The OpenAPI response for the current status.</param>

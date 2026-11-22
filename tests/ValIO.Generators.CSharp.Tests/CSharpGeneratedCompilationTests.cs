@@ -25,6 +25,40 @@ namespace ValIO.Generators.CSharp.Tests;
 [NonParallelizable]
 public sealed class CSharpGeneratedCompilationTests
 {
+    /// <summary>Generates distinct C# contracts for multipart file parts and binary JSON members.</summary>
+    /// <returns>The asynchronous source assertions.</returns>
+    [Test]
+    public async Task MultipartOpenApi_EmitsBorrowedFilesAndKeepsJsonByteArrays()
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CoreIR/multipart-file-parts-3.0.json")));
+        var parsed = await OpenApiDocument.LoadAsync(input, "json");
+        var ir = new IrBuilder(new SchemaResolver(parsed.Document!), new NamingConverter()).BuildFromOpenApi(parsed.Document!);
+        var context = new GenerationContext
+        {
+            IrDocument = ir,
+            Configuration = new GenerationConfiguration
+            {
+                Namespace = "Generated.Contracts",
+                NamingConvention = new NamingConventions { Properties = NamingConvention.PascalCase }
+            },
+            PluginOptions = new CSharpGenerationOptions()
+        };
+        var naming = new CSharpNamingConverter();
+        var renderer = new CSharpAstRenderer();
+        await new CSharpModelsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpClientStep(naming, renderer).ExecuteAsync(context);
+
+        var generated = context.GeneratedFiles.ToDictionary(file => file.RelativePath, file => file.Content);
+        generated["Models/UploadFilesFormModel.cs"].Should()
+            .Contain("MultipartFile PrimaryFile").And.Contain("MultipartFile[] Attachments")
+            .And.Contain("[JsonPropertyName(\"primary-file\")]");
+        generated["Models/UploadFields.cs"].Should().Contain("byte[] PrimaryFile").And.Contain("byte[][] Attachments");
+        generated["Models/UploadInlineFormModel.cs"].Should().Contain("MultipartFile? File");
+        generated["Models/MultipartFile.cs"].Should().Contain("MultipartFile(Stream content, string fileName, string contentType");
+        generated["Api/UploadsClient.cs"].Should().Contain("MultipartFormDataContentFactory.Create(request)");
+        generated["Api/MultipartFormDataContentFactory.cs"].Should().Contain("new StreamContent(new BorrowedReadStream(file.Content))");
+    }
+
     /// <summary>Compiles nullable references from real OpenAPI and exercises their System.Text.Json codecs.</summary>
     /// <returns>The asynchronous source generation, compiler and runtime verification.</returns>
     [Test]
@@ -453,6 +487,7 @@ public sealed class CSharpGeneratedCompilationTests
                 Properties =
                 [
                     Property("content", "Content", Primitive(IrPrimitiveKind.File)),
+                    Property("related-files", "RelatedFiles", new IrArrayType { ElementType = Primitive(IrPrimitiveKind.File) }),
                     Property("state", "State", state),
                     Property("amount", "Amount", Primitive(IrPrimitiveKind.Number)),
                     Property("enabled", "Enabled", Primitive(IrPrimitiveKind.Boolean))
@@ -620,10 +655,84 @@ public sealed class CSharpGeneratedCompilationTests
         if (!uri.Contains("/files/seg%2Fone") || !uri.Contains("ratio=1.5") ||
             !uri.Contains("state=in_progress") || !uri.Contains("enabled=true") || !uri.Contains("tags=x%20y"))
             throw new InvalidOperationException("Invariant and escaped URL serialization failed: " + uri);
-        var form = new UploadForm { Content = new MemoryStream([1, 2, 3]), State = State.InProgress, Amount = 1.5, Enabled = true };
+        using var primary = new UploadProbeStream([1, 2, 3]);
+        using var firstRelated = new UploadProbeStream([4, 5]);
+        using var secondRelated = new UploadProbeStream([6, 7]);
+        var form = new UploadForm
+        {
+            Content = new MultipartFile(primary, "primary.jpg", "image/jpeg"),
+            RelatedFiles = [new(firstRelated, "first.png", "image/png"), new(secondRelated, "second.bin")],
+            State = State.InProgress, Amount = 1.5, Enabled = true
+        };
+        handler.BeforeBodyRead = () =>
+        {
+            if (primary.CopyCount + firstRelated.CopyCount + secondRelated.CopyCount != 0)
+                throw new InvalidOperationException("Multipart files were read before HTTP transmission.");
+        };
         await client.Send("x", null, null, true, null, null, null, null, null, null, null, null, form);
+        handler.BeforeBodyRead = null;
         if (!handler.Body!.Contains("in_progress") || !handler.Body.Contains("1.5") || !handler.Body.Contains("true"))
             throw new InvalidOperationException("Multipart invariant and enum wire values failed.");
+        if (!handler.FileParts.SequenceEqual(new[]
+            {
+                ("content", "primary.jpg", "image/jpeg"),
+                ("related-files", "first.png", "image/png"),
+                ("related-files", "second.bin", "application/octet-stream")
+            }) || primary.CopyCount != 1 || firstRelated.CopyCount != 1 || secondRelated.CopyCount != 1 ||
+            !primary.CanRead || !firstRelated.CanRead || !secondRelated.CanRead)
+            throw new InvalidOperationException("Multipart order, metadata, streaming, or stream ownership failed.");
+
+        using var rejectedFile = new UploadProbeStream([1]);
+        var rejectedForm = new UploadForm
+        {
+            Content = new MultipartFile(rejectedFile, "rejected.bin"), RelatedFiles = [],
+            State = State.InProgress, Amount = 1.5, Enabled = true
+        };
+        handler.ReturnError = true;
+        try
+        {
+            await client.Send("x", null, null, true, null, null, null, null, null, null, null, null, rejectedForm);
+            throw new InvalidOperationException("Multipart gateway failure was accepted.");
+        }
+        catch (ApiException) when (rejectedFile.CopyCount == 1 && rejectedFile.CanRead)
+        {
+        }
+        handler.ReturnError = false;
+
+        using var cancelUpload = new CancellationTokenSource();
+        using var cancelledFile = new UploadProbeStream([1], cancelUpload.Cancel);
+        var cancelledForm = new UploadForm
+        {
+            Content = new MultipartFile(cancelledFile, "cancelled.bin"), RelatedFiles = [],
+            State = State.InProgress, Amount = 1.5, Enabled = true
+        };
+        try
+        {
+            await client.Send("x", null, null, true, null, null, null, null, null, null, null, null, cancelledForm, cancelUpload.Token);
+            throw new InvalidOperationException("Cancellation did not interrupt multipart transmission.");
+        }
+        catch (OperationCanceledException) when (cancelledFile.CopyCount == 1 && cancelledFile.CanRead)
+        {
+        }
+
+        using var validMetadataFile = new UploadProbeStream([1]);
+        using var invalidMetadataFile = new UploadProbeStream([2]);
+        var invalidForm = new UploadForm
+        {
+            Content = new MultipartFile(validMetadataFile, "valid.bin"),
+            RelatedFiles = [new MultipartFile(invalidMetadataFile, "invalid.bin", "invalid media type")],
+            State = State.InProgress, Amount = 1.5, Enabled = true
+        };
+        try
+        {
+            await client.Send("x", null, null, true, null, null, null, null, null, null, null, null, invalidForm);
+            throw new InvalidOperationException("Invalid multipart media type was accepted.");
+        }
+        catch (FormatException) when (validMetadataFile.CopyCount == 0 && invalidMetadataFile.CopyCount == 0 &&
+            validMetadataFile.CanRead && invalidMetadataFile.CanRead)
+        {
+        }
+
         handler.ReturnError = true;
         try
         {
@@ -668,6 +777,27 @@ public sealed class CSharpGeneratedCompilationTests
         await HttpPipelineChecks.Run();
         Console.WriteLine("CSharp generated runtime passed");
 
+        /// <summary>Tracks HTTP serialization of a non-seekable caller-owned file.</summary>
+        /// <param name="bytes">The complete contents for this probe.</param>
+        /// <param name="beginCopy">An optional action when serialization attempts a read.</param>
+        internal sealed class UploadProbeStream(byte[] bytes, Action? beginCopy = null) : MemoryStream(bytes)
+        {
+            /// <summary>Gets the number of copy attempts by the HTTP transport.</summary>
+            /// <value>The number of times the probe received an asynchronous copy request.</value>
+            internal int CopyCount { get; private set; }
+
+            /// <inheritdoc/>
+            public override bool CanSeek => false;
+
+            /// <inheritdoc/>
+            public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
+            {
+                CopyCount++;
+                beginCopy?.Invoke();
+                return base.CopyToAsync(destination, bufferSize, cancellationToken);
+            }
+        }
+
         /// <summary>Captures generated HTTP requests without making a network connection.</summary>
         internal sealed class CaptureHandler : HttpMessageHandler
         {
@@ -685,6 +815,12 @@ public sealed class CSharpGeneratedCompilationTests
             internal bool HadContent { get; private set; }
             /// <summary>Gets the last serialized request body.</summary>
             internal string? Body { get; private set; }
+            /// <summary>Gets the last transmitted filenames, part names, and media types.</summary>
+            /// <value>File metadata in the order chosen by the generated request.</value>
+            internal IReadOnlyList<(string Name, string FileName, string MediaType)> FileParts { get; private set; } = [];
+            /// <summary>Gets or sets an assertion before the handler serializes a body.</summary>
+            /// <value>An optional action that observes whether the caller's streams were read early.</value>
+            internal Action? BeforeBodyRead { get; set; }
             /// <summary>Gets or sets whether the next response simulates a non-JSON gateway error.</summary>
             internal bool ReturnError { get; set; }
             /// <summary>Gets or sets the 202 receipt content. Null selects the declared bodyless 204.</summary>
@@ -698,6 +834,14 @@ public sealed class CSharpGeneratedCompilationTests
                 RequestMediaType = request.Content?.Headers.ContentType?.MediaType;
                 AcceptMediaType = request.Headers.Accept.SingleOrDefault()?.MediaType;
                 HadContent = request.Content != null;
+                BeforeBodyRead?.Invoke();
+                FileParts = request.Content is MultipartFormDataContent formData
+                    ? formData.Where(part => part.Headers.ContentDisposition?.FileNameStar != null).Select(part =>
+                    {
+                        var disposition = part.Headers.ContentDisposition!;
+                        return (disposition.Name!.Trim('"'), disposition.FileNameStar!, part.Headers.ContentType!.MediaType!);
+                    }).ToArray()
+                    : [];
                 Body = request.Content == null ? null : await request.Content.ReadAsStringAsync(cancellationToken);
                 if (Uri?.AbsolutePath == "/money")
                     return new HttpResponseMessage(HttpStatusCode.OK)

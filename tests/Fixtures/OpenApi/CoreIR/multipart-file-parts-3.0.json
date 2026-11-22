@@ -1,0 +1,69 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Multipart file parts", "version": "1.0" },
+  "paths": {
+    "/uploads": {
+      "post": {
+        "operationId": "UploadFiles",
+        "tags": ["Uploads"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": { "$ref": "#/components/schemas/UploadFields" },
+              "encoding": { "primary-file": { "contentType": "image/png, image/jpeg" } }
+            }
+          }
+        },
+        "responses": { "204": { "description": "Uploaded" } }
+      }
+    },
+    "/inline": {
+      "post": {
+        "operationId": "UploadInline",
+        "tags": ["Uploads"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": { "type": "string", "format": "binary", "nullable": true },
+                  "base64": { "type": "string", "format": "byte" },
+                  "alias-file": { "$ref": "#/components/schemas/FilePart" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "204": { "description": "Uploaded" } }
+      }
+    },
+    "/uploads/json": {
+      "post": {
+        "operationId": "SendJson",
+        "tags": ["Uploads"],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UploadFields" } } }
+        },
+        "responses": { "204": { "description": "Stored" } }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "FilePart": { "type": "string", "format": "binary" },
+      "UploadFields": {
+        "type": "object",
+        "required": ["primary-file", "caption"],
+        "properties": {
+          "primary-file": { "type": "string", "format": "binary" },
+          "caption": { "type": "string" },
+          "attachments": { "type": "array", "items": { "type": "string", "format": "binary" } }
+        }
+      }
+    }
+  }
+}

@@ -1126,9 +1126,6 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     {
         switch (type)
         {
-            case IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.File }:
-                dependencies.Add("System.IO");
-                break;
             case IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Date or IrPrimitiveKind.DateTime or IrPrimitiveKind.Time or IrPrimitiveKind.Uuid }:
                 dependencies.Add("System");
                 break;

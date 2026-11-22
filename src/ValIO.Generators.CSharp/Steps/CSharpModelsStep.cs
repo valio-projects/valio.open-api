@@ -48,6 +48,9 @@ public sealed class CSharpModelsStep : ICodeGenerationStep
         foreach (var model in context.DocumentContext.ModelsInDependencyOrder)
             AddModelFile(context, builder, model, ns);
 
+        if (CSharpClientStep.HasMultipartOperations(context))
+            CSharpClientStep.AddMultipartFileType(context, ns);
+
         return Task.CompletedTask;
     }
 
