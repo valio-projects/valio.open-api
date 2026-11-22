@@ -115,6 +115,9 @@ Metadata methods send once, use paths relative to the injected `HttpClient.BaseA
 its timeout across headers and body. End a gateway base path with a slash. Configure the client to
 disable redirects if the caller needs to observe redirect statuses. `options.responseMetadataMaxBodyBytes`
 limits decoded UTF-8 JSON to 65,536 bytes by default.
+Use the optional configuration object `options.responseMetadataOperations` to select exact
+operation names and set their individual byte limits. Select a limit that includes the largest
+response accepted by each producer's contract, including a full allowed page.
 
 ## Architecture
 

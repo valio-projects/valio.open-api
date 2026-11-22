@@ -59,6 +59,15 @@ public sealed class CSharpClientStep : ICodeGenerationStep
             if (names.Any(name => name is "ApiResponseContract" or "ApiResponseReader"))
                 throw new InvalidOperationException("A C# schema or client name conflicts with the generated response metadata support types.");
 
+            if (opts.ResponseMetadataOperations is { } selection)
+            {
+                var ids = context.IrDocument.Clients.SelectMany(client => client.Operations)
+                    .Select(operation => operation.OriginalMethodName).ToHashSet(StringComparer.Ordinal);
+                var unknown = selection.Keys.Where(name => !ids.Contains(name)).ToArray();
+                if (unknown.Length > 0)
+                    throw new InvalidOperationException($"Unknown C# response metadata operations: {string.Join(", ", unknown)}.");
+            }
+
             context.GeneratedFiles.Add(new GeneratedFile("Api/ApiResponse.cs", CSharpResponseMetadataSource.Build(ns)));
         }
 

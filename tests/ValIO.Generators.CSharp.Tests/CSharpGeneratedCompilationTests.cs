@@ -81,7 +81,7 @@ public sealed class CSharpGeneratedCompilationTests
                 InterfaceFileStrategy = InterfaceFileStrategy.SeparateFile,
                 UseRequired = true,
                 GenerateResponseMetadata = true,
-                ResponseMetadataMaxBodyBytes = 256,
+                ResponseMetadataOperations = new Dictionary<string, int> { ["FindReceipt"] = 256, ["ReadWins"] = 524_288 },
                 GenerateTraces = true,
                 GenerateMetrics = true,
             }
@@ -93,12 +93,15 @@ public sealed class CSharpGeneratedCompilationTests
 
         var files = context.GeneratedFiles.ToDictionary(file => file.RelativePath, file => file.Content);
         files["Api/IReceipts.cs"].Should().Contain("Task<Receipt> FindReceipt(")
-            .And.Contain("Task<ApiResponse<Receipt>> FindReceiptWithResponse(");
+            .And.Contain("Task<ApiResponse<Receipt>> FindReceiptWithResponse(")
+            .And.Contain("Task<ApiResponse<WinPage>> ReadWinsWithResponse(")
+            .And.Contain("Task ReadOrdinary(").And.NotContain("ReadOrdinaryWithResponse");
         files["Api/ReceiptsClient.cs"].Should().Contain("ApiResponseReader.SendAsync<Receipt>")
             .And.Contain("new ApiResponseContract(400, \"application/problem+json\", typeof(ReceiptProblem))")
             .And.Contain("new ApiResponseContract(404, null, null)");
         files["Api/ApiResponse.cs"].Should().Contain("HttpCompletionOption.ResponseHeadersRead").And.Contain("ReadAtLeastAsync");
-        ir.Clients.Single().Operations.Single().Responses.Single(response => response.StatusCode == "404")
+        ir.Clients.Single().Operations.Single(operation => operation.OriginalMethodName == "FindReceipt")
+            .Responses.Single(response => response.StatusCode == "404")
             .Headers.Single().Name.Should().Be("Cache-Control");
 
         var directory = Path.Combine(Path.GetTempPath(), "ValIO.CSharp.ResponseMetadata", Guid.NewGuid().ToString("N"));
@@ -120,6 +123,7 @@ public sealed class CSharpGeneratedCompilationTests
                 using System.Net;
                 using System.Net.Http.Headers;
                 using System.Text;
+                using System.Text.Json;
                 using Generated.Contracts;
 
                 var id = Guid.Parse("43648bac-f7af-4a8a-b26a-a4d272780b93");
@@ -154,7 +158,14 @@ public sealed class CSharpGeneratedCompilationTests
                         throw new InvalidOperationException("An unexpected response was mistaken for authoritative evidence.");
                 }
 
-                if (handler.Sends != 10)
+                var page = await client.ReadWinsWithResponse(id);
+                var wins = page.Body;
+                if (page.StatusCode != 200 || wins is null || wins.Entries.Length != 500 ||
+                    wins.Entries[499].Amount != 123456789123456789.1234567891m ||
+                    wins.Entries[499].ReversalSequence != long.MaxValue)
+                    throw new InvalidOperationException("The accepted maximum-size evidence page could not be read.");
+
+                if (handler.Sends != 11)
                     throw new InvalidOperationException("A metadata method issued more than one HTTP request.");
                 Console.WriteLine("CSharp response metadata passed");
 
@@ -180,6 +191,31 @@ public sealed class CSharpGeneratedCompilationTests
                     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
+                        if (request.RequestUri?.AbsolutePath == "/private-owner/api/v1/receipts/" + _id + "/wins")
+                        {
+                            Sends++;
+                            var payload = JsonSerializer.Serialize(new
+                            {
+                                entries = Enumerable.Range(0, 500).Select(index => new
+                                {
+                                    winId = _id,
+                                    sequence = long.MaxValue - 500 + index,
+                                    journalEntryId = _id,
+                                    amount = 123456789123456789.1234567891m,
+                                    restricted = false,
+                                    observedAt = "2026-01-01T00:00:00.1234567+00:00",
+                                    postedAt = "2026-01-01T00:00:01.1234567+00:00",
+                                    reversalId = _id,
+                                    reversalSequence = long.MaxValue,
+                                    reversalJournalEntryId = _id,
+                                    reversalRestricted = true
+                                })
+                            });
+                            if (Encoding.UTF8.GetByteCount(payload) <= 65_536)
+                                throw new InvalidOperationException("The fixture must exceed the ordinary receipt budget.");
+                            return Task.FromResult(Json(HttpStatusCode.OK, payload));
+                        }
+
                         if (request.RequestUri?.AbsolutePath != "/private-owner/api/v1/receipts/" + _id ||
                             !request.Headers.Accept.Any(type => type.MediaType == "application/problem+json"))
                             throw new InvalidOperationException("The configured gateway prefix, identity, or declared Accept values were lost.");

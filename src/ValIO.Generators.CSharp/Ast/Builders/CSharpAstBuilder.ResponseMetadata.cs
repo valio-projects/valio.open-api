@@ -24,24 +24,27 @@ public partial class CSharpAstBuilder
 
     /// <summary>Gets the operations that expose companion response methods.</summary>
     /// <param name="client">The client with any pre-existing member naming collisions resolved.</param>
-    /// <returns>All client operations for a response-aware profile, or an empty sequence.</returns>
+    /// <returns>The enabled client operations, restricted to the operation map when present.</returns>
     /// <exception cref="InvalidOperationException">A companion method would hide a schema operation or class name.</exception>
     private IReadOnlyList<IrOperation> MetadataOperations(IrClient client)
     {
         if (!_options.GenerateResponseMetadata)
             return [];
 
+        var operationMap = _options.ResponseMetadataOperations;
+        var enabled = operationMap is null ? client.Operations : client.Operations
+            .Where(operation => operationMap.ContainsKey(operation.OriginalMethodName)).ToArray();
         var used = client.Operations.Select(operation => operation.MethodName).ToHashSet(StringComparer.Ordinal);
         used.Add(client.Name);
         used.Add("I" + client.Name);
         used.Add(client.Name + "TelemetryDecorator");
-        foreach (var operation in client.Operations)
+        foreach (var operation in enabled)
         {
             if (!used.Add(MetadataMethodName(operation)))
                 throw new InvalidOperationException($"C# response metadata method '{MetadataMethodName(operation)}' conflicts with '{client.Name}'.");
         }
 
-        return client.Operations;
+        return enabled;
     }
 
     /// <summary>Maps the ordinary success payload into the response-aware return type.</summary>
@@ -67,11 +70,12 @@ public partial class CSharpAstBuilder
     /// <returns>The statement awaiting the single HTTP call and status-specific body decode.</returns>
     private StatementNode BuildMetadataSend(IrOperation operation, IrResponse? success, string requestName)
     {
+        var bodyLimit = _options.ResponseMetadataOperations?.GetValueOrDefault(operation.OriginalMethodName) ?? _options.ResponseMetadataMaxBodyBytes;
         var arguments = new List<ExpressionNode>
         {
             new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("this")), new IdentifierNode("_httpClient")),
             new IdentifierExpressionNode(new IdentifierNode(requestName)),
-            new LiteralExpressionNode(_options.ResponseMetadataMaxBodyBytes.ToString(CultureInfo.InvariantCulture), LiteralKind.Number),
+            new LiteralExpressionNode(bodyLimit.ToString(CultureInfo.InvariantCulture), LiteralKind.Number),
             new IdentifierExpressionNode(new IdentifierNode("cancellationToken")),
         };
 

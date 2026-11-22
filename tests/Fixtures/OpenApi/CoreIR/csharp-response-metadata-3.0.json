@@ -33,6 +33,30 @@
           }
         }
       }
+    },
+    "/api/v1/receipts/{id}/wins": {
+      "get": {
+        "operationId": "ReadWins",
+        "tags": ["Receipts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The complete page of up to 500 financial facts.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WinPage" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/receipts": {
+      "get": {
+        "operationId": "ReadOrdinary",
+        "tags": ["Receipts"],
+        "responses": {
+          "204": { "description": "An ordinary operation without metadata enabled." }
+        }
+      }
     }
   },
   "components": {
@@ -51,6 +75,33 @@
         "required": ["code"],
         "properties": {
           "code": { "type": "string" }
+        }
+      },
+      "WinPage": {
+        "type": "object",
+        "required": ["entries"],
+        "properties": {
+          "entries": { "type": "array", "maxItems": 500, "items": { "$ref": "#/components/schemas/WinFact" } }
+        }
+      },
+      "WinFact": {
+        "type": "object",
+        "required": [
+          "winId", "sequence", "journalEntryId", "amount", "restricted", "observedAt", "postedAt",
+          "reversalId", "reversalSequence", "reversalJournalEntryId", "reversalRestricted"
+        ],
+        "properties": {
+          "winId": { "type": "string", "format": "uuid" },
+          "sequence": { "type": "integer", "format": "int64" },
+          "journalEntryId": { "type": "string", "format": "uuid" },
+          "amount": { "type": "number", "format": "decimal" },
+          "restricted": { "type": "boolean" },
+          "observedAt": { "type": "string", "format": "date-time" },
+          "postedAt": { "type": "string", "format": "date-time" },
+          "reversalId": { "type": "string", "format": "uuid" },
+          "reversalSequence": { "type": "integer", "format": "int64" },
+          "reversalJournalEntryId": { "type": "string", "format": "uuid" },
+          "reversalRestricted": { "type": "boolean" }
         }
       }
     }

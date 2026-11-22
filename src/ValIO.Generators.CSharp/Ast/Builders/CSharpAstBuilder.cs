@@ -1566,7 +1566,8 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
 
         var operations = client.Operations
             .Select(operation => string.Equals(operation.MethodName, client.Name, StringComparison.Ordinal)
-                ? new IrOperation(operation) { MethodName = ToPascalCase(operation.HttpMethod) + operation.MethodName }
+                ? new IrOperation(operation) { MethodName = ToPascalCase(operation.HttpMethod) + operation.MethodName,
+                    OriginalMethodName = operation.OriginalMethodName }
                 : operation)
             .ToList();
 

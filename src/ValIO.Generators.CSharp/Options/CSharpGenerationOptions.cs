@@ -74,6 +74,10 @@ public sealed class CSharpGenerationOptions
     /// <value>The response body limit in bytes, excluding HTTP headers.</value>
     public int ResponseMetadataMaxBodyBytes { get; set; } = 64 * 1024;
 
+    /// <summary>Gets or sets the operation map for profiles that expose a subset of response metadata methods.</summary>
+    /// <value>Exact operation names and per-operation byte limits, or null to use the profile-wide limit for all operations.</value>
+    public IReadOnlyDictionary<string, int>? ResponseMetadataOperations { get; set; }
+
     /// <summary>Gets or sets where generated client interfaces are placed.</summary>
     /// <value>The interface file placement strategy.</value>
     public InterfaceFileStrategy InterfaceFileStrategy { get; set; } = InterfaceFileStrategy.SameFile;
@@ -115,6 +119,8 @@ public sealed class CSharpGenerationOptions
             errors.Add("C# top-level clients support clientAccessModifier=Public or Internal only.");
         if (GenerateResponseMetadata && ResponseMetadataMaxBodyBytes is <= 0 or int.MaxValue)
             errors.Add("C# responseMetadataMaxBodyBytes must be positive and leave room for one overflow byte.");
+        if (GenerateResponseMetadata && ResponseMetadataOperations?.Values.Any(limit => limit is <= 0 or int.MaxValue) == true)
+            errors.Add("C# responseMetadataOperations values must be positive byte limits and leave room for one overflow byte.");
         return errors;
     }
 }
