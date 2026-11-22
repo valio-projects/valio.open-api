@@ -63,13 +63,17 @@
     "schemas": {
       "Receipt": {
         "type": "object",
-        "required": ["revision", "amount", "accepted"],
+        "required": ["revision", "amount", "accepted", "status"],
         "properties": {
           "revision": { "type": "integer", "format": "int64" },
           "amount": { "type": "number", "format": "decimal" },
-          "accepted": { "type": "boolean" }
+          "accepted": { "type": "boolean" },
+          "status": { "$ref": "#/components/schemas/ReceiptStatus" },
+          "errorCode": { "$ref": "#/components/schemas/ReceiptError" }
         }
       },
+      "ReceiptStatus": { "type": "string", "enum": ["Applied", "Rejected"] },
+      "ReceiptError": { "type": "string", "enum": ["insufficient_coins", "wallet_not_found"] },
       "ReceiptProblem": {
         "type": "object",
         "required": ["code"],

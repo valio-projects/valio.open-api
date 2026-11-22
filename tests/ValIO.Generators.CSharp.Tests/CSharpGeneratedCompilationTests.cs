@@ -82,6 +82,8 @@ public sealed class CSharpGeneratedCompilationTests
                 UseRequired = true,
                 GenerateResponseMetadata = true,
                 ResponseMetadataOperations = new Dictionary<string, int> { ["FindReceipt"] = 256, ["ReadWins"] = 524_288 },
+                StrictStringEnums = true,
+                PascalCaseEnumMembers = true,
                 GenerateTraces = true,
                 GenerateMetrics = true,
             }
@@ -89,6 +91,7 @@ public sealed class CSharpGeneratedCompilationTests
         var naming = new CSharpNamingConverter();
         var renderer = new CSharpAstRenderer();
         await new CSharpModelsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpEnumsStep(naming, renderer).ExecuteAsync(context);
         await new CSharpClientStep(naming, renderer).ExecuteAsync(context);
 
         var files = context.GeneratedFiles.ToDictionary(file => file.RelativePath, file => file.Content);
@@ -133,11 +136,13 @@ public sealed class CSharpGeneratedCompilationTests
 
                 var found = await client.FindReceiptWithResponse(id);
                 if (found.StatusCode != 200 || found.ContentType != "application/json" || !found.HasBody || found.IsBodyless ||
-                    found.Body is not { Revision: 9007199254740993L, Amount: 123456789123456789.1234567891m, Accepted: true })
+                    found.Body is not { Revision: 9007199254740993L, Amount: 123456789123456789.1234567891m, Accepted: true,
+                        Status: ReceiptStatus.Applied })
                     throw new InvalidOperationException("The typed success receipt lost its HTTP or numeric contract.");
 
                 var conflict = await client.FindReceiptWithResponse(id);
-                if (conflict.StatusCode != 409 || !conflict.TryGetBody<Receipt>(out var rejection) || rejection.Accepted)
+                if (conflict.StatusCode != 409 || !conflict.TryGetBody<Receipt>(out var rejection) || rejection.Accepted ||
+                    rejection.Status != ReceiptStatus.Rejected || rejection.ErrorCode != ReceiptError.InsufficientCoins)
                     throw new InvalidOperationException("A documented conflict did not retain its typed finance receipt.");
 
                 var missing = await client.FindReceiptWithResponse(id);
@@ -151,12 +156,16 @@ public sealed class CSharpGeneratedCompilationTests
                     !invalid.TryGetBody<ReceiptProblem>(out var problem) || problem.Code != "invalid_request")
                     throw new InvalidOperationException("The explicitly declared alternate schema was not decoded.");
 
-                foreach (var status in new[] { 409, 409, 202, 404, 409, 409 })
+                foreach (var status in new[] { 409, 409, 202, 404, 409, 409, 409, 409, 409, 409 })
                 {
                     var unconfirmed = await client.FindReceiptWithResponse(id);
                     if (unconfirmed.StatusCode != status || unconfirmed.HasBody || unconfirmed.IsBodyless)
                         throw new InvalidOperationException("An unexpected response was mistaken for authoritative evidence.");
                 }
+
+                var zero = await client.FindReceiptWithResponse(id);
+                if (zero.Body is not { Revision: 0L, Amount: 0m, Accepted: false, Status: ReceiptStatus.Rejected })
+                    throw new InvalidOperationException("Explicit zero and false fields were not recognized.");
 
                 var page = await client.ReadWinsWithResponse(id);
                 var wins = page.Body;
@@ -165,7 +174,7 @@ public sealed class CSharpGeneratedCompilationTests
                     wins.Entries[499].ReversalSequence != long.MaxValue)
                     throw new InvalidOperationException("The accepted maximum-size evidence page could not be read.");
 
-                if (handler.Sends != 11)
+                if (handler.Sends != 16)
                     throw new InvalidOperationException("A metadata method issued more than one HTTP request.");
                 Console.WriteLine("CSharp response metadata passed");
 
@@ -173,7 +182,13 @@ public sealed class CSharpGeneratedCompilationTests
                 internal sealed class FixtureHandler : HttpMessageHandler
                 {
                     /// <summary>Retains an exact int64 and decimal in a literal JSON payload.</summary>
-                    private const string ReceiptJson = """{"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":true}""";
+                    private const string ReceiptJson = """
+                        {"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":true,"status":"Applied"}
+                        """;
+                    /// <summary>Includes the exact declared error wire label on a rejected financial receipt.</summary>
+                    private const string RejectedJson = """
+                        {"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":false,"status":"Rejected","errorCode":"insufficient_coins"}
+                        """;
                     /// <summary>Checks that path parameters use the selected receipt identity.</summary>
                     private readonly Guid _id;
 
@@ -223,7 +238,7 @@ public sealed class CSharpGeneratedCompilationTests
                         var response = (++Sends) switch
                         {
                             1 => Json(HttpStatusCode.OK, ReceiptJson, "Application/JSON"),
-                            2 => Json(HttpStatusCode.Conflict, ReceiptJson.Replace("true", "false")),
+                            2 => Json(HttpStatusCode.Conflict, RejectedJson),
                             3 => new HttpResponseMessage(HttpStatusCode.NotFound),
                             4 => Json(HttpStatusCode.BadRequest, "{\"code\":\"invalid_request\"}", "application/problem+json"),
                             5 => Json(HttpStatusCode.Conflict, ReceiptJson, "text/html"),
@@ -231,7 +246,12 @@ public sealed class CSharpGeneratedCompilationTests
                             7 => Json(HttpStatusCode.Accepted, ReceiptJson),
                             8 => Json(HttpStatusCode.NotFound, "{\"code\":\"edge_not_found\"}"),
                             9 => Json(HttpStatusCode.Conflict, ReceiptJson + new string(' ', 257)),
-                            10 => Json(HttpStatusCode.Conflict, "{\"revision\":9007199254740993,\"amount\":2}"),
+                            10 => Json(HttpStatusCode.Conflict, """{"revision":0,"amount":0,"status":"Applied"}"""),
+                            11 => Json(HttpStatusCode.Conflict, ReceiptJson.Replace("\"Applied\"", "1")),
+                            12 => Json(HttpStatusCode.Conflict, ReceiptJson.Replace("Applied", "applied")),
+                            13 => Json(HttpStatusCode.Conflict, RejectedJson.Replace("insufficient_coins", "undeclared_business_error")),
+                            14 => Json(HttpStatusCode.Conflict, RejectedJson.Replace("insufficient_coins", "InsufficientCoins")),
+                            15 => Json(HttpStatusCode.Conflict, """{"revision":0,"amount":0,"accepted":false,"status":"Rejected"}"""),
                             _ => throw new InvalidOperationException("Unexpected request.")
                         };
                         response.Headers.CacheControl = new CacheControlHeaderValue { NoStore = true };
