@@ -168,7 +168,7 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
     [Test]
     public void MultipartBody_UsesMultipartFactoryInsteadOfJsonSerialization()
     {
-        var operation = OperationWith(new IrResponse { StatusCode = "204" }) with
+        var operation = new IrOperation(OperationWith(new IrResponse { StatusCode = "204" }))
         {
             HttpMethod = "POST",
             RequestBody = new IrRequestBody

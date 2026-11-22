@@ -7,13 +7,38 @@ namespace ValIO.Core.IR;
 /// <summary>
 /// IR представление HTTP операции
 /// </summary>
-public sealed record IrOperation
+public sealed class IrOperation : IEquatable<IrOperation>
 {
+    /// <summary>Creates a language-independent value for initialization from source data.</summary>
+    public IrOperation()
+    {
+    }
+
+    /// <summary>Copies all stored members before applying initializer overrides.</summary>
+    /// <param name="source">The value to copy.</param>
+    [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
+    public IrOperation(IrOperation source)
+    {
+        MethodName = source.MethodName;
+        _originalMethodName = source._originalMethodName;
+        HttpMethod = source.HttpMethod;
+        Path = source.Path;
+        Summary = source.Summary;
+        Description = source.Description;
+        PathParameters = source.PathParameters;
+        QueryParameters = source.QueryParameters;
+        HeaderParameters = source.HeaderParameters;
+        RequestBody = source.RequestBody;
+        Responses = source.Responses;
+        Tags = source.Tags;
+    }
+
     /// <summary>
     /// Имя метода (sanitized, с учётом affix-преобразования, если оно применялось)
     /// </summary>
     public required string MethodName { get; init; }
 
+    /// <summary>Preserves the explicit original name before applying a fallback.</summary>
     private readonly string? _originalMethodName;
 
     /// <summary>
@@ -76,13 +101,85 @@ public sealed record IrOperation
     /// Теги операции (для группировки)
     /// </summary>
     public IReadOnlyList<string>? Tags { get; init; }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(IrOperation? other) => other is not null
+        && EqualityComparer<string>.Default.Equals(MethodName, other.MethodName)
+        && EqualityComparer<string?>.Default.Equals(_originalMethodName, other._originalMethodName)
+        && EqualityComparer<string>.Default.Equals(HttpMethod, other.HttpMethod)
+        && EqualityComparer<string>.Default.Equals(Path, other.Path)
+        && EqualityComparer<string?>.Default.Equals(Summary, other.Summary)
+        && EqualityComparer<string?>.Default.Equals(Description, other.Description)
+        && EqualityComparer<IReadOnlyList<IrParameter>>.Default.Equals(PathParameters, other.PathParameters)
+        && EqualityComparer<IReadOnlyList<IrParameter>>.Default.Equals(QueryParameters, other.QueryParameters)
+        && EqualityComparer<IReadOnlyList<IrParameter>>.Default.Equals(HeaderParameters, other.HeaderParameters)
+        && EqualityComparer<IrRequestBody?>.Default.Equals(RequestBody, other.RequestBody)
+        && EqualityComparer<IReadOnlyList<IrResponse>>.Default.Equals(Responses, other.Responses)
+        && EqualityComparer<IReadOnlyList<string>?>.Default.Equals(Tags, other.Tags);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is IrOperation other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(MethodName);
+        hash.Add(_originalMethodName);
+        hash.Add(HttpMethod);
+        hash.Add(Path);
+        hash.Add(Summary);
+        hash.Add(Description);
+        hash.Add(PathParameters);
+        hash.Add(QueryParameters);
+        hash.Add(HeaderParameters);
+        hash.Add(RequestBody);
+        hash.Add(Responses);
+        hash.Add(Tags);
+        return hash.ToHashCode();
+    }
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(IrOperation? left, IrOperation? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(IrOperation? left, IrOperation? right) => !Equals(left, right);
 }
 
 /// <summary>
 /// Represents an operation parameter, preserving source identity, validation, and HTTP serialization metadata.
 /// </summary>
-public sealed record IrParameter
+public sealed class IrParameter : IEquatable<IrParameter>
 {
+    /// <summary>Creates a language-independent value for initialization from source data.</summary>
+    public IrParameter()
+    {
+    }
+
+    /// <summary>Copies all stored members before applying initializer overrides.</summary>
+    /// <param name="source">The value to copy.</param>
+    [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
+    public IrParameter(IrParameter source)
+    {
+        Name = source.Name;
+        _originalName = source._originalName;
+        Type = source.Type;
+        IsRequired = source.IsRequired;
+        Description = source.Description;
+        DefaultValue = source.DefaultValue;
+        Constraints = source.Constraints;
+        Style = source.Style;
+        Explode = source.Explode;
+    }
+
     /// <summary>
     /// Gets the sanitized identifier used by generated source declarations.
     /// </summary>
@@ -151,13 +248,74 @@ public sealed record IrParameter
     /// </remarks>
     /// <value>The normalized explode flag, or <see langword="null"/> when no metadata was supplied.</value>
     public bool? Explode { get; init; }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(IrParameter? other) => other is not null
+        && EqualityComparer<string>.Default.Equals(Name, other.Name)
+        && EqualityComparer<string?>.Default.Equals(_originalName, other._originalName)
+        && EqualityComparer<IrType>.Default.Equals(Type, other.Type)
+        && EqualityComparer<bool>.Default.Equals(IsRequired, other.IsRequired)
+        && EqualityComparer<string?>.Default.Equals(Description, other.Description)
+        && EqualityComparer<object?>.Default.Equals(DefaultValue, other.DefaultValue)
+        && EqualityComparer<IrPropertyConstraints?>.Default.Equals(Constraints, other.Constraints)
+        && EqualityComparer<IrParameterStyle?>.Default.Equals(Style, other.Style)
+        && EqualityComparer<bool?>.Default.Equals(Explode, other.Explode);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is IrParameter other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode()
+    {
+        var hash = new HashCode();
+        hash.Add(Name);
+        hash.Add(_originalName);
+        hash.Add(Type);
+        hash.Add(IsRequired);
+        hash.Add(Description);
+        hash.Add(DefaultValue);
+        hash.Add(Constraints);
+        hash.Add(Style);
+        hash.Add(Explode);
+        return hash.ToHashCode();
+    }
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(IrParameter? left, IrParameter? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(IrParameter? left, IrParameter? right) => !Equals(left, right);
 }
 
 /// <summary>
 /// IR представление request body
 /// </summary>
-public sealed record IrRequestBody
+public sealed class IrRequestBody : IEquatable<IrRequestBody>
 {
+    /// <summary>Creates a language-independent value for initialization from source data.</summary>
+    public IrRequestBody()
+    {
+    }
+
+    /// <summary>Copies all stored members before applying initializer overrides.</summary>
+    /// <param name="source">The value to copy.</param>
+    [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
+    public IrRequestBody(IrRequestBody source)
+    {
+        Type = source.Type;
+        IsRequired = source.IsRequired;
+        ContentType = source.ContentType;
+        Description = source.Description;
+    }
+
     /// <summary>
     /// Тип request body
     /// </summary>
@@ -197,13 +355,58 @@ public sealed record IrRequestBody
     /// True когда content type — application/x-www-form-urlencoded.
     /// </summary>
     public bool IsFormUrlEncoded => ContentType == "application/x-www-form-urlencoded";
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(IrRequestBody? other) => other is not null
+        && EqualityComparer<IrType>.Default.Equals(Type, other.Type)
+        && EqualityComparer<bool>.Default.Equals(IsRequired, other.IsRequired)
+        && EqualityComparer<string?>.Default.Equals(ContentType, other.ContentType)
+        && EqualityComparer<string?>.Default.Equals(Description, other.Description);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is IrRequestBody other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(Type, IsRequired, ContentType, Description);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(IrRequestBody? left, IrRequestBody? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(IrRequestBody? left, IrRequestBody? right) => !Equals(left, right);
 }
 
 /// <summary>
 /// IR представление ответа операции
 /// </summary>
-public sealed record IrResponse
+public sealed class IrResponse : IEquatable<IrResponse>
 {
+    /// <summary>Creates a language-independent value for initialization from source data.</summary>
+    public IrResponse()
+    {
+    }
+
+    /// <summary>Copies all stored members before applying initializer overrides.</summary>
+    /// <param name="source">The value to copy.</param>
+    [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
+    public IrResponse(IrResponse source)
+    {
+        StatusCode = source.StatusCode;
+        Type = source.Type;
+        ContentTypes = source.ContentTypes;
+        MediaTypes = source.MediaTypes;
+        Headers = source.Headers;
+        Description = source.Description;
+    }
+
     /// <summary>
     /// HTTP статус код (200, 400, 404, "default" и т.д.)
     /// </summary>
@@ -229,11 +432,54 @@ public sealed record IrResponse
     /// Описание
     /// </summary>
     public string? Description { get; init; }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(IrResponse? other) => other is not null
+        && EqualityComparer<string>.Default.Equals(StatusCode, other.StatusCode)
+        && EqualityComparer<IrType?>.Default.Equals(Type, other.Type)
+        && EqualityComparer<IReadOnlyList<string>>.Default.Equals(ContentTypes, other.ContentTypes)
+        && EqualityComparer<IReadOnlyList<IrResponseMediaType>>.Default.Equals(MediaTypes, other.MediaTypes)
+        && EqualityComparer<IReadOnlyList<IrResponseHeader>>.Default.Equals(Headers, other.Headers)
+        && EqualityComparer<string?>.Default.Equals(Description, other.Description);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is IrResponse other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(StatusCode, Type, ContentTypes, MediaTypes, Headers, Description);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(IrResponse? left, IrResponse? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(IrResponse? left, IrResponse? right) => !Equals(left, right);
 }
 
 /// <summary>Describes a response body for one OpenAPI media type.</summary>
-public sealed record IrResponseMediaType
+public sealed class IrResponseMediaType : IEquatable<IrResponseMediaType>
 {
+    /// <summary>Creates a language-independent value for initialization from source data.</summary>
+    public IrResponseMediaType()
+    {
+    }
+
+    /// <summary>Copies all stored members before applying initializer overrides.</summary>
+    /// <param name="source">The value to copy.</param>
+    [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
+    public IrResponseMediaType(IrResponseMediaType source)
+    {
+        Name = source.Name;
+        Type = source.Type;
+    }
+
     /// <summary>Gets the original media type name.</summary>
     /// <value>The key declared in the OpenAPI response content map.</value>
     public required string Name { get; init; }
@@ -241,10 +487,35 @@ public sealed record IrResponseMediaType
     /// <summary>Gets the schema for this response representation.</summary>
     /// <value>The translated payload type, if the source declares a schema.</value>
     public IrType? Type { get; init; }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(IrResponseMediaType? other) => other is not null
+        && EqualityComparer<string>.Default.Equals(Name, other.Name)
+        && EqualityComparer<IrType?>.Default.Equals(Type, other.Type);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is IrResponseMediaType other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(Name, Type);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(IrResponseMediaType? left, IrResponseMediaType? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(IrResponseMediaType? left, IrResponseMediaType? right) => !Equals(left, right);
 }
 
 /// <summary>Describes a declared HTTP response header independently of its runtime presence.</summary>
-public sealed record IrResponseHeader
+public sealed class IrResponseHeader : IEquatable<IrResponseHeader>
 {
     /// <summary>Gets the original header name from the OpenAPI document.</summary>
     /// <value>The case-preserving wire name.</value>
@@ -257,4 +528,30 @@ public sealed record IrResponseHeader
     /// <summary>Gets whether the source contract declares the header required.</summary>
     /// <value>True when an implementing server must send the header.</value>
     public bool IsRequired { get; init; }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(IrResponseHeader? other) => other is not null
+        && EqualityComparer<string>.Default.Equals(Name, other.Name)
+        && EqualityComparer<string?>.Default.Equals(Description, other.Description)
+        && EqualityComparer<bool>.Default.Equals(IsRequired, other.IsRequired);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is IrResponseHeader other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(Name, Description, IsRequired);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(IrResponseHeader? left, IrResponseHeader? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(IrResponseHeader? left, IrResponseHeader? right) => !Equals(left, right);
 }

@@ -23,18 +23,18 @@ public sealed class PythonBuilderContextTests
         var source = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
         var baseline = await harness.RunAsync(source);
         var stateReference = new IrModelReference { ModelName = "State" };
-        var stateModel = baseline.IrDocument.Models[0] with
+        var stateModel = new IrModel(baseline.IrDocument.Models[0])
         {
             Name = "State", OriginalName = "FirstPayload", Properties = [],
         };
-        var owner = stateModel with
+        var owner = new IrModel(stateModel)
         {
             Name = "Owner", OriginalName = "Owner",
             Properties = [new IrProperty { Name = "State", OriginalName = "state", Type = stateReference, IsRequired = true }],
         };
-        var stateEnum = baseline.IrDocument.Enums[0] with { Name = "State", OriginalName = "StatusWire" };
-        var modelContext = new IrDocumentContext(baseline.IrDocument with { Models = [stateModel, owner], Enums = [] });
-        var enumContext = new IrDocumentContext(baseline.IrDocument with { Models = [owner], Enums = [stateEnum] });
+        var stateEnum = new IrEnum(baseline.IrDocument.Enums[0]) { Name = "State", OriginalName = "StatusWire" };
+        var modelContext = new IrDocumentContext(new IrDocument(baseline.IrDocument) { Models = [stateModel, owner], Enums = [] });
+        var enumContext = new IrDocumentContext(new IrDocument(baseline.IrDocument) { Models = [owner], Enums = [stateEnum] });
         var naming = new NamingConverter();
         var mapper = new PythonIrTypeMapper();
         var modelBuilder = new PydanticModelAstBuilder(modelContext, naming, mapper);
@@ -47,12 +47,12 @@ public sealed class PythonBuilderContextTests
         enumClientBuilder.EnumsByName.Should().BeSameAs(enumBuilder.EnumsByName);
         enumClientBuilder.EnumNames.Should().BeSameAs(enumContext.EnumNames);
 
-        var operation = baseline.IrDocument.Clients[0].Operations[0] with
+        var operation = new IrOperation(baseline.IrDocument.Clients[0].Operations[0])
         {
             MethodName = "GetState", Path = "/state", PathParameters = [], QueryParameters = [], HeaderParameters = [],
             RequestBody = null, Responses = [new IrResponse { StatusCode = "200", Type = stateReference }],
         };
-        var client = baseline.IrDocument.Clients[0] with { Operations = [operation] };
+        var client = new IrClient(baseline.IrDocument.Clients[0]) { Operations = [operation] };
         var renderer = new PythonAstRenderer();
         renderer.Render(modelBuilder.BuildModule(owner)).Should().Contain("from .first_payload import State");
         renderer.Render(enumBuilder.BuildModule(owner)).Should().Contain("from .status_wire import State");

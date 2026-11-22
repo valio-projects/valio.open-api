@@ -128,11 +128,11 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         {
             ValidatePascalCasePropertyNames(model);
             effectiveProperties = effectiveProperties
-                .Select(property => property with { Name = GetPascalCasePropertyName(property) })
+                .Select(property => new IrProperty(property) { Name = GetPascalCasePropertyName(property) })
                 .ToArray();
         }
 
-        var effectiveModel = model with { Properties = effectiveProperties };
+        var effectiveModel = new IrModel(model) { Properties = effectiveProperties };
         var properties = effectiveProperties
             .Select(property => BuildProperty(property, effectiveModel))
             .ToList<DeclarationNode>();
@@ -411,10 +411,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 ? new TypeNode[] { BuildSimpleType(name) }
                 : Array.Empty<TypeNode>();
             foreach (var property in GetAllPropertiesIncludingInherited(
-                baseModel with { Properties = plan.EffectiveProperties }, inheritedBases))
+                new IrModel(baseModel) { Properties = plan.EffectiveProperties }, inheritedBases))
             {
                 properties[property.OriginalName] = UsePascalCaseProperties
-                    ? property with { Name = GetPascalCasePropertyName(property) }
+                    ? new IrProperty(property) { Name = GetPascalCasePropertyName(property) }
                     : property;
             }
         }
@@ -1083,7 +1083,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <returns>The distinct namespace names required by the generated source.</returns>
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
-        model = model with { Properties = IrInheritancePlan.Resolve(model, ModelsByName).EffectiveProperties };
+        model = new IrModel(model) { Properties = IrInheritancePlan.Resolve(model, ModelsByName).EffectiveProperties };
         // Не добавляем зависимости для типов моделей, так как они генерируются в том же namespace
         // Используем только системные типы и типы из других namespace'ов, если они нужны
         var dependencies = new HashSet<string>();
@@ -1565,11 +1565,11 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
 
         var operations = client.Operations
             .Select(operation => string.Equals(operation.MethodName, client.Name, StringComparison.Ordinal)
-                ? operation with { MethodName = ToPascalCase(operation.HttpMethod) + operation.MethodName }
+                ? new IrOperation(operation) { MethodName = ToPascalCase(operation.HttpMethod) + operation.MethodName }
                 : operation)
             .ToList();
 
-        return client with { Operations = operations };
+        return new IrClient(client) { Operations = operations };
     }
 
     /// <summary>Приводит слово к PascalCase: <c>post</c> -> <c>Post</c>.</summary>
@@ -1874,10 +1874,10 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             var name = parameter.Name;
             while (!usedNames.Add(name))
                 name += "_";
-            return parameter with { Name = name, OriginalName = parameter.OriginalName };
+            return new IrParameter(parameter) { Name = name, OriginalName = parameter.OriginalName };
         }
 
-        return operation with
+        return new IrOperation(operation)
         {
             PathParameters = operation.PathParameters.Select(Resolve).ToArray(),
             QueryParameters = operation.QueryParameters.Select(Resolve).ToArray(),
@@ -2742,7 +2742,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
 
             if (operation.HttpMethod.Equals("HEAD", StringComparison.OrdinalIgnoreCase) || response.StatusCode is "204" or "205")
             {
-                result.Add(response with { Type = null, ContentTypes = [] });
+                result.Add(new IrResponse(response) { Type = null, ContentTypes = [] });
                 continue;
             }
 
@@ -2764,7 +2764,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                     $"C# operation '{operation.MethodName}' has incompatible media schemas for HTTP {response.StatusCode}. An explicit result union is required.");
             }
 
-            result.Add(response with
+            result.Add(new IrResponse(response)
             {
                 Type = type,
                 ContentTypes = json.Select(media => media.Name.Split(';', 2)[0].Trim()).ToArray()

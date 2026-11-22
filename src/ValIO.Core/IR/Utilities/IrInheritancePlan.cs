@@ -5,7 +5,7 @@ namespace ValIO.Core.IR.Utilities;
 /// <summary>
 /// Plans single-base inheritance or flattened allOf properties for target languages.
 /// </summary>
-public sealed record IrInheritancePlan
+public sealed class IrInheritancePlan : IEquatable<IrInheritancePlan>
 {
     /// <summary>
     /// Gets the resolved base model's name, or no base when properties are flattened.
@@ -113,4 +113,29 @@ public sealed record IrInheritancePlan
         path.Remove(model.Name);
         return hasCycle;
     }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(IrInheritancePlan? other) => other is not null
+        && EqualityComparer<string?>.Default.Equals(BaseModelName, other.BaseModelName)
+        && EqualityComparer<IReadOnlyList<IrProperty>>.Default.Equals(EffectiveProperties, other.EffectiveProperties);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is IrInheritancePlan other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(BaseModelName, EffectiveProperties);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(IrInheritancePlan? left, IrInheritancePlan? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(IrInheritancePlan? left, IrInheritancePlan? right) => !Equals(left, right);
 }

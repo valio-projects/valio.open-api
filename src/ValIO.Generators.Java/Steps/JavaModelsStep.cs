@@ -80,7 +80,7 @@ public sealed class JavaModelsStep : ICodeGenerationStep
         IReadOnlyDictionary<string, IrModel> modelLookup,
         string rootPackage)
     {
-        var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
+        var effectiveModel = new IrModel(model) { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
         var sourceFile = builder.BuildSourceFile(effectiveModel, rootPackage);
         var content = _renderer.Render(sourceFile);
         var relativePath = $"models/{model.Name}.java";

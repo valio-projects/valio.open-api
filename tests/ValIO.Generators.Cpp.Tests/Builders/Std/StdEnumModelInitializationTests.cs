@@ -23,15 +23,15 @@ public sealed class StdEnumModelInitializationTests
     public void FieldsSharingDeclarationNames_QualifyEveryAffectedReference()
     {
         var (header, _) = Build([
-            Property("EarlierStates", "State") with
+            new IrProperty(Property("EarlierStates", "State"))
             {
                 Type = new IrArrayType { ElementType = new IrModelReference { ModelName = "State" } },
             },
-            Property("State", "State") with { IsRequired = false },
+            new IrProperty(Property("State", "State")) { IsRequired = false },
             Property("LaterState", "State"),
             Property("EarlierChild", "Child"),
             Property("Child", "Child"),
-            Property("LaterChildren", "Child") with
+            new IrProperty(Property("LaterChildren", "Child"))
             {
                 IsRequired = false,
                 Type = new IrArrayType { ElementType = new IrModelReference { ModelName = "Child" } },
@@ -54,10 +54,10 @@ public sealed class StdEnumModelInitializationTests
     {
         var (header, fields) = Build([
             Property("Status", "State"), Property("NumericLevel", "Level"),
-            Property("OptionalState", "State") with { IsRequired = false },
-            Property("NullableState", "State") with { Type = new IrNullableType { InnerType = new IrModelReference { ModelName = "State" } } },
+            new IrProperty(Property("OptionalState", "State")) { IsRequired = false },
+            new IrProperty(Property("NullableState", "State")) { Type = new IrNullableType { InnerType = new IrModelReference { ModelName = "State" } } },
             Property("Child", "Child"),
-            Property("States", "State") with { Type = new IrArrayType { ElementType = new IrModelReference { ModelName = "State" } } },
+            new IrProperty(Property("States", "State")) { Type = new IrArrayType { ElementType = new IrModelReference { ModelName = "State" } } },
         ]);
         header.Should().Contain("State Status = Api::State();");
         header.Should().Contain("Level NumericLevel = Api::Level();");
@@ -80,7 +80,7 @@ public sealed class StdEnumModelInitializationTests
     public void ExplicitSchemaDefault_InitializesDeclaredMember(bool isInteger)
     {
         var defaultValue = JsonSerializer.Deserialize<JsonElement>(isInteger ? "2e0" : "\"approved\"");
-        var (header, fields) = Build([Property("Value", isInteger ? "Level" : "State") with
+        var (header, fields) = Build([new IrProperty(Property("Value", isInteger ? "Level" : "State"))
         {
             Constraints = new IrPropertyConstraints { DefaultValue = defaultValue },
         }]);
@@ -93,7 +93,7 @@ public sealed class StdEnumModelInitializationTests
     [Test]
     public void InvalidEnumSchemaDefault_FailsGenerationExplicitly()
     {
-        var build = () => Build([Property("Value", "State") with
+        var build = () => Build([new IrProperty(Property("Value", "State"))
         {
             Constraints = new IrPropertyConstraints { DefaultValue = 2 },
         }]);

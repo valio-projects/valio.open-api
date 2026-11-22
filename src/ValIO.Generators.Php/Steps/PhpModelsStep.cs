@@ -80,7 +80,7 @@ public sealed class PhpModelsStep : ICodeGenerationStep
         IReadOnlyDictionary<string, IrModel> modelLookup,
         string @namespace)
     {
-        var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
+        var effectiveModel = new IrModel(model) { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
         var sourceFile = builder.BuildSourceFile(effectiveModel, @namespace);
         var content = _renderer.Render(sourceFile);
         var relativePath = $"Models/{model.Name}.php";

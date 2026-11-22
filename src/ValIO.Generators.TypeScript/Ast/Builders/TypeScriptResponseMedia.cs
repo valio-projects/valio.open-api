@@ -56,7 +56,7 @@ internal static class TypeScriptResponseMedia
             if (alternatives.Count == 0 || preservePrimary)
                 yield return response;
             for (var index = 0; index < alternatives.Count; index++)
-                yield return response with { StatusCode = SchemaCode(response, index), Type = alternatives[index].Type };
+                yield return new IrResponse(response) { StatusCode = SchemaCode(response, index), Type = alternatives[index].Type };
         }
     }
 
@@ -105,10 +105,10 @@ internal static class TypeScriptResponseMedia
             return buildBody(response);
 
         var last = alternatives.Count - 1;
-        var body = buildBody(response with { StatusCode = SchemaCode(response, last), Type = alternatives[last].Type });
+        var body = buildBody(new IrResponse(response) { StatusCode = SchemaCode(response, last), Type = alternatives[last].Type });
         for (var index = last - 1; index >= 0; index--)
             body = new ConditionalExpressionNode(Matches(alternatives[index].Name),
-                buildBody(response with { StatusCode = SchemaCode(response, index), Type = alternatives[index].Type }), body);
+                buildBody(new IrResponse(response) { StatusCode = SchemaCode(response, index), Type = alternatives[index].Type }), body);
         return body;
     }
 

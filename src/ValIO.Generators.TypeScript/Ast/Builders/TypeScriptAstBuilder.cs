@@ -1293,9 +1293,9 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         ExpressionNode? requestUrl = null;
         if (formArrays.Length > 0)
         {
-            requestUrl = TypeScriptQueryString.AppendQueryToUrl(operation with { QueryParameters = formArrays },
+            requestUrl = TypeScriptQueryString.AppendQueryToUrl(new IrOperation(operation) { QueryParameters = formArrays },
                 axiosBuilder.BuildUrlWithSource(operation, routeSource), querySource, ctx.QueryMayBeUndefined, statements);
-            axiosOperation = operation with
+            axiosOperation = new IrOperation(operation)
             {
                 QueryParameters = operation.QueryParameters.Where(parameter => !TypeScriptQueryString.IsFormArray(parameter)).ToArray()
             };

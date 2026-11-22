@@ -392,7 +392,7 @@ public sealed class OkHttpClientAstBuilder
         {
             chain = new CallExpressionNode(
                 new MemberAccessExpressionNode(chain, new IdentifierNode("addPathSegment")),
-                [BuildPathExpression(op with { Path = segment })]);
+                [BuildPathExpression(new IrOperation(op) { Path = segment })]);
         }
 
         foreach (var q in op.QueryParameters)

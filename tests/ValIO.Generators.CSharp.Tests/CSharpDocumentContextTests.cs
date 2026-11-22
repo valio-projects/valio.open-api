@@ -29,7 +29,7 @@ public sealed class CSharpDocumentContextTests
         builder.ModelsByName.Should().BeSameAs(context.ModelsByName);
         builder.EnumsByName.Should().BeSameAs(context.EnumsByName);
         builder.EnumNames.Should().BeSameAs(context.EnumNames);
-        var build = () => builder.BuildCompilationUnits(context.Document with { });
+        var build = () => builder.BuildCompilationUnits(new IrDocument(context.Document));
 
         build.Should().Throw<ArgumentException>().WithParameterName("document");
     }
@@ -39,7 +39,7 @@ public sealed class CSharpDocumentContextTests
     public void DocumentEntryPoint_UsesCanonicalContextOrder()
     {
         var document = CSharpDocumentFixture.Context([Model("First"), Model("Second"), Model("Unordered")], []).Document;
-        document = document with
+        document = new IrDocument(document)
         {
             TypeDependencies = new IrTypeDependencyGraph
             {

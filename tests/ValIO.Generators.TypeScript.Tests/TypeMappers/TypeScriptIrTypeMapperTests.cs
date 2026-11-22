@@ -104,8 +104,8 @@ public class TypeScriptIrTypeMapperTests
             Name = "x", OriginalName = "x", IsRequired = true,
             Type = Prim(IrPrimitiveKind.String),
         };
-        var nonRequiredProp = requiredProp with { IsRequired = false };
-        var optionalWrapperProp = requiredProp with
+        var nonRequiredProp = new IrProperty(requiredProp) { IsRequired = false };
+        var optionalWrapperProp = new IrProperty(requiredProp)
         {
             Type = new IrOptionalType { InnerType = Prim(IrPrimitiveKind.String) },
         };

@@ -52,12 +52,12 @@ public static class IrNameAffixer
         var newModels = new List<IrModel>(models.Count);
         foreach (var m in models)
         {
-            newModels.Add(m with
+            newModels.Add(new IrModel(m)
             {
                 Name = rename[m.Name],
                 OriginalName = m.Name,
                 Properties = m.Properties
-                    .Select(p => p with { Type = RewriteType(p.Type, rename) })
+                    .Select(p => new IrProperty(p) { Type = RewriteType(p.Type, rename) })
                     .ToList(),
                 Composition = RewriteComposition(m.Composition, rename),
             });
@@ -66,7 +66,7 @@ public static class IrNameAffixer
         var newEnums = new List<IrEnum>(enums.Count);
         foreach (var e in enums)
         {
-            newEnums.Add(e with
+            newEnums.Add(new IrEnum(e)
             {
                 Name = rename[e.Name],
                 OriginalName = e.Name,
@@ -77,7 +77,7 @@ public static class IrNameAffixer
         foreach (var c in clients)
         {
             // Имя клиента (группы/тега) не входит в model/method/enum-affix и не меняется.
-            newClients.Add(c with
+            newClients.Add(new IrClient(c)
             {
                 Operations = c.Operations
                     .Select(op => RewriteOperation(op, options, namingConverter, rename))
@@ -100,7 +100,7 @@ public static class IrNameAffixer
         INamingConverter namingConverter,
         IReadOnlyDictionary<string, string> rename)
     {
-        return op with
+        return new IrOperation(op)
         {
             MethodName = Affix(namingConverter, options.MethodPrefix, op.MethodName, options.MethodSuffix),
             OriginalMethodName = op.MethodName,
@@ -109,28 +109,28 @@ public static class IrNameAffixer
             HeaderParameters = op.HeaderParameters.Select(p => RewriteParameter(p, rename)).ToList(),
             RequestBody = op.RequestBody is null
                 ? null
-                : op.RequestBody with { Type = RewriteType(op.RequestBody.Type, rename) },
+                : new IrRequestBody(op.RequestBody) { Type = RewriteType(op.RequestBody.Type, rename) },
             Responses = op.Responses
-                .Select(r => r with
+                .Select(r => new IrResponse(r)
                 {
                     Type = r.Type is null ? null : RewriteType(r.Type, rename),
                     MediaTypes = r.MediaTypes.Select(media => media.Type is null
                         ? media
-                        : media with { Type = RewriteType(media.Type, rename) }).ToArray(),
+                        : new IrResponseMediaType(media) { Type = RewriteType(media.Type, rename) }).ToArray(),
                 })
                 .ToList(),
         };
     }
 
     private static IrParameter RewriteParameter(IrParameter p, IReadOnlyDictionary<string, string> rename)
-        => p with { Type = RewriteType(p.Type, rename) };
+        => new IrParameter(p) { Type = RewriteType(p.Type, rename) };
 
     private static IrComposition? RewriteComposition(IrComposition? comp, IReadOnlyDictionary<string, string> rename)
     {
         if (comp is null)
             return null;
 
-        return comp with
+        return new IrComposition(comp)
         {
             Types = comp.Types.Select(t => RewriteType(t, rename)).ToList(),
             DiscriminatorMapping = comp.DiscriminatorMapping?.ToDictionary(
@@ -141,21 +141,21 @@ public static class IrNameAffixer
 
     private static IrType RewriteType(IrType type, IReadOnlyDictionary<string, string> rename) => type switch
     {
-        IrModelReference r => r with
+        IrModelReference r => new IrModelReference(r)
         {
             ModelName = rename.GetValueOrDefault(r.ModelName, r.ModelName),
             OriginalModelName = r.ModelName,
         },
-        IrArrayType a => a with { ElementType = RewriteType(a.ElementType, rename) },
-        IrDictionaryType d => d with
+        IrArrayType a => new IrArrayType(a) { ElementType = RewriteType(a.ElementType, rename) },
+        IrDictionaryType d => new IrDictionaryType(d)
         {
             KeyType = RewriteType(d.KeyType, rename),
             ValueType = RewriteType(d.ValueType, rename),
         },
-        IrNullableType n => n with { InnerType = RewriteType(n.InnerType, rename) },
-        IrOptionalType o => o with { InnerType = RewriteType(o.InnerType, rename) },
-        IrUnionType u => u with { Types = u.Types.Select(t => RewriteType(t, rename)).ToList() },
-        IrIntersectionType i => i with { Types = i.Types.Select(t => RewriteType(t, rename)).ToList() },
+        IrNullableType n => new IrNullableType(n) { InnerType = RewriteType(n.InnerType, rename) },
+        IrOptionalType o => new IrOptionalType(o) { InnerType = RewriteType(o.InnerType, rename) },
+        IrUnionType u => new IrUnionType(u) { Types = u.Types.Select(t => RewriteType(t, rename)).ToList() },
+        IrIntersectionType i => new IrIntersectionType(i) { Types = i.Types.Select(t => RewriteType(t, rename)).ToList() },
         _ => type, // примитивы и прочее — без изменений
     };
 

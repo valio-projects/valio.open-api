@@ -198,7 +198,7 @@ public sealed class StdContractRegressionTests
     [Test]
     public void Client_DocumentsPublicContractAndEscapesCommentTerminators()
     {
-        var operation = EmptyOperation() with { Summary = "Probe summary */ declaration", Description = "Detailed contract" };
+        var operation = new IrOperation(EmptyOperation()) { Summary = "Probe summary */ declaration", Description = "Detailed contract" };
         var result = RenderClient(operation, CppApiStyle.Both);
         result.Header.Should().Contain("@brief HTTP implementation for Probe.");
         result.Header.Should().Contain("@brief Probe summary * / declaration");
@@ -213,7 +213,7 @@ public sealed class StdContractRegressionTests
     [Test]
     public void Client_NoContentDoesNotUseDefaultErrorSchema()
     {
-        var operation = EmptyOperation() with
+        var operation = new IrOperation(EmptyOperation())
         {
             Responses = [new IrResponse { StatusCode = "204" },
                 new IrResponse { StatusCode = "default", Type = new IrModelReference { ModelName = "ErrorBody" } }],
@@ -231,7 +231,7 @@ public sealed class StdContractRegressionTests
     {
         var typed = new IrResponse { StatusCode = "200", Type = new IrModelReference { ModelName = "Value" } };
         var empty = new IrResponse { StatusCode = "204" };
-        var operation = EmptyOperation() with { Responses = reverse ? [empty, typed] : [typed, empty] };
+        var operation = new IrOperation(EmptyOperation()) { Responses = reverse ? [empty, typed] : [typed, empty] };
         var result = RenderClient(operation, CppApiStyle.Both);
         result.Header.Should().Contain("ValIO::Expected<std::optional<Value>, ValIO::Error>");
         result.Source.Should().Contain("return std::optional<Value>();");
@@ -243,7 +243,7 @@ public sealed class StdContractRegressionTests
     [Test]
     public void Client_HeadIsAlwaysBodyless()
     {
-        var operation = EmptyOperation() with { HttpMethod = "HEAD", Responses =
+        var operation = new IrOperation(EmptyOperation()) { HttpMethod = "HEAD", Responses =
             [new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }] };
         var result = RenderClient(operation, CppApiStyle.Sync);
         result.Header.Should().Contain("ValIO::Expected<void, ValIO::Error>");
@@ -254,7 +254,7 @@ public sealed class StdContractRegressionTests
     [Test]
     public void Client_ExactResponseTakesPrecedenceOverSuccessfulRange()
     {
-        var operation = EmptyOperation() with { Responses =
+        var operation = new IrOperation(EmptyOperation()) { Responses =
             [new IrResponse { StatusCode = "2XX" },
              new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }] };
         var result = RenderClient(operation, CppApiStyle.Sync);
@@ -267,7 +267,7 @@ public sealed class StdContractRegressionTests
     [Test]
     public void Client_DistinctSuccessfulSchemasFailExplicitly()
     {
-        var operation = EmptyOperation() with { Responses =
+        var operation = new IrOperation(EmptyOperation()) { Responses =
             [new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } },
              new IrResponse { StatusCode = "201", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } }] };
         var action = () => RenderClient(operation, CppApiStyle.Sync);

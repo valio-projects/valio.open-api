@@ -40,8 +40,8 @@ public sealed class IrDocumentContextTests
     [Test]
     public void Indexes_PreserveOriginalDeclarationInstancesAndGeneratedNames()
     {
-        var model = CreateModel("OrderDto") with { OriginalName = "Order" };
-        var enumModel = CreateEnum("StatusEnum") with { OriginalName = "Status" };
+        var model = new IrModel(CreateModel("OrderDto")) { OriginalName = "Order" };
+        var enumModel = new IrEnum(CreateEnum("StatusEnum")) { OriginalName = "Status" };
         var document = CreateDocument([model], [enumModel]);
 
         var context = new IrDocumentContext(document);
@@ -133,7 +133,7 @@ public sealed class IrDocumentContextTests
         var child = CreateModel("Child", [CreateReferenceProperty("Base")]);
         var baseModel = CreateModel("Base", [CreateReferenceProperty("Mode")]);
         var document = CreateDocument([child, baseModel], [CreateEnum("Mode")]);
-        document = document with
+        document = new IrDocument(document)
         {
             TypeDependencies = new IrTypeDependencyGraphBuilder().Build(document.Models, document.Enums),
         };

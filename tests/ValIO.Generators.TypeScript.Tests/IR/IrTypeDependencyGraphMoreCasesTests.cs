@@ -53,7 +53,7 @@ public class IrTypeDependencyGraphMoreCasesTests
     public void Composition_AllOf_AddsParentToDependencies()
     {
         var model = Model("Dog");
-        var withComposition = model with
+        var withComposition = new IrModel(model)
         {
             Composition = new IrComposition
             {

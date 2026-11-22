@@ -157,8 +157,8 @@ public class CppCompileFixtureTests
             PathParameters = [],
             QueryParameters =
             [
-                BrowseParameter("Mode", "mode", integerType) with { IsRequired = true },
-                BrowseParameter("RequiredNullable", "required", new IrNullableType { InnerType = integerType }) with { IsRequired = true },
+                new IrParameter(BrowseParameter("Mode", "mode", integerType)) { IsRequired = true },
+                new IrParameter(BrowseParameter("RequiredNullable", "required", new IrNullableType { InnerType = integerType })) { IsRequired = true },
                 BrowseParameter("Enabled", "enabled", booleanType),
                 BrowseParameter("Count", "count", integerType),
                 BrowseParameter("Ratio", "ratio", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Number }),
@@ -166,9 +166,9 @@ public class CppCompileFixtureTests
                 BrowseParameter("Values", "values", integerArray),
                 BrowseParameter("Switches", "switches", new IrArrayType { ElementType = booleanType }),
                 BrowseParameter("States", "states", statusArray),
-                BrowseParameter("Csv", "csv", integerArray) with { Style = IrParameterStyle.Form, Explode = false },
-                BrowseParameter("Spaces", "spaces", integerArray) with { Style = IrParameterStyle.SpaceDelimited, Explode = false },
-                BrowseParameter("Pipes", "pipes", integerArray) with { Style = IrParameterStyle.PipeDelimited, Explode = false },
+                new IrParameter(BrowseParameter("Csv", "csv", integerArray)) { Style = IrParameterStyle.Form, Explode = false },
+                new IrParameter(BrowseParameter("Spaces", "spaces", integerArray)) { Style = IrParameterStyle.SpaceDelimited, Explode = false },
+                new IrParameter(BrowseParameter("Pipes", "pipes", integerArray)) { Style = IrParameterStyle.PipeDelimited, Explode = false },
                 BrowseParameter("Filter", "filter", new IrModelReference { ModelName = "Order" }),
                 BrowseParameter("MaybeText", "maybeText", new IrNullableType { InnerType = stringType }),
             ],
@@ -177,8 +177,8 @@ public class CppCompileFixtureTests
                 BrowseParameter("EnabledHeader", "X-Enabled", booleanType),
                 BrowseParameter("CountHeader", "X-Count", integerType),
                 BrowseParameter("TextHeader", "X-Text", stringType),
-                BrowseParameter("ValuesHeader", "X-Values", integerArray) with { Style = IrParameterStyle.Simple, Explode = false },
-                BrowseParameter("StatesHeader", "X-States", statusArray) with { Style = IrParameterStyle.Simple, Explode = false },
+                new IrParameter(BrowseParameter("ValuesHeader", "X-Values", integerArray)) { Style = IrParameterStyle.Simple, Explode = false },
+                new IrParameter(BrowseParameter("StatesHeader", "X-States", statusArray)) { Style = IrParameterStyle.Simple, Explode = false },
             ],
             Responses = [new IrResponse { StatusCode = "200", Type = booleanType }],
         };
@@ -261,16 +261,16 @@ public class CppCompileFixtureTests
                         Operation("POST", "/store/order", "PlaceOrder", body: "Order"),
                         Operation("POST", "/store/formats", "PlaceFormats", body: "CodecFormats"),
                         Operation("DELETE", "/store/order/{orderId}", "DeleteOrder", successCode: "204", successBody: false),
-                        Operation("GET", "/store/maybe/{orderId}", "GetMaybeOrder") with
+                        new IrOperation(Operation("GET", "/store/maybe/{orderId}", "GetMaybeOrder"))
                         {
                             Responses = [new IrResponse { StatusCode = "200", Type = new IrModelReference { ModelName = "Order" } },
                                 new IrResponse { StatusCode = "204" }, new IrResponse { StatusCode = "205" }],
                         },
-                        Operation("GET", "/store/status/{orderId}", "GetStatus") with
+                        new IrOperation(Operation("GET", "/store/status/{orderId}", "GetStatus"))
                         {
                             Responses = [new IrResponse { StatusCode = "2XX", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }],
                         },
-                        Operation("GET", "/store/status/{orderId}", "GetRangeOverride") with
+                        new IrOperation(Operation("GET", "/store/status/{orderId}", "GetRangeOverride"))
                         {
                             Responses = [new IrResponse { StatusCode = "2XX" },
                                 new IrResponse { StatusCode = "200", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Boolean } }],
@@ -317,7 +317,7 @@ public class CppCompileFixtureTests
         var nullableReferences = await LoadNullableReferencesAsync();
         var models = document.Models.Concat(optionalBodies.Models).Concat(nullableReferences.Models).ToList();
         var enums = document.Enums.Concat(optionalBodies.Enums).Concat(nullableReferences.Enums).ToList();
-        document = document with
+        document = new IrDocument(document)
         {
             Models = models,
             Enums = enums,

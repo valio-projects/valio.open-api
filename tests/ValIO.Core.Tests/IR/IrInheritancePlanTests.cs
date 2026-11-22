@@ -58,8 +58,8 @@ public class IrInheritancePlanTests
     [Test]
     public void SameWireProperty_LastDeclarationWinsWithoutReordering()
     {
-        var inherited = Property("wire-id") with { Name = "inheritedId" };
-        var own = Property("wire-id") with { Name = "ownId" };
+        var inherited = new IrProperty(Property("wire-id")) { Name = "inheritedId" };
+        var own = new IrProperty(Property("wire-id")) { Name = "ownId" };
         var first = Model("First", [inherited]);
         var second = Model("Second", [Property("code")]);
         var child = Model("Child", [own], "First", "Second");
@@ -75,8 +75,8 @@ public class IrInheritancePlanTests
     [Test]
     public void DistinctWireProperties_AreNotDeduplicatedByGeneratedName()
     {
-        var parent = Model("Parent", [Property("first-id") with { Name = "id" }]);
-        var child = Model("Child", [Property("second-id") with { Name = "id" }], "Parent");
+        var parent = Model("Parent", [new IrProperty(Property("first-id")) { Name = "id" }]);
+        var child = Model("Child", [new IrProperty(Property("second-id")) { Name = "id" }], "Parent");
 
         IrInheritancePlan.FlattenProperties(child, Lookup(parent, child))
             .Select(p => p.OriginalName).Should().Equal("first-id", "second-id");
@@ -87,7 +87,7 @@ public class IrInheritancePlanTests
     public void NonAllOfComposition_DoesNotFlattenAlternatives()
     {
         var option = Model("Option", [Property("option")]);
-        var union = Model("Union", [Property("own")]) with
+        var union = new IrModel(Model("Union", [Property("own")]))
         {
             Composition = new IrComposition
             {

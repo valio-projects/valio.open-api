@@ -93,7 +93,7 @@ public sealed class PythonModelsStep : ICodeGenerationStep
         ValIO.Core.IR.IrModel model,
         IReadOnlyDictionary<string, ValIO.Core.IR.IrModel> modelLookup)
     {
-        var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
+        var effectiveModel = new IrModel(model) { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
         var module = builder.BuildModule(effectiveModel);
         var content = _renderer.Render(module);
         var fileName = _namingConverter.ToSnakeCase(model.OriginalName);

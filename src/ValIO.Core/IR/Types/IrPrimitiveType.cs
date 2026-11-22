@@ -1,3 +1,4 @@
+using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 
 namespace ValIO.Core.IR.Types;
@@ -5,8 +6,23 @@ namespace ValIO.Core.IR.Types;
 /// <summary>
 /// Represents a scalar schema type and its retained format annotation.
 /// </summary>
-public sealed record IrPrimitiveType : IrType
+public sealed class IrPrimitiveType : IrType
 {
+    /// <summary>Creates a type for initialization from source data.</summary>
+    public IrPrimitiveType()
+    {
+    }
+
+    /// <summary>Copies the stored type data before applying initializer overrides.</summary>
+    /// <param name="source">The type to copy.</param>
+    [System.Diagnostics.CodeAnalysis.SetsRequiredMembers]
+    public IrPrimitiveType(IrPrimitiveType source)
+    {
+        Constraints = source.Constraints;
+        PrimitiveKind = source.PrimitiveKind;
+        Format = source.Format;
+    }
+
     /// <summary>
     /// Gets the scalar representation selected independently of language-specific backends.
     /// </summary>
@@ -20,4 +36,15 @@ public sealed record IrPrimitiveType : IrType
     /// their exact spelling so case-sensitive validator contracts remain distinct.
     /// </remarks>
     public string? Format { get; init; }
+
+    /// <inheritdoc />
+    public override IrType WithConstraints(IrPropertyConstraints? constraints) => new IrPrimitiveType(this) { Constraints = constraints };
+
+    /// <inheritdoc />
+    protected override bool EqualsType(IrType other) =>
+        EqualityComparer<IrPrimitiveKind>.Default.Equals(PrimitiveKind, ((IrPrimitiveType)other).PrimitiveKind)
+        && EqualityComparer<string?>.Default.Equals(Format, ((IrPrimitiveType)other).Format);
+
+    /// <inheritdoc />
+    protected override int GetTypeHashCode() => HashCode.Combine(PrimitiveKind, Format);
 }

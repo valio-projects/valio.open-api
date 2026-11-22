@@ -154,7 +154,7 @@ public sealed class StdProviderClientTests
             QueryParameters =
             [
                 Parameter("When", "date", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Date }),
-                Parameter("At", "time", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Time }) with { IsRequired = false },
+                new IrParameter(Parameter("At", "time", new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Time })) { IsRequired = false },
             ],
             HeaderParameters =
             [

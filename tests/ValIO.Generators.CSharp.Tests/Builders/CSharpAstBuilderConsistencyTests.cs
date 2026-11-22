@@ -85,7 +85,7 @@ public sealed class CSharpAstBuilderConsistencyTests
     public void StringDefault_KeywordText_RemainsQuoted(string value)
     {
         var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
-        var property = Property("value", "Value") with
+        var property = new IrProperty(Property("value", "Value"))
         {
             Constraints = new IrPropertyConstraints { DefaultValue = value }
         };
@@ -110,7 +110,7 @@ public sealed class CSharpAstBuilderConsistencyTests
     public void InvalidNumericDefault_DoesNotRoundOrOverflow(IrPrimitiveKind kind, string value)
     {
         var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([], []));
-        var property = Property("value", "Value") with
+        var property = new IrProperty(Property("value", "Value"))
         {
             Type = new IrPrimitiveType { PrimitiveKind = kind },
             Constraints = new IrPropertyConstraints { DefaultValue = value }
@@ -306,7 +306,7 @@ public sealed class CSharpAstBuilderConsistencyTests
     public void ParameterArrays_PreserveQueryExpansionAndHeaderWireNames()
     {
         var array = new IrArrayType { ElementType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String } };
-        var operation = OperationWithResponses(new IrResponse { StatusCode = "204" }) with
+        var operation = new IrOperation(OperationWithResponses(new IrResponse { StatusCode = "204" }))
         {
             QueryParameters =
             [
@@ -329,7 +329,7 @@ public sealed class CSharpAstBuilderConsistencyTests
     public void RequiredValidation_DoesNotRejectAllowedNullOrEmptyString()
     {
         var value = Property("label", "Label");
-        var optional = Property("note", "Note") with { Type = new IrNullableType { InnerType = value.Type } };
+        var optional = new IrProperty(Property("note", "Note")) { Type = new IrNullableType { InnerType = value.Type } };
         var model = new IrModel { Name = "Receipt", Properties = [value, optional] };
         var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([model], []),
             new CSharpGenerationOptions { UseRequired = true, GenerateValidationAttributes = true });

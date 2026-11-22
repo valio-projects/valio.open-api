@@ -56,7 +56,7 @@ public sealed class CppDocumentContextIntegrationTests
     public void Facade_WithAnotherDocument_ThrowsBeforeGeneration()
     {
         var context = CppDocumentContextFactory.Create();
-        var otherDocument = context.Document with { Metadata = new IrDocumentMetadata { Title = "Another" } };
+        var otherDocument = new IrDocument(context.Document) { Metadata = new IrDocumentMetadata { Title = "Another" } };
         var builder = new CppAstBuilder(new CppGenerationOptions(), context);
         Action build = () => _ = builder.Build(otherDocument);
 

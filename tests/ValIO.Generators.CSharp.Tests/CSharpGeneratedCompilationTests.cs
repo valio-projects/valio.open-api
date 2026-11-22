@@ -454,24 +454,24 @@ public sealed class CSharpGeneratedCompilationTests
                 },
                 Properties =
                 [
-                    Property("message", "Message", text) with { Constraints = new IrPropertyConstraints { DefaultValue = "default!" } },
-                    Property("state", "State", state) with { IsRequired = false, Constraints = new IrPropertyConstraints { DefaultValue = "in_progress" } },
+                    new IrProperty(Property("message", "Message", text)) { Constraints = new IrPropertyConstraints { DefaultValue = "default!" } },
+                    new IrProperty(Property("state", "State", state)) { IsRequired = false, Constraints = new IrPropertyConstraints { DefaultValue = "in_progress" } },
                     Property("date", "Date", Primitive(IrPrimitiveKind.Date)),
                     Property("time", "Time", Primitive(IrPrimitiveKind.Time)),
                     Property("when", "When", Primitive(IrPrimitiveKind.DateTime)),
-                    Property("quantity", "Quantity", Primitive(IrPrimitiveKind.Integer)) with
+                    new IrProperty(Property("quantity", "Quantity", Primitive(IrPrimitiveKind.Integer)))
                     {
                         Constraints = new IrPropertyConstraints { Min = 1.5m, Max = 5.5m }
                     },
-                    Property("longValue", "LongValue", Primitive(IrPrimitiveKind.Long)) with
+                    new IrProperty(Property("longValue", "LongValue", Primitive(IrPrimitiveKind.Long)))
                     {
                         Constraints = new IrPropertyConstraints { Min = 9007199254740993m, Max = long.MaxValue }
                     },
-                    Property("exclusive", "Exclusive", Primitive(IrPrimitiveKind.Number)) with
+                    new IrProperty(Property("exclusive", "Exclusive", Primitive(IrPrimitiveKind.Number)))
                     {
                         Constraints = new IrPropertyConstraints { ExclusiveMin = 1m, ExclusiveMax = 2m }
                     },
-                    Property("negative", "Negative", Primitive(IrPrimitiveKind.Integer)) with
+                    new IrProperty(Property("negative", "Negative", Primitive(IrPrimitiveKind.Integer)))
                     {
                         Constraints = new IrPropertyConstraints { Max = 5m }
                     },

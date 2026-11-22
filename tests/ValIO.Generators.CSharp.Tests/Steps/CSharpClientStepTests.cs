@@ -98,7 +98,7 @@ public class CSharpClientStepTests
     [Test]
     public async Task MultipartClient_EmitsInvariantContentFactoryExactlyOnce()
     {
-        var multipartOperation = MinimalClient("Logos").Operations[0] with
+        var multipartOperation = new IrOperation(MinimalClient("Logos").Operations[0])
         {
             HttpMethod = "POST",
             RequestBody = new IrRequestBody
@@ -108,7 +108,7 @@ public class CSharpClientStepTests
                 ContentType = "multipart/form-data",
             },
         };
-        var client = MinimalClient("Logos") with { Operations = [multipartOperation] };
+        var client = new IrClient(MinimalClient("Logos")) { Operations = [multipartOperation] };
         var context = new GenerationContext
         {
             IrDocument = DocumentWithClients(client),

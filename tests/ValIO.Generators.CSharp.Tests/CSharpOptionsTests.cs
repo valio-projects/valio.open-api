@@ -112,7 +112,7 @@ public sealed class CSharpOptionsTests
         code.Contains("[DataContract]", StringComparison.Ordinal).Should().Be(dataContract);
         code.Should().Contain("[EnumMember(Value = \"in-progress\")]").And.Contain("[JsonStringEnumMemberName(\"in-progress\")]");
 
-        var numeric = state with
+        var numeric = new IrEnum(state)
         {
             BaseType = IrEnumBaseType.Integer,
             Values = [new IrEnumValue { Name = "Started", Value = 7 }]
@@ -158,7 +158,7 @@ public sealed class CSharpOptionsTests
         renderer.Render(builder.BuildCompilationUnit(model, "Example")).Should().Contain("global::Example.State.Player");
         renderer.Render(builder.BuildCompilationUnit(state, "Example")).Should().Contain("[JsonStringEnumMemberName(\"player\")]")
             .And.Contain("    Player");
-        var collision = state with { Values = [.. state.Values, new IrEnumValue { Name = "Player", Value = "Player" }] };
+        var collision = new IrEnum(state) { Values = [.. state.Values, new IrEnumValue { Name = "Player", Value = "Player" }] };
         var generate = () => builder.BuildCompilationUnit(collision);
         generate.Should().Throw<InvalidOperationException>().WithMessage("*'State'*'player'*'Player'*");
     }

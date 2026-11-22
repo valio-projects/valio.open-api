@@ -68,7 +68,7 @@ public sealed class FSharpModelsStep : ICodeGenerationStep
             var typeName = _namingConverter.ToPascalCase(model.Name);
             var fileName = _namingConverter.ToPascalCase(model.OriginalName);
             var moduleName = FSharpStepHelper.ModelModuleName(opts, typeName);
-            var effectiveModel = model with { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
+            var effectiveModel = new IrModel(model) { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
             var file = builder.BuildFile(effectiveModel, moduleName);
             var content = _renderer.Render(file);
             var relativePath = $"{FSharpStepHelper.ModelsDir}/{fileName}.fs";

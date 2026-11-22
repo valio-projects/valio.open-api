@@ -239,7 +239,7 @@ public class IrBuilder
             var isFilePart = multipart && ContainsMultipartFile(propertySchema);
             var typeSchema = isFilePart ? _schemaResolver.ResolveSchema(propertySchema) : propertySchema;
             var propertyType = WithContext(
-                _ctx with { PropertyPath = AppendPath(_ctx.PropertyPath, propertyName) },
+                new SchemaBuildContext(_ctx) { PropertyPath = AppendPath(_ctx.PropertyPath, propertyName) },
                 () => BuildType(typeSchema, document, propertyContext: new PropertyContext
                 {
                     PropertyName = propertyName,
@@ -284,16 +284,54 @@ public class IrBuilder
     /// Используется только для информативных сообщений об ошибках построения типа
     /// (см. <see cref="BuildType"/>). Сохраняется/восстанавливается через <see cref="WithContext{T}"/>.
     /// </summary>
-    private sealed record SchemaBuildContext
+    private sealed class SchemaBuildContext
     {
+        /// <summary>Creates a diagnostic location before assigning its source coordinates.</summary>
+        public SchemaBuildContext()
+        {
+        }
+
+        /// <summary>Copies the current diagnostic location before applying narrower coordinates.</summary>
+        /// <param name="source">The existing location to copy.</param>
+        public SchemaBuildContext(SchemaBuildContext source)
+        {
+            HttpMethod = source.HttpMethod;
+            Path = source.Path;
+            OperationId = source.OperationId;
+            Role = source.Role;
+            StatusCode = source.StatusCode;
+            ContentType = source.ContentType;
+            ParameterName = source.ParameterName;
+            RootModelName = source.RootModelName;
+            PropertyPath = source.PropertyPath;
+        }
+
+        /// <summary>Gets the verb of the enclosing OpenAPI operation.</summary>
+        /// <value>The HTTP verb, when building an operation.</value>
         public string? HttpMethod { get; init; }
+        /// <summary>Gets the route of the enclosing operation.</summary>
+        /// <value>The OpenAPI path template, when applicable.</value>
         public string? Path { get; init; }
+        /// <summary>Gets the identifier of the enclosing operation.</summary>
+        /// <value>The OpenAPI operation identifier, when specified.</value>
         public string? OperationId { get; init; }
+        /// <summary>Gets how the current schema participates in the operation.</summary>
+        /// <value>The role governing diagnostic labels.</value>
         public SchemaRole Role { get; init; }
+        /// <summary>Gets the enclosing response status.</summary>
+        /// <value>The declared HTTP status or range, when applicable.</value>
         public string? StatusCode { get; init; }
+        /// <summary>Gets the current representation's media type.</summary>
+        /// <value>The declared OpenAPI content key, when applicable.</value>
         public string? ContentType { get; init; }
+        /// <summary>Gets the current request parameter's wire name.</summary>
+        /// <value>The parameter name, when building a parameter.</value>
         public string? ParameterName { get; init; }
+        /// <summary>Gets the name of the enclosing top-level schema model.</summary>
+        /// <value>The model name, when building a component.</value>
         public string? RootModelName { get; init; }
+        /// <summary>Gets the nested coordinates relative to the enclosing schema.</summary>
+        /// <value>The property path segments in traversal order.</value>
         public IReadOnlyList<string> PropertyPath { get; init; } = Array.Empty<string>();
 
         /// <summary>Человекочитаемое описание места, где строится тип — например
@@ -544,7 +582,7 @@ public class IrBuilder
         if (constraints == null)
             return type;
 
-        var constrained = type with { Constraints = constraints };
+        var constrained = type.WithConstraints(constraints);
         if (type.Constraints == null || type.Constraints == constraints)
             return constrained;
 
@@ -685,7 +723,7 @@ public class IrBuilder
 
             var items = resolvedSchema.Items!;
             var elementType = WithContext(
-                _ctx with { PropertyPath = SuffixLastSegment(_ctx.PropertyPath, "[]") },
+                new SchemaBuildContext(_ctx) { PropertyPath = SuffixLastSegment(_ctx.PropertyPath, "[]") },
                 () => BuildType(items, document, propertyContext));
             return new IrArrayType { ElementType = elementType };
         }
@@ -1277,7 +1315,7 @@ public class IrBuilder
                     _ => SchemaRole.QueryParameter
                 };
                 var irParameter = WithContext(
-                    _ctx with { Role = role, ParameterName = parameter.Name },
+                    new SchemaBuildContext(_ctx) { Role = role, ParameterName = parameter.Name },
                     () => BuildParameter(parameter, document));
 
                 switch (parameter.In)
@@ -1475,7 +1513,7 @@ public class IrBuilder
 
                 if (name != parameter.Name)
                 {
-                    parameters[index] = parameter with { Name = name };
+                    parameters[index] = new IrParameter(parameter) { Name = name };
                     warnings?.Add($"Operation {methodName}: parameter '{parameter.OriginalName}' uses identifier '{name}' to avoid a generated name collision.");
                 }
             }
@@ -1578,7 +1616,7 @@ public class IrBuilder
 
         var type = schema != null
             ? WithContext(
-                _ctx with { Role = SchemaRole.RequestBody, ContentType = contentType },
+                new SchemaBuildContext(_ctx) { Role = SchemaRole.RequestBody, ContentType = contentType },
                 () => contentType == "multipart/form-data"
                     ? BuildMultipartRequestType(schema, document, propertyContext)
                     : BuildType(schema, document, propertyContext))
@@ -1666,14 +1704,14 @@ public class IrBuilder
     /// <returns>The file type, or the equivalent array or nullable wrapper around it.</returns>
     private IrType LowerMultipartFile(IrType type, IOpenApiSchema schema, OpenApiDocument document) => type switch
     {
-        IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary } binary => binary with { PrimitiveKind = IrPrimitiveKind.File },
-        IrArrayType array when schema.Items is { } item => array with
+        IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary } binary => new IrPrimitiveType(binary) { PrimitiveKind = IrPrimitiveKind.File },
+        IrArrayType array when schema.Items is { } item => new IrArrayType(array)
         {
             ElementType = LowerMultipartFile(
                 array.ElementType is IrModelReference ? BuildType(_schemaResolver.ResolveSchema(item), document) : array.ElementType,
                 _schemaResolver.ResolveSchema(item), document)
         },
-        IrNullableType nullable => nullable with { InnerType = LowerMultipartFile(nullable.InnerType, schema, document) },
+        IrNullableType nullable => new IrNullableType(nullable) { InnerType = LowerMultipartFile(nullable.InnerType, schema, document) },
         _ => type
     };
     
@@ -1691,7 +1729,7 @@ public class IrBuilder
             return null;
 
         return WithContext(
-            _ctx with { Role = SchemaRole.Response, StatusCode = statusCode, ContentType = content?.Key },
+            new SchemaBuildContext(_ctx) { Role = SchemaRole.Response, StatusCode = statusCode, ContentType = content?.Key },
             () => BuildType(schema, document));
     }
 
@@ -1712,7 +1750,7 @@ public class IrBuilder
         var media = new List<IrResponseMediaType>(content.Count) { new() { Name = primary.Key, Type = primaryType } };
         if (content.Count > 1)
         {
-            var responseContext = _ctx with { Role = SchemaRole.Response, StatusCode = statusCode };
+            var responseContext = new SchemaBuildContext(_ctx) { Role = SchemaRole.Response, StatusCode = statusCode };
             completeMediaTypes.Add(() =>
             {
                 foreach (var (name, representation) in content.Skip(1))
@@ -1720,7 +1758,7 @@ public class IrBuilder
                     var schema = representation?.Schema;
                     var type = schema is null ? null : ReferenceEquals(primary.Value?.Schema, schema)
                         ? primaryType
-                        : WithContext(responseContext with { ContentType = name }, () => BuildType(schema, document));
+                        : WithContext(new SchemaBuildContext(responseContext) { ContentType = name }, () => BuildType(schema, document));
                     media.Add(new IrResponseMediaType { Name = name, Type = type });
                 }
             });

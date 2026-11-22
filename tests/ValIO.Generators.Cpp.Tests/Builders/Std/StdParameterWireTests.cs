@@ -24,7 +24,7 @@ public sealed class StdParameterWireTests
             Parameter("Count", "count", Primitive(IrPrimitiveKind.Integer)),
             Parameter("Text", "text", Primitive(IrPrimitiveKind.String)),
             Parameter("State", "state", new IrModelReference { ModelName = "State" }),
-            Parameter("RequiredValue", "required", new IrNullableType { InnerType = Primitive(IrPrimitiveKind.Integer) }) with { IsRequired = true },
+            new IrParameter(Parameter("RequiredValue", "required", new IrNullableType { InnerType = Primitive(IrPrimitiveKind.Integer) })) { IsRequired = true },
         ], [Parameter("Header", "X-Count", Primitive(IrPrimitiveKind.Integer))]);
         source.Should().Contain("httpRequest.AddQuery(\"enabled\", Enabled);");
         source.Should().Contain("httpRequest.AddQuery(\"count\", Count);");
@@ -47,7 +47,7 @@ public sealed class StdParameterWireTests
     [TestCase(IrParameterStyle.PipeDelimited, false, "PipeSeparated")]
     public void QueryArrays_SelectDeclaredEncoding(IrParameterStyle? style, bool? explode, string expected)
     {
-        var source = Render([Parameter("Values", "values", new IrArrayType { ElementType = Primitive(IrPrimitiveKind.Integer) }) with { Style = style, Explode = explode }]);
+        var source = Render([new IrParameter(Parameter("Values", "values", new IrArrayType { ElementType = Primitive(IrPrimitiveKind.Integer) })) { Style = style, Explode = explode }]);
         source.Should().Contain($"httpRequest.AddQuery(\"values\", Values, ValIO::CollectionEncoding::{expected});");
         source.Should().NotContain("if (Values)");
     }
@@ -74,7 +74,7 @@ public sealed class StdParameterWireTests
     [TestCase(IrParameterStyle.Simple, false)]
     public void UnsupportedArrayStyle_ReportsTheContract(IrParameterStyle style, bool explode)
     {
-        var parameter = Parameter("Values", "values", new IrArrayType { ElementType = Primitive(IrPrimitiveKind.Integer) }) with { Style = style, Explode = explode };
+        var parameter = new IrParameter(Parameter("Values", "values", new IrArrayType { ElementType = Primitive(IrPrimitiveKind.Integer) })) { Style = style, Explode = explode };
         var action = () => Render([parameter]);
         action.Should().Throw<NotSupportedException>().WithMessage("*values*unsupported*style*");
     }
@@ -87,7 +87,7 @@ public sealed class StdParameterWireTests
     [TestCase(IrParameterStyle.Cookie)]
     public void UnsupportedScalarStyle_ReportsTheContract(IrParameterStyle style)
     {
-        var action = () => Render([Parameter("Value", "value", Primitive(IrPrimitiveKind.String)) with { Style = style }]);
+        var action = () => Render([new IrParameter(Parameter("Value", "value", Primitive(IrPrimitiveKind.String))) { Style = style }]);
         action.Should().Throw<NotSupportedException>().WithMessage("*value*unsupported query style*");
     }
 
@@ -95,7 +95,7 @@ public sealed class StdParameterWireTests
     [Test]
     public void DeepObjectStyle_ReportsUnsupportedObjectEncoding()
     {
-        var action = () => Render([Parameter("Filter", "filter", new IrModelReference { ModelName = "Filter" }) with { Style = IrParameterStyle.DeepObject, Explode = true }]);
+        var action = () => Render([new IrParameter(Parameter("Filter", "filter", new IrModelReference { ModelName = "Filter" })) { Style = IrParameterStyle.DeepObject, Explode = true }]);
         action.Should().Throw<NotSupportedException>().WithMessage("*filter*unsupported query style*DeepObject*");
     }
 
@@ -103,7 +103,7 @@ public sealed class StdParameterWireTests
     [Test]
     public void ExplicitObjectFormStyle_RejectsLegacyJsonSubstitution()
     {
-        var action = () => Render([Parameter("Filter", "filter", new IrModelReference { ModelName = "Filter" }) with { Style = IrParameterStyle.Form, Explode = true }]);
+        var action = () => Render([new IrParameter(Parameter("Filter", "filter", new IrModelReference { ModelName = "Filter" })) { Style = IrParameterStyle.Form, Explode = true }]);
         action.Should().Throw<NotSupportedException>().WithMessage("*object parameter*filter*Form*object wire codec is not implemented*");
     }
 
