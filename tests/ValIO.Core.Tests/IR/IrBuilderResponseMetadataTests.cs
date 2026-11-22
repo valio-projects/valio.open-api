@@ -38,7 +38,11 @@ public sealed class IrBuilderResponseMetadataTests
         requestId.Description.Should().Be("The request correlation identifier.");
 
         var invalid = responses.Single(response => response.StatusCode == "400");
-        invalid.ContentTypes.Should().Equal("application/json", "text/plain");
+        invalid.ContentTypes.Should().Equal("application/json", "text/plain", "application/problem+json");
         invalid.Type.Should().BeOfType<IrPrimitiveType>().Which.PrimitiveKind.Should().Be(IrPrimitiveKind.Integer);
+        invalid.MediaTypes.Select(media => media.Name).Should().Equal(invalid.ContentTypes);
+        invalid.MediaTypes[0].Type.Should().BeSameAs(invalid.Type);
+        invalid.MediaTypes[1].Type.Should().BeOfType<IrPrimitiveType>().Which.PrimitiveKind.Should().Be(IrPrimitiveKind.String);
+        invalid.MediaTypes[2].Type.Should().BeOfType<IrModelReference>().Which.ModelName.Should().Be("ReportProblem");
     }
 }

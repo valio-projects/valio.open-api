@@ -7,8 +7,11 @@
         "operationId": "readReport",
         "responses": {
           "200": {
-            "description": "The report as JSON.",
-            "content": { "application/json": { "schema": { "type": "string" } } }
+            "description": "The report as JSON or plain text.",
+            "content": {
+              "application/json": { "schema": { "type": "string" } },
+              "text/plain": { "schema": { "type": "string" } }
+            }
           },
           "202": {
             "description": "A text receipt with the location of the report.",
@@ -31,10 +34,20 @@
             "description": "The report could not be read.",
             "content": {
               "application/json": { "schema": { "type": "integer", "format": "int32" } },
-              "text/plain": { "schema": { "type": "string" } }
+              "text/plain": { "schema": { "type": "string" } },
+              "application/problem+json": { "schema": { "$ref": "#/components/schemas/ReportProblem" } }
             }
           }
         }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ReportProblem": {
+        "type": "object",
+        "required": ["issueCode"],
+        "properties": { "issueCode": { "type": "string" } }
       }
     }
   }

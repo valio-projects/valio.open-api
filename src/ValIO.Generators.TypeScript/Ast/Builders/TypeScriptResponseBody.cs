@@ -23,13 +23,19 @@ public static class TypeScriptResponseBody
         ExpressionNode? textCondition = null;
         foreach (var variant in operation.Responses)
         {
-            if (variant.ContentTypes.Count != 1 || !string.Equals(variant.ContentTypes[0], "text/plain", StringComparison.OrdinalIgnoreCase)
-                || variant.Type is not { } type || IrTypeQueries.UnwrapNullableOptional(type) is not IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.String }
-                || !int.TryParse(variant.StatusCode, out var code))
+            if (!int.TryParse(variant.StatusCode, out _))
                 continue;
 
-            var matches = new BinaryExpressionNode(status, BinaryOperator.Equal, new LiteralExpressionNode(code, LiteralKind.Number));
-            textCondition = textCondition is null ? matches : new BinaryExpressionNode(textCondition, BinaryOperator.LogicalOr, matches);
+            var matches = TypeScriptResponseMedia.StatusMatches(status, variant.StatusCode);
+            if (variant.ContentTypes.Count == 1 && string.Equals(variant.ContentTypes[0], "text/plain", StringComparison.OrdinalIgnoreCase)
+                && variant.Type is { } type && IrTypeQueries.UnwrapNullableOptional(type) is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.String })
+            {
+                textCondition = Or(textCondition, matches);
+                continue;
+            }
+
+            foreach (var media in TypeScriptResponseMedia.Alternatives(operation, variant).Where(TypeScriptResponseMedia.IsPlainText))
+                textCondition = Or(textCondition, new BinaryExpressionNode(matches, BinaryOperator.LogicalAnd, TypeScriptResponseMedia.Matches(media.Name)));
         }
 
         if (textCondition is not null)
@@ -41,6 +47,13 @@ public static class TypeScriptResponseBody
 
         return Read(operation, status, decoder);
     }
+
+    /// <summary>Appends a match to an optional condition that has not yet received its first branch.</summary>
+    /// <param name="condition">The existing condition, if any.</param>
+    /// <param name="match">The alternative condition.</param>
+    /// <returns>The combined condition.</returns>
+    private static ExpressionNode Or(ExpressionNode? condition, ExpressionNode match) =>
+        condition is null ? match : new BinaryExpressionNode(condition, BinaryOperator.LogicalOr, match);
 
     /// <summary>Skips a response body decoder for HEAD, 204/205, and explicitly bodyless response variants.</summary>
     /// <param name="operation">The operation whose response contract determines decoding.</param>

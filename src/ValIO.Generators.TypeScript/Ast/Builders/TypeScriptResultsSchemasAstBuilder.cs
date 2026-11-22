@@ -52,10 +52,8 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
             return null;
 
 
-        var constructed = operation.Responses
-            .Where(r => r.Type != null
-                && int.TryParse(r.StatusCode, out _)
-                && ValidationTypes.NeedsConstructedSchema(r.Type!))
+        var constructed = TypeScriptResponseMedia.SchemaInputs(operation, includeAlternatives: true, preservePrimary: true)
+            .Where(r => r.Type != null && ValidationTypes.NeedsConstructedSchema(r.Type))
             .ToList();
 
         if (constructed.Count == 0)

@@ -282,6 +282,8 @@ public partial class TypeScriptAstBuilder
         var decodeBody = exactJsonNumbers
             ? TypeScriptExactJson.DecodeFetchResponse(Id("response"))
             : new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty));
+        TypeScriptResponseMedia.AddContentTypeGuards(operation, Id("response"),
+            new CallExpressionNode(Member(Member(Id("response"), "headers"), "get"), [Str("content-type")]), statements);
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"), type: null,
             initializer: TypeScriptResponseBody.ReadFetch(operation, Id("response"), decodeBody)));
@@ -305,7 +307,7 @@ public partial class TypeScriptAstBuilder
             {
                 var statusCode = int.Parse(resp.StatusCode);
                 var isSuccessful = statusCode >= 200 && statusCode < 300;
-                var parseCall = BuildStatusResultBody(operation, resp, responseDataRef);
+                var parseCall = TypeScriptResponseMedia.SelectBody(operation, resp, variant => BuildStatusResultBody(operation, variant, responseDataRef));
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {

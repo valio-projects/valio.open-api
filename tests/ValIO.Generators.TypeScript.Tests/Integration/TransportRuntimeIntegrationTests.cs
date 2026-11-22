@@ -403,15 +403,17 @@ public sealed class TransportRuntimeIntegrationTests
         output.Should().Contain("typed response headers runtime passed");
     }
 
-    /// <summary>Checks plain text, JSON, and headers on distinct documented statuses in fetch transports.</summary>
-    /// <param name="transport">The generated Fetch or Next.js transport.</param>
+    /// <summary>Checks media-specific decoding, validation, and headers on documented response statuses.</summary>
+    /// <param name="transport">The generated Axios, Fetch, or Next.js transport.</param>
     /// <param name="exactJsonNumbers">Whether the JSON status uses lossless decoding.</param>
     /// <returns>The asynchronous generated-code assertions.</returns>
     [TestCase("fetch", false)]
     [TestCase("fetch", true)]
     [TestCase("nextjs", false)]
     [TestCase("nextjs", true)]
-    public async Task ResponseMetadata_ExposesDeclaredHeadersAndReadsTextByStatus(string transport, bool exactJsonNumbers)
+    [TestCase("axios", false)]
+    [TestCase("axios", true)]
+    public async Task ResponseMetadata_SelectsTheSchemaByStatusAndMediaType(string transport, bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
         var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/response-metadata-3.0.json"));
@@ -423,26 +425,46 @@ public sealed class TransportRuntimeIntegrationTests
             ValidationLibrary = "zod4",
         });
         var results = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("readReport.results.ts", StringComparison.Ordinal));
-        results.Content.Should().Contain("\"location\"?: string").And.Contain("\"x-request-id\"?: string");
+        results.Content.Should().Contain("\"location\"?: string").And.Contain("\"x-request-id\"?: string")
+            .And.Contain("number | string | ReportProblem");
+        await GeneratedTypeScriptCompiler.Compile(context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray(),
+            $"response media types with {transport}");
         var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
-            const endpoint = 'readReport.' + {{JsonSerializer.Serialize(transport)}} + '.js';
+            const transport = {{JsonSerializer.Serialize(transport)}};
+            const endpoint = 'readReport.' + transport + '.js';
             const { readReport } = require(path.join(root, 'api', 'readReport', endpoint));
+            const reply = (status, data, headers) => transport === 'axios'
+              ? require('axios').create({ adapter: async config => ({ config, status, data, headers }) })
+              : async () => new Response(data, { status, headers });
             (async () => {
-              const json = await readReport(undefined, undefined, async () => Response.json('report'));
+              const read = (status, data, headers) => readReport(undefined, undefined, reply(status, data, headers));
+              const json = await read(200, '"report"', { 'Content-Type': 'application/json' });
               assert.equal(json.body, 'report');
+              const text = await read(200, 'report', { 'Content-Type': 'text/plain' });
+              assert.equal(text.body, 'report');
 
-              const accepted = await readReport(undefined, undefined,
-                async () => new Response('accepted without JSON quoting', {
-                  status: 202, headers: { 'Content-Type': 'text/plain; charset=utf-8', Location: '/reports/42' }
-                }));
+              const accepted = await read(202, 'accepted without JSON quoting', {
+                'Content-Type': 'text/plain; charset=utf-8', Location: '/reports/42'
+              });
               assert.equal(accepted.status, 202);
               assert.equal(accepted.body, 'accepted without JSON quoting');
               assert.equal(accepted.headers.location, '/reports/42');
 
-              const bodyless = await readReport(undefined, undefined,
-                async () => new Response(null, { status: 204, headers: { 'X-Request-ID': 'report-42' } }));
+              const bodyless = await read(204, null, { 'X-Request-ID': 'report-42' });
               assert.equal(bodyless.body, undefined);
               assert.equal(bodyless.headers['x-request-id'], 'report-42');
+
+              const numberError = await read(400, '42', { 'Content-Type': 'application/json' });
+              assert.equal(numberError.isFailed, true);
+              assert.equal(numberError.body, 42);
+              const textError = await read(400, '42', { 'Content-Type': 'TEXT/PLAIN; charset=utf-8' });
+              assert.equal(textError.body, '42');
+              const problem = await read(400, '{"issueCode":"conflict"}', { 'Content-Type': 'Application/Problem+JSON; charset=utf-8' });
+              assert.deepEqual(problem.body, { issueCode: 'conflict' });
+
+              await assert.rejects(read(400, '42', { 'Content-Type': 'application/problem+json' }));
+              await assert.rejects(read(400, '<error/>', { 'Content-Type': 'application/xml' }), /HTTP 400 unexpected Content-Type/);
+              await assert.rejects(read(400, new Uint8Array([52, 50]), {}), /HTTP 400 unexpected Content-Type/);
               console.log('response metadata passed');
             })().catch(error => { console.error(error); process.exitCode = 1; });
             """, "zod", "lossless-json");

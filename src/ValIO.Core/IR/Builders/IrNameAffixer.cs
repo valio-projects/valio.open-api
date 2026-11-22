@@ -88,6 +88,12 @@ public static class IrNameAffixer
         return (newModels, newEnums, newClients);
     }
 
+    /// <summary>Renames an operation and all model references, including alternate response representations.</summary>
+    /// <param name="op">The original operation.</param>
+    /// <param name="options">The configured naming affixes.</param>
+    /// <param name="namingConverter">The identifier naming policy.</param>
+    /// <param name="rename">The map from original type names to affixed names.</param>
+    /// <returns>The operation with renamed references and original wire metadata.</returns>
     private static IrOperation RewriteOperation(
         IrOperation op,
         NameAffixOptions options,
@@ -105,7 +111,13 @@ public static class IrNameAffixer
                 ? null
                 : op.RequestBody with { Type = RewriteType(op.RequestBody.Type, rename) },
             Responses = op.Responses
-                .Select(r => r.Type is null ? r : r with { Type = RewriteType(r.Type, rename) })
+                .Select(r => r with
+                {
+                    Type = r.Type is null ? null : RewriteType(r.Type, rename),
+                    MediaTypes = r.MediaTypes.Select(media => media.Type is null
+                        ? media
+                        : media with { Type = RewriteType(media.Type, rename) }).ToArray(),
+                })
                 .ToList(),
         };
     }

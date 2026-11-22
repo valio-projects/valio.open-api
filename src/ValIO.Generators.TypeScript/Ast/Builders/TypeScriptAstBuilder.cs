@@ -1310,6 +1310,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             new[] { bodyTypeNode }.ToImmutableList());
 
         var useResultType = operation.Responses.Any(r => r.Type != null);
+        var negotiatedResponse = TypeScriptResponseMedia.HasAlternatives(operation);
         var operationReturnType = useResultType
             ? new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: false)
             : ExtractReturnType(operation.Responses);
@@ -1348,18 +1349,22 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
                         isSpread: true)
                 ])));
         }
-        if (_options?.ExactJsonNumbers == true)
+        var exactJsonNumbers = _options?.ExactJsonNumbers == true;
+        if (exactJsonNumbers && operation.RequestBody is { IsJson: true })
+            mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("transformRequest"),
+                new ArrayLiteralExpressionNode([TypeScriptExactJson.AxiosRequestTransform()])));
+        if (negotiatedResponse)
         {
-            if (operation.RequestBody is { IsJson: true })
-                mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("transformRequest"),
-                    new ArrayLiteralExpressionNode([TypeScriptExactJson.AxiosRequestTransform()])));
-            if (HasExactAxiosResponse(operation))
-            {
-                mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("responseType"),
-                    new LiteralExpressionNode("text", LiteralKind.String)));
-                mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("transformResponse"),
-                    new ArrayLiteralExpressionNode([TypeScriptExactJson.AxiosResponseTransform()])));
-            }
+            var identityTransform = new ArrowFunctionExpressionNode([new(new IdentifierNode("data"), type: null)], Id("data"));
+            mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("responseType"), Str("text")));
+            mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("transformResponse"),
+                new ArrayLiteralExpressionNode([identityTransform])));
+        }
+        else if (exactJsonNumbers && HasExactAxiosResponse(operation))
+        {
+            mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("responseType"), Str("text")));
+            mergedConfigProps.Add(new PropertyAssignmentNode(new IdentifierNode("transformResponse"),
+                new ArrayLiteralExpressionNode([TypeScriptExactJson.AxiosResponseTransform()])));
         }
 
         if (useResultType)
@@ -1390,15 +1395,24 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         if (useResultType)
         {
             var includeResponseHeaders = _options?.IncludeResponseHeaders == true;
-            if (includeResponseHeaders)
+            if (includeResponseHeaders || negotiatedResponse)
                 statements.AddRange(TypeScriptResponseHeaders.ReadAxios(Member(Id("response"), "headers")));
 
-            var responseDataRef = new MemberAccessExpressionNode(
+            ExpressionNode responseDataRef = new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("data"));
             var responseStatusRef = new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("response")),
                 new IdentifierNode("status"));
+            if (negotiatedResponse)
+            {
+                var contentType = new CallExpressionNode(Member(Id("Reflect"), "get"), [Id("responseHeaders"), Str("content-type")]);
+                TypeScriptResponseMedia.AddContentTypeGuards(operation, Id("response"), contentType, statements);
+                statements.Add(new VariableDeclarationStatementNode(new IdentifierNode("responseData"), type: null,
+                    initializer: TypeScriptResponseBody.Read(operation, responseStatusRef,
+                        TypeScriptResponseMedia.DecodeAxiosResponse(responseDataRef, exactJsonNumbers))));
+                responseDataRef = Id("responseData");
+            }
             var responsesWithType = operation.Responses
                 .Where(r => int.TryParse(r.StatusCode, out _))
                 .ToList();
@@ -1407,10 +1421,8 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
             {
                 var statusCode = int.Parse(resp.StatusCode);
                 var isSuccessful = statusCode >= 200 && statusCode < 300;
-                var dataAccess = new MemberAccessExpressionNode(
-                    new IdentifierExpressionNode(new IdentifierNode("response")),
-                    new IdentifierNode("data"));
-                var parseCall = BuildStatusResultBody(operation, resp, dataAccess);
+                var parseCall = TypeScriptResponseMedia.SelectBody(operation, resp,
+                    variant => BuildStatusResultBody(operation, variant, responseDataRef));
 
                 var returnObj = new ObjectLiteralExpressionNode(new[]
                 {
@@ -1533,34 +1545,23 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         return types;
     }
 
-    /// <summary>Есть ли валидируемые типизированные ответы (любого статуса).</summary>
+    /// <summary>Determines whether the endpoint validates a response body.</summary>
+    /// <param name="operation">The endpoint whose response schemas are used.</param>
+    /// <returns>True when a primary or media-specific body needs validation.</returns>
     private static bool ClientHasResponseValidation(IrOperation operation)
-        => operation.Responses.Any(r => r.Type != null && int.TryParse(r.StatusCode, out _) && ValidationTypes.IsValidatable(r.Type!));
+        => ClientResponseSchemas.ValidatedResponses(operation, includeAlternatives: true).Any();
 
-    /// <summary>
-    /// Model-схемы, импортируемые КЛИЕНТОМ: тело (рекурсивно) + ответы-голые-ссылки. Ответы с
-    /// constructed-схемой импортируют свою result-схему (их члены живут в <c>{op}.results.schemas.ts</c>).
-    /// </summary>
+    /// <summary>Finds model schemas needed directly by the generated endpoint.</summary>
+    /// <param name="operation">The endpoint supplying request and response types.</param>
+    /// <returns>The model schema names required by the endpoint.</returns>
     private static HashSet<string> ClientModelSchemaNames(IrOperation operation)
-    {
-        var names = new HashSet<string>(StringComparer.Ordinal);
-        if (operation.RequestBody != null && ValidationTypes.IsValidatable(operation.RequestBody.Type))
-            ValidationTypes.CollectModelSchemaNames(operation.RequestBody.Type, names);
+        => ClientResponseSchemas.ModelSchemaNames(operation, includeAlternatives: true);
 
-        foreach (var response in operation.Responses)
-            if (response.Type != null && int.TryParse(response.StatusCode, out _)
-                && ValidationTypes.IsValidatable(response.Type!) && !ValidationTypes.NeedsConstructedSchema(response.Type!))
-                ValidationTypes.CollectModelSchemaNames(response.Type!, names);
-
-        return names;
-    }
-
-    /// <summary>Имена вынесенных result-схем (для constructed-ответов), импортируемых клиентом.</summary>
+    /// <summary>Finds response validator constants imported by the generated endpoint.</summary>
+    /// <param name="operation">The operation supplying the response definitions.</param>
+    /// <returns>The schema constants required for status and media selection.</returns>
     private List<string> ClientResultSchemaNames(IrOperation operation)
-        => operation.Responses
-            .Where(r => r.Type != null && int.TryParse(r.StatusCode, out _) && ValidationTypes.NeedsConstructedSchema(r.Type!))
-            .Select(r => ResultSchemaName(operation.MethodName, r.StatusCode))
-            .ToList();
+        => ClientResponseSchemas.ConstructedResultSchemaNames(_namingConverter, operation, includeAlternatives: true);
 
     private TypeNode ExtractReturnType(IReadOnlyList<IrResponse> responses)
     {

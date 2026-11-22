@@ -64,7 +64,11 @@ public class IrBuilder
 
         var models = ExtractModels(document);
         var enums = ExtractEnums(document);
-        var clients = ExtractClients(document, warnings);
+        var completeMediaTypes = new List<Action>();
+        var clients = ExtractClients(document, completeMediaTypes, warnings);
+        // Allocate additional inline models after the existing declarations to preserve their generated names.
+        foreach (var complete in completeMediaTypes)
+            complete();
 
         // Inline models are declarations and participate in dependency ordering.
         IReadOnlyList<IrModel> allModels = models.Concat(_inlineModels.Values).ToList();
@@ -1127,10 +1131,12 @@ public class IrBuilder
         };
     }
     
-    /// <summary>
-    /// Извлекает клиенты из путей
-    /// </summary>
-    private IReadOnlyList<IrClient> ExtractClients(OpenApiDocument document, ICollection<string>? warnings = null)
+    /// <summary>Builds clients from the documented paths.</summary>
+    /// <param name="document">The OpenAPI document being translated.</param>
+    /// <param name="completeMediaTypes">Deferred translations of additional response schemas.</param>
+    /// <param name="warnings">An optional diagnostic sink.</param>
+    /// <returns>The operations grouped into clients.</returns>
+    private IReadOnlyList<IrClient> ExtractClients(OpenApiDocument document, List<Action> completeMediaTypes, ICollection<string>? warnings = null)
     {
         var operations = new List<IrOperation>();
         
@@ -1153,7 +1159,7 @@ public class IrBuilder
                 if (openApiOperation == null)
                     continue;
                 
-                var operation = BuildOperation(path, httpMethod, pathItem, openApiOperation, document, warnings);
+                var operation = BuildOperation(path, httpMethod, pathItem, openApiOperation, document, completeMediaTypes, warnings);
                 operations.Add(operation);
             }
         }
@@ -1215,6 +1221,7 @@ public class IrBuilder
     /// <param name="pathItem">The path item declaring shared parameters.</param>
     /// <param name="openApiOperation">The operation-specific declarations.</param>
     /// <param name="document">The document used to resolve referenced schemas.</param>
+    /// <param name="completeMediaTypes">Deferred translations of additional response schemas.</param>
     /// <param name="warnings">An optional diagnostic sink.</param>
     /// <returns>The operation and its generated parameter identifiers.</returns>
     private IrOperation BuildOperation(
@@ -1223,6 +1230,7 @@ public class IrBuilder
         IOpenApiPathItem pathItem,
         OpenApiOperation openApiOperation,
         OpenApiDocument document,
+        List<Action> completeMediaTypes,
         ICollection<string>? warnings = null)
     {
         var operationId = openApiOperation.OperationId ?? 
@@ -1297,6 +1305,7 @@ public class IrBuilder
                     StatusCode = statusCode,
                     Type = responseType,
                     ContentTypes = response.Content?.Keys.ToArray() ?? [],
+                    MediaTypes = ExtractResponseMediaTypes(response, statusCode, responseType, document, completeMediaTypes),
                     Headers = ExtractResponseHeaders(response),
                     Description = response.Description
                 });
@@ -1585,6 +1594,40 @@ public class IrBuilder
         return WithContext(
             _ctx with { Role = SchemaRole.Response, StatusCode = statusCode, ContentType = content?.Key },
             () => BuildType(schema, document));
+    }
+
+    /// <summary>Retains each response representation without changing the primary body selected by existing generators.</summary>
+    /// <param name="response">The response supplying the media declarations.</param>
+    /// <param name="statusCode">The status used for diagnostics.</param>
+    /// <param name="primaryType">The body type already translated from the first media declaration.</param>
+    /// <param name="document">The document used to resolve schemas.</param>
+    /// <param name="completeMediaTypes">The actions run after existing inline model names have been allocated.</param>
+    /// <returns>The representations in document order, populated before the IR is returned.</returns>
+    private IReadOnlyList<IrResponseMediaType> ExtractResponseMediaTypes(IOpenApiResponse response, string statusCode,
+        IrType? primaryType, OpenApiDocument document, List<Action> completeMediaTypes)
+    {
+        if (response.Content is not { Count: > 0 } content)
+            return [];
+
+        var primary = content.First();
+        var media = new List<IrResponseMediaType>(content.Count) { new() { Name = primary.Key, Type = primaryType } };
+        if (content.Count > 1)
+        {
+            var responseContext = _ctx with { Role = SchemaRole.Response, StatusCode = statusCode };
+            completeMediaTypes.Add(() =>
+            {
+                foreach (var (name, representation) in content.Skip(1))
+                {
+                    var schema = representation?.Schema;
+                    var type = schema is null ? null : ReferenceEquals(primary.Value?.Schema, schema)
+                        ? primaryType
+                        : WithContext(responseContext with { ContentType = name }, () => BuildType(schema, document));
+                    media.Add(new IrResponseMediaType { Name = name, Type = type });
+                }
+            });
+        }
+
+        return media;
     }
 
     /// <summary>Extracts status-specific response headers while retaining their wire spelling.</summary>

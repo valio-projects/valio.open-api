@@ -217,6 +217,10 @@ public sealed record IrResponse
     /// <value>The declared response content keys, or an empty list for a bodyless response.</value>
     public IReadOnlyList<string> ContentTypes { get; init; } = [];
 
+    /// <summary>Gets the response representations and their independently translated payload schemas.</summary>
+    /// <value>The representations keyed by their original media names in document order.</value>
+    public IReadOnlyList<IrResponseMediaType> MediaTypes { get; init; } = [];
+
     /// <summary>Gets the HTTP headers declared for this response status.</summary>
     /// <value>The wire declarations, excluding the Content-Type header described by <see cref="ContentTypes"/>.</value>
     public IReadOnlyList<IrResponseHeader> Headers { get; init; } = [];
@@ -225,6 +229,18 @@ public sealed record IrResponse
     /// Описание
     /// </summary>
     public string? Description { get; init; }
+}
+
+/// <summary>Describes a response body for one OpenAPI media type.</summary>
+public sealed record IrResponseMediaType
+{
+    /// <summary>Gets the original media type name.</summary>
+    /// <value>The key declared in the OpenAPI response content map.</value>
+    public required string Name { get; init; }
+
+    /// <summary>Gets the schema for this response representation.</summary>
+    /// <value>The translated payload type, if the source declares a schema.</value>
+    public IrType? Type { get; init; }
 }
 
 /// <summary>Describes a declared HTTP response header independently of its runtime presence.</summary>

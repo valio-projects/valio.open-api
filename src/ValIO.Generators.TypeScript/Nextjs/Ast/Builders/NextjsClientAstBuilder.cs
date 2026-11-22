@@ -151,7 +151,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         imports.AddRange(_validation.RuntimeImports(
             ClientInlineConstructedTypes(operation),
             hasParams: operation.PathParameters.Count > 0 || operation.QueryParameters.Count > 0,
-            hasNamedSchemaParse: Validation.ClientResponseSchemas.ValidatedResponses(operation).Any()));
+            hasNamedSchemaParse: Validation.ClientResponseSchemas.ValidatedResponses(operation, includeAlternatives: true).Any()));
 
         if (_exactJsonNumbers && (operation.RequestBody is { IsJson: true }
                 || hasResultType && !operation.HttpMethod.Equals("HEAD", StringComparison.OrdinalIgnoreCase))
@@ -176,13 +176,13 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         {
             AddParamsSchemaImports(imports, operation, operationFileName);
 
-            foreach (var modelName in Validation.ClientResponseSchemas.ModelSchemaNames(operation))
+            foreach (var modelName in Validation.ClientResponseSchemas.ModelSchemaNames(operation, includeAlternatives: true))
                 imports.Add(new ImportNode(
                     items: ImmutableList.Create(new IdentifierNode($"{modelName}Schema")),
                     from: BuildSchemaImportPath(modelName, fileOrganization),
                     kind: ImportKind.Named));
 
-            var resultSchemaNames = Validation.ClientResponseSchemas.ConstructedResultSchemaNames(_namingConverter, operation);
+            var resultSchemaNames = Validation.ClientResponseSchemas.ConstructedResultSchemaNames(_namingConverter, operation, includeAlternatives: true);
             if (resultSchemaNames.Count > 0)
                 imports.Add(new ImportNode(
                     items: resultSchemaNames.Select(n => new IdentifierNode(n)).ToImmutableList(),
@@ -401,6 +401,8 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
                 ? TypeScriptExactJson.DecodeFetchResponse(Id("response"))
                 : new AwaitExpressionNode(new CallExpressionNode(Member(Id("response"), "json"), ImmutableList<ExpressionNode>.Empty)),
             useAsOperator: true);
+        TypeScriptResponseMedia.AddContentTypeGuards(operation, Id("response"),
+            new CallExpressionNode(Member(Member(Id("response"), "headers"), "get"), [String("content-type")]), statements);
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("responseData"),
             type: null,
@@ -564,7 +566,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         {
             var statusCode = int.Parse(response.StatusCode);
             var isSuccessful = statusCode >= 200 && statusCode < 300;
-            var body = BuildResponseBody(operation, response, responseData);
+            var body = TypeScriptResponseMedia.SelectBody(operation, response, variant => BuildResponseBody(operation, variant, responseData));
 
             var returnObject = new CastExpressionNode(
                 Simple(resultTypeName),

@@ -17,31 +17,37 @@ internal static class ClientResponseSchemas
     public static string ResultSchemaName(INamingConverter naming, string operationName, string statusCode)
         => TypeScriptResultsAstBuilder.ResultVariantName(naming, operationName, statusCode) + "Schema";
 
-    /// <summary>Числовые типизированные ответы, которые валидируются (исключая any/void).</summary>
-    public static IEnumerable<IrResponse> ValidatedResponses(IrOperation operation)
-        => operation.Responses.Where(r =>
-            r.Type != null && int.TryParse(r.StatusCode, out _) && ValidationTypes.IsValidatable(r.Type!));
+    /// <summary>Enumerates typed responses whose bodies receive runtime validation.</summary>
+    /// <param name="operation">The operation whose response schemas are needed.</param>
+    /// <param name="includeAlternatives">Whether the transport selects a schema by media type.</param>
+    /// <returns>The validated responses or their media-specific schema inputs.</returns>
+    public static IEnumerable<IrResponse> ValidatedResponses(IrOperation operation, bool includeAlternatives = false)
+        => TypeScriptResponseMedia.SchemaInputs(operation, includeAlternatives)
+            .Where(r => r.Type != null && ValidationTypes.IsValidatable(r.Type));
 
-    /// <summary>Имена вынесенных result-схем (constructed-ответы) — для импорта и ссылки в клиенте.</summary>
-    public static List<string> ConstructedResultSchemaNames(INamingConverter naming, IrOperation operation)
-        => ValidatedResponses(operation)
+    /// <summary>Finds the generated schema constants required by the client.</summary>
+    /// <param name="naming">The TypeScript identifier naming policy.</param>
+    /// <param name="operation">The operation supplying the response schemas.</param>
+    /// <param name="includeAlternatives">Whether the client needs media-specific validators.</param>
+    /// <returns>Names of the exported schema constants to import.</returns>
+    public static List<string> ConstructedResultSchemaNames(INamingConverter naming, IrOperation operation, bool includeAlternatives = false)
+        => ValidatedResponses(operation, includeAlternatives)
             .Where(r => ValidationTypes.NeedsConstructedSchema(r.Type!))
             .Select(r => ResultSchemaName(naming, operation.MethodName, r.StatusCode))
             .ToList();
 
-    /// <summary>
-    /// Имена model-схем (<c>{Model}Schema</c>), импортируемых клиентом: тело запроса (рекурсивно) +
-    /// ответы-голые-ссылки. Члены union/array constructed-ответов сюда НЕ входят — они импортируются
-    /// файлом <c>{op}.results.schemas.ts</c>.
-    /// </summary>
-    public static HashSet<string> ModelSchemaNames(IrOperation operation)
+    /// <summary>Finds model schemas used directly by the client rather than by a generated result schema.</summary>
+    /// <param name="operation">The operation supplying request and response shapes.</param>
+    /// <param name="includeAlternatives">Whether the transport uses alternate response representations.</param>
+    /// <returns>The set of model schema names required by the client.</returns>
+    public static HashSet<string> ModelSchemaNames(IrOperation operation, bool includeAlternatives = false)
     {
         var names = new HashSet<string>(StringComparer.Ordinal);
 
         if (operation.RequestBody != null && ValidationTypes.IsValidatable(operation.RequestBody.Type))
             ValidationTypes.CollectModelSchemaNames(operation.RequestBody.Type, names);
 
-        foreach (var response in ValidatedResponses(operation))
+        foreach (var response in ValidatedResponses(operation, includeAlternatives))
             if (!ValidationTypes.NeedsConstructedSchema(response.Type!))
                 ValidationTypes.CollectModelSchemaNames(response.Type!, names);
 

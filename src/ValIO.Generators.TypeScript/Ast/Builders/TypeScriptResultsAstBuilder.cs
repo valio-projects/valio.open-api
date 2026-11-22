@@ -133,9 +133,12 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
             foreach (var response in operation.Responses)
             {
                 var statusLiteral = ParseStatusCodeLiteral(response.StatusCode);
-                var bodyType = response.Type == null
-                    ? new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true)
-                    : _typeBuilder(response.Type);
+                var alternatives = TypeScriptResponseMedia.Alternatives(operation, response);
+                var bodyType = TypeScriptResponseMedia.HasDistinctSchemas(alternatives)
+                    ? new UnionTypeNode(alternatives.Select(media => _typeBuilder(media.Type!)).ToArray())
+                    : response.Type == null
+                        ? new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true)
+                        : _typeBuilder(response.Type);
                 var isSuccess = IsSuccessStatusCode(response.StatusCode);
 
                 var variantInterfaceName = ResultVariantInterfaceName(currentOperationName, response.StatusCode);
@@ -226,8 +229,12 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
             var modelRefs = new HashSet<string>(StringComparer.Ordinal);
             foreach (var response in responsesWithType)
             {
-                if (response.Type != null)
-                    ExtractModelReferences(response.Type, modelRefs);
+                var alternatives = TypeScriptResponseMedia.Alternatives(operation, response);
+                if (alternatives.Count == 0)
+                    ExtractModelReferences(response.Type!, modelRefs);
+                else
+                    foreach (var media in alternatives)
+                        ExtractModelReferences(media.Type!, modelRefs);
             }
 
             var modelsPath = fileOrganization?.ModelsPath ?? "models";
