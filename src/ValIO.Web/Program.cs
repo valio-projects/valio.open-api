@@ -30,6 +30,7 @@ builder.Services.AddAllGeneratorPlugins();
 builder.Services.AddScoped<GenerationFormState>();
 builder.Services.AddScoped<ThemeService>();
 builder.Services.AddSingleton<ISafeSchemaFetcher, SafeSchemaFetcher>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 // Localization for Web UI
 builder.Services.AddLocalization(o => o.ResourcesPath = "Resources");

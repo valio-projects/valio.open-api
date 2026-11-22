@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using ValIO.Application.Services;
 using ValIO.Core.Models;
@@ -12,12 +13,22 @@ namespace ValIO.Web.Endpoints;
 /// </summary>
 public static class GenerateEndpoint
 {
+    /// <summary>Generates the requested SDK and returns its files as a ZIP archive.</summary>
+    /// <param name="req">The schema reference and generator configuration.</param>
+    /// <param name="orchestrator">The configured generation pipeline coordinator.</param>
+    /// <param name="registry">The catalog of available language generators.</param>
+    /// <param name="sinkFactory">The factory that writes the generated archive.</param>
+    /// <param name="fetcher">The service preparing an authorized schema input.</param>
+    /// <param name="clock">The host clock used for the archive name.</param>
+    /// <param name="ct">The cancellation token for the request.</param>
+    /// <returns>The generated archive or the applicable HTTP problem.</returns>
     public static async Task<IResult> HandleAsync(
         GenerateRequest req,
         IGenerationOrchestrator orchestrator,
         IGeneratorRegistry registry,
         IOutputSinkFactory sinkFactory,
         ISafeSchemaFetcher fetcher,
+        TimeProvider clock,
         CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(req.LanguageId))
@@ -85,7 +96,8 @@ public static class GenerateEndpoint
         }
         ms.Position = 0;
 
-        var fileName = $"valio-{req.LanguageId}-{DateTime.UtcNow:yyyyMMddHHmmss}.zip";
+        var timestamp = clock.GetUtcNow().ToString("yyyyMMddHHmmss", CultureInfo.InvariantCulture);
+        var fileName = $"valio-{req.LanguageId}-{timestamp}.zip";
         return Results.Stream(ms, "application/zip", fileName);
     }
 }
