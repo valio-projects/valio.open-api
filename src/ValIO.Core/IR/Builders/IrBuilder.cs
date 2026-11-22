@@ -9,6 +9,7 @@ using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.IR.Utilities;
+using ValIO.Core.Utilities;
 
 namespace ValIO.Core.IR.Builders;
 
@@ -388,31 +389,39 @@ public class IrBuilder
         if (!hasConstraints)
             return null;
         
-        decimal? min = null;
-        decimal? max = null;
-        if (decimal.TryParse(schema.Minimum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMin))
-            min = parsedMin;
-        if (decimal.TryParse(schema.Maximum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedMax))
-            max = parsedMax;
-        
-        decimal? exclusiveMin = null;
-        decimal? exclusiveMax = null;
-        if (decimal.TryParse(schema.ExclusiveMinimum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedExclusiveMin))
-            exclusiveMin = parsedExclusiveMin;
-        if (decimal.TryParse(schema.ExclusiveMaximum, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsedExclusiveMax))
-            exclusiveMax = parsedExclusiveMax;
-        
         return new IrPropertyConstraints
         {
-            Min = min,
-            Max = max,
-            ExclusiveMin = exclusiveMin,
-            ExclusiveMax = exclusiveMax,
+            Min = ReadNumericBound(schema.Minimum, schema.Format),
+            Max = ReadNumericBound(schema.Maximum, schema.Format),
+            ExclusiveMin = ReadNumericBound(schema.ExclusiveMinimum, schema.Format),
+            ExclusiveMax = ReadNumericBound(schema.ExclusiveMaximum, schema.Format),
             MinLength = schema.MinLength,
             MaxLength = schema.MaxLength,
             Pattern = schema.Pattern,
             DefaultValue = includeDefault ? ExtractDefaultValue(schema.Default) : null
         };
+    }
+
+    /// <summary>Preserves decimal bounds without rounding and retains legacy handling for other formats.</summary>
+    /// <param name="text">The original OpenAPI numeric bound, if declared.</param>
+    /// <param name="format">The format of the schema containing the bound.</param>
+    /// <returns>The parsed bound, or null if none was declared or the legacy format is out of range.</returns>
+    /// <exception cref="InvalidOperationException">A declared decimal bound cannot be represented exactly.</exception>
+    private static decimal? ReadNumericBound(string? text, string? format)
+    {
+        if (string.IsNullOrEmpty(text))
+            return null;
+
+        if (string.Equals(format?.Trim(), "decimal", StringComparison.OrdinalIgnoreCase))
+        {
+            return ExactDecimal.TryParse(text, out var exact)
+                ? exact
+                : throw new InvalidOperationException($"OpenAPI decimal bound '{text}' is not exactly representable.");
+        }
+
+        return decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var number)
+            ? number
+            : null;
     }
     
     /// <summary>

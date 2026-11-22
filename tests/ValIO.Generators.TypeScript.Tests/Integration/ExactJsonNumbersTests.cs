@@ -41,6 +41,7 @@ public sealed class ExactJsonNumbersTests
             const { LosslessNumber } = require('lossless-json');
             const { save } = require(path.join(root, 'api', 'save', 'save.' + transport + '.js'));
             const decimal = '0.100000000000000001';
+            const ledgerAmount = '999999999999999999.9999999999';
             const revision = '9007199254740993';
             let expectedAfter = revision;
             const request = {
@@ -50,10 +51,12 @@ public sealed class ExactJsonNumbersTests
               body: {
                 revision: new LosslessNumber(revision),
                 amount: new LosslessNumber(decimal),
+                ledgerAmount: new LosslessNumber(ledgerAmount),
                 rates: [1.25], label: revision, count: 0, otherAmount: null, state: 0
               }
             };
             const document = '{"revision":' + revision + ',"amount":' + decimal
+              + ',"ledgerAmount":' + ledgerAmount
               + ',"rates":[1.25],"label":"' + revision + '","count":0,"otherAmount":null,"state":0}';
             let status = 200;
             let responseBody = document;
@@ -62,6 +65,7 @@ public sealed class ExactJsonNumbersTests
               assert.equal(url, '/changes/' + revision + '?after=' + expectedAfter);
               assert(body.includes('"revision":' + revision + ','));
               assert(body.includes('"amount":' + decimal + ','));
+              assert(body.includes('"ledgerAmount":' + ledgerAmount + ','));
               assert(body.includes('"label":"' + revision + '"'));
               assert.equal(JSON.parse(body).count, 0);
               assert.equal(JSON.parse(body).state, 0);
@@ -90,6 +94,7 @@ public sealed class ExactJsonNumbersTests
               assert.equal(result.status, 200);
               assert.equal(result.body.revision.toString(), revision);
               assert.equal(result.body.amount.toString(), decimal);
+              assert.equal(result.body.ledgerAmount.toString(), ledgerAmount);
               assert.equal(result.body.label, revision);
               assert.deepEqual(result.body.rates, [1.25]);
               assert.equal(result.body.count, 0);
@@ -113,6 +118,8 @@ public sealed class ExactJsonNumbersTests
               responseBody = document.replace('"revision":' + revision, '"revision":9223372036854775808');
               await assert.rejects(() => save(request, undefined, signal, client));
               responseBody = document.replace('"amount":' + decimal, '"amount":0.100000000000000000');
+              await assert.rejects(() => save(request, undefined, signal, client));
+              responseBody = document.replace('"ledgerAmount":' + ledgerAmount, '"ledgerAmount":1000000000000000000.0');
               await assert.rejects(() => save(request, undefined, signal, client));
 
               status = 204;
@@ -150,10 +157,11 @@ public sealed class ExactJsonNumbersTests
           },
           "components":{"schemas":{"ChangeState":{"type":"integer","format":"int32","enum":[0,1]},"Change":{
             "type":"object",
-            "required":["revision","amount","rates","label","count","otherAmount","state"],
+            "required":["revision","amount","ledgerAmount","rates","label","count","otherAmount","state"],
             "properties":{
               "revision":{"type":"integer","format":"int64"},
               "amount":{"type":"number","format":"decimal","minimum":0.100000000000000001},
+              "ledgerAmount":{"type":"number","format":"decimal","maximum":999999999999999999.9999999999},
               "rates":{"type":"array","items":{"type":"number","format":"double"}},
               "label":{"type":"string"},
               "count":{"type":"integer","format":"int32"},

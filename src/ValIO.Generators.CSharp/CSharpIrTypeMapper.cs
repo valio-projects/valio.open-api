@@ -43,8 +43,8 @@ public sealed class CSharpIrTypeMapper : IIrTypeMapper
     {
         IrPrimitiveKind.String   => new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
         IrPrimitiveKind.Integer  => new SimpleTypeNode(new IdentifierNode("int"), isPrimitive: true),
-        IrPrimitiveKind.Long     => new SimpleTypeNode(new IdentifierNode("long"), isPrimitive: true),
-        IrPrimitiveKind.Number   => new SimpleTypeNode(new IdentifierNode("double"), isPrimitive: true),
+        IrPrimitiveKind.Long     => new SimpleTypeNode(new IdentifierNode(p.Format == "uint64" ? "ulong" : "long"), isPrimitive: true),
+        IrPrimitiveKind.Number   => new SimpleTypeNode(new IdentifierNode(p.Format == "decimal" ? "decimal" : "double"), isPrimitive: true),
         IrPrimitiveKind.Boolean  => new SimpleTypeNode(new IdentifierNode("bool"), isPrimitive: true),
         IrPrimitiveKind.Date     => new SimpleTypeNode(new IdentifierNode("DateOnly"), isPrimitive: true),
         IrPrimitiveKind.DateTime => new SimpleTypeNode(new IdentifierNode("DateTime"), isPrimitive: true),

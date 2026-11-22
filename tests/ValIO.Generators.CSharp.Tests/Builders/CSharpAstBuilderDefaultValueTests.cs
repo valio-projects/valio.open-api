@@ -7,6 +7,7 @@ using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Generators.CSharp.Ast.Builders;
 using ValIO.Generators.CSharp.Ast.Renderers;
+using ValIO.Generators.CSharp.Options;
 using ValIO.Generators.CSharp.Services;
 
 namespace ValIO.Generators.CSharp.Tests.Builders;
@@ -107,6 +108,66 @@ public class CSharpAstBuilderDefaultValueTests
         var code = _renderer.Render(_builder.BuildProperty(property));
 
         code.Should().Contain("public double Rate { get; set; } = 1.5d;");
+    }
+
+    /// <summary>Preserves a decimal default and inclusive bound beyond JavaScript's safe integer range.</summary>
+    [Test]
+    public void DecimalDefault_UsesDecimalAndExactRange()
+    {
+        var property = new IrProperty
+        {
+            OriginalName = "amount",
+            Name = "Amount",
+            Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Number, Format = "decimal" },
+            IsRequired = false,
+            Constraints = new IrPropertyConstraints
+            {
+                DefaultValue = JsonNode.Parse("9007199254740993.1234567890")!.AsValue().GetValue<object>(),
+                Min = 0.0000000001m,
+                Max = 999999999999999999.9999999999m
+            }
+        };
+
+        var model = new IrModel { Name = "Payment", Properties = [property] };
+        var builder = new CSharpAstBuilder(new CSharpNamingConverter(), CSharpDocumentFixture.Context([model], []),
+            new CSharpGenerationOptions { GenerateValidationAttributes = true });
+        var code = _renderer.Render(builder.BuildProperty(property, model));
+
+        code.Should().Contain("public decimal Amount { get; set; } = 9007199254740993.1234567890m;")
+            .And.Contain("typeof(decimal), \"0.0000000001\", \"999999999999999999.9999999999\"");
+    }
+
+    /// <summary>Omits decimal defaults that would be rounded by the CLR parser.</summary>
+    [Test]
+    public void DecimalDefault_DoesNotEmitRoundedInitializer()
+    {
+        var property = new IrProperty
+        {
+            OriginalName = "amount",
+            Name = "Amount",
+            Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Number, Format = "decimal" },
+            IsRequired = false,
+            Constraints = new IrPropertyConstraints { DefaultValue = "1234567890123.123456789012345678" }
+        };
+
+        _builder.BuildProperty(property).DefaultValue.Should().BeNull();
+    }
+
+    /// <summary>Uses the full unsigned 64-bit range rather than truncating it to signed long.</summary>
+    [Test]
+    public void UInt64Default_UsesUnsignedLiteral()
+    {
+        var property = new IrProperty
+        {
+            OriginalName = "sequence",
+            Name = "Sequence",
+            Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Long, Format = "uint64" },
+            IsRequired = false,
+            Constraints = new IrPropertyConstraints { DefaultValue = "18446744073709551615" }
+        };
+
+        _renderer.Render(_builder.BuildProperty(property)).Should()
+            .Contain("public ulong Sequence { get; set; } = 18446744073709551615UL;");
     }
 
     [Test]

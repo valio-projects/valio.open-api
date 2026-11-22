@@ -15,6 +15,7 @@ using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.IR.Utilities;
+using ValIO.Core.Utilities;
 using ValIO.Generators.CSharp.Ast.Nodes;
 using ValIO.Generators.CSharp.Models;
 using ValIO.Generators.CSharp.Options;
@@ -710,14 +711,18 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             (!maximum.HasValue || exclusiveMax <= maximum.Value);
         if (minimumExclusive) minimum = constraints.ExclusiveMin;
         if (maximumExclusive) maximum = constraints.ExclusiveMax;
-        var kind = UnwrapNullableOrOptional(property.Type) is IrPrimitiveType primitive
-            ? primitive.PrimitiveKind : IrPrimitiveKind.Any;
+        var primitive = UnwrapNullableOrOptional(property.Type) as IrPrimitiveType;
+        var kind = primitive?.PrimitiveKind ?? IrPrimitiveKind.Any;
         string minimumText;
         string maximumText;
         if (kind is IrPrimitiveKind.Integer or IrPrimitiveKind.Long)
         {
-            var typeMinimum = kind == IrPrimitiveKind.Integer ? (decimal)int.MinValue : long.MinValue;
-            var typeMaximum = kind == IrPrimitiveKind.Integer ? (decimal)int.MaxValue : long.MaxValue;
+            var (typeMinimum, typeMaximum) = (kind, primitive?.Format) switch
+            {
+                (IrPrimitiveKind.Integer, _) => ((decimal)int.MinValue, (decimal)int.MaxValue),
+                (_, "uint64") => (0m, (decimal)ulong.MaxValue),
+                _ => ((decimal)long.MinValue, (decimal)long.MaxValue)
+            };
             if (minimum > typeMaximum || maximum < typeMinimum)
                 throw new InvalidOperationException($"Numeric bounds for '{property.Name}' exclude every value of its C# type.");
             var lower = minimum.HasValue && minimum.Value >= typeMinimum
@@ -735,6 +740,12 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         }
         else if (kind == IrPrimitiveKind.Number)
         {
+            if (primitive?.Format == "decimal")
+            {
+                minimum ??= decimal.MinValue;
+                maximum ??= decimal.MaxValue;
+            }
+
             if (minimum > maximum || minimum == maximum && minimum.HasValue && (minimumExclusive || maximumExclusive))
                 throw new InvalidOperationException($"Numeric bounds for '{property.Name}' have no permitted value.");
             minimumText = minimum?.ToString(CultureInfo.InvariantCulture) ?? double.MinValue.ToString("R", CultureInfo.InvariantCulture);
@@ -1198,16 +1209,6 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             thenBlock: new BlockNode(statements.ToImmutableList()));
     }
     
-    /// <summary>
-    /// Определяет примитивный тип, под который нужно типизировать default-значение свойства
-    /// (<see cref="BuildTypedLiteral"/>) — по ДЕКЛАРИРОВАННОМУ типу схемы (после снятия
-    /// Nullable/Optional), а не по CLR-типу самого значения.
-    /// </summary>
-    private static IrPrimitiveKind GetDefaultValueTargetKind(IrType type)
-    {
-        return UnwrapNullableOrOptional(type) is IrPrimitiveType primitive ? primitive.PrimitiveKind : IrPrimitiveKind.Any;
-    }
-
     /// <summary>Resolves a schema default to a typed primitive literal or a declared enum member.</summary>
     /// <param name="property">The property whose schema declares the default.</param>
     /// <returns>The typed default expression, or null when no valid default exists.</returns>
@@ -1232,14 +1233,17 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode(enumTypeName)), new IdentifierNode(GetEnumMemberName(member)));
         }
 
-        return BuildTypedLiteral(rawDefault, GetDefaultValueTargetKind(property.Type));
+        return UnwrapNullableOrOptional(property.Type) is IrPrimitiveType primitive
+            ? BuildTypedLiteral(rawDefault, primitive.PrimitiveKind, primitive.Format)
+            : null;
     }
 
     /// <summary>Builds a schema-typed literal only when its value fits the emitted C# type.</summary>
     /// <param name="value">The boxed primitive or JSON value extracted from the schema.</param>
     /// <param name="targetKind">The declared schema primitive kind.</param>
+    /// <param name="format">The explicit schema format, if it distinguishes C# numeric types.</param>
     /// <returns>A valid C# literal, or null when the value cannot be represented faithfully.</returns>
-    private static LiteralExpressionNode? BuildTypedLiteral(object? value, IrPrimitiveKind targetKind)
+    private static LiteralExpressionNode? BuildTypedLiteral(object? value, IrPrimitiveKind targetKind, string? format = null)
     {
         value = NormalizeRawValue(value);
         if (value == null)
@@ -1254,10 +1258,23 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                     ? new LiteralExpressionNode(text, LiteralKind.Number)
                     : null;
             }
+            case IrPrimitiveKind.Long when format == "uint64":
+            {
+                return ExactDecimal.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out var number)
+                    && number >= 0 && number <= ulong.MaxValue && decimal.Truncate(number) == number
+                    ? new LiteralExpressionNode(((ulong)number).ToString(CultureInfo.InvariantCulture) + "UL", LiteralKind.Number)
+                    : null;
+            }
             case IrPrimitiveKind.Long:
             {
                 var text = ToInvariantIntegerText(value);
                 return text != null ? new LiteralExpressionNode(text + "L", LiteralKind.Number) : null;
+            }
+            case IrPrimitiveKind.Number when format == "decimal":
+            {
+                return ExactDecimal.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), out var number)
+                    ? new LiteralExpressionNode(number.ToString(CultureInfo.InvariantCulture) + "m", LiteralKind.Number)
+                    : null;
             }
             case IrPrimitiveKind.Number:
             {
