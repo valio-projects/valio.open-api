@@ -7,8 +7,14 @@ namespace ValIO.Generators.Cpp.Steps;
 /// <summary>
 /// Модели std-профиля: Models/{N}.h — чистые header-only struct'ы без JSON-зависимостей.
 /// </summary>
-public sealed class CppStdModelsStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
+public sealed class CppStdModelsStep : CppStdStepBase
 {
+    /// <summary>Creates the generation step with the renderer for its output files.</summary>
+    /// <param name="renderer">The C++ syntax renderer.</param>
+    public CppStdModelsStep(ICppAstRenderer renderer) : base(renderer)
+    {
+    }
+
     /// <inheritdoc />
     public override string Name => "cpp-std-models";
     /// <inheritdoc />

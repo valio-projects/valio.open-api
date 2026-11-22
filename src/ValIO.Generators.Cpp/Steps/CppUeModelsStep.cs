@@ -7,8 +7,14 @@ namespace ValIO.Generators.Cpp.Steps;
 /// <summary>
 /// Модели UE-профиля: Public/Models/{Model}.h (USTRUCT) для каждой IrModel.
 /// </summary>
-public sealed class CppUeModelsStep(ICppAstRenderer renderer) : CppUeStepBase(renderer)
+public sealed class CppUeModelsStep : CppUeStepBase
 {
+    /// <summary>Creates the generation step with the renderer for its output files.</summary>
+    /// <param name="renderer">The C++ syntax renderer.</param>
+    public CppUeModelsStep(ICppAstRenderer renderer) : base(renderer)
+    {
+    }
+
     /// <inheritdoc />
     public override string Name => "cpp-ue-models";
     /// <inheritdoc />

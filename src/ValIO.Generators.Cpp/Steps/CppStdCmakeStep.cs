@@ -7,8 +7,14 @@ namespace ValIO.Generators.Cpp.Steps;
 /// <summary>
 /// Emits independent model, serializer, and HTTP client build targets for standalone output.
 /// </summary>
-public sealed class CppStdCmakeStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
+public sealed class CppStdCmakeStep : CppStdStepBase
 {
+    /// <summary>Creates the generation step with the renderer for its output files.</summary>
+    /// <param name="renderer">The C++ syntax renderer.</param>
+    public CppStdCmakeStep(ICppAstRenderer renderer) : base(renderer)
+    {
+    }
+
     public override string Name => "cpp-std-cmake";
     public override int Order => 90;
 

@@ -8,8 +8,14 @@ namespace ValIO.Generators.Cpp.Steps;
 /// JSON-кодеки std-профиля: Serializers/{N}Json.h/.cpp для моделей и enum'ов —
 /// единственные файлы, которые включают nlohmann и знают wire-имена.
 /// </summary>
-public sealed class CppStdSerializersStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
+public sealed class CppStdSerializersStep : CppStdStepBase
 {
+    /// <summary>Creates the generation step with the renderer for its output files.</summary>
+    /// <param name="renderer">The C++ syntax renderer.</param>
+    public CppStdSerializersStep(ICppAstRenderer renderer) : base(renderer)
+    {
+    }
+
     /// <inheritdoc />
     public override string Name => "cpp-std-serializers";
     /// <inheritdoc />

@@ -271,47 +271,56 @@ public sealed class CSharpClientStep : ICodeGenerationStep
             }
 
             /// <summary>Lets StreamContent dispose its wrapper without taking ownership of the source stream.</summary>
-            /// <param name="source">The readable stream owned by the request caller.</param>
-            private sealed class BorrowedReadStream(Stream source) : Stream
+            private sealed class BorrowedReadStream : Stream
             {
-                /// <inheritdoc />
-                public override bool CanRead => source.CanRead;
+                /// <summary>The underlying stream owned by the request caller.</summary>
+                private readonly Stream _source;
+
+                /// <summary>Wraps a stream for serialization without closing it with the content.</summary>
+                /// <param name="source">The readable stream owned by the request caller.</param>
+                public BorrowedReadStream(Stream source)
+                {
+                    _source = source;
+                }
 
                 /// <inheritdoc />
-                public override bool CanSeek => source.CanSeek;
+                public override bool CanRead => _source.CanRead;
+
+                /// <inheritdoc />
+                public override bool CanSeek => _source.CanSeek;
 
                 /// <inheritdoc />
                 public override bool CanWrite => false;
 
                 /// <inheritdoc />
-                public override long Length => source.Length;
+                public override long Length => _source.Length;
 
                 /// <inheritdoc />
-                public override long Position { get => source.Position; set => source.Position = value; }
+                public override long Position { get => _source.Position; set => _source.Position = value; }
 
                 /// <inheritdoc />
                 public override void Flush() { }
 
                 /// <inheritdoc />
-                public override int Read(byte[] buffer, int offset, int count) => source.Read(buffer, offset, count);
+                public override int Read(byte[] buffer, int offset, int count) => _source.Read(buffer, offset, count);
 
                 /// <inheritdoc />
-                public override int Read(Span<byte> buffer) => source.Read(buffer);
+                public override int Read(Span<byte> buffer) => _source.Read(buffer);
 
                 /// <inheritdoc />
                 public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
-                    source.ReadAsync(buffer, offset, count, cancellationToken);
+                    _source.ReadAsync(buffer, offset, count, cancellationToken);
 
                 /// <inheritdoc />
                 public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
-                    source.ReadAsync(buffer, cancellationToken);
+                    _source.ReadAsync(buffer, cancellationToken);
 
                 /// <inheritdoc />
                 public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken) =>
-                    source.CopyToAsync(destination, bufferSize, cancellationToken);
+                    _source.CopyToAsync(destination, bufferSize, cancellationToken);
 
                 /// <inheritdoc />
-                public override long Seek(long offset, SeekOrigin origin) => source.Seek(offset, origin);
+                public override long Seek(long offset, SeekOrigin origin) => _source.Seek(offset, origin);
 
                 /// <inheritdoc />
                 public override void SetLength(long value) => throw new NotSupportedException();

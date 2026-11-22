@@ -104,18 +104,25 @@ public class GeneratorRegistryTests
     }
 
     /// <summary>Supplies plugin identity metadata without constructing language-specific generation services.</summary>
-    /// <param name="languageId">The plugin's primary language identifier.</param>
-    /// <param name="aliases">The aliases claimed by the plugin.</param>
-    private sealed class TestPlugin(string languageId, params string[] aliases) : IGeneratorPlugin
+    private sealed class TestPlugin : IGeneratorPlugin
     {
+        /// <summary>Creates a plugin stub for testing registry lookup.</summary>
+        /// <param name="languageId">The plugin's primary language identifier.</param>
+        /// <param name="aliases">The aliases claimed by the plugin.</param>
+        public TestPlugin(string languageId, params string[] aliases)
+        {
+            LanguageId = languageId;
+            LanguageAliases = aliases;
+        }
+
         /// <inheritdoc />
-        public string LanguageId { get; } = languageId;
+        public string LanguageId { get; }
 
         /// <inheritdoc />
         public string DisplayName => LanguageId;
 
         /// <inheritdoc />
-        public IReadOnlyList<string> LanguageAliases { get; } = aliases;
+        public IReadOnlyList<string> LanguageAliases { get; }
 
         /// <inheritdoc />
         /// <exception cref="NotSupportedException">Registry tests do not supply generation options.</exception>

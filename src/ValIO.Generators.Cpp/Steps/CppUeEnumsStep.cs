@@ -8,8 +8,14 @@ namespace ValIO.Generators.Cpp.Steps;
 /// <summary>
 /// Enum'ы UE-профиля: Public/Enums/{Enum}.h (UENUM) для каждого IrEnum.
 /// </summary>
-public sealed class CppUeEnumsStep(ICppAstRenderer renderer) : CppUeStepBase(renderer)
+public sealed class CppUeEnumsStep : CppUeStepBase
 {
+    /// <summary>Creates the generation step with the renderer for its output files.</summary>
+    /// <param name="renderer">The C++ syntax renderer.</param>
+    public CppUeEnumsStep(ICppAstRenderer renderer) : base(renderer)
+    {
+    }
+
     public override string Name => "cpp-ue-enums";
     public override int Order => 20;
 

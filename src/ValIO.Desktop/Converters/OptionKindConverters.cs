@@ -46,27 +46,67 @@ public static class OptionKindConverters
     /// </summary>
     public static readonly IMultiValueConverter FormatHidden = new FormatHiddenConverter();
 
-    private sealed class KindIs(OptionKind expected) : IValueConverter
+    /// <summary>Tests whether an option uses the configured control kind.</summary>
+    private sealed class KindIs : IValueConverter
     {
-        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-            => value is OptionKind k && k == expected;
+        /// <summary>The kind represented by the control.</summary>
+        private readonly OptionKind _expected;
 
+        /// <summary>Creates a predicate for the specified option kind.</summary>
+        /// <param name="expected">The kind represented by the control.</param>
+        public KindIs(OptionKind expected)
+        {
+            _expected = expected;
+        }
+
+        /// <inheritdoc />
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => value is OptionKind k && k == _expected;
+
+        /// <inheritdoc />
         public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
             => throw new NotSupportedException();
     }
 
-    private sealed class FormatEquals(DesktopOutputFormat expected) : IValueConverter
+    /// <summary>Binds a format choice to its checked state.</summary>
+    private sealed class FormatEquals : IValueConverter
     {
-        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-            => value is DesktopOutputFormat f && f == expected;
+        /// <summary>The format selected when the control is checked.</summary>
+        private readonly DesktopOutputFormat _expected;
 
+        /// <summary>Creates a converter for the specified output format.</summary>
+        /// <param name="expected">The output format represented by the control.</param>
+        public FormatEquals(DesktopOutputFormat expected)
+        {
+            _expected = expected;
+        }
+
+        /// <inheritdoc />
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+            => value is DesktopOutputFormat f && f == _expected;
+
+        /// <inheritdoc />
         public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-            => value is true ? expected : Avalonia.Data.BindingOperations.DoNothing;
+            => value is true ? _expected : Avalonia.Data.BindingOperations.DoNothing;
     }
 
-    private sealed class FuncConverter(Func<object?, bool> predicate) : IValueConverter
+    /// <summary>Evaluates a display predicate from the bound value.</summary>
+    private sealed class FuncConverter : IValueConverter
     {
-        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => predicate(value);
+        /// <summary>The rule applied to the bound value.</summary>
+        private readonly Func<object?, bool> _predicate;
+
+        /// <summary>Creates a converter for the specified display condition.</summary>
+        /// <param name="predicate">The condition that determines the resulting Boolean value.</param>
+        public FuncConverter(Func<object?, bool> predicate)
+        {
+            _predicate = predicate;
+        }
+
+        /// <inheritdoc />
+        public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => _predicate(value);
+
+        /// <inheritdoc />
         public object? ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
             => throw new NotSupportedException();
     }

@@ -9,8 +9,14 @@ namespace ValIO.Generators.Cpp.Steps;
 /// apiStyle = sync | async | both. Тела операций — с именованными локальными
 /// переменными (path/httpRequest/body/sendResult/response).
 /// </summary>
-public sealed class CppStdClientStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
+public sealed class CppStdClientStep : CppStdStepBase
 {
+    /// <summary>Creates the generation step with the renderer for its output files.</summary>
+    /// <param name="renderer">The C++ syntax renderer.</param>
+    public CppStdClientStep(ICppAstRenderer renderer) : base(renderer)
+    {
+    }
+
     /// <inheritdoc />
     public override string Name => "cpp-std-clients";
     /// <inheritdoc />

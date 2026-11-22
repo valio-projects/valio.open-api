@@ -7,8 +7,14 @@ namespace ValIO.Generators.Cpp.Steps;
 /// <summary>
 /// Enum-хедеры std-профиля: Enums/{N}.h — enum class + ToWire/FromWire, без JSON.
 /// </summary>
-public sealed class CppStdEnumsStep(ICppAstRenderer renderer) : CppStdStepBase(renderer)
+public sealed class CppStdEnumsStep : CppStdStepBase
 {
+    /// <summary>Creates the generation step with the renderer for its output files.</summary>
+    /// <param name="renderer">The C++ syntax renderer.</param>
+    public CppStdEnumsStep(ICppAstRenderer renderer) : base(renderer)
+    {
+    }
+
     public override string Name => "cpp-std-enums";
     public override int Order => 40;
 

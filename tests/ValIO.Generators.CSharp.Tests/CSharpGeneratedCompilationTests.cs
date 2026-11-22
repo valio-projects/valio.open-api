@@ -778,10 +778,19 @@ public sealed class CSharpGeneratedCompilationTests
         Console.WriteLine("CSharp generated runtime passed");
 
         /// <summary>Tracks HTTP serialization of a non-seekable caller-owned file.</summary>
-        /// <param name="bytes">The complete contents for this probe.</param>
-        /// <param name="beginCopy">An optional action when serialization attempts a read.</param>
-        internal sealed class UploadProbeStream(byte[] bytes, Action? beginCopy = null) : MemoryStream(bytes)
+        internal sealed class UploadProbeStream : MemoryStream
         {
+            /// <summary>Optional assertion invoked before each asynchronous copy.</summary>
+            private readonly Action? _beginCopy;
+
+            /// <summary>Creates a caller-owned stream that observes multipart serialization.</summary>
+            /// <param name="bytes">The complete contents for this probe.</param>
+            /// <param name="beginCopy">An optional action when serialization attempts a read.</param>
+            public UploadProbeStream(byte[] bytes, Action? beginCopy = null) : base(bytes)
+            {
+                _beginCopy = beginCopy;
+            }
+
             /// <summary>Gets the number of copy attempts by the HTTP transport.</summary>
             /// <value>The number of times the probe received an asynchronous copy request.</value>
             internal int CopyCount { get; private set; }
@@ -793,7 +802,7 @@ public sealed class CSharpGeneratedCompilationTests
             public override Task CopyToAsync(Stream destination, int bufferSize, CancellationToken cancellationToken)
             {
                 CopyCount++;
-                beginCopy?.Invoke();
+                _beginCopy?.Invoke();
                 return base.CopyToAsync(destination, bufferSize, cancellationToken);
             }
         }
