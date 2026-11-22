@@ -113,8 +113,8 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
         code.Should().Contain("return default!;");
     }
 
-    /// <summary>Checks that a typed 202 rejects an empty receipt, including a wildcard success contract.</summary>
-    /// <param name="status">The explicit Accepted status or the wildcard success status.</param>
+    /// <summary>Emits an API exception for an empty acceptance receipt while allowing the documented bodyless 204.</summary>
+    /// <param name="status">The typed contract is declared directly as 202 or applies to 202 through the 2XX range.</param>
     [TestCase("202")]
     [TestCase("2XX")]
     public void TypedAcceptedResponse_RejectsEmptyReceipt(string status)
@@ -131,7 +131,7 @@ public class CSharpAstBuilderNullableEnumAndEmptyBodyTests
             .And.Contain("return default!;");
     }
 
-    /// <summary>Checks that an explicit bodyless acceptance takes precedence over a typed success range.</summary>
+    /// <summary>Returns the default value for a declared bodyless 202 even when the 2XX range has a typed body.</summary>
     [Test]
     public void BodylessAcceptedResponse_OverridesTypedWildcard()
     {

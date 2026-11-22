@@ -45,7 +45,7 @@ public class CSharpAstBuilderEnumSerializationTests
         code.Should().Contain("[JsonConverter(typeof(JsonStringEnumConverter))]");
     }
 
-    /// <summary>Uses the strict converter only when the output profile asks to reject numeric input.</summary>
+    /// <summary>Emits the strict converter on an opted-in string enum with a distinct CLR name and JSON wire value.</summary>
     [Test]
     public void StringEnum_UsesStrictConverterWhenEnabled()
     {

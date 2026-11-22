@@ -13,8 +13,8 @@ namespace ValIO.Core.Tests.IR;
 [TestFixture]
 public sealed class IrBuilderResponseMetadataTests
 {
-    /// <summary>Checks that bodyless and typed statuses retain their declarations without changing the selected payload.</summary>
-    /// <returns>The asynchronous OpenAPI parsing and IR assertions.</returns>
+    /// <summary>Retains Location for 202, optional request ID for 204, and distinct schemas for three media types under 400.</summary>
+    /// <returns>The assertions for header casing, requiredness, and the selected legacy payload type.</returns>
     [Test]
     public async Task ResponsesPreserveMediaTypesAndHeaderWireNames()
     {

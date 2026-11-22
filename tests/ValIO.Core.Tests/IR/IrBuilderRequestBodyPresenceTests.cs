@@ -41,8 +41,8 @@ public sealed class IrBuilderRequestBodyPresenceTests
         model.Properties.Single(property => property.OriginalName == "note").IsRequired.Should().BeFalse();
     }
 
-    /// <summary>Projects multipart files separately from components reused by JSON requests.</summary>
-    /// <returns>The asynchronous assertion operation.</returns>
+    /// <summary>Keeps the file field order and repeated part element type in multipart while preserving the original binary JSON component.</summary>
+    /// <returns>The OpenAPI-to-IR assertions for referenced and inline forms and the separately reused JSON schema.</returns>
     [Test]
     public async Task MultipartFiles_PreserveOrderAndLeaveJsonBinaryUnchanged()
     {

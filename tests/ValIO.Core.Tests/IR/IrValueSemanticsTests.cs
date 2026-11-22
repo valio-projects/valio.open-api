@@ -8,7 +8,7 @@ namespace ValIO.Core.Tests.IR;
 /// <summary>Covers value equality and nonmutating overrides used by the IR builder and generators.</summary>
 public sealed class IrValueSemanticsTests
 {
-    /// <summary>Tests that exact constraints and concrete shape participate in dictionary keys.</summary>
+    /// <summary>Resolves the original dictionary entry from a separate but equal decimal type and rejects changed bounds or wrappers.</summary>
     [Test]
     public void EquivalentScalarTypesShareDictionaryKeys()
     {
@@ -32,7 +32,7 @@ public sealed class IrValueSemanticsTests
         });
     }
 
-    /// <summary>Tests that copying distinguishes generated fallback names from explicit source names.</summary>
+    /// <summary>Follows an overridden generated name only when the original model reference has an implicit wire-name fallback.</summary>
     [Test]
     public void CopyPreservesOriginalWireNameFallback()
     {
@@ -47,7 +47,7 @@ public sealed class IrValueSemanticsTests
         });
     }
 
-    /// <summary>Tests that response copies retain header and alternate media declarations.</summary>
+    /// <summary>Changes the status and selected body on a response copy while preserving header and alternate media declarations.</summary>
     [Test]
     public void ResponseCopyPreservesAlternateContentAndHeaders()
     {

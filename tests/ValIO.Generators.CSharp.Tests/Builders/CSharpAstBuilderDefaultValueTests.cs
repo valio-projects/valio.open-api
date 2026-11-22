@@ -110,7 +110,7 @@ public class CSharpAstBuilderDefaultValueTests
         code.Should().Contain("public double Rate { get; set; } = 1.5d;");
     }
 
-    /// <summary>Preserves a decimal default and inclusive bound beyond JavaScript's safe integer range.</summary>
+    /// <summary>Emits a decimal property with the exact decimal default and inclusive bound beyond JavaScript's safe integer range.</summary>
     [Test]
     public void DecimalDefault_UsesDecimalAndExactRange()
     {
@@ -137,7 +137,7 @@ public class CSharpAstBuilderDefaultValueTests
             .And.Contain("typeof(decimal), \"0.0000000001\", \"999999999999999999.9999999999\"");
     }
 
-    /// <summary>Omits decimal defaults that would be rounded by the CLR parser.</summary>
+    /// <summary>Leaves the property without an initializer when the schema default exceeds the exact precision of CLR decimal.</summary>
     [Test]
     public void DecimalDefault_DoesNotEmitRoundedInitializer()
     {
@@ -153,7 +153,7 @@ public class CSharpAstBuilderDefaultValueTests
         _builder.BuildProperty(property).DefaultValue.Should().BeNull();
     }
 
-    /// <summary>Uses the full unsigned 64-bit range rather than truncating it to signed long.</summary>
+    /// <summary>Emits the unsigned suffix for the maximum unsigned 64-bit default so the generated literal keeps its full range.</summary>
     [Test]
     public void UInt64Default_UsesUnsignedLiteral()
     {

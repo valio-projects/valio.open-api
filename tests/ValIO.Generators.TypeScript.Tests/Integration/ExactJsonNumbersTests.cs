@@ -11,9 +11,14 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [Category("NodeIntegration")]
 public sealed class ExactJsonNumbersTests
 {
-    /// <summary>Compiles generated clients and verifies exact numbers, numeric enums, query defaults, and a bodyless result.</summary>
-    /// <param name="transport">The generated client transport.</param>
-    /// <returns>The asynchronous generated-client check.</returns>
+    /// <summary>Exercises lossless numeric serialization and typed response validation through the generated transport.</summary>
+    /// <remarks>
+    /// The HTTP request keeps exact JSON decimals, int64 route, query and header strings, and an int64 query default.
+    /// The response retains the full numeric(28,10) amount and numeric enum zero. Quoted numbers, fractional integers, invalid enum members,
+    /// overflowing revisions, and out-of-range amounts fail validation. A declared 204 remains bodyless.
+    /// </remarks>
+    /// <param name="transport">The Axios, Next.js, or Fetch client used to run the same wire assertions.</param>
+    /// <returns>The generated TypeScript compilation and runtime assertions.</returns>
     [TestCase("axios")]
     [TestCase("nextjs")]
     [TestCase("fetch")]

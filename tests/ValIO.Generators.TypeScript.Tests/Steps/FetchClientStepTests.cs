@@ -83,8 +83,8 @@ public class FetchClientStepTests
         updateForm.Content.Should().Contain("params.query?.");
     }
 
-    /// <summary>Checks that operation headers are merged with the caller's native fetch headers.</summary>
-    /// <returns>The asynchronous generation check.</returns>
+    /// <summary>Starts the generated delete request with caller headers, sets operation headers, and sends the merged set.</summary>
+    /// <returns>The assertions against the generated Fetch request.</returns>
     [Test]
     public async Task FetchClient_MergesOperationAndCallerHeaders()
     {

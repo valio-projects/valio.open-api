@@ -25,8 +25,10 @@ namespace ValIO.Generators.CSharp.Tests;
 [NonParallelizable]
 public sealed class CSharpGeneratedCompilationTests
 {
-    /// <summary>Generates distinct C# contracts for multipart file parts and binary JSON members.</summary>
-    /// <returns>The asynchronous source assertions.</returns>
+    /// <summary>
+    /// Projects required and repeated multipart parts as borrowed streams and retains byte arrays in the shared JSON model.
+    /// </summary>
+    /// <returns>The assertions for the wire field name, optional inline part, and generated stream content factory.</returns>
     [Test]
     public async Task MultipartOpenApi_EmitsBorrowedFilesAndKeepsJsonByteArrays()
     {
@@ -59,8 +61,16 @@ public sealed class CSharpGeneratedCompilationTests
         generated["Api/MultipartFormDataContentFactory.cs"].Should().Contain("new StreamContent(new BorrowedReadStream(file.Content))");
     }
 
-    /// <summary>Checks declared status, actual media and headers, and typed finance precision through one generated HTTP send.</summary>
-    /// <returns>The isolated compilation and transport assertions.</returns>
+    /// <summary>
+    /// Executes the generated response-aware financial client against synthetic success, conflict, validation, and absence responses.
+    /// </summary>
+    /// <remarks>
+    /// A declared JSON receipt keeps the exact decimal and int64, and a documented empty 404 keeps the actual no-store and trace headers.
+    /// Wrong media, malformed or oversized JSON, undeclared status, a nonempty 404, and missing required fields expose status without a typed body.
+    /// Numeric, wrong-case, and undeclared enum values leave the receipt unconfirmed, while explicit zero and false remain valid.
+    /// A separate response limit admits the full 500-row evidence page and every call sends exactly one request through the configured gateway path.
+    /// </remarks>
+    /// <returns>The isolated C# compilation and the assertions against the generated client.</returns>
     [Test]
     public async Task OptInResponseMetadata_ConfirmsOnlyDeclaredResponses()
     {
@@ -200,6 +210,7 @@ public sealed class CSharpGeneratedCompilationTests
                     }
 
                     /// <summary>Gets the number of requests issued by the generated client.</summary>
+                    /// <value>The fixture uses sixteen requests, including the independently bounded wins page.</value>
                     internal int Sends { get; private set; }
 
                     /// <inheritdoc />
@@ -508,9 +519,14 @@ public sealed class CSharpGeneratedCompilationTests
         return context;
     }
 
-    /// <summary>Verifies generated models, enums, HTTP requests, interfaces, and telemetry compile together.</summary>
-    /// <param name="traces">Whether the fixture generates tracing.</param>
-    /// <param name="metrics">Whether the fixture generates metrics.</param>
+    /// <summary>Exercises the compiled client against the same wire contracts with each tracing and metrics combination.</summary>
+    /// <remarks>
+    /// The multipart scenario checks repeated fields, metadata, and deferred reads. Success, HTTP failure, cancellation,
+    /// and invalid part metadata preserve caller ownership of the upload streams.
+    /// </remarks>
+    /// <param name="traces">Whether emitted spans are collected while the same requests run.</param>
+    /// <param name="metrics">Whether request outcomes and durations are collected while the same requests run.</param>
+    /// <returns>The isolated C# compilation and the request, response, and telemetry assertions.</returns>
     [TestCase(false, false)]
     [TestCase(true, false)]
     [TestCase(false, true)]

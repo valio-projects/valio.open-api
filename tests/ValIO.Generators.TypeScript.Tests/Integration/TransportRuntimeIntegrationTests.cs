@@ -106,10 +106,11 @@ public sealed class TransportRuntimeIntegrationTests
         }
         """;
 
-    /// <summary>Verifies repeated and comma-delimited arrays using each transport's actual URL serialization.</summary>
-    /// <param name="transport">The generated HTTP transport.</param>
-    /// <param name="exactJsonNumbers">Whether to include an int64 array element that exceeds JavaScript's safe integer range.</param>
-    /// <returns>The asynchronous generated-code runtime check.</returns>
+    /// <summary>Uses repeated keys for default and explicit explode, and comma delimiters for explode disabled.</summary>
+    /// <remarks>Empty, absent, and null arrays emit no query parameter. The Axios case also retains deep-object and escaped string values.</remarks>
+    /// <param name="transport">The generated Fetch, Next.js, or Axios URL serializer.</param>
+    /// <param name="exactJsonNumbers">The precise Axios case also preserves both int64 values beyond JavaScript's safe integer range.</param>
+    /// <returns>The generated client compilation and assertions against the transmitted URL.</returns>
     [TestCase("fetch", false)]
     [TestCase("nextjs", false)]
     [TestCase("axios", false)]
@@ -310,10 +311,10 @@ public sealed class TransportRuntimeIntegrationTests
         output.Should().Contain("transport runtime passed");
     }
 
-    /// <summary>Verifies that a fetch transport reports HTTP failures for a bodyless mutation.</summary>
-    /// <param name="transport">The generated fetch-based transport.</param>
-    /// <param name="exactJsonNumbers">Whether the lossless response decoder is enabled.</param>
-    /// <returns>The asynchronous generated-code runtime check.</returns>
+    /// <summary>Returns undefined for a bodyless 204, reports 401 and 500 as HTTP failures, and forwards caller cancellation.</summary>
+    /// <param name="transport">The Fetch or Next.js client issuing the bodyless mutation.</param>
+    /// <param name="exactJsonNumbers">Whether Fetch uses the lossless response decoder for otherwise typed bodies.</param>
+    /// <returns>The generated client's HTTP status and abort assertions.</returns>
     [TestCase("nextjs", false)]
     [TestCase("fetch", false)]
     [TestCase("fetch", true)]
@@ -403,10 +404,14 @@ public sealed class TransportRuntimeIntegrationTests
         output.Should().Contain("typed response headers runtime passed");
     }
 
-    /// <summary>Checks media-specific decoding, validation, and headers on documented response statuses.</summary>
-    /// <param name="transport">The generated Axios, Fetch, or Next.js transport.</param>
-    /// <param name="exactJsonNumbers">Whether the JSON status uses lossless decoding.</param>
-    /// <returns>The asynchronous generated-code assertions.</returns>
+    /// <summary>Chooses the schema for the received status and media type and preserves headers on typed and bodyless responses.</summary>
+    /// <remarks>
+    /// A 400 can carry a JSON integer, plain text, or a typed problem. Media matching accepts case and charset variation.
+    /// A wrong schema or an undeclared or missing Content-Type fails instead of exposing a typed error body.
+    /// </remarks>
+    /// <param name="transport">The generated Axios, Fetch, or Next.js client exercised against the same responses.</param>
+    /// <param name="exactJsonNumbers">Whether JSON variants use the lossless decoder before schema validation.</param>
+    /// <returns>The generated result type compilation and runtime assertions for statuses, media, and response headers.</returns>
     [TestCase("fetch", false)]
     [TestCase("fetch", true)]
     [TestCase("nextjs", false)]

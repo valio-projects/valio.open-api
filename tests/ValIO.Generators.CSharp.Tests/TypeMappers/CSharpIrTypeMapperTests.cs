@@ -25,7 +25,7 @@ public class CSharpIrTypeMapperTests
     /// <returns>The normalized type.</returns>
     private static IrPrimitiveType Prim(IrPrimitiveKind k) => new() { PrimitiveKind = k };
 
-    /// <summary>Maps each semantic primitive to the same type emitted by C# models and clients.</summary>
+    /// <summary>Maps semantic primitives to CLR types shared by generated models and clients, including MultipartFile for form data.</summary>
     /// <param name="kind">The semantic primitive kind.</param>
     /// <param name="expected">The C# type name expected in generated source.</param>
     [TestCase(IrPrimitiveKind.String,    "string")]

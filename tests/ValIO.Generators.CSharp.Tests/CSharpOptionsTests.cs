@@ -131,7 +131,7 @@ public sealed class CSharpOptionsTests
         construct.Should().Throw<ArgumentException>().WithMessage("*modelType=Class*");
     }
 
-    /// <summary>Checks the profile option in model defaults and rejects ambiguous member declarations.</summary>
+    /// <summary>Uses the generated PascalCase member for a schema default and throws when two wire values map to the same CLR name.</summary>
     [Test]
     public void PascalCaseEnumMembers_UseTheSameNameForDefaultsAndDetectCollisions()
     {
