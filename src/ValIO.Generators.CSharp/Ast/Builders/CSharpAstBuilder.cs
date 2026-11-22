@@ -25,7 +25,7 @@ namespace ValIO.Generators.CSharp.Ast.Builders;
 /// <summary>
 /// Builds C# declarations using one required, immutable document context.
 /// </summary>
-public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
+public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
 {
     /// <summary>Converts external names to valid C# identifiers.</summary>
     private readonly INamingConverter _namingConverter;
@@ -1429,16 +1429,17 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <param name="operation">The normalized operation contract.</param>
     /// <param name="includeBody">Whether to emit the executable HTTP body.</param>
     /// <param name="useInheritDoc">Whether the interface supplies the method documentation.</param>
+    /// <param name="withResponse">Whether to emit the response-aware overload.</param>
     /// <returns>The projected method declaration.</returns>
-    private MethodDeclarationNode BuildMethod(IrOperation operation, bool includeBody, bool useInheritDoc)
+    private MethodDeclarationNode BuildMethod(IrOperation operation, bool includeBody, bool useInheritDoc, bool withResponse = false)
     {
         operation = ResolveMethodParameterCollisions(operation);
         var response = SelectSuccessResponse(GetSuccessResponses(operation));
         return new MethodDeclarationNode(
-            name: new IdentifierNode(operation.MethodName),
-            returnType: BuildOperationReturnType(response),
+            name: new IdentifierNode(withResponse ? MetadataMethodName(operation) : operation.MethodName),
+            returnType: withResponse ? BuildMetadataReturnType(response) : BuildOperationReturnType(response),
             parameters: BuildMethodParameters(operation),
-            body: includeBody ? BuildMethodBody(operation) : null,
+            body: includeBody ? BuildMethodBody(operation, withResponse) : null,
             accessModifier: AccessModifier.Public,
             isAsync: true,
             documentation: useInheritDoc ? null : BuildOperationSummary(operation),
@@ -1446,7 +1447,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             useInheritDoc: useInheritDoc)
         {
             RemarksDocumentation = useInheritDoc ? null : GetOperationRemarks(operation),
-            ReturnsDocumentation = useInheritDoc ? null : GetOperationReturns(response)
+            ReturnsDocumentation = useInheritDoc ? null : withResponse ? MetadataReturnDocumentation : GetOperationReturns(response)
         };
     }
 
@@ -1768,6 +1769,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         var decoratorMethods = client.Operations
             .Select(op => BuildDecoratorMethod(op, client.Name))
             .ToList<DeclarationNode>();
+        decoratorMethods.AddRange(MetadataOperations(client).Select(op => BuildDecoratorMethod(op, client.Name, withResponse: true)));
         members.AddRange(decoratorMethods);
         
         return new ClassDeclarationNode(
@@ -1783,13 +1785,14 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <summary>Wraps an operation with optional tracing and metrics for typed or bodyless tasks.</summary>
     /// <param name="operation">The operation with the original HTTP contract.</param>
     /// <param name="clientName">The client identity used by telemetry tags.</param>
+    /// <param name="withResponse">Whether the decorated method preserves response metadata.</param>
     /// <returns>A decorator method matching the generated client signature.</returns>
-    private MethodDeclarationNode BuildDecoratorMethod(IrOperation operation, string clientName)
+    private MethodDeclarationNode BuildDecoratorMethod(IrOperation operation, string clientName, bool withResponse = false)
     {
         operation = ResolveMethodParameterCollisions(operation);
-        var name = new IdentifierNode(operation.MethodName);
+        var name = new IdentifierNode(withResponse ? MetadataMethodName(operation) : operation.MethodName);
         var response = SelectSuccessResponse(GetSuccessResponses(operation));
-        var returnType = BuildOperationReturnType(response);
+        var returnType = withResponse ? BuildMetadataReturnType(response) : BuildOperationReturnType(response);
         var resultType = ExtractReturnTypeGenericArgument(returnType);
         var parameters = BuildMethodParameters(operation);
         var usedNames = parameters.Select(parameter => parameter.Name.Name).ToHashSet(StringComparer.Ordinal);
@@ -1857,7 +1860,7 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             useInheritDoc: _options.GenerateInterfaces)
         {
             RemarksDocumentation = _options.GenerateInterfaces ? null : GetOperationRemarks(operation),
-            ReturnsDocumentation = _options.GenerateInterfaces ? null : GetOperationReturns(response)
+            ReturnsDocumentation = _options.GenerateInterfaces ? null : withResponse ? MetadataReturnDocumentation : GetOperationReturns(response)
         };
     }
 
@@ -1966,8 +1969,9 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     
     /// <summary>Builds an HTTP implementation with allocated locals and typed transport boundaries.</summary>
     /// <param name="operation">The operation with unique C# parameter names.</param>
+    /// <param name="withResponse">Whether to keep the actual status and response headers.</param>
     /// <returns>The complete asynchronous request implementation.</returns>
-    private BlockNode? BuildMethodBody(IrOperation operation)
+    private BlockNode? BuildMethodBody(IrOperation operation, bool withResponse)
     {
         // Служебные переменные тела запроса именуются генератором, а параметры приходят из схемы,
         // и они сталкиваются: операция с параметром url давала "string url = urlBuilder.ToString()"
@@ -2018,7 +2022,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         statements.Add(urlBuilderVar);
         
         // Строим URL по частям, заменяя {param} на значения
-        var basePath = operation.Path;
+        // Metadata clients use an injected BaseAddress; a relative path retains its gateway prefix.
+        var basePath = withResponse ? operation.Path.TrimStart('/') : operation.Path;
         var appendMethod = new MemberAccessExpressionNode(
             @object: new IdentifierExpressionNode(new IdentifierNode(Local("urlBuilder"))),
             member: new IdentifierNode("Append"));
@@ -2238,9 +2243,12 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         var acceptAdd = new MemberAccessExpressionNode(
             @object: acceptHeader,
             member: new IdentifierNode("Add"));
-        var responseMedia = successResponses
+        var responseMedia = (withResponse ? MetadataRepresentations(operation)
+            .Where(representation => representation.Type is not null)
+            .Select(representation => representation.MediaType!)
+            : successResponses
             .Where(response => response.Type is not null)
-            .SelectMany(response => response.ContentTypes.DefaultIfEmpty("application/json"))
+            .SelectMany(response => response.ContentTypes.DefaultIfEmpty("application/json")))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .DefaultIfEmpty("application/json");
         foreach (var media in responseMedia)
@@ -2342,6 +2350,12 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 requestMessageUsingBodyStatements.Add(new IfStatementNode(
                     new BinaryExpressionNode(requestBodyParam, BinaryOperator.NotEqual, new LiteralExpressionNode(null, LiteralKind.Null)),
                     new BlockNode(requestContentStatements.ToImmutableList())));
+        }
+
+        if (withResponse)
+        {
+            requestMessageUsingBodyStatements.Add(BuildMetadataSend(operation, successResponse, Local("requestMessage")));
+            return BuildRequestBlock(statements, requestMessageVar, requestMessageUsingBodyStatements);
         }
 
         // Извлекаем данные из requestMessage для ApiException (до отправки запроса, чтобы были доступны в блоках обработки ошибок)
@@ -2606,10 +2620,20 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Добавляем using для responseMessage в requestMessageUsingBodyStatements (который уже содержит объявления requestUri и httpMethod)
         requestMessageUsingBodyStatements.Add(responseMessageUsing);
         
-        // Создаем using statement для requestMessage, который содержит объявления переменных и using для responseMessage
+        return BuildRequestBlock(statements, requestMessageVar, requestMessageUsingBodyStatements);
+    }
+
+    /// <summary>Completes request generation with a scope that disposes request content for both response modes.</summary>
+    /// <param name="statements">The statements that construct the request URL.</param>
+    /// <param name="requestMessageVar">The generated request message declaration.</param>
+    /// <param name="requestMessageUsingBodyStatements">Statements that configure the request and await its response.</param>
+    /// <returns>The complete method body.</returns>
+    private static BlockNode BuildRequestBlock(List<StatementNode> statements,
+        VariableDeclarationStatementNode requestMessageVar, List<StatementNode> requestMessageUsingBodyStatements)
+    {
         var requestMessageUsingBlock = new BlockNode(requestMessageUsingBodyStatements.ToImmutableList());
         var requestMessageUsingResource = new CallExpressionNode(
-            target: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
+            target: new IdentifierExpressionNode(requestMessageVar.Name),
             arguments: ImmutableList<ExpressionNode>.Empty,
             isUsingVariable: true,
             variableDeclaration: requestMessageVar);
@@ -2833,6 +2857,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         var interfaceMethods = client.Operations
             .Select(BuildInterfaceMethod)
             .ToList<DeclarationNode>();
+        interfaceMethods.AddRange(MetadataOperations(client).Select(operation =>
+            BuildMethod(operation, includeBody: false, useInheritDoc: false, withResponse: true)));
         
         return new InterfaceDeclarationNode(
             name: interfaceName,
@@ -2897,6 +2923,8 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         var methods = client.Operations
             .Select(operation => BuildMethod(operation, includeBody: true, useInheritDoc: _options.GenerateInterfaces))
             .ToList<DeclarationNode>();
+        methods.AddRange(MetadataOperations(client).Select(operation =>
+            BuildMethod(operation, includeBody: true, useInheritDoc: _options.GenerateInterfaces, withResponse: true)));
 
         members.AddRange(methods);
         
@@ -3176,6 +3204,14 @@ public class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             {
                 if (response.Type is { } type)
                     ExtractDependenciesFromType(type, dependencies);
+                if (_options.GenerateResponseMetadata)
+                {
+                    foreach (var media in response.MediaTypes)
+                    {
+                        if (media.Type is { } representation)
+                            ExtractDependenciesFromType(representation, dependencies);
+                    }
+                }
             }
         }
 

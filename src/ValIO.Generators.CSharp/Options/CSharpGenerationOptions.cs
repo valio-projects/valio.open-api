@@ -66,6 +66,14 @@ public sealed class CSharpGenerationOptions
     /// <value>Whether to emit a client interface.</value>
     public bool GenerateInterfaces { get; set; }
 
+    /// <summary>Gets or sets whether clients also expose response metadata methods for each operation.</summary>
+    /// <value>True to emit additional WithResponse methods beside the existing body-only methods.</value>
+    public bool GenerateResponseMetadata { get; set; }
+
+    /// <summary>Gets or sets the largest JSON response that a metadata method can confirm.</summary>
+    /// <value>The response body limit in bytes, excluding HTTP headers.</value>
+    public int ResponseMetadataMaxBodyBytes { get; set; } = 64 * 1024;
+
     /// <summary>Gets or sets where generated client interfaces are placed.</summary>
     /// <value>The interface file placement strategy.</value>
     public InterfaceFileStrategy InterfaceFileStrategy { get; set; } = InterfaceFileStrategy.SameFile;
@@ -105,6 +113,8 @@ public sealed class CSharpGenerationOptions
             errors.Add("C# requires nullableActivity=true because ActivitySource.StartActivity may return null when no listener is active.");
         if (ClientAccessModifier is not (AccessModifier.Public or AccessModifier.Internal))
             errors.Add("C# top-level clients support clientAccessModifier=Public or Internal only.");
+        if (GenerateResponseMetadata && ResponseMetadataMaxBodyBytes is <= 0 or int.MaxValue)
+            errors.Add("C# responseMetadataMaxBodyBytes must be positive and leave room for one overflow byte.");
         return errors;
     }
 }

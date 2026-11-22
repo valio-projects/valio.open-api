@@ -81,11 +81,10 @@ valio generate -s ./petstore.yaml -o ./out/cs -l csharp \
 ```
 
 ```csharp
-public sealed record Pet(long Id, string Name);
-public sealed class PetStoreClient(HttpClient http)
+public sealed class Pet
 {
-    public Task<Pet?> GetPetById(long id, CancellationToken ct = default) =>
-        http.GetFromJsonAsync<Pet>($"/pet/{id}", ct);
+    public long Id { get; init; }
+    public required string Name { get; init; }
 }
 ```
 
@@ -105,6 +104,17 @@ on the schema to an object keyed by exact wire literals or to an array in the sa
 of the same length as `enum`. Each supplied string becomes the member's XML summary in C#.
 The generated client XML documentation includes the operation summary, parameter
 and request-body descriptions, and the successful response description.
+
+Set `options.generateResponseMetadata` to `true` to add a `WithResponse` method beside each
+ordinary client method. `ApiResponse<T>` captures the observed status, normalized media type
+and headers. `TryGetBody<TBody>` reads the typed payload selected by the declared status and JSON
+media type, including an alternate error schema. `IsBodyless` confirms a declared empty response.
+An unconfirmed response still carries its observed metadata.
+
+Metadata methods send once, use paths relative to the injected `HttpClient.BaseAddress`, and apply
+its timeout across headers and body. End a gateway base path with a slash. Configure the client to
+disable redirects if the caller needs to observe redirect statuses. `options.responseMetadataMaxBodyBytes`
+limits decoded UTF-8 JSON to 65,536 bytes by default.
 
 ## Architecture
 

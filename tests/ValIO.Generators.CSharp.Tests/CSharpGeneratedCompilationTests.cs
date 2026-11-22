@@ -59,6 +59,171 @@ public sealed class CSharpGeneratedCompilationTests
         generated["Api/MultipartFormDataContentFactory.cs"].Should().Contain("new StreamContent(new BorrowedReadStream(file.Content))");
     }
 
+    /// <summary>Checks declared status, actual media and headers, and typed finance precision through one generated HTTP send.</summary>
+    /// <returns>The isolated compilation and transport assertions.</returns>
+    [Test]
+    public async Task OptInResponseMetadata_ConfirmsOnlyDeclaredResponses()
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CoreIR/csharp-response-metadata-3.0.json")));
+        var parsed = await OpenApiDocument.LoadAsync(input, "json");
+        var ir = new IrBuilder(new SchemaResolver(parsed.Document!), new NamingConverter()).BuildFromOpenApi(parsed.Document!);
+        var context = new GenerationContext
+        {
+            IrDocument = ir,
+            Configuration = new GenerationConfiguration
+            {
+                Namespace = "Generated.Contracts",
+                NamingConvention = new NamingConventions { Properties = NamingConvention.PascalCase }
+            },
+            PluginOptions = new CSharpGenerationOptions
+            {
+                GenerateInterfaces = true,
+                InterfaceFileStrategy = InterfaceFileStrategy.SeparateFile,
+                UseRequired = true,
+                GenerateResponseMetadata = true,
+                ResponseMetadataMaxBodyBytes = 256,
+                GenerateTraces = true,
+                GenerateMetrics = true,
+            }
+        };
+        var naming = new CSharpNamingConverter();
+        var renderer = new CSharpAstRenderer();
+        await new CSharpModelsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpClientStep(naming, renderer).ExecuteAsync(context);
+
+        var files = context.GeneratedFiles.ToDictionary(file => file.RelativePath, file => file.Content);
+        files["Api/IReceipts.cs"].Should().Contain("Task<Receipt> FindReceipt(")
+            .And.Contain("Task<ApiResponse<Receipt>> FindReceiptWithResponse(");
+        files["Api/ReceiptsClient.cs"].Should().Contain("ApiResponseReader.SendAsync<Receipt>")
+            .And.Contain("new ApiResponseContract(400, \"application/problem+json\", typeof(ReceiptProblem))")
+            .And.Contain("new ApiResponseContract(404, null, null)");
+        files["Api/ApiResponse.cs"].Should().Contain("HttpCompletionOption.ResponseHeadersRead").And.Contain("ReadAtLeastAsync");
+        ir.Clients.Single().Operations.Single().Responses.Single(response => response.StatusCode == "404")
+            .Headers.Single().Name.Should().Be("Cache-Control");
+
+        var directory = Path.Combine(Path.GetTempPath(), "ValIO.CSharp.ResponseMetadata", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory, "Smoke.csproj"), """
+                <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup></Project>
+                """);
+            await File.WriteAllTextAsync(Path.Combine(directory, "NuGet.Config"), "<configuration><packageSources><clear /></packageSources></configuration>");
+            foreach (var (path, content) in files)
+            {
+                var destination = Path.Combine(directory, path);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                await File.WriteAllTextAsync(destination, content);
+            }
+
+            await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), """"
+                using System.Net;
+                using System.Net.Http.Headers;
+                using System.Text;
+                using Generated.Contracts;
+
+                var id = Guid.Parse("43648bac-f7af-4a8a-b26a-a4d272780b93");
+                using var handler = new FixtureHandler(id);
+                using var http = new HttpClient(handler) { BaseAddress = new Uri("https://fixture.invalid/private-owner/") };
+                IReceipts client = new Receipts(http);
+
+                var found = await client.FindReceiptWithResponse(id);
+                if (found.StatusCode != 200 || found.ContentType != "application/json" || !found.HasBody || found.IsBodyless ||
+                    found.Body is not { Revision: 9007199254740993L, Amount: 123456789123456789.1234567891m, Accepted: true })
+                    throw new InvalidOperationException("The typed success receipt lost its HTTP or numeric contract.");
+
+                var conflict = await client.FindReceiptWithResponse(id);
+                if (conflict.StatusCode != 409 || !conflict.TryGetBody<Receipt>(out var rejection) || rejection.Accepted)
+                    throw new InvalidOperationException("A documented conflict did not retain its typed finance receipt.");
+
+                var missing = await client.FindReceiptWithResponse(id);
+                if (missing.StatusCode != 404 || !missing.IsBodyless || !missing.CacheControlNoStore || missing.HasBody ||
+                    !missing.Headers.TryGetValue("CACHE-Control", out var cache) || !cache.Contains("no-store") ||
+                    !missing.Headers.TryGetValue("x-OWNER-trace", out var trace) || !trace.SequenceEqual(["fixture"]))
+                    throw new InvalidOperationException("The authoritative empty 404 did not retain received headers.");
+
+                var invalid = await client.FindReceiptWithResponse(id);
+                if (invalid.StatusCode != 400 || invalid.HasBody ||
+                    !invalid.TryGetBody<ReceiptProblem>(out var problem) || problem.Code != "invalid_request")
+                    throw new InvalidOperationException("The explicitly declared alternate schema was not decoded.");
+
+                foreach (var status in new[] { 409, 409, 202, 404, 409, 409 })
+                {
+                    var unconfirmed = await client.FindReceiptWithResponse(id);
+                    if (unconfirmed.StatusCode != status || unconfirmed.HasBody || unconfirmed.IsBodyless)
+                        throw new InvalidOperationException("An unexpected response was mistaken for authoritative evidence.");
+                }
+
+                if (handler.Sends != 10)
+                    throw new InvalidOperationException("A metadata method issued more than one HTTP request.");
+                Console.WriteLine("CSharp response metadata passed");
+
+                /// <summary>Emits typed and ambiguous replies while asserting the injected HttpClient address is preserved.</summary>
+                internal sealed class FixtureHandler : HttpMessageHandler
+                {
+                    /// <summary>Retains an exact int64 and decimal in a literal JSON payload.</summary>
+                    private const string ReceiptJson = """{"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":true}""";
+                    /// <summary>Checks that path parameters use the selected receipt identity.</summary>
+                    private readonly Guid _id;
+
+                    /// <summary>Initializes the stub for the selected receipt.</summary>
+                    /// <param name="id">The path identity expected on each request.</param>
+                    internal FixtureHandler(Guid id)
+                    {
+                        _id = id;
+                    }
+
+                    /// <summary>Gets the number of requests issued by the generated client.</summary>
+                    internal int Sends { get; private set; }
+
+                    /// <inheritdoc />
+                    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (request.RequestUri?.AbsolutePath != "/private-owner/api/v1/receipts/" + _id ||
+                            !request.Headers.Accept.Any(type => type.MediaType == "application/problem+json"))
+                            throw new InvalidOperationException("The configured gateway prefix, identity, or declared Accept values were lost.");
+
+                        var response = (++Sends) switch
+                        {
+                            1 => Json(HttpStatusCode.OK, ReceiptJson, "Application/JSON"),
+                            2 => Json(HttpStatusCode.Conflict, ReceiptJson.Replace("true", "false")),
+                            3 => new HttpResponseMessage(HttpStatusCode.NotFound),
+                            4 => Json(HttpStatusCode.BadRequest, "{\"code\":\"invalid_request\"}", "application/problem+json"),
+                            5 => Json(HttpStatusCode.Conflict, ReceiptJson, "text/html"),
+                            6 => Json(HttpStatusCode.Conflict, "{broken"),
+                            7 => Json(HttpStatusCode.Accepted, ReceiptJson),
+                            8 => Json(HttpStatusCode.NotFound, "{\"code\":\"edge_not_found\"}"),
+                            9 => Json(HttpStatusCode.Conflict, ReceiptJson + new string(' ', 257)),
+                            10 => Json(HttpStatusCode.Conflict, "{\"revision\":9007199254740993,\"amount\":2}"),
+                            _ => throw new InvalidOperationException("Unexpected request.")
+                        };
+                        response.Headers.CacheControl = new CacheControlHeaderValue { NoStore = true };
+                        response.Headers.Add("X-Owner-Trace", "fixture");
+                        return Task.FromResult(response);
+                    }
+
+                    /// <summary>Encodes the stub response without parsing or rounding its JSON literals.</summary>
+                    /// <param name="status">The synthetic status code.</param>
+                    /// <param name="json">The exact response bytes represented as UTF-8 text.</param>
+                    /// <param name="mediaType">The observed response media type.</param>
+                    /// <returns>The response dispatched through the generated transport.</returns>
+                    private static HttpResponseMessage Json(HttpStatusCode status, string json, string mediaType = "application/json") =>
+                        new(status) { Content = new StringContent(json, Encoding.UTF8, mediaType) };
+                }
+                """");
+
+            var result = await RunGeneratedProject(directory);
+            result.ExitCode.Should().Be(0, "the generated response-aware client must compile and preserve evidence:{0}{1}",
+                Environment.NewLine, result.Output);
+            result.Output.Should().Contain("CSharp response metadata passed");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     /// <summary>Compiles nullable references from real OpenAPI and exercises their System.Text.Json codecs.</summary>
     /// <returns>The asynchronous source generation, compiler and runtime verification.</returns>
     [Test]

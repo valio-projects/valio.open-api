@@ -1,0 +1,58 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Receipt response metadata", "version": "1" },
+  "paths": {
+    "/api/v1/receipts/{id}": {
+      "get": {
+        "operationId": "FindReceipt",
+        "tags": ["Receipts"],
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The receipt is available.",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Receipt" } } }
+          },
+          "400": {
+            "description": "The request is invalid.",
+            "content": { "application/problem+json": { "schema": { "$ref": "#/components/schemas/ReceiptProblem" } } }
+          },
+          "404": {
+            "description": "The owner does not have the receipt.",
+            "headers": {
+              "Cache-Control": { "description": "Read directly from the owner.", "required": true, "schema": { "type": "string", "enum": ["no-store"] } }
+            }
+          },
+          "409": {
+            "description": "A published receipt rejects the operation.",
+            "content": {
+              "text/html": {},
+              "application/json": { "schema": { "$ref": "#/components/schemas/Receipt" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Receipt": {
+        "type": "object",
+        "required": ["revision", "amount", "accepted"],
+        "properties": {
+          "revision": { "type": "integer", "format": "int64" },
+          "amount": { "type": "number", "format": "decimal" },
+          "accepted": { "type": "boolean" }
+        }
+      },
+      "ReceiptProblem": {
+        "type": "object",
+        "required": ["code"],
+        "properties": {
+          "code": { "type": "string" }
+        }
+      }
+    }
+  }
+}

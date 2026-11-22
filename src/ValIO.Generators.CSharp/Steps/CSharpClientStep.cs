@@ -51,6 +51,17 @@ public sealed class CSharpClientStep : ICodeGenerationStep
                 _renderer.Render(builder.BuildCompilationUnitForHttpClientMetrics(ns))));
         }
 
+        if (opts?.GenerateResponseMetadata == true)
+        {
+            var names = context.IrDocument.Models.Select(model => model.Name)
+                .Concat(context.IrDocument.Enums.Select(model => model.Name))
+                .Concat(context.IrDocument.Clients.Select(client => client.Name));
+            if (names.Any(name => name is "ApiResponseContract" or "ApiResponseReader"))
+                throw new InvalidOperationException("A C# schema or client name conflicts with the generated response metadata support types.");
+
+            context.GeneratedFiles.Add(new GeneratedFile("Api/ApiResponse.cs", CSharpResponseMetadataSource.Build(ns)));
+        }
+
         foreach (var client in context.IrDocument.Clients)
         {
             var compilationUnit = builder.BuildCompilationUnit(client, ns);
