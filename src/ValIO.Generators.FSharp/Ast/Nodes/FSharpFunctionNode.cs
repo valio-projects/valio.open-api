@@ -15,7 +15,50 @@ namespace ValIO.Generators.FSharp.Ast.Nodes;
 public sealed class FSharpFunctionNode : DeclarationNode
 {
     /// <summary>Parameter (name + type annotation).</summary>
-    public sealed record Parameter(string Name, TypeNode Type);
+    public sealed class Parameter : IEquatable<Parameter>
+    {
+        /// <summary>Initializes the values carried by this model.</summary>
+        /// <param name="Name">The parameter name in generated code.</param>
+        /// <param name="Type">The syntax node for the parameter's declared type.</param>
+        public Parameter(string Name, TypeNode Type)
+        {
+            this.Name = Name;
+            this.Type = Type;
+        }
+
+        /// <summary>Gets the parameter name in generated code.</summary>
+        /// <value>The parameter name in generated code.</value>
+        public string Name { get; init; }
+
+        /// <summary>Gets the syntax node for the parameter's declared type.</summary>
+        /// <value>The syntax node for the parameter's declared type.</value>
+        public TypeNode Type { get; init; }
+
+        /// <summary>Determines whether another value has the same stored members.</summary>
+        /// <param name="other">The instance to compare.</param>
+        /// <returns>True when all stored members are equal.</returns>
+        public bool Equals(Parameter? other) => other is not null
+            && EqualityComparer<string>.Default.Equals(Name, other.Name)
+            && EqualityComparer<TypeNode>.Default.Equals(Type, other.Type);
+
+        /// <inheritdoc />
+        public override bool Equals(object? obj) => obj is Parameter other && Equals(other);
+
+        /// <inheritdoc />
+        public override int GetHashCode() => HashCode.Combine(Name, Type);
+
+        /// <summary>Compares two values for equality.</summary>
+        /// <param name="left">The first value.</param>
+        /// <param name="right">The second value.</param>
+        /// <returns>True when both are null or carry the same member values.</returns>
+        public static bool operator ==(Parameter? left, Parameter? right) => Equals(left, right);
+
+        /// <summary>Compares two values for inequality.</summary>
+        /// <param name="left">The first value.</param>
+        /// <param name="right">The second value.</param>
+        /// <returns>True when the values differ.</returns>
+        public static bool operator !=(Parameter? left, Parameter? right) => !Equals(left, right);
+    }
 
     /// <summary>Ordered list of parameters.</summary>
     public IReadOnlyList<Parameter> Parameters { get; }

@@ -13,7 +13,50 @@ namespace ValIO.Generators.FSharp.Ast.Nodes;
 public sealed class FSharpDuNode : DeclarationNode
 {
     /// <summary>Single DU case (case name + optional payload type).</summary>
-    public sealed record Case(string Name, TypeNode? Payload);
+    public sealed class Case : IEquatable<Case>
+    {
+        /// <summary>Initializes the values carried by this model.</summary>
+        /// <param name="Name">The variant name in generated code.</param>
+        /// <param name="Payload">The syntax node for the optional payload type.</param>
+        public Case(string Name, TypeNode? Payload)
+        {
+            this.Name = Name;
+            this.Payload = Payload;
+        }
+
+        /// <summary>Gets the variant name in generated code.</summary>
+        /// <value>The variant name in generated code.</value>
+        public string Name { get; init; }
+
+        /// <summary>Gets the syntax node for the optional payload type.</summary>
+        /// <value>The syntax node for the optional payload type.</value>
+        public TypeNode? Payload { get; init; }
+
+        /// <summary>Determines whether another value has the same stored members.</summary>
+        /// <param name="other">The instance to compare.</param>
+        /// <returns>True when all stored members are equal.</returns>
+        public bool Equals(Case? other) => other is not null
+            && EqualityComparer<string>.Default.Equals(Name, other.Name)
+            && EqualityComparer<TypeNode?>.Default.Equals(Payload, other.Payload);
+
+        /// <inheritdoc />
+        public override bool Equals(object? obj) => obj is Case other && Equals(other);
+
+        /// <inheritdoc />
+        public override int GetHashCode() => HashCode.Combine(Name, Payload);
+
+        /// <summary>Compares two values for equality.</summary>
+        /// <param name="left">The first value.</param>
+        /// <param name="right">The second value.</param>
+        /// <returns>True when both are null or carry the same member values.</returns>
+        public static bool operator ==(Case? left, Case? right) => Equals(left, right);
+
+        /// <summary>Compares two values for inequality.</summary>
+        /// <param name="left">The first value.</param>
+        /// <param name="right">The second value.</param>
+        /// <returns>True when the values differ.</returns>
+        public static bool operator !=(Case? left, Case? right) => !Equals(left, right);
+    }
 
     /// <summary>Ordered list of cases.</summary>
     public IReadOnlyList<Case> Cases { get; }

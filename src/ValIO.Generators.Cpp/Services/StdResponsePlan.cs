@@ -7,7 +7,7 @@ namespace ValIO.Generators.Cpp.Services;
 
 /// <summary>Selects a deterministic successful result without confusing default errors and empty responses.</summary>
 /// <remarks>HEAD, 204, and 205 never carry a decoded payload. Distinct successful payload schemas require an explicit result variant.</remarks>
-internal sealed record StdResponsePlan
+internal sealed class StdResponsePlan : IEquatable<StdResponsePlan>
 {
     /// <summary>Gets the declared payload type before absence is represented.</summary>
     /// <value>The successful payload, or no payload for a bodyless operation.</value>
@@ -65,4 +65,30 @@ internal sealed record StdResponsePlan
     /// <returns>Whether the status or schema declares a bodyless response.</returns>
     internal static bool IsBodyless(IrResponse response) => response.StatusCode is "204" or "205"
         || response.Type is null or IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Void };
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(StdResponsePlan? other) => other is not null
+        && EqualityComparer<IrType?>.Default.Equals(PayloadType, other.PayloadType)
+        && EqualityComparer<bool>.Default.Equals(AllowsNoContent, other.AllowsNoContent)
+        && EqualityComparer<IReadOnlyList<IrResponse>>.Default.Equals(Responses, other.Responses);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is StdResponsePlan other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(PayloadType, AllowsNoContent, Responses);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(StdResponsePlan? left, StdResponsePlan? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(StdResponsePlan? left, StdResponsePlan? right) => !Equals(left, right);
 }

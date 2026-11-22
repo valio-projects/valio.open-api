@@ -6,7 +6,7 @@ namespace ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
 /// Спецификаторы макроса UPROPERTY(...).
 /// Определяет поведение свойства/поля в Unreal Engine Reflection System и Blueprints.
 /// </summary>
-public sealed record UPropertySpecifiers
+public sealed class UPropertySpecifiers : IEquatable<UPropertySpecifiers>
 {
     /// <summary>
     /// EditAnywhere — свойство можно редактировать в Details Panel
@@ -83,4 +83,34 @@ public sealed record UPropertySpecifiers
             ? new Dictionary<string, string> { ["DisplayName"] = displayName }.ToImmutableDictionary()
             : ImmutableDictionary<string, string>.Empty
     };
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(UPropertySpecifiers? other) => other is not null
+        && EqualityComparer<bool>.Default.Equals(EditAnywhere, other.EditAnywhere)
+        && EqualityComparer<bool>.Default.Equals(BlueprintReadWrite, other.BlueprintReadWrite)
+        && EqualityComparer<bool>.Default.Equals(BlueprintReadOnly, other.BlueprintReadOnly)
+        && EqualityComparer<bool>.Default.Equals(BlueprintAssignable, other.BlueprintAssignable)
+        && EqualityComparer<string?>.Default.Equals(Category, other.Category)
+        && EqualityComparer<string?>.Default.Equals(DisplayName, other.DisplayName)
+        && EqualityComparer<IReadOnlyDictionary<string, string>>.Default.Equals(Meta, other.Meta);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is UPropertySpecifiers other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(EditAnywhere, BlueprintReadWrite, BlueprintReadOnly, BlueprintAssignable, Category, DisplayName, Meta);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(UPropertySpecifiers? left, UPropertySpecifiers? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(UPropertySpecifiers? left, UPropertySpecifiers? right) => !Equals(left, right);
 }

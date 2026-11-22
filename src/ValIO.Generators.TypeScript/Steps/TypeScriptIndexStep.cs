@@ -181,21 +181,60 @@ public sealed class TypeScriptIndexStep : ICodeGenerationStep
     /// A generated module participating in the barrel: its import specifier, ordinal sort key,
     /// precedence (lower wins shared names first), and parsed exported symbols.
     /// </summary>
-    /// <param name="ImportPath">The <c>./…</c> module specifier used in the re-export statement.</param>
-    /// <param name="SortKey">The original relative path, used for deterministic ordinal output ordering.</param>
-    /// <param name="Precedence">Claim priority: <c>0</c> for <c>models/</c> files, <c>1</c> otherwise.</param>
-    /// <param name="Exports">The module's top-level exported symbols.</param>
-    private sealed record BarrelModule(
-        string ImportPath,
-        string SortKey,
-        int Precedence,
-        IReadOnlyList<ExportSymbol> Exports);
+    private sealed class BarrelModule
+    {
+        /// <summary>Initializes the values carried by this model.</summary>
+        /// <param name="ImportPath">The relative module specifier used in the re-export.</param>
+        /// <param name="SortKey">The path used for deterministic output ordering.</param>
+        /// <param name="Precedence">The claim priority for shared exported names.</param>
+        /// <param name="Exports">The top-level symbols exported by the module.</param>
+        public BarrelModule(
+            string ImportPath,
+            string SortKey,
+            int Precedence,
+            IReadOnlyList<ExportSymbol> Exports)
+        {
+            this.ImportPath = ImportPath;
+            this.SortKey = SortKey;
+            this.Precedence = Precedence;
+            this.Exports = Exports;
+        }
+
+        /// <summary>Gets the relative module specifier used in the re-export.</summary>
+        /// <value>The relative module specifier used in the re-export.</value>
+        public string ImportPath { get; init; }
+
+        /// <summary>Gets the path used for deterministic output ordering.</summary>
+        /// <value>The path used for deterministic output ordering.</value>
+        public string SortKey { get; init; }
+
+        /// <summary>Gets the claim priority for shared exported names.</summary>
+        /// <value>The claim priority for shared exported names.</value>
+        public int Precedence { get; init; }
+
+        /// <summary>Gets the top-level symbols exported by the module.</summary>
+        /// <value>The top-level symbols exported by the module.</value>
+        public IReadOnlyList<ExportSymbol> Exports { get; init; }
+    }
 
     /// <summary>A top-level export of a generated module.</summary>
-    /// <param name="Name">The exported identifier.</param>
-    /// <param name="IsType">
-    /// <see langword="true"/> for type-only declarations (<c>interface</c>/<c>type</c>), which must be
-    /// re-exported via <c>export type { }</c>; <see langword="false"/> for runtime values.
-    /// </param>
-    private sealed record ExportSymbol(string Name, bool IsType);
+    private sealed class ExportSymbol
+    {
+        /// <summary>Initializes the values carried by this model.</summary>
+        /// <param name="Name">The exported identifier.</param>
+        /// <param name="IsType">Whether the symbol is exported only as a type.</param>
+        public ExportSymbol(string Name, bool IsType)
+        {
+            this.Name = Name;
+            this.IsType = IsType;
+        }
+
+        /// <summary>Gets the exported identifier.</summary>
+        /// <value>The exported identifier.</value>
+        public string Name { get; init; }
+
+        /// <summary>Gets whether the symbol is exported only as a type.</summary>
+        /// <value>Whether the symbol is exported only as a type.</value>
+        public bool IsType { get; init; }
+    }
 }

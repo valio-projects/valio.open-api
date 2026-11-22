@@ -19,9 +19,25 @@ namespace ValIO.Generators.Cpp.CompileTests;
 public sealed class ScalarProviderCompileTests
 {
     /// <summary>Captures the complete native tool output together with its verified process exit status.</summary>
-    /// <param name="ExitCode">The exit status, or minus one after the bounded process-tree timeout.</param>
-    /// <param name="Output">Combined standard output and standard error text.</param>
-    private sealed record ToolResult(int ExitCode, string Output);
+    private sealed class ToolResult
+    {
+        /// <summary>Initializes the values carried by this model.</summary>
+        /// <param name="ExitCode">The exit code, or minus one after a timeout.</param>
+        /// <param name="Output">The combined output emitted by the tool.</param>
+        public ToolResult(int ExitCode, string Output)
+        {
+            this.ExitCode = ExitCode;
+            this.Output = Output;
+        }
+
+        /// <summary>Gets the exit code, or minus one after a timeout.</summary>
+        /// <value>The exit code, or minus one after a timeout.</value>
+        public int ExitCode { get; init; }
+
+        /// <summary>Gets the combined output emitted by the tool.</summary>
+        /// <value>The combined output emitted by the tool.</value>
+        public string Output { get; init; }
+    }
 
     /// <summary>Locates an installed CMake supporting the modern Visual Studio toolchain.</summary>
     /// <returns>The CMake executable path, or null when CMake is unavailable.</returns>

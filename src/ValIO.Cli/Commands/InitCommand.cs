@@ -117,7 +117,26 @@ public sealed class InitCommand : Command
         });
     }
 
-    private sealed record InteractiveResult(ValIOConfig Config, string ConfigPath);
+    /// <summary>Carries the configuration selected during interactive initialization.</summary>
+    private sealed class InteractiveResult
+    {
+        /// <summary>Initializes the values carried by this model.</summary>
+        /// <param name="Config">The configuration selected by the user.</param>
+        /// <param name="ConfigPath">The path where the configuration will be written.</param>
+        public InteractiveResult(ValIOConfig Config, string ConfigPath)
+        {
+            this.Config = Config;
+            this.ConfigPath = ConfigPath;
+        }
+
+        /// <summary>Gets the configuration selected by the user.</summary>
+        /// <value>The configuration selected by the user.</value>
+        public ValIOConfig Config { get; init; }
+
+        /// <summary>Gets the path where the configuration will be written.</summary>
+        /// <value>The path where the configuration will be written.</value>
+        public string ConfigPath { get; init; }
+    }
 
     private static InteractiveResult RunInteractive(IInitPrompter prompter, IGeneratorRegistry registry)
     {

@@ -6,7 +6,7 @@ namespace ValIO.Generators.Cpp.Ast.Nodes.UE.Specifiers;
 /// Спецификаторы макроса UFUNCTION(...).
 /// Определяет поведение функции/метода в Unreal Engine Reflection System и Blueprints.
 /// </summary>
-public sealed record UFunctionSpecifiers
+public sealed class UFunctionSpecifiers : IEquatable<UFunctionSpecifiers>
 {
     /// <summary>
     /// BlueprintCallable — функцию можно вызвать из Blueprint
@@ -74,4 +74,31 @@ public sealed record UFunctionSpecifiers
         }.Where(kv => !string.IsNullOrEmpty(kv.Value))
          .ToImmutableDictionary(kv => kv.Key, kv => kv.Value)
     };
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(UFunctionSpecifiers? other) => other is not null
+        && EqualityComparer<bool>.Default.Equals(BlueprintCallable, other.BlueprintCallable)
+        && EqualityComparer<bool>.Default.Equals(BlueprintPure, other.BlueprintPure)
+        && EqualityComparer<string?>.Default.Equals(Category, other.Category)
+        && EqualityComparer<IReadOnlyDictionary<string, string>>.Default.Equals(Meta, other.Meta);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is UFunctionSpecifiers other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(BlueprintCallable, BlueprintPure, Category, Meta);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(UFunctionSpecifiers? left, UFunctionSpecifiers? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(UFunctionSpecifiers? left, UFunctionSpecifiers? right) => !Equals(left, right);
 }

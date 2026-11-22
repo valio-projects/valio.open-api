@@ -9,7 +9,50 @@ namespace ValIO.Generators.Rust.Ast.Nodes;
 /// <summary>
 /// Rust function parameter (<c>name: Type</c>).
 /// </summary>
-public sealed record RustParameter(string Name, TypeNode Type);
+public sealed class RustParameter : IEquatable<RustParameter>
+{
+    /// <summary>Initializes the values carried by this model.</summary>
+    /// <param name="Name">The parameter name emitted with the function.</param>
+    /// <param name="Type">The declared Rust type.</param>
+    public RustParameter(string Name, TypeNode Type)
+    {
+        this.Name = Name;
+        this.Type = Type;
+    }
+
+    /// <summary>Gets the parameter name emitted with the function.</summary>
+    /// <value>The parameter name emitted with the function.</value>
+    public string Name { get; init; }
+
+    /// <summary>Gets the declared Rust type.</summary>
+    /// <value>The declared Rust type.</value>
+    public TypeNode Type { get; init; }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(RustParameter? other) => other is not null
+        && EqualityComparer<string>.Default.Equals(Name, other.Name)
+        && EqualityComparer<TypeNode>.Default.Equals(Type, other.Type);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is RustParameter other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(Name, Type);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(RustParameter? left, RustParameter? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(RustParameter? left, RustParameter? right) => !Equals(left, right);
+}
 
 /// <summary>
 /// Rust function declaration:
@@ -75,7 +118,7 @@ public sealed class RustFunctionNode : DeclarationNode
     public override AstNode Clone() =>
         new RustFunctionNode(
             (IdentifierNode)Name.Clone(),
-            Parameters.Select(p => p with { Type = (TypeNode)p.Type.Clone() }).ToImmutableList(),
+            Parameters.Select(p => new RustParameter(p.Name, (TypeNode)p.Type.Clone())).ToImmutableList(),
             ReturnType != null ? (TypeNode)ReturnType.Clone() : null,
             Body.ToImmutableList(),
             IsAsync,

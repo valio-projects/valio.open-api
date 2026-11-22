@@ -15,7 +15,8 @@ namespace ValIO.Generators.TypeScript.Ast.Builders;
 /// </summary>
 public sealed class TypeScriptSourceFileBuilder
 {
-    private readonly Dictionary<ImportKey, IdentifierNode> _imports = new();
+    /// <summary>Deduplicates imports by source module, symbol, and import form.</summary>
+    private readonly Dictionary<(string Symbol, string From, bool IsTypeOnly, ImportKind Kind), IdentifierNode> _imports = new();
     private readonly List<(string From, ImportKind Kind, bool IsTypeOnly, List<IdentifierNode> Items)> _importOrder = new();
     private readonly List<DeclarationNode> _declarations = new();
     private readonly List<ExportNode> _exports = new();
@@ -32,7 +33,7 @@ public sealed class TypeScriptSourceFileBuilder
         if (string.IsNullOrEmpty(from))
             throw new ArgumentException("Import 'from' module must be non-empty", nameof(from));
 
-        var key = new ImportKey(symbol, from, isTypeOnly, kind);
+        var key = (symbol, from, isTypeOnly, kind);
         if (_imports.ContainsKey(key)) return this;
 
         var ident = new IdentifierNode(symbol);
@@ -97,6 +98,4 @@ public sealed class TypeScriptSourceFileBuilder
             declarations: _declarations.ToImmutableList(),
             metadata: _metadata.Count == 0 ? null : _metadata.ToImmutableDictionary());
     }
-
-    private readonly record struct ImportKey(string Symbol, string From, bool IsTypeOnly, ImportKind Kind);
 }

@@ -8,7 +8,50 @@ namespace ValIO.Generators.Cpp.Ast.Nodes.UE;
 /// <summary>
 /// Параметр делегата (тип + имя)
 /// </summary>
-public sealed record UDelegateParameter(TypeNode Type, IdentifierNode Name);
+public sealed class UDelegateParameter : IEquatable<UDelegateParameter>
+{
+    /// <summary>Initializes the values carried by this model.</summary>
+    /// <param name="Type">The declared C++ type.</param>
+    /// <param name="Name">The parameter name emitted with the delegate.</param>
+    public UDelegateParameter(TypeNode Type, IdentifierNode Name)
+    {
+        this.Type = Type;
+        this.Name = Name;
+    }
+
+    /// <summary>Gets the declared C++ type.</summary>
+    /// <value>The declared C++ type.</value>
+    public TypeNode Type { get; init; }
+
+    /// <summary>Gets the parameter name emitted with the delegate.</summary>
+    /// <value>The parameter name emitted with the delegate.</value>
+    public IdentifierNode Name { get; init; }
+
+    /// <summary>Determines whether another value has the same stored members.</summary>
+    /// <param name="other">The instance to compare.</param>
+    /// <returns>True when all stored members are equal.</returns>
+    public bool Equals(UDelegateParameter? other) => other is not null
+        && EqualityComparer<TypeNode>.Default.Equals(Type, other.Type)
+        && EqualityComparer<IdentifierNode>.Default.Equals(Name, other.Name);
+
+    /// <inheritdoc />
+    public override bool Equals(object? obj) => obj is UDelegateParameter other && Equals(other);
+
+    /// <inheritdoc />
+    public override int GetHashCode() => HashCode.Combine(Type, Name);
+
+    /// <summary>Compares two values for equality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when both are null or carry the same member values.</returns>
+    public static bool operator ==(UDelegateParameter? left, UDelegateParameter? right) => Equals(left, right);
+
+    /// <summary>Compares two values for inequality.</summary>
+    /// <param name="left">The first value.</param>
+    /// <param name="right">The second value.</param>
+    /// <returns>True when the values differ.</returns>
+    public static bool operator !=(UDelegateParameter? left, UDelegateParameter? right) => !Equals(left, right);
+}
 
 /// <summary>
 /// Узел объявления DECLARE_DYNAMIC_MULTICAST_DELEGATE для Unreal Engine.
