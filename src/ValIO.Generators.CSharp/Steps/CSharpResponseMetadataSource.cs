@@ -203,7 +203,7 @@ internal static class CSharpResponseMetadataSource
                     try
                     {
                         var count = await stream.ReadAtLeastAsync(buffer.AsMemory(0, maxBodyBytes + 1), maxBodyBytes + 1,
-                            throwIfEndOfStream: false, cancellationToken: cancellationToken).ConfigureAwait(false);
+                            throwOnEndOfStream: false, cancellationToken: cancellationToken).ConfigureAwait(false);
                         if (count == 0 || count > maxBodyBytes)
                             return null;
 
