@@ -67,14 +67,23 @@ internal static class TypeScriptExactJson
     /// <returns>A scalar text expression or the existing expression for other types.</returns>
     public static ExpressionNode TextParameter(IrType type, ExpressionNode value)
     {
-        if (ExactPrimitive(type) != null)
+        if (IsExactTextScalar(type))
             return Call(new MemberAccessExpressionNode(value, new IdentifierNode("toString"), useOptionalChaining: true));
 
-        return Unwrap(type) is IrArrayType array && ExactPrimitive(array.ElementType) != null
+        return Unwrap(type) is IrArrayType array && IsExactTextScalar(array.ElementType)
             ? Call(new MemberAccessExpressionNode(value, new IdentifierNode("map"), useOptionalChaining: true),
                 Lambda(TextParameter(array.ElementType, Id("value"))))
             : value;
     }
+
+    /// <summary>Identifies exact numbers and their alternative string representations in URL or header parameters.</summary>
+    /// <param name="type">The parameter type, including its presence wrappers.</param>
+    /// <returns>Whether the value needs text conversion and every alternative can use it.</returns>
+    private static bool IsExactTextScalar(IrType type) => ExactPrimitive(type) != null
+        || Unwrap(type) is IrUnionType union
+        && union.Types.Any(variant => ExactPrimitive(variant) != null)
+        && union.Types.All(variant => ExactPrimitive(variant) != null
+            || Unwrap(variant) is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.String });
 
     /// <summary>Rejects operation contracts whose exact values cannot be decoded from a JSON response.</summary>
     /// <param name="document">The finalized schema and model declarations.</param>
@@ -95,8 +104,8 @@ internal static class TypeScriptExactJson
             foreach (var parameter in operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters))
             {
                 if (HasExact(parameter.Type, document, [])
-                    && ExactPrimitive(parameter.Type) == null
-                    && (Unwrap(parameter.Type) is not IrArrayType array || ExactPrimitive(array.ElementType) == null))
+                    && !IsExactTextScalar(parameter.Type)
+                    && (Unwrap(parameter.Type) is not IrArrayType array || !IsExactTextScalar(array.ElementType)))
                     throw Unsupported(operation, $"parameter '{parameter.OriginalName}' requires a scalar or array of exact numbers");
             }
 
@@ -121,7 +130,8 @@ internal static class TypeScriptExactJson
         IrIntersectionType intersection => intersection.Types.Any(variant => HasExact(variant, document, visited)),
         IrModelReference reference when visited.Add(reference.ModelName)
             && document.ModelsByName.TryGetValue(reference.ModelName, out var model) =>
-            model.Properties.Any(property => HasExact(property.Type, document, visited))
+            (model.ScalarType is { } scalar && HasExact(scalar, document, visited))
+            || model.Properties.Any(property => HasExact(property.Type, document, visited))
             || model.Composition?.Types.Any(variant => HasExact(variant, document, visited)) == true,
         _ => false,
     };

@@ -127,11 +127,13 @@ public sealed class TypeBoxSchemaSourceFileBuilder : AstBuilderBase
     {
         var imports = ImmutableList.CreateBuilder<ImportNode>();
         imports.AddRange(BuildTypeBoxImports());
-        if (model.Properties.Any(property => TypeBoxInstanceAst.RequiresRegistry(property.Type))
+        if ((model.ScalarType is { } scalar && TypeBoxInstanceAst.RequiresRegistry(scalar))
+            || model.Properties.Any(property => TypeBoxInstanceAst.RequiresRegistry(property.Type))
             || model.Composition?.Types.Any(TypeBoxInstanceAst.RequiresRegistry) == true)
             imports.Add(new ImportNode([new IdentifierNode("Kind"), new IdentifierNode("TypeRegistry")],
                 "@sinclair/typebox", ImportKind.Named));
-        if (model.Properties.Any(property => _builder.RequiresFormatRegistry(property.Type))
+        if ((model.ScalarType is { } formatScalar && _builder.RequiresFormatRegistry(formatScalar))
+            || model.Properties.Any(property => _builder.RequiresFormatRegistry(property.Type))
             || model.Composition?.Types.Any(_builder.RequiresFormatRegistry) == true)
             imports.Add(new ImportNode([new IdentifierNode("FormatRegistry")], "@sinclair/typebox", ImportKind.Named));
         var dependencies = ExtractDependencies(model);

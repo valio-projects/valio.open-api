@@ -20,6 +20,7 @@ public sealed class IrModel : IEquatable<IrModel>
         Description = source.Description;
         Properties = source.Properties;
         Composition = source.Composition;
+        ScalarType = source.ScalarType;
         OriginalSchema = source.OriginalSchema;
     }
 
@@ -56,6 +57,10 @@ public sealed class IrModel : IEquatable<IrModel>
     /// Композиция (allOf, oneOf, anyOf)
     /// </summary>
     public IrComposition? Composition { get; init; }
+
+    /// <summary>Gets the value schema of a named scalar component.</summary>
+    /// <value>The scalar type with its format, nullability, and constraints, or null for object and composed models.</value>
+    public Types.IrType? ScalarType { get; init; }
     
     /// <summary>
     /// Оригинальная OpenAPI схема (для отладки)
@@ -71,13 +76,14 @@ public sealed class IrModel : IEquatable<IrModel>
         && EqualityComparer<string?>.Default.Equals(Description, other.Description)
         && EqualityComparer<IReadOnlyList<IrProperty>>.Default.Equals(Properties, other.Properties)
         && EqualityComparer<IrComposition?>.Default.Equals(Composition, other.Composition)
+        && EqualityComparer<Types.IrType?>.Default.Equals(ScalarType, other.ScalarType)
         && EqualityComparer<IOpenApiSchema?>.Default.Equals(OriginalSchema, other.OriginalSchema);
 
     /// <inheritdoc />
     public override bool Equals(object? obj) => obj is IrModel other && Equals(other);
 
     /// <inheritdoc />
-    public override int GetHashCode() => HashCode.Combine(Name, _originalName, Description, Properties, Composition, OriginalSchema);
+    public override int GetHashCode() => HashCode.Combine(Name, _originalName, Description, Properties, Composition, ScalarType, OriginalSchema);
 
     /// <summary>Compares two values for equality.</summary>
     /// <param name="left">The first value.</param>

@@ -3,6 +3,7 @@ using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Tests.TestHelpers;
+using ValIO.Tests.Fixtures;
 
 namespace ValIO.Generators.TypeScript.Tests.Integration;
 
@@ -11,6 +12,57 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [Category("NodeIntegration")]
 public sealed class ExactJsonNumbersTests
 {
+    /// <summary>Compiles and runs provider-style scalar references and numeric alternatives.</summary>
+    /// <returns>The generated type, request text, and lossless Next.js response assertions.</returns>
+    [Test]
+    public async Task GeneratedNextJsPreservesNamedScalarsAndNumericAlternatives()
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("CoreIR/native-scalar-union-3.0.json"));
+        var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
+        {
+            Transports = ["nextjs"],
+            ValidationLibrary = "zod4",
+            ExactJsonNumbers = true,
+        });
+
+        context.GeneratedFiles.Single(file => file.RelativePath == "models/actionCode/actionCode.ts").Content
+            .Should().Contain("type ActionCode = number");
+        var sources = context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
+        await GeneratedTypeScriptCompiler.Compile(sources, "native scalar aliases and numeric alternatives");
+
+        var output = await GeneratedTypeScriptRuntime.Run(context, """
+            const { LosslessNumber } = require('lossless-json');
+            const { ActionCodeSchema } = require(path.join(root, 'models', 'actionCode', 'actionCode.schema.js'));
+            const { readPage } = require(path.join(root, 'api', 'readPage', 'readPage.nextjs.js'));
+            assert.equal(ActionCodeSchema.parse(1), 1);
+            for (const invalid of [{}, '1', -1, 1.5]) {
+                assert.equal(ActionCodeSchema.safeParse(invalid).success, false);
+            }
+            const width = '9007199254740993';
+            let body = '{"action":1,"total":' + width + ',"latest":' + width + '}';
+            const fetcher = async url => {
+                assert.equal(url, '/pages?cursor=' + width);
+                return new Response(body, { headers: { 'Content-Type': 'application/json' } });
+            };
+            (async () => {
+                const number = await readPage({ cursor: new LosslessNumber(width) }, undefined, undefined, fetcher);
+                assert(number.body.total instanceof LosslessNumber);
+                assert.equal(number.body.total.toString(), width);
+                assert.equal(number.body.latest.toString(), width);
+                assert.equal(number.body.action, 1);
+
+                body = '{"action":1,"total":"' + width + '","latest":' + width + '}';
+                const text = await readPage({ cursor: width }, undefined, undefined, fetcher);
+                assert.equal(text.body.total, width);
+                body = '{"action":{},"total":' + width + ',"latest":' + width + '}';
+                await assert.rejects(() => readPage({ cursor: width }, undefined, undefined, fetcher));
+                console.log('native scalar contracts passed');
+            })().catch(error => { console.error(error); process.exitCode = 1; });
+            """, "lossless-json");
+        output.Should().Contain("native scalar contracts passed");
+    }
+
     /// <summary>Exercises lossless numeric serialization and typed response validation through the generated transport.</summary>
     /// <remarks>
     /// The HTTP request keeps exact JSON decimals, int64 route, query and header strings, and an int64 query default.

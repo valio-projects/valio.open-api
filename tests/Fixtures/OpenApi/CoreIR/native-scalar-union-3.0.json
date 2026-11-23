@@ -1,0 +1,52 @@
+{
+  "openapi": "3.0.4",
+  "info": { "title": "Native scalar components", "version": "1" },
+  "paths": {
+    "/pages": {
+      "get": {
+        "operationId": "readPage",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "anyOf": [{ "type": "integer" }, { "type": "string" }],
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recorded actions and their count",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Page" } } }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActionCode": { "type": "integer", "minimum": 0 },
+      "WideCount": { "type": "integer", "format": "int64" },
+      "Page": {
+        "type": "object",
+        "required": ["action", "total", "latest"],
+        "properties": {
+          "action": { "$ref": "#/components/schemas/ActionCode" },
+          "total": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "anyOf": [{ "type": "integer" }, { "type": "string" }],
+            "format": "int64"
+          },
+          "latest": { "$ref": "#/components/schemas/WideCount" },
+          "explicitWidth": {
+            "anyOf": [{ "type": "integer", "format": "int32" }, { "type": "string" }],
+            "format": "int64"
+          }
+        }
+      }
+    }
+  }
+}

@@ -377,11 +377,15 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
                 string.IsNullOrWhiteSpace(model.Description) ? $"{model.Name} model." : model.Description));
     }
 
-    /// <summary>Builds union models as aliases, intersecting sibling properties rather than discarding alternatives.</summary>
+    /// <summary>Builds aliases for scalar and union models and preserves their documentation and sibling fields.</summary>
     /// <param name="model">The source model.</param>
     /// <returns>The interface or composed model type alias.</returns>
     private DeclarationNode BuildModelDeclaration(IrModel model)
     {
+        if (model.ScalarType is { } scalar)
+            return new TypeAliasDeclarationNode(new IdentifierNode(model.Name), BuildType(scalar),
+                string.IsNullOrWhiteSpace(model.Description) ? null : new CommentNode(model.Description, CommentKind.JSDoc));
+
         if (model.Composition is not { Kind: IrCompositionKind.OneOf or IrCompositionKind.AnyOf } composition)
             return BuildInterface(model);
 

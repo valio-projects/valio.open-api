@@ -94,6 +94,28 @@ public sealed class IrBuilderPrimitiveFormatTests
         union.Types.Cast<IrPrimitiveType>().Select(type => type.PrimitiveKind).Should().Equal(IrPrimitiveKind.Integer, IrPrimitiveKind.Boolean);
     }
 
+    /// <summary>Retains scalar declarations and honors an enclosing int64 format on its numeric alternative.</summary>
+    /// <returns>The assertions against the provider-style component, property, and parameter IR.</returns>
+    [Test]
+    public async Task NamedScalarsAndAlternativesPreserveNumericFormats()
+    {
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read("CoreIR/native-scalar-union-3.0.json"));
+        var action = ir.Models.Single(model => model.Name == "ActionCode");
+        action.ScalarType.Should().BeOfType<IrPrimitiveType>().Which.PrimitiveKind.Should().Be(IrPrimitiveKind.Integer);
+        action.ScalarType!.Constraints.Should().NotBeNull();
+        var page = ir.Models.Single(model => model.Name == "Page");
+        page.ScalarType.Should().BeNull();
+        page.Properties.Single(property => property.Name == "action").Type.Should().BeOfType<IrModelReference>()
+            .Which.ModelName.Should().Be("ActionCode");
+        var total = page.Properties.Single(property => property.Name == "total").Type.Should().BeOfType<IrUnionType>().Which;
+        total.Types.Cast<IrPrimitiveType>().Select(type => (type.PrimitiveKind, type.Format))
+            .Should().Equal((IrPrimitiveKind.Long, "int64"), (IrPrimitiveKind.String, null));
+        var explicitWidth = page.Properties.Single(property => property.Name == "explicitWidth").Type.Should().BeOfType<IrUnionType>().Which;
+        explicitWidth.Types.Cast<IrPrimitiveType>().Select(type => type.Format).Should().Equal("int32", null);
+        ir.Clients.Single().Operations.Single().QueryParameters.Single().Type.Should().BeOfType<IrUnionType>()
+            .Which.Types.OfType<IrPrimitiveType>().Select(type => type.Format).Should().Equal("int64", null);
+    }
+
     /// <summary>Builds a real parser-to-IR document from the requested disk fixture.</summary>
     /// <param name="version">The OpenAPI dialect encoded in the fixture filename.</param>
     /// <returns>The translated document containing model and operation format scenarios.</returns>

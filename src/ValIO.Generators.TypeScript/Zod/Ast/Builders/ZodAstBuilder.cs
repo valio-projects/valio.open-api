@@ -57,12 +57,15 @@ public class ZodAstBuilder : AstBuilderBase
     }
     
     /// <summary>
-    /// Builds a model schema, intersecting sibling properties with composition constraints.
+    /// Builds a scalar, object, or composition schema for a named model.
     /// </summary>
     /// <param name="model">The model being validated.</param>
     /// <returns>The complete model schema.</returns>
     public ZodSchemaNode BuildZodSchemaFromIrModel(IrModel model)
     {
+        if (model.ScalarType is { } scalar)
+            return BuildZodSchemaFromIrType(scalar, model.Name);
+
         if (model.Composition != null && model.Composition.Types.Count > 0)
         {
             switch (model.Composition.Kind)

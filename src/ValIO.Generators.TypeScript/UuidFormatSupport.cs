@@ -35,10 +35,12 @@ public static class UuidFormatSupport
         }
     }
 
-    /// <summary>True if any property (or composition member) of the model is a uuid.</summary>
+    /// <summary>Checks a model's scalar, properties, and composition for a UUID schema.</summary>
+    /// <param name="model">The component being rendered.</param>
+    /// <returns>Whether this component needs the shared UUID expression.</returns>
     public static bool ModelUsesUuid(IrModel model)
     {
-        if (model.Properties.Any(p => ContainsUuid(p.Type)))
+        if (ContainsUuid(model.ScalarType) || model.Properties.Any(p => ContainsUuid(p.Type)))
             return true;
         return model.Composition != null && model.Composition.Types.Any(ContainsUuid);
     }

@@ -21,13 +21,16 @@ public sealed class TypeBoxAstBuilder(string? uuidFormat = null)
 {
     private readonly string _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
 
-    /// <summary>Builds a model schema, applying sibling properties to every union or intersection arm.</summary>
+    /// <summary>Builds a named scalar or model schema with its complete composition.</summary>
     /// <param name="model">The model being validated.</param>
     /// <returns>The complete TypeBox schema, wrapped recursively when necessary.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="model"/> is null.</exception>
     public ExpressionNode BuildSchemaFromIrModel(IrModel model)
     {
         ArgumentNullException.ThrowIfNull(model);
+
+        if (model.ScalarType is { } scalar)
+            return BuildSchemaFromIrType(scalar, model.Name);
 
         ExpressionNode body;
         if (model.Composition != null && model.Composition.Types.Count > 0)

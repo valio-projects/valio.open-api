@@ -166,9 +166,13 @@ public class IrBuilder
         return models;
     }
     
-    /// <summary>
-    /// Строит модель из схемы
-    /// </summary>
+    /// <summary>Builds the owned properties, scalar value, or composition of a named model.</summary>
+    /// <param name="name">The allocated IR identifier.</param>
+    /// <param name="schema">The source definition or component reference.</param>
+    /// <param name="document">The document used to resolve referenced schemas.</param>
+    /// <param name="parentModelName">The optional containing model for inline declarations.</param>
+    /// <param name="propertyContext">The optional inline naming context.</param>
+    /// <returns>The named model and its declared value shape.</returns>
     private IrModel BuildModel(string name, IOpenApiSchema schema, OpenApiDocument document, string? parentModelName = null, PropertyContext? propertyContext = null)
     {
         var resolvedSchema = _schemaResolver.ResolveSchema(schema);
@@ -207,6 +211,11 @@ public class IrBuilder
         }
         
         var composition = ExtractComposition(schema, document, propertyContext);
+        var scalarType = composition is null && resolvedSchema.Type is { } type &&
+            (type & (JsonSchemaType.Object | JsonSchemaType.Array)) == 0 &&
+            resolvedSchema.Enum?.Count is not > 0
+            ? BuildType(resolvedSchema, document, propertyContext)
+            : null;
         
         return new IrModel
         {
@@ -214,6 +223,7 @@ public class IrBuilder
             Description = schema.Description,
             Properties = properties,
             Composition = composition,
+            ScalarType = scalarType,
             OriginalSchema = schema
         };
     }
@@ -527,7 +537,7 @@ public class IrBuilder
         
         if (schema.OneOf?.Count > 0)
         {
-            var types = schema.OneOf.Select(s => BuildType(s, document, propertyContext)).ToList();
+            var types = schema.OneOf.Select(member => BuildAlternativeType(member, document, propertyContext, schema.Format)).ToList();
             return new IrComposition
             {
                 Kind = IrCompositionKind.OneOf,
@@ -543,7 +553,7 @@ public class IrBuilder
         
         if (schema.AnyOf?.Count > 0)
         {
-            var types = schema.AnyOf.Select(s => BuildType(s, document, propertyContext)).ToList();
+            var types = schema.AnyOf.Select(member => BuildAlternativeType(member, document, propertyContext, schema.Format)).ToList();
             return new IrComposition
             {
                 Kind = IrCompositionKind.AnyOf,
@@ -552,6 +562,27 @@ public class IrBuilder
         }
         
         return null;
+    }
+
+    /// <summary>Applies a parent numeric format to an inline numeric alternative that has no format of its own.</summary>
+    /// <param name="schema">The alternative's source schema.</param>
+    /// <param name="document">The document containing referenced schemas.</param>
+    /// <param name="propertyContext">The optional inline naming context.</param>
+    /// <param name="parentFormat">The format on the enclosing anyOf or oneOf schema.</param>
+    /// <returns>The formatted numeric alternative or the original translated alternative.</returns>
+    private IrType BuildAlternativeType(IOpenApiSchema schema, OpenApiDocument document, PropertyContext? propertyContext,
+        string? parentFormat)
+    {
+        var type = BuildType(schema, document, propertyContext);
+        var nullable = type as IrNullableType;
+        if ((nullable?.InnerType ?? type) is not IrPrimitiveType
+                { Format: null, PrimitiveKind: IrPrimitiveKind.Integer or IrPrimitiveKind.Number } primitive
+            || !IsNumericOrIntegerWidthFormat(parentFormat))
+            return type;
+
+        var jsonType = primitive.PrimitiveKind == IrPrimitiveKind.Integer ? JsonSchemaType.Integer : JsonSchemaType.Number;
+        var formatted = BuildPrimitiveType(jsonType, parentFormat).WithConstraints(primitive.Constraints);
+        return nullable is null ? formatted : new IrNullableType(nullable) { InnerType = formatted };
     }
     
     /// <summary>
@@ -635,7 +666,7 @@ public class IrBuilder
                     continue;
                 }
 
-                members.Add(BuildType(variant, document, propertyContext));
+                members.Add(BuildAlternativeType(variant, document, propertyContext, resolvedSchema.Format));
             }
 
             // An all-null inclusive union (or a single exclusive null branch) accepts only null.
@@ -1005,10 +1036,10 @@ public class IrBuilder
         return IrPrimitiveKind.String;
     }
     
-    /// <summary>
-    /// Format задаёт ширину/вид числа — для ветки <c>string</c> в union с integer/number не наследуем его (иначе string ведёт себя как число).
-    /// </summary>
-    private static bool IsNumericOrIntegerWidthFormat(string format)
+    /// <summary>Recognizes formats that annotate a numeric branch of a mixed type.</summary>
+    /// <param name="format">The optional format from the enclosing schema.</param>
+    /// <returns>Whether the format describes numeric width or representation.</returns>
+    private static bool IsNumericOrIntegerWidthFormat(string? format)
     {
         return TryMapSchemaFormatToPrimitiveKind(format, out var k) &&
                k is IrPrimitiveKind.Long or IrPrimitiveKind.Integer or IrPrimitiveKind.Number;

@@ -22,11 +22,14 @@ public sealed class ValibotAstBuilder(string? uuidFormat = null)
 {
     private readonly string _uuidFormat = TypeScriptOptionIds.UuidFormat.Resolve(uuidFormat);
 
-    /// <summary>Builds a model schema with sibling properties applied to every composition alternative.</summary>
+    /// <summary>Builds a named scalar or model schema with its complete composition.</summary>
     /// <param name="model">The model being validated.</param>
     /// <returns>The complete Valibot schema expression.</returns>
     public ExpressionNode BuildSchemaFromIrModel(IrModel model)
     {
+        if (model.ScalarType is { } scalar)
+            return BuildSchemaFromIrType(scalar, model.Name);
+
         if (model.Composition != null && model.Composition.Types.Count > 0)
         {
             return model.Composition.Kind switch

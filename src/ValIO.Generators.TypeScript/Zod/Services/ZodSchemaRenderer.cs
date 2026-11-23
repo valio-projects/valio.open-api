@@ -131,7 +131,8 @@ public class ZodSchemaRenderer : AstBuilderBase
         if (UsesUuidRegex && UuidFormatSupport.ModelUsesUuid(model))
             sb.AppendLine(FormatsImportLine(".."));
 
-        if (_exactJsonNumbers && (model.Properties.Any(p => TypeScriptExactJson.UsesNumberCodec(p.Type))
+        if (_exactJsonNumbers && ((model.ScalarType is { } scalar && TypeScriptExactJson.UsesNumberCodec(scalar))
+            || model.Properties.Any(p => TypeScriptExactJson.UsesNumberCodec(p.Type))
             || model.Composition?.Types.Any(TypeScriptExactJson.UsesNumberCodec) == true))
             sb.AppendLine(TypeScriptExactJson.ImportLine);
 
