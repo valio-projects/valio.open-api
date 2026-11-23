@@ -50,14 +50,15 @@ internal static class HttpPipelineChecks
 
         token = "old";
         transport.UnauthorizedResponsesRemaining = 1;
+        using var content = new NonSeekableStream([0, 1, 255, 2]);
         var form = new UploadForm
         {
-            Content = new NonSeekableStream([0, 1, 255, 2]), State = State.InProgress, Amount = 1.5, Enabled = true
+            Content = new MultipartFile(content, "fixture.bin"), State = State.InProgress, Amount = 1.5, Enabled = true
         };
         Require(await SendMultipart(api, form) == 7, "Multipart response was lost after replay.");
         VerifyReplay(transport.Requests.TakeLast(2).ToArray(), "multipart/form-data");
         Require(refreshCalls == 2 && beforeCalls == 4 && afterCalls == 4, "Multipart refresh or hook counts were incorrect.");
-        Require(!form.Content.CanRead, "The generated multipart request did not dispose its owned stream.");
+        Require(content.CanRead, "The generated multipart request disposed the caller-owned stream.");
 
         token = "external";
         await api.Ping();
@@ -113,7 +114,7 @@ internal static class HttpPipelineChecks
             var previousBefore = beforeCalls;
             try
             {
-                await SendMultipart(api, new UploadForm { Content = untouchedContent }, canceled.Token);
+                await SendMultipart(api, new UploadForm { Content = new MultipartFile(untouchedContent, "untouched.bin") }, canceled.Token);
                 throw new InvalidOperationException("Pre-cancellation was ignored.");
             }
             catch (OperationCanceledException)
@@ -160,7 +161,7 @@ internal static class HttpPipelineChecks
 
     /// <summary>Calls the generated multipart operation with a body and the original cancellation token.</summary>
     /// <param name="api">The generated client.</param>
-    /// <param name="form">The body whose stream ownership transfers to a prepared request.</param>
+    /// <param name="form">The form carrying the caller-owned stream.</param>
     /// <param name="cancellationToken">Cancels request preparation, content writing, and response handling.</param>
     /// <returns>The deserialized numeric result.</returns>
     private static Task<int> SendMultipart(TransportApi api, UploadForm form, CancellationToken cancellationToken = default) =>

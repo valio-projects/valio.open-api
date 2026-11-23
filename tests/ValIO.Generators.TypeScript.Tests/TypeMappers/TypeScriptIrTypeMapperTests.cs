@@ -1,5 +1,6 @@
 using FluentAssertions;
 using NUnit.Framework;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Generators.TypeScript;

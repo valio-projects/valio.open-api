@@ -78,7 +78,7 @@ public sealed class ValidatorSemanticsRegressionTests
         var child = new IrModel
         {
             Name = "Child",
-            Properties = [id with { }, value with { Constraints = new IrPropertyConstraints { MinLength = 3 } }],
+            Properties = [id, new IrProperty(value) { Constraints = new IrPropertyConstraints { MinLength = 3 } }],
             Composition = new IrComposition { Kind = IrCompositionKind.AllOf, Types = [new IrModelReference { ModelName = "Base" }] }
         };
         var context = IrDocumentContexts.Create(models: [parent, child]);

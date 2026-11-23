@@ -129,8 +129,8 @@ public sealed class ClientExecutionContractTests
         client.Content.Should().MatchRegex(@"\?*\.Paging_Page\b");
     }
 
-    /// <summary>Выполняет сгенерированные клиенты Axios и fetch с нормализованными именами свойств и именами передачи с точками.</summary>
-    /// <returns>Задача, завершающаяся после проверки сохранения имён параметров OpenAPI обоими клиентами.</returns>
+    /// <summary>Runs the generated Axios and Fetch clients with normalized property names and dotted wire names.</summary>
+    /// <returns>A task that completes after both clients preserve the OpenAPI parameter names.</returns>
     [Test]
     public async Task QueryParametersUseOriginalWireNamesAtRuntime()
     {
@@ -140,7 +140,7 @@ public sealed class ClientExecutionContractTests
         {
             var parameter = new IrParameter { Name = "Paging_Page", OriginalName = "Paging.Page", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Integer }, IsRequired = false };
             var other = new IrParameter { Name = "Status", OriginalName = "Status", Type = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String }, IsRequired = false };
-            var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]) with { QueryParameters = [parameter, other] };
+            var operation = new IrOperation(Operation([new IrResponse { StatusCode = "204", Type = null }])) { QueryParameters = [parameter, other] };
             var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter());
             var renderer = new TypeScriptAstRenderer([new AxiosNodeRenderer()]);
             await File.WriteAllTextAsync(Path.Combine(temporary, "axios.ts"), renderer.Render(builder.BuildSourceFileForOperation(operation, transport: "axios")));

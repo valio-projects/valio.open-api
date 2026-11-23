@@ -16,7 +16,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [TestFixture]
 public sealed class IdentityClientContractTests
 {
-    /// <summary>Объявления модели и запроса сохраняют все четыре сочетания наличия и допустимости null.</summary>
+    /// <summary>Preserves all four combinations of presence and nullability in model and query parameter types.</summary>
     [Test]
     public void ModelsAndParametersKeepPresenceSeparateFromNull()
     {
@@ -42,7 +42,7 @@ public sealed class IdentityClientContractTests
         modelCode.Should().Contain("optionalValue?: string;");
         modelCode.Should().Contain("optionalNullable?: string | null;");
         modelCode.Should().Contain("nestedOptional?: string | null;");
-        var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]) with
+        var operation = new IrOperation(Operation([new IrResponse { StatusCode = "204", Type = null }]))
         {
             QueryParameters =
             [
@@ -150,13 +150,13 @@ public sealed class IdentityClientContractTests
             code.IndexOf("204", StringComparison.Ordinal).Should().BeLessThan(code.IndexOf("response.json", StringComparison.Ordinal));
     }
 
-    /// <summary>Разделители сгенерированного клиента не содержат пробелов, а строковые литералы сохраняют свои пробелы.</summary>
-    /// <param name="transport">Выбранный HTTP-транспорт.</param>
+    /// <summary>Leaves generated separator lines empty and preserves whitespace within string literals.</summary>
+    /// <param name="transport">The generated HTTP transport.</param>
     [TestCase("axios")]
     [TestCase("fetch")]
     public void ClientBlankLinesDoNotContainWhitespace(string transport)
     {
-        var operation = Operation([new IrResponse { StatusCode = "204", Type = null }]) with { Path = "/  literal  " };
+        var operation = new IrOperation(Operation([new IrResponse { StatusCode = "204", Type = null }])) { Path = "/  literal  " };
         var builder = new TypeScriptAstBuilder(IrDocumentContexts.Create(), new NamingConverter(), new TypeScriptGenerationOptions { Transports = [transport] });
         var code = new TypeScriptAstRenderer([new AxiosNodeRenderer()]).Render(builder.BuildSourceFileForOperation(operation, transport: transport));
         code.Split('\n').Select(line => line.TrimEnd('\r')).Should().NotContain(line => line.Length > 0 && string.IsNullOrWhiteSpace(line));
