@@ -87,7 +87,7 @@ public static class TypeScriptQueryString
             }
 
             var setCall = WriteValue("set", parameter.OriginalName, access);
-            if (parameter.IsRequired)
+            if (!queryMayBeUndefined && !TypeScriptParameterModel.IsOptional(parameter))
                 statements.Add(setCall);
             else
                 statements.Add(new IfStatementNode(

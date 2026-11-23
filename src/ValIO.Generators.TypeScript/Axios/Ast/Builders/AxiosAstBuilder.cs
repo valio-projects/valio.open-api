@@ -178,6 +178,9 @@ public class AxiosAstBuilder : AstBuilderBase
     internal static bool HasOperationHeaders(IrOperation operation) =>
         operation.HeaderParameters.Count > 0 || operation.RequestBody is { IsFormUrlEncoded: true };
 
+    /// <summary>Determines whether a successful response returns binary data.</summary>
+    /// <param name="response">The documented HTTP response.</param>
+    /// <returns>Whether the response requires binary decoding.</returns>
     internal static bool IsBinarySuccessResponse(IrResponse response)
     {
         if (!int.TryParse(response.StatusCode, out var statusCode) || statusCode is < 200 or >= 300)
@@ -189,6 +192,9 @@ public class AxiosAstBuilder : AstBuilderBase
         };
     }
 
+    /// <summary>Удаляет обёртки nullable и optional из типа ответа.</summary>
+    /// <param name="type">Проверяемый тип ответа.</param>
+    /// <returns>Базовый тип или null, если тип отсутствует.</returns>
     private static ValIO.Core.IR.Types.IrType? Unwrap(ValIO.Core.IR.Types.IrType? type)
     {
         return type switch

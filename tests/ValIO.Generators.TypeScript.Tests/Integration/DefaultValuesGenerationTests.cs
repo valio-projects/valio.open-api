@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
+using ValIO.Core.Models;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Tests.TestHelpers;
 
@@ -15,14 +16,15 @@ public sealed class DefaultValuesGenerationTests
     private const string Contract = """
     {"openapi":"3.0.3","info":{"title":"Defaults","version":"1"},
      "paths":{"/items/{id}":{"get":{"operationId":"getItems","parameters":[
-       {"name":"id","in":"path","required":true,"schema":{"type":"integer","default":0}},
-       {"name":"active","in":"query","required":true,"schema":{"type":"boolean","default":false}},
-       {"name":"text","in":"query","schema":{"type":"string","default":""}}
+       {"name":"id","in":"path","required":true,"description":"Путь первая\r\nПуть вторая","schema":{"type":"integer","default":0}},
+       {"name":"active","in":"query","required":true,"description":"Флаг первая\rФлаг вторая","schema":{"type":"boolean","default":false}},
+       {"name":"text","in":"query","description":"Текст первая\nТекст вторая","schema":{"type":"string","default":""}}
      ],"responses":{"200":{"description":"ok"}}}}},
-     "components":{"schemas":{"Settings":{"type":"object","required":["MobileVisible","Missing"],"properties":{
-       "MobileVisible":{"type":"boolean","default":true},"disabled":{"type":"boolean","default":false},
+     "components":{"schemas":{"Settings":{"type":"object","required":["MobileVisible","Missing","nullableRequired"],"properties":{
+       "MobileVisible":{"type":"boolean","default":true,"description":"Первая строка\nВторая строка\nТретья строка"},"disabled":{"type":"boolean","default":false},
        "count":{"type":"integer","minimum":0,"default":0},"text":{"type":"string","default":""},
        "missing":{"type":"string"},"nullable":{"type":"string","nullable":true,"default":null},
+       "nullableRequired":{"type":"string","nullable":true},
        "items":{"type":"array","items":{"type":"integer"},"default":[0,1]},
        "config":{"type":"object","default":{"foo-bar":"x","a b":false}}
      }}}}}
@@ -43,6 +45,12 @@ public sealed class DefaultValuesGenerationTests
         index.Should().Contain("./models/settings/settings").And.Contain("./api/getItems/getItems.params");
         var parameters = context.GeneratedFiles.Single(f => f.RelativePath.EndsWith(".params.ts")).Content;
         model.Should().Contain("MobileVisible: boolean;").And.Contain("@default true");
+        model.Should().MatchRegex(@"\* @description Первая строка\r?\n\s*\* Вторая строка\r?\n\s*\* Третья строка");
+        model.Should().MatchRegex(@"\* @type \{boolean\}\r?\n\s*\* @required\r?\n\s*\* @default true\r?\n\s*\*/\r?\n\s*MobileVisible: boolean;");
+        model.Should().MatchRegex(@"\* @required\r?\n\s*\* @nullable\r?\n\s*\*/\r?\n\s*nullableRequired: string \| null;");
+        parameters.Should().MatchRegex(@"\* Путь первая\r?\n\s*\* Путь вторая\r?\n\s*\* @required\r?\n\s*\*/\r?\n\s*id: number;");
+        parameters.Should().MatchRegex(@"\* Флаг первая\r?\n\s*\* Флаг вторая\r?\n\s*\* @required\r?\n\s*\*/\r?\n\s*active: boolean;");
+        parameters.Should().MatchRegex(@"\* Текст первая\r?\n\s*\* Текст вторая\r?\n\s*\* @optional\r?\n\s*\*/\r?\n\s*text\?: string;");
         model.Should().Contain("SettingsConstraints");
         if (!enabled)
         {
@@ -81,6 +89,35 @@ public sealed class DefaultValuesGenerationTests
             process.ExitCode.Should().Be(0, error);
         }
         finally { Directory.Delete(dir, true); }
+    }
+
+    /// <summary>Сохраняет явные значения по умолчанию и независимую обязательность свойств при добавлении аффиксов к именам моделей и операций.</summary>
+    /// <returns>Задача, завершающаяся после строгой компиляции и выполнения экспортов значений по умолчанию с аффиксами.</returns>
+    [Test]
+    public async Task AffixedDefaultsPreserveOptionalNullableMembers()
+    {
+        using var harness = new PipelineTestHarness();
+        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Contract);
+        var context = await harness.RunAsync(document,
+            new TypeScriptGenerationOptions { GenerateDefaultValues = true },
+            naming: new NamingConventions { ModelPrefix = "Api", MethodPrefix = "Api" });
+        var model = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("/settings.ts", StringComparison.Ordinal));
+        var parameters = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(".params.ts", StringComparison.Ordinal));
+        model.Content.Should().Contain("nullable?: string | null;").And.Contain("ApiSettingsDefaultValues");
+        parameters.Content.Should().Contain("ApigetItemsQueryParamsDefaultValues");
+        await GeneratedTypeScriptCompiler.Compile(context.GeneratedFiles
+            .Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray(), "affixed explicit defaults");
+        await GeneratedTypeScriptRuntime.Run(context, $$"""
+            const defaults = require(path.join(root, {{JsonSerializer.Serialize(model.RelativePath[..^3] + ".js")}})).ApiSettingsDefaultValues;
+            const params = require(path.join(root, {{JsonSerializer.Serialize(parameters.RelativePath[..^3] + ".js")}})).ApigetItemsQueryParamsDefaultValues;
+            assert.equal(defaults.disabled, false);
+            assert.equal(defaults.count, 0);
+            assert.equal(defaults.text, '');
+            assert.equal(Object.hasOwn(defaults, 'nullable'), false);
+            assert.equal(Object.hasOwn(defaults, 'missing'), false);
+            assert.equal(params.active, false);
+            assert.equal(params.text, '');
+            """);
     }
 
     /// <summary>Verifies the configuration parser defaults to false and accepts a boolean.</summary>
