@@ -16,8 +16,8 @@ namespace ValIO.Generators.TypeScript.Tests.Steps;
 [TestFixture]
 public sealed class OptionalParameterSerializationTests
 {
-    /// <summary>Проверяет, что необязательные значения пропускаются только при undefined, в том числе в обязательных группах.</summary>
-    /// <returns>Задача, завершающаяся после выполнения обоих сгенерированных клиентов.</returns>
+    /// <summary>Preserves present false and zero values in query parameters and headers while omitting missing values.</summary>
+    /// <returns>A task completing after Axios and Fetch serialize the query and headers.</returns>
     [Test]
     public async Task OptionalTypesPreservePresentValuesInQueryAndHeaders()
     {
@@ -45,7 +45,7 @@ public sealed class OptionalParameterSerializationTests
             let config,url,init;
             const client={request:async value=>{config=value;return {status:204}}};
             const load=file=>{const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-              const exports={};vm.runInNewContext(js,{exports,require:()=>({default:client}),URLSearchParams,fetch:async (value,options)=>{url=value;init=options;return {status:204}}});return Object.values(exports).find(v=>typeof v==='function');};
+              const exports={};vm.runInNewContext(js,{exports,require:()=>({default:client}),URLSearchParams,Headers,fetch:async (value,options)=>{url=value;init=options;return new Response(null,{status:204})}});return Object.values(exports).find(v=>typeof v==='function');};
             (async()=>{
               const values={anchor:'ok',flag:false,count:0,nullable:null};
               const params={query:values,headers:values};
@@ -57,8 +57,9 @@ public sealed class OptionalParameterSerializationTests
               await load('fetch.ts')(params);
               const query=new URL(url,'http://example.test').searchParams;
               assert.equal(query.has('Missing.Value'),false);assert.equal(query.get('Flag'),'false');assert.equal(query.get('Count'),'0');assert.equal(query.get('Nullable'),'null');
-              assert.equal(Object.hasOwn(init.headers,'Missing.Value'),false);
-              assert.equal(init.headers.Flag,false);assert.equal(init.headers.Count,0);assert.equal(init.headers.Nullable,null);
+              assert.equal(init.headers.has('Missing.Value'),false);
+              assert.equal(init.headers.get('Flag'),'false');assert.equal(init.headers.get('Count'),'0');
+              assert.equal(init.headers.has('Nullable'),false);
             })().catch(error=>{console.error(error);process.exit(1)});
             """;
             var start = new ProcessStartInfo("node") { WorkingDirectory = directory, RedirectStandardError = true, RedirectStandardOutput = true, UseShellExecute = false };
