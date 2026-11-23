@@ -9,4 +9,7 @@ public enum UnaryOperator
     AddressOf,    // &
     LogicalNot,   // !
     Negate,       // -
+
+    /// <summary>Reads the runtime type name of the operand.</summary>
+    TypeOf,
 }

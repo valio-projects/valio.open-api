@@ -86,7 +86,7 @@ public sealed class ClientExecutionContractTests
             const override={request:async()=>{overrideCalls++; return response;}};
             let jsonCalls=0;
             const load=(file)=>{const src=fs.readFileSync(file,'utf8');const js=ts.transpileModule(src,{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-              const exports={};const ctx={exports,require:(name)=>name==='./defaults'?{apiMutator:defaults}:{},fetch:async()=>({status:response.status,json:async()=>{jsonCalls++;return response.data;}}),URLSearchParams};
+              const exports={};const ctx={exports,require:(name)=>name==='./defaults'?{apiMutator:defaults}:{},fetch:async()=>({status:response.status,ok:response.status>=200&&response.status<300,json:async()=>{jsonCalls++;return response.data;}}),URLSearchParams};
               vm.runInNewContext(js,ctx); return Object.values(exports).find(v=>typeof v==='function');};
             (async()=>{const f=load('axios.ts'); let x=await f(undefined,undefined);assert.equal(x.status,200);assert.equal(x.body,'hello-intercepted');assert.equal(defaultsCalls,1);assert.equal(intercepted,1);
               response={status:204,data:undefined};x=await f(undefined,undefined,override);assert.equal(x.status,204);assert.equal(x.body,undefined);assert.equal(overrideCalls,1);assert.equal(defaultsCalls,1);
@@ -150,7 +150,7 @@ public sealed class ClientExecutionContractTests
             let config, url;
             const client={request:async value=>{config=value;return {status:204,data:undefined}}};
             const load=file=>{const js=ts.transpileModule(fs.readFileSync(file,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020}}).outputText;
-              const exports={};vm.runInNewContext(js,{exports,require:()=>({default:client}),URLSearchParams,fetch:async value=>{url=value;return {status:204}}});return Object.values(exports).find(v=>typeof v==='function');};
+              const exports={};vm.runInNewContext(js,{exports,require:()=>({default:client}),URLSearchParams,fetch:async value=>{url=value;return {status:204,ok:true}}});return Object.values(exports).find(v=>typeof v==='function');};
             (async()=>{await load('axios.ts')({Paging_Page:3,Status:'active'},undefined,undefined,client);
               assert.equal(config.params['Paging.Page'],3);assert.equal(config.params.Status,'active');assert.equal(Object.hasOwn(config.params,'Paging_Page'),false);
               await load('fetch.ts')({Paging_Page:3,Status:'active'});const parsed=new URL(url,'http://example.test');

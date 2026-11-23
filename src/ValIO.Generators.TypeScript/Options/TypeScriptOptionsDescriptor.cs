@@ -235,7 +235,7 @@ public sealed class TypeScriptOptionsDescriptor : IGeneratorOptionsDescriptor
             DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Models"),
         new(Name: "exactJsonNumbers", Description: "Preserve decimal and int64 JSON numbers with lossless-json. Requires Zod 4.",
             DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Clients"),
-        new(Name: "includeResponseHeaders", Description: "Expose received headers on typed Axios and Next.js results using lowercase names.",
+        new(Name: "includeResponseHeaders", Description: "Expose received headers on typed Axios, Fetch, and Next.js results using lowercase names.",
             DefaultValue: "false", IsRequired: false, Kind: OptionKind.Bool, Group: "Clients"),
         new(
             Name:           "transports",

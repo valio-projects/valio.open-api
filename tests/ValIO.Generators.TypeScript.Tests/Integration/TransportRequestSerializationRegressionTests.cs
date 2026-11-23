@@ -114,7 +114,7 @@ public sealed class TransportRequestSerializationRegressionTests
         endpoint.Content.Should().NotContain("headers: params.headers");
     }
 
-    /// <summary>Ensures fetch operations with no response body never invoke the JSON parser.</summary>
+    /// <summary>Verifies that Fetch checks HTTP success for bodyless operations without reading JSON.</summary>
     /// <returns>The asynchronous generation check.</returns>
     [Test]
     public async Task FetchNoContentResponse_DoesNotReadJson()
@@ -123,7 +123,7 @@ public sealed class TransportRequestSerializationRegressionTests
 
         content.Should().Contain("await httpClient(");
         content.Should().NotContain("response.json()");
-        content.Should().NotContain("const response =");
+        content.Should().Contain("!response.ok");
     }
 
     /// <summary>Ensures Next.js uses the native Headers codec and emits a default JSON content type.</summary>

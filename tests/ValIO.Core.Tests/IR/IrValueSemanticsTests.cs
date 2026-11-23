@@ -1,3 +1,4 @@
+using NUnit.Framework;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Constraints;
 using ValIO.Core.IR.Enums;

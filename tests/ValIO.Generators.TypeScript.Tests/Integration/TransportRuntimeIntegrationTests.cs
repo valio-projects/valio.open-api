@@ -49,7 +49,7 @@ public sealed class TransportRuntimeIntegrationTests
               assert.deepEqual(receipt.body, { receipt: 'accepted' });
               console.log('next response decoding passed');
             })().catch(error => { console.error(error); process.exitCode = 1; });
-            """, "zod", "lossless-json");
+            """, "zod4", "lossless-json");
 
         output.Should().Contain("next response decoding passed");
     }
@@ -260,7 +260,7 @@ public sealed class TransportRuntimeIntegrationTests
               return new Headers(captured.headers instanceof HttpFields ? captured.headers.values : captured.headers);
             }
             (async () => {
-              const form = { file: new Blob(['picture']), metadata: { published: true }, tags: ['one', null, 'two'],
+              const form = { file: new File(['picture'], 'photo.bin'), metadata: { published: true }, tags: ['one', null, 'two'],
                              bytes: new Uint8Array([0, 255]), [{{JsonSerializer.Serialize(captionName)}}]: 'wire caption' };
               const mergeHeaders = ['fetch', 'axios', 'nextjs'].includes(transport);
               await endpoint('upload')({ form, headers: { X_Request_ID: 'request-42' } },
@@ -326,6 +326,7 @@ public sealed class TransportRuntimeIntegrationTests
         {
             Transports = [transport],
             ExactJsonNumbers = exactJsonNumbers,
+            ValidationLibrary = "zod4",
         });
         var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
             const endpoint = 'uploadOptional.' + {{JsonSerializer.Serialize(transport)}} + '.js';
@@ -472,7 +473,7 @@ public sealed class TransportRuntimeIntegrationTests
               await assert.rejects(read(400, new Uint8Array([52, 50]), {}), /HTTP 400 unexpected Content-Type/);
               console.log('response metadata passed');
             })().catch(error => { console.error(error); process.exitCode = 1; });
-            """, "zod", "lossless-json");
+            """, "zod4", "lossless-json");
 
         output.Should().Contain("response metadata passed");
     }

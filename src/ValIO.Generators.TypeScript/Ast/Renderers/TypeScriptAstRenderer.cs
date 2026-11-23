@@ -478,6 +478,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         {
             UnaryOperator.LogicalNot => $"!{operand}",
             UnaryOperator.Negate => $"-{operand}",
+            UnaryOperator.TypeOf => $"typeof {operand}",
             _ => throw new NotSupportedException($"Unary operator {node.Operator} is not supported for TypeScript")
         };
     }

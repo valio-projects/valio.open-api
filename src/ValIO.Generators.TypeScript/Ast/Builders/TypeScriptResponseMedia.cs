@@ -130,8 +130,7 @@ internal static class TypeScriptResponseMedia
         // When an unrelated status omits Content-Type, retain Axios's usual JSON interpretation.
         jsonMedia = new BinaryExpressionNode(jsonMedia, BinaryOperator.LogicalOr, Matches(string.Empty));
         var parser = exactNumbers ? TypeScriptExactJson.Runtime("parse") : Member(Id("JSON"), "parse");
-        var isString = new BinaryExpressionNode(Member(data, "constructor"), BinaryOperator.Equal, Id("String"));
-        var hasRawText = new BinaryExpressionNode(data, BinaryOperator.LogicalAnd, isString);
+        var hasRawText = new BinaryExpressionNode(new UnaryExpressionNode(UnaryOperator.TypeOf, data), BinaryOperator.Equal, Str("string"));
         return new ConditionalExpressionNode(new BinaryExpressionNode(hasRawText, BinaryOperator.LogicalAnd, jsonMedia), Call(parser, data), data);
     }
 
