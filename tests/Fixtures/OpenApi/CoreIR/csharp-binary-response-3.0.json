@@ -1,0 +1,47 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Binary download", "version": "1" },
+  "paths": {
+    "/documents/content": {
+      "get": {
+        "tags": ["Downloads"],
+        "operationId": "ReadDocument",
+        "parameters": [
+          { "name": "Range", "in": "header", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "The complete document",
+            "content": {
+              "application/octet-stream": { "schema": { "type": "string", "format": "binary" } },
+              "application/pdf": { "schema": { "type": "string", "format": "binary" } },
+              "image/png": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "206": {
+            "description": "The requested range",
+            "headers": { "Content-Range": { "schema": { "type": "string" } } },
+            "content": {
+              "application/octet-stream": { "schema": { "type": "string", "format": "binary" } }
+            }
+          },
+          "404": {
+            "description": "The document was not found",
+            "content": {
+              "application/problem+json": { "schema": { "$ref": "#/components/schemas/DownloadProblem" } }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "DownloadProblem": {
+        "type": "object",
+        "required": ["title"],
+        "properties": { "title": { "type": "string" } }
+      }
+    }
+  }
+}

@@ -1472,9 +1472,10 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <summary>Documents the successful response selected for the generated return type.</summary>
     /// <param name="response">The selected success response, if available.</param>
     /// <returns>The schema's response description or the result's transport meaning.</returns>
-    private static string GetOperationReturns(IrResponse? response) =>
-        !string.IsNullOrWhiteSpace(response?.Description) ? response.Description
-            : response?.Type is null ? "A task that completes when the request succeeds." : "The successful response body.";
+    private static string GetOperationReturns(IrResponse? response) => IsStreamingResponse(response)
+        ? "The HTTP response, including error statuses, with an unread body. The caller owns and must dispose the response. Pass a cancellation token to content reads."
+        : !string.IsNullOrWhiteSpace(response?.Description) ? response.Description
+        : response?.Type is null ? "A task that completes when the request succeeds." : "The successful response body.";
 
     /// <summary>Builds a documented interface method without an implementation body.</summary>
     /// <param name="operation">The normalized operation contract.</param>
@@ -2006,6 +2007,7 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
 
         var successResponses = GetSuccessResponses(operation);
         var successResponse = SelectSuccessResponse(successResponses);
+        var streamResponse = !withResponse && IsStreamingResponse(successResponse);
         var successType = successResponse?.Type is { } responseType ? BuildType(responseType) : null;
 
         // Подсчитываем capacity для StringBuilder
@@ -2023,8 +2025,8 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         statements.Add(urlBuilderVar);
         
         // Строим URL по частям, заменяя {param} на значения
-        // Metadata clients use an injected BaseAddress; a relative path retains its gateway prefix.
-        var basePath = withResponse ? operation.Path.TrimStart('/') : operation.Path;
+        // A relative path retains the gateway prefix for streaming and metadata methods.
+        var basePath = withResponse || streamResponse ? operation.Path.TrimStart('/') : operation.Path;
         var appendMethod = new MemberAccessExpressionNode(
             @object: new IdentifierExpressionNode(new IdentifierNode(Local("urlBuilder"))),
             member: new IdentifierNode("Append"));
@@ -2234,7 +2236,7 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Создаем блок для using statement requestMessage
         var requestMessageUsingBodyStatements = new List<StatementNode>();
         
-        // Advertise only the response representations the generated client can deserialize.
+        // Advertise the selected response representations and documented JSON errors for streaming calls.
         var requestMessageHeaders = new MemberAccessExpressionNode(
             @object: new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
             member: new IdentifierNode("Headers"));
@@ -2244,14 +2246,16 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         var acceptAdd = new MemberAccessExpressionNode(
             @object: acceptHeader,
             member: new IdentifierNode("Add"));
-        var responseMedia = (withResponse ? MetadataRepresentations(operation)
+        var successMedia = successResponses.Where(response => response.Type is not null)
+            .SelectMany(response => response.ContentTypes.DefaultIfEmpty("application/json"));
+        var metadataMedia = withResponse || streamResponse ? MetadataRepresentations(operation)
             .Where(representation => representation.Type is not null)
             .Select(representation => representation.MediaType!)
-            : successResponses
-            .Where(response => response.Type is not null)
-            .SelectMany(response => response.ContentTypes.DefaultIfEmpty("application/json")))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .DefaultIfEmpty("application/json");
+            : [];
+        var responseMedia = withResponse
+            ? metadataMedia.Concat(successResponses.Where(IsStreamingResponse).SelectMany(response => response.ContentTypes))
+            : successMedia.Concat(metadataMedia);
+        responseMedia = responseMedia.Distinct(StringComparer.OrdinalIgnoreCase).DefaultIfEmpty("application/json");
         foreach (var media in responseMedia)
         {
             var acceptMedia = new CallExpressionNode(
@@ -2356,6 +2360,19 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         if (withResponse)
         {
             requestMessageUsingBodyStatements.Add(BuildMetadataSend(operation, successResponse, Local("requestMessage")));
+            return BuildRequestBlock(statements, requestMessageVar, requestMessageUsingBodyStatements);
+        }
+
+        if (streamResponse)
+        {
+            var send = new CallExpressionNode(
+                new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("this._httpClient")), new IdentifierNode("SendAsync")),
+                [
+                    new IdentifierExpressionNode(new IdentifierNode(Local("requestMessage"))),
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("HttpCompletionOption")), new IdentifierNode("ResponseHeadersRead")),
+                    new IdentifierExpressionNode(new IdentifierNode("cancellationToken")),
+                ]);
+            requestMessageUsingBodyStatements.Add(new ReturnStatementNode(new AwaitExpressionNode(send)));
             return BuildRequestBlock(statements, requestMessageVar, requestMessageUsingBodyStatements);
         }
 
@@ -2750,10 +2767,10 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
             }.ToImmutableList());
     }
 
-    /// <summary>Resolves the JSON representations that can share the generated C# response signature.</summary>
+    /// <summary>Resolves the JSON or streaming representations that share the generated C# response signature.</summary>
     /// <param name="operation">The operation whose successful responses are exposed by the client.</param>
-    /// <returns>Successful statuses with their selected JSON types and media names.</returns>
-    /// <exception cref="NotSupportedException">A typed status has no JSON representation or has incompatible body types.</exception>
+    /// <returns>Successful statuses with their selected body types and media names.</returns>
+    /// <exception cref="NotSupportedException">A typed status has no supported representation or has incompatible body types.</exception>
     private static IReadOnlyList<IrResponse> GetSuccessResponses(IrOperation operation)
     {
         var result = new List<IrResponse>();
@@ -2777,13 +2794,23 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 continue;
             }
 
-            var json = response.MediaTypes.Where(media => media.Type is not null && IsJsonMediaType(media.Name)).ToArray();
+            var typed = response.MediaTypes.Where(media => media.Type is not null).ToArray();
+            var json = typed.Where(media => IsJsonMediaType(media.Name)).ToArray();
             if (json.Length == 0)
-                throw new NotSupportedException($"C# operation '{operation.MethodName}' has no supported JSON response for HTTP {response.StatusCode}.");
+            {
+                if (typed.Any(media => !IsBinaryResponseType(media.Type)))
+                    throw new NotSupportedException($"C# operation '{operation.MethodName}' has no supported JSON or binary response for HTTP {response.StatusCode}.");
+
+                result.Add(new IrResponse(response)
+                {
+                    Type = typed[0].Type,
+                    ContentTypes = typed.Select(media => media.Name.Split(';', 2)[0].Trim()).ToArray()
+                });
+                continue;
+            }
 
             var type = json[0].Type!;
-            if (response.MediaTypes.Any(media => media.Type is not null &&
-                    !IrTypeComparer.AreSemanticallyEqual(type, media.Type, ignorePresence: false)))
+            if (typed.Any(media => !IrTypeComparer.AreSemanticallyEqual(type, media.Type, ignorePresence: false)))
             {
                 throw new NotSupportedException(
                     $"C# operation '{operation.MethodName}' has incompatible media schemas for HTTP {response.StatusCode}. An explicit result union is required.");
@@ -2798,6 +2825,18 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
 
         return result;
     }
+
+    /// <summary>Recognizes unencoded binary data, distinct from a JSON byte-array representation.</summary>
+    /// <param name="type">The response representation's schema type.</param>
+    /// <returns>Whether the schema describes raw bytes.</returns>
+    private static bool IsBinaryResponseType(IrType? type) => type is not null && UnwrapNullableOrOptional(type) is
+        IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.File };
+
+    /// <summary>Identifies a projected response that hands the unread HTTP body to the caller.</summary>
+    /// <param name="response">The resolved response with its supported media names.</param>
+    /// <returns>Whether the selected representation is raw binary over a non-JSON media type.</returns>
+    private static bool IsStreamingResponse(IrResponse? response) => response is { ContentTypes.Count: > 0 }
+        && IsBinaryResponseType(response.Type) && !response.ContentTypes.Any(IsJsonMediaType);
 
     /// <summary>Recognizes a concrete JSON media type understood by the generated serializer.</summary>
     /// <param name="value">The declared media name, optionally followed by parameters.</param>
@@ -2817,9 +2856,12 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     private static IrResponse? SelectSuccessResponse(IReadOnlyList<IrResponse> responses)
     {
         var typed = responses.Where(response => response.Type is not null).ToArray();
-        if (typed.Skip(1).Any(response => !IrTypeComparer.AreSemanticallyEqual(typed[0].Type, response.Type, ignorePresence: false)))
+        var selected = typed.FirstOrDefault();
+        var streaming = IsStreamingResponse(selected);
+        if (typed.Skip(1).Any(response => IsStreamingResponse(response) != streaming ||
+            (!streaming && !IrTypeComparer.AreSemanticallyEqual(selected?.Type, response.Type, ignorePresence: false))))
             throw new NotSupportedException("C# operations with different success body types require an explicit result union, which is not implemented.");
-        return typed.FirstOrDefault() ?? responses.FirstOrDefault();
+        return selected ?? responses.FirstOrDefault();
     }
 
     /// <summary>Wraps the selected operation result in the appropriate asynchronous C# return type.</summary>
@@ -2827,6 +2869,9 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     /// <returns>Task or Task of the selected body type.</returns>
     private TypeNode BuildOperationReturnType(IrResponse? successResponse)
     {
+        if (IsStreamingResponse(successResponse))
+            return new GenericTypeNode(new IdentifierNode("Task"), [BuildSimpleType("HttpResponseMessage")]);
+
         if (successResponse?.Type != null)
         {
             // Для async методов оборачиваем тип в Task<T>

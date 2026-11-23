@@ -22,6 +22,7 @@
         <None Include="..\..\samples\csharp-http-pipeline\BearerReplayHandler.cs"
               Link="Fixtures\CSharpHttpPipeline\BearerReplayHandler.cs" CopyToOutputDirectory="PreserveNewest" />
         <None Update="Fixtures\HttpPipelineChecks.cs.txt" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Fixtures\BinaryResponseChecks.cs.txt" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 
 </Project>

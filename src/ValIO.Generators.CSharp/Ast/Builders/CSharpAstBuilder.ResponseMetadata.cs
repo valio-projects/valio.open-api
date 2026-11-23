@@ -59,7 +59,7 @@ public partial class CSharpAstBuilder
     /// <summary>Chooses the preferred success body type for direct access on the response.</summary>
     /// <param name="success">The selected successful response contract.</param>
     /// <returns>The preferred type, or an object when no success body is declared.</returns>
-    private TypeNode MetadataPrimaryType(IrResponse? success) => success?.Type is { } type
+    private TypeNode MetadataPrimaryType(IrResponse? success) => !IsStreamingResponse(success) && success?.Type is { } type
         ? BuildType(UnwrapNullableOrOptional(type))
         : BuildSimpleType("object");
 

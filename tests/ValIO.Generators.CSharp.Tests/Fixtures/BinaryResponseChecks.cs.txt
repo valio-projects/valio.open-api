@@ -1,0 +1,179 @@
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
+using System.Text.Json;
+using Generated.Contracts;
+
+using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+var token = deadline.Token;
+using var server = new TcpListener(IPAddress.Loopback, 0);
+server.Start();
+using var http = new HttpClient
+{
+    BaseAddress = new Uri($"http://127.0.0.1:{((IPEndPoint)server.LocalEndpoint).Port}/private-owner/"),
+    MaxResponseContentBufferSize = 64,
+};
+using var activitySource = new ActivitySource("downloads-test");
+using var meter = new Meter("downloads-test");
+IDownloads client = new DownloadsTelemetryDecorator(new Downloads(http), activitySource, new HttpClientMetrics(meter));
+
+var startBody = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var complete = RespondAsync(server, null, async stream =>
+{
+    await WriteAsync(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n", token);
+    await startBody.Task.WaitAsync(token);
+    await WriteAsync(stream, $"200\r\n{new string('A', 512)}\r\n1\r\nB\r\n0\r\n\r\n", token);
+}, token);
+using (var response = await client.ReadDocument(null, token))
+{
+    Check(response.StatusCode == HttpStatusCode.OK && response.Headers.TransferEncodingChunked == true &&
+        response.Content.Headers.ContentType?.MediaType == "application/pdf" && response.Content.Headers.ContentLength is null,
+        "The generated client lost download status, media, or chunked headers.");
+    startBody.SetResult();
+    var stream = await response.Content.ReadAsStreamAsync(token);
+    using var buffer = new MemoryStream();
+    await stream.CopyToAsync(buffer, token);
+    Check(buffer.Length == 513 && Encoding.ASCII.GetString(buffer.ToArray()) == new string('A', 512) + "B",
+        "The streamed response was buffered, truncated, or changed.");
+}
+await complete;
+
+var partial = RespondAsync(server, "bytes=5-7", stream => WriteAsync(stream,
+    "HTTP/1.1 206 Partial Content\r\nContent-Type: application/octet-stream\r\nContent-Range: bytes 5-7/40\r\n" +
+    "Content-Length: 3\r\nContent-Disposition: attachment; filename=document.bin\r\nConnection: close\r\n\r\nxyz", token), token);
+var range = await client.ReadDocument("bytes=5-7", token);
+using (range)
+{
+    Check(range.StatusCode == HttpStatusCode.PartialContent && range.Content.Headers.ContentRange?.ToString() == "bytes 5-7/40" &&
+        range.Content.Headers.ContentLength == 3 && range.Content.Headers.ContentDisposition?.FileName == "document.bin",
+        "The generated client lost the partial-content status or content headers.");
+    var stream = await range.Content.ReadAsStreamAsync(token);
+    var bytes = new byte[3];
+    await stream.ReadExactlyAsync(bytes, token);
+    Check(bytes.AsSpan().SequenceEqual("xyz"u8), "The partial body changed in transit.");
+}
+try
+{
+    await range.Content.ReadAsStreamAsync(token);
+    throw new InvalidOperationException("Disposing the response did not dispose its content.");
+}
+catch (ObjectDisposedException)
+{
+}
+await partial;
+
+const string problem = """{"title":"Document missing"}""";
+var failure = RespondAsync(server, null, stream => WriteAsync(stream,
+    $"HTTP/1.1 404 Not Found\r\nContent-Type: application/problem+json\r\nContent-Length: {problem.Length}\r\nConnection: close\r\n\r\n{problem}", token), token);
+using (var response = await client.ReadDocument(null, token))
+{
+    Check(response.StatusCode == HttpStatusCode.NotFound && response.Content.Headers.ContentType?.MediaType == "application/problem+json",
+        "The generated client consumed or replaced HTTP error metadata.");
+    using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(token), cancellationToken: token);
+    Check(body.RootElement.GetProperty("title").GetString() == "Document missing", "The HTTP error body was lost.");
+}
+await failure;
+
+var metadata = RespondAsync(server, null, stream => WriteAsync(stream,
+    $"HTTP/1.1 404 Not Found\r\nContent-Type: application/problem+json\r\nContent-Length: {problem.Length}\r\nConnection: close\r\n\r\n{problem}", token), token);
+var snapshot = await client.ReadDocumentWithResponse(null, token);
+Check(snapshot.StatusCode == 404 && snapshot.TryGetBody<DownloadProblem>(out var error) && error.Title == "Document missing",
+    "The response metadata method lost the declared JSON error body.");
+await metadata;
+
+var finishCanceledBody = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var canceledBody = RespondAsync(server, null, async stream =>
+{
+    await WriteAsync(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/pdf\r\nContent-Length: 500\r\nConnection: close\r\n\r\n", token);
+    await finishCanceledBody.Task.WaitAsync(token);
+}, token);
+using (var response = await client.ReadDocument(null, token))
+using (var readCancellation = CancellationTokenSource.CreateLinkedTokenSource(token))
+{
+    var stream = await response.Content.ReadAsStreamAsync(token);
+    var read = stream.ReadAsync(new byte[1], readCancellation.Token).AsTask();
+    Check(!read.IsCompleted, "A body read completed before the server sent any bytes.");
+    readCancellation.Cancel();
+    await CheckCanceledAsync(read, readCancellation.Token);
+    finishCanceledBody.SetResult();
+}
+await canceledBody;
+
+var received = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var finishCanceledRequest = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var canceledHeaders = RespondAsync(server, null, async _ =>
+{
+    received.SetResult();
+    await finishCanceledRequest.Task.WaitAsync(token);
+}, token);
+using (var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(token))
+{
+    var request = client.ReadDocument(null, requestCancellation.Token);
+    await received.Task.WaitAsync(token);
+    requestCancellation.Cancel();
+    await CheckCanceledAsync(request, requestCancellation.Token);
+    finishCanceledRequest.SetResult();
+}
+await canceledHeaders;
+Console.WriteLine("CSharp binary responses passed");
+
+/// <summary>Accepts one complete HTTP request and supplies the scripted response on a fresh connection.</summary>
+/// <param name="server">The loopback listener assigned an ephemeral port.</param>
+/// <param name="range">The expected optional wire Range header.</param>
+/// <param name="respond">The status, headers, and body writer for this request.</param>
+/// <param name="token">The single fixture deadline.</param>
+/// <returns>The task that completes after the simulated server closes its connection.</returns>
+static async Task RespondAsync(TcpListener server, string? range, Func<NetworkStream, Task> respond, CancellationToken token)
+{
+    using var connection = await server.AcceptTcpClientAsync(token);
+    await using var stream = connection.GetStream();
+    using var reader = new StreamReader(stream, Encoding.ASCII, leaveOpen: true);
+    Check(await reader.ReadLineAsync(token) == "GET /private-owner/documents/content HTTP/1.1", "The gateway request path changed.");
+    var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    while (await reader.ReadLineAsync(token) is { Length: > 0 } header)
+    {
+        var boundary = header.IndexOf(':');
+        headers[header[..boundary]] = header[(boundary + 1)..].Trim();
+    }
+    Check(headers.GetValueOrDefault("Range") == range, "The requested byte range did not reach the server.");
+    var accepts = headers.GetValueOrDefault("Accept");
+    Check(accepts is not null && accepts.Contains("application/octet-stream") && accepts.Contains("application/pdf") &&
+        accepts.Contains("image/png") && accepts.Contains("application/problem+json"), "The declared response media were not advertised.");
+    await respond(stream);
+}
+
+/// <summary>Writes ASCII fixture bytes directly to the HTTP connection.</summary>
+/// <param name="stream">The connected response stream.</param>
+/// <param name="text">The complete wire segment.</param>
+/// <param name="token">The single fixture deadline.</param>
+/// <returns>The pending write.</returns>
+static Task WriteAsync(NetworkStream stream, string text, CancellationToken token) =>
+    stream.WriteAsync(Encoding.ASCII.GetBytes(text), token).AsTask();
+
+/// <summary>Requires that an in-flight operation stops after caller cancellation.</summary>
+/// <param name="operation">The pending HTTP request or content read.</param>
+/// <param name="token">The caller's canceled token.</param>
+/// <returns>The cancellation assertion.</returns>
+static async Task CheckCanceledAsync(Task operation, CancellationToken token)
+{
+    try
+    {
+        await operation;
+        throw new InvalidOperationException("The operation ignored caller cancellation.");
+    }
+    catch (OperationCanceledException) when (token.IsCancellationRequested)
+    {
+    }
+}
+
+/// <summary>Stops the fixture at the first broken observable contract.</summary>
+/// <param name="condition">The assertion result.</param>
+/// <param name="message">The failure description.</param>
+/// <exception cref="InvalidOperationException">The assertion failed.</exception>
+static void Check(bool condition, string message)
+{
+    if (!condition)
+        throw new InvalidOperationException(message);
+}

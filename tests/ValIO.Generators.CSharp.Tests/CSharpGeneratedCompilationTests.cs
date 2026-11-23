@@ -291,6 +291,68 @@ public sealed class CSharpGeneratedCompilationTests
         }
     }
 
+    /// <summary>Compiles a generated binary download client and checks streaming against a loopback HTTP server.</summary>
+    /// <returns>The generated client, interface, decorator, and transport assertions.</returns>
+    [Test]
+    public async Task BinaryOpenApi_StreamsResponsesAndTransfersOwnership()
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CoreIR/csharp-binary-response-3.0.json")));
+        var parsed = await OpenApiDocument.LoadAsync(input, "json");
+        var ir = new IrBuilder(new SchemaResolver(parsed.Document!), new NamingConverter()).BuildFromOpenApi(parsed.Document!);
+        var context = new GenerationContext
+        {
+            IrDocument = ir,
+            Configuration = new GenerationConfiguration
+            {
+                Namespace = "Generated.Contracts",
+                NamingConvention = new NamingConventions { Properties = NamingConvention.PascalCase },
+            },
+            PluginOptions = new CSharpGenerationOptions
+            {
+                GenerateInterfaces = true,
+                InterfaceFileStrategy = InterfaceFileStrategy.SeparateFile,
+                GenerateResponseMetadata = true,
+                GenerateTraces = true,
+                GenerateMetrics = true,
+            }
+        };
+        var naming = new CSharpNamingConverter();
+        var renderer = new CSharpAstRenderer();
+        await new CSharpModelsStep(naming, renderer).ExecuteAsync(context);
+        await new CSharpClientStep(naming, renderer).ExecuteAsync(context);
+
+        var files = context.GeneratedFiles.ToDictionary(file => file.RelativePath, file => file.Content);
+        files["Api/IDownloads.cs"].Should().Contain("Task<HttpResponseMessage> ReadDocument(")
+            .And.Contain("The caller owns and must dispose the response.");
+        files["Api/DownloadsClient.cs"].Should().Contain("HttpCompletionOption.ResponseHeadersRead")
+            .And.NotContain("ReadAsStringAsync");
+
+        var directory = Path.Combine(Path.GetTempPath(), "ValIO.CSharp.BinaryResponse", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory, "Smoke.csproj"), """
+                <Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><TreatWarningsAsErrors>true</TreatWarningsAsErrors></PropertyGroup></Project>
+                """);
+            await File.WriteAllTextAsync(Path.Combine(directory, "NuGet.Config"), "<configuration><packageSources><clear /></packageSources></configuration>");
+            foreach (var (path, content) in files)
+            {
+                var destination = Path.Combine(directory, path);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                await File.WriteAllTextAsync(destination, content);
+            }
+            File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "BinaryResponseChecks.cs.txt"), Path.Combine(directory, "Program.cs"));
+
+            var result = await RunGeneratedProject(directory);
+            result.ExitCode.Should().Be(0, "the generated download must compile and stream:{0}{1}", Environment.NewLine, result.Output);
+            result.Output.Should().Contain("CSharp binary responses passed");
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     /// <summary>Compiles nullable references from real OpenAPI and exercises their System.Text.Json codecs.</summary>
     /// <returns>The asynchronous source generation, compiler and runtime verification.</returns>
     [Test]
