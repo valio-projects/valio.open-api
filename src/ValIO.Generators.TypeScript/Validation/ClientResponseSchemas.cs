@@ -29,10 +29,13 @@ internal static class ClientResponseSchemas
     /// <param name="naming">The TypeScript identifier naming policy.</param>
     /// <param name="operation">The operation supplying the response schemas.</param>
     /// <param name="includeAlternatives">Whether the client needs media-specific validators.</param>
+    /// <param name="skipBinaryStreams">Whether successful binary bodies bypass decoding and validation.</param>
     /// <returns>Names of the exported schema constants to import.</returns>
-    public static List<string> ConstructedResultSchemaNames(INamingConverter naming, IrOperation operation, bool includeAlternatives = false)
+    public static List<string> ConstructedResultSchemaNames(INamingConverter naming, IrOperation operation,
+        bool includeAlternatives = false, bool skipBinaryStreams = false)
         => ValidatedResponses(operation, includeAlternatives)
             .Where(r => ValidationTypes.NeedsConstructedSchema(r.Type!))
+            .Where(response => !skipBinaryStreams || !TypeScriptBinaryResponse.IsBinarySuccess(operation, response))
             .Select(r => ResultSchemaName(naming, operation.MethodName, r.StatusCode))
             .ToList();
 

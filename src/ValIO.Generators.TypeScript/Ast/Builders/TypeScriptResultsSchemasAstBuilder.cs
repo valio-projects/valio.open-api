@@ -24,6 +24,9 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
     /// <summary>Используют ли генерируемые схемы общее регулярное выражение UUID.</summary>
     private readonly bool _usesUuidRegex;
 
+    /// <summary>Whether binary success bodies bypass schema decoding in the generated transport.</summary>
+    /// <value>True for a Next.js stream result contract.</value>
+    internal bool StreamBinaryResponses { get; init; }
 
     /// <summary>Создаёт построитель схем ответов для окончательного документа.</summary>
     /// <param name="documentContext">Общие индексы документа.</param>
@@ -59,6 +62,7 @@ public sealed class TypeScriptResultsSchemasAstBuilder : AstBuilderBase
 
         var constructed = TypeScriptResponseMedia.SchemaInputs(operation, includeAlternatives: true, preservePrimary: true)
             .Where(r => r.Type != null && ValidationTypes.NeedsConstructedSchema(r.Type))
+            .Where(response => !StreamBinaryResponses || !TypeScriptBinaryResponse.IsBinarySuccess(operation, response))
             .ToList();
 
         if (constructed.Count == 0)

@@ -28,6 +28,10 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
     /// <value>True when at least one generated transport exposes headers.</value>
     internal bool IncludeResponseHeaders { get; init; }
 
+    /// <summary>Whether the generated transport hands raw binary success bodies to its caller.</summary>
+    /// <value>True for a Next.js stream result contract.</value>
+    internal bool StreamBinaryResponses { get; init; }
+
     /// <summary>Creates a TypeScriptResultsAstBuilder for one finalized IR document.</summary>
     /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
     /// <param name="namingConverter">The generated identifier naming policy.</param>
@@ -129,12 +133,17 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
         else
         {
             var variantTypes = new List<TypeNode>();
+            var includeHeaders = IncludeResponseHeaders || StreamBinaryResponses
+                && operation.Responses.Any(response => TypeScriptBinaryResponse.IsBinarySuccess(operation, response));
 
             foreach (var response in operation.Responses)
             {
                 var statusLiteral = ParseStatusCodeLiteral(response.StatusCode);
                 var alternatives = TypeScriptResponseMedia.Alternatives(operation, response);
-                var bodyType = TypeScriptResponseMedia.HasDistinctSchemas(alternatives)
+                var isStream = StreamBinaryResponses && TypeScriptBinaryResponse.IsBinarySuccess(operation, response);
+                var bodyType = isStream
+                    ? new GenericTypeNode(new IdentifierNode("ReadableStream"), [new SimpleTypeNode(new IdentifierNode("Uint8Array"))])
+                    : TypeScriptResponseMedia.HasDistinctSchemas(alternatives)
                     ? new UnionTypeNode(alternatives.Select(media => _typeBuilder(media.Type!)).ToArray())
                     : response.Type == null
                         ? new SimpleTypeNode(new IdentifierNode("undefined"), isPrimitive: true)
@@ -153,7 +162,9 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
                         new IdentifierNode("body"),
                         bodyType,
                         isRequired: true,
-                        documentation: new CommentNode(response.Description ?? $"Response body for {response.StatusCode}")),
+                        documentation: new CommentNode(isStream
+                            ? "Unread response stream. The caller must consume or cancel it."
+                            : response.Description ?? $"Response body for {response.StatusCode}")),
                     new PropertySignatureNode(
                         new IdentifierNode("isSuccessful"),
                         new SimpleTypeNode(new IdentifierNode("boolean"), isPrimitive: true, literalValue: isSuccess),
@@ -165,7 +176,7 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
                         isRequired: true,
                         documentation: new CommentNode(isSuccess ? "False — response is 2xx" : "True — response is not 2xx"))
                 };
-                if (IncludeResponseHeaders)
+                if (includeHeaders)
                     members.Add(TypeScriptResponseHeaders.Signature(response.Headers));
 
                 var variantInterface = new InterfaceDeclarationNode(
@@ -205,7 +216,7 @@ public sealed class TypeScriptResultsAstBuilder : AstBuilderBase
                     isRequired: true,
                     documentation: new CommentNode("Always true — undocumented status codes are treated as failures"))
             };
-            if (IncludeResponseHeaders)
+            if (includeHeaders)
                 otherMembers.Add(TypeScriptResponseHeaders.Signature());
 
             var otherVariantInterface = new InterfaceDeclarationNode(

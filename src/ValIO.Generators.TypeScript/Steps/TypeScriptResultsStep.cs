@@ -44,7 +44,8 @@ public sealed class TypeScriptResultsStep : ICodeGenerationStep
         {
             IncludeResponseHeaders = opts?.IncludeResponseHeaders == true &&
                 opts.Transports.Any(transport => transport is TypeScriptOptionIds.Transport.Axios
-                    or TypeScriptOptionIds.Transport.Fetch or TypeScriptOptionIds.Transport.Nextjs)
+                    or TypeScriptOptionIds.Transport.Fetch or TypeScriptOptionIds.Transport.Nextjs),
+            StreamBinaryResponses = TypeScriptBinaryResponse.UsesNextJsStreams(opts)
         };
         var fileOrg = context.Configuration.FileOrganization;
         var clientsPath = fileOrg.ClientsPath ?? "api";

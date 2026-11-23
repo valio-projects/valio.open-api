@@ -28,8 +28,8 @@ namespace ValIO.Generators.TypeScript.Nextjs.Ast.Builders;
 /// cacheable <c>GET</c> operations attaches a per-operation cache <b>tag</b> plus an optional
 /// <c>revalidate&lt;Op&gt;()</c> helper that calls <c>revalidateTag(tag, "max")</c> from <c>next/cache</c>
 /// for on-demand invalidation. Caller-supplied <c>options</c> (cache, credentials, headers, next-config)
-/// are merged in, with per-field override. Everything else — the parameter/result types, schemas,
-/// validation and the discriminable <c>{Op}Results</c> union — is shared verbatim with the other transports.
+/// are merged in, with per-field override. Binary downloads in Next.js-only projects skip caching
+/// and return the unread stream and received headers through the status-discriminated result.
 /// </remarks>
 public sealed class NextjsClientAstBuilder : AstBuilderBase
 {
@@ -48,6 +48,9 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
 
     /// <summary>Whether this client reads and writes JSON using exact numeric tokens.</summary>
     private readonly bool _exactJsonNumbers;
+
+    /// <summary>Whether the selected transport uses the native stream result contract.</summary>
+    private readonly bool _streamBinaryResponses;
 
     /// <summary>Creates a NextjsClientAstBuilder for one finalized IR document.</summary>
     /// <param name="documentContext">The shared immutable indexes of the finalized IR document.</param>
@@ -70,6 +73,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         _generateRevalidateHelpers = options?.NextJs?.GenerateRevalidateHelpers ?? true;
         _includeResponseHeaders = options?.IncludeResponseHeaders == true;
         _exactJsonNumbers = options?.ExactJsonNumbers == true;
+        _streamBinaryResponses = TypeScriptBinaryResponse.UsesNextJsStreams(options);
     }
 
     /// <summary>
@@ -87,8 +91,8 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         var operationFileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
         var hasParameters = _paramsBuilder.HasParameters(operation);
         var hasResultType = _resultsBuilder.HasResponsesWithBody(operation);
-        // Only GET responses participate in Next's persistent cache, so tags/revalidate apply to GET only.
-        var isCacheable = string.Equals(operation.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase);
+        var isCacheable = string.Equals(operation.HttpMethod, "GET", StringComparison.OrdinalIgnoreCase)
+            && !operation.Responses.Any(response => IsStreamingResponse(operation, response));
         // Cache tags are derived in the shared {op}.query-keys.ts module so a server-side revalidateTag mirrors a
         // client-side prefix invalidateQueries (see TypeScriptQueryKeysAstBuilder / TypeScriptCacheKey).
         var cacheTagsFnName = $"get{_namingConverter.ToPascalCase(operation.MethodName)}CacheTags";
@@ -186,7 +190,8 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
                     from: BuildSchemaImportPath(modelName, fileOrganization),
                     kind: ImportKind.Named));
 
-            var resultSchemaNames = Validation.ClientResponseSchemas.ConstructedResultSchemaNames(_namingConverter, operation, includeAlternatives: true);
+            var resultSchemaNames = Validation.ClientResponseSchemas.ConstructedResultSchemaNames(_namingConverter, operation,
+                includeAlternatives: true, skipBinaryStreams: _streamBinaryResponses);
             if (resultSchemaNames.Count > 0)
                 imports.Add(new ImportNode(
                     items: resultSchemaNames.Select(n => new IdentifierNode(n)).ToImmutableList(),
@@ -377,10 +382,13 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
             operation, sources.HeadersSource, sources.HeadersSourceMayBeUndefined,
             Member(Id("options"), "headers", optional: true), statements);
 
+        var streamingResponses = operation.Responses.Where(response => IsStreamingResponse(operation, response)).ToArray();
+        var hasStreams = streamingResponses.Length > 0;
+        var includeHeaders = _includeResponseHeaders || hasStreams;
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("requestInit"),
             type: null,
-            initializer: BuildFetchInit(operation, sources, requestHeaders, hasParameters, isCacheable, cacheTagsFnName)));
+            initializer: BuildFetchInit(operation, sources, requestHeaders, hasParameters, isCacheable, cacheTagsFnName, hasStreams)));
         statements.Add(new BlankLineStatementNode());
 
         var fetchCall = new CallExpressionNode(
@@ -403,6 +411,12 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
             return new BlockNode(statements.ToImmutableList());
         }
 
+        if (hasStreams)
+        {
+            statements.AddRange(TypeScriptResponseHeaders.ReadFetch(Member(Id("response"), "headers")));
+            AddStreamingResultBranches(operation, streamingResponses, statements);
+        }
+
         var bodyJson = new CastExpressionNode(
             Simple("unknown", isPrimitive: true),
             _exactJsonNumbers
@@ -415,13 +429,13 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
             new IdentifierNode("responseData"),
             type: null,
             initializer: TypeScriptResponseBody.ReadFetch(operation, Id("response"), bodyJson)));
-        if (_includeResponseHeaders)
+        if (includeHeaders && !hasStreams)
             statements.AddRange(TypeScriptResponseHeaders.ReadFetch(Member(Id("response"), "headers")));
 
         statements.Add(new BlankLineStatementNode());
 
-        AddStatusResultBranches(operation, statements);
-        statements.Add(BuildFallbackResult(operation));
+        AddStatusResultBranches(operation, statements, includeHeaders);
+        statements.Add(BuildFallbackResult(operation, includeHeaders));
 
         return new BlockNode(statements.ToImmutableList());
     }
@@ -496,8 +510,10 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
     /// <param name="hasParameters">Whether the generated operation accepts a parameter object.</param>
     /// <param name="isCacheable">Whether the operation supports Next.js cache configuration.</param>
     /// <param name="cacheTagsFnName">The generated helper that derives cache tags for the operation.</param>
+    /// <param name="hasStreams">Whether storing the response would consume or buffer a streaming body.</param>
     /// <returns>The generated <c>RequestInit</c> object literal.</returns>
-    private ObjectLiteralExpressionNode BuildFetchInit(IrOperation operation, TypeScriptParameterSources sources, ExpressionNode requestHeaders, bool hasParameters, bool isCacheable, string cacheTagsFnName)
+    private ObjectLiteralExpressionNode BuildFetchInit(IrOperation operation, TypeScriptParameterSources sources,
+        ExpressionNode requestHeaders, bool hasParameters, bool isCacheable, string cacheTagsFnName, bool hasStreams)
     {
         var props = new List<PropertyAssignmentNode>
         {
@@ -526,6 +542,13 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
 
         if (isCacheable)
             props.Add(new PropertyAssignmentNode(new IdentifierNode("next"), BuildNextConfig(cacheTagsFnName, hasParameters)));
+
+        if (hasStreams)
+        {
+            props.Add(new PropertyAssignmentNode(new IdentifierNode("cache"),
+                new CastExpressionNode(Simple("const"), String("no-store"), useAsOperator: true)));
+            props.Add(new PropertyAssignmentNode(new IdentifierNode("next"), Id("undefined")));
+        }
 
         props.Add(SpreadProperty(new ConditionalExpressionNode(Id("signal"), Object(("signal", Id("signal"))), EmptyObject())));
 
@@ -561,40 +584,72 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
         return new ObjectLiteralExpressionNode(nextProps.ToImmutableList(), preferMultilineFormat: true);
     }
 
-    /// <summary>Adds a result branch for every documented numeric status, including responses without content.</summary>
+    /// <summary>Checks whether this status hands its unread body to the caller.</summary>
+    /// <param name="operation">The operation defining the response.</param>
+    /// <param name="response">The declared status and representations.</param>
+    /// <returns>Whether the client returns a stream for this status.</returns>
+    private bool IsStreamingResponse(IrOperation operation, IrResponse response) =>
+        _streamBinaryResponses && TypeScriptBinaryResponse.IsBinarySuccess(operation, response);
+
+    /// <summary>Adds result branches that return a native body before any decoder runs.</summary>
+    /// <param name="operation">The operation whose result type is returned.</param>
+    /// <param name="responses">The documented binary success statuses.</param>
+    /// <param name="statements">The statements receiving the streaming branches.</param>
+    private void AddStreamingResultBranches(IrOperation operation, IReadOnlyList<IrResponse> responses, List<StatementNode> statements)
+    {
+        var status = Member(Id("response"), "status");
+        var stream = Member(Id("response"), "body");
+        foreach (var response in responses)
+        {
+            var missingStream = new IfStatementNode(
+                new UnaryExpressionNode(UnaryOperator.LogicalNot, stream),
+                new BlockNode([new ThrowStatementNode(new CallExpressionNode(Id("Error"),
+                    [String($"HTTP {response.StatusCode} response has no binary stream.")], isNewExpression: true))]));
+            statements.Add(new IfStatementNode(TypeScriptResponseMedia.StatusMatches(status, response.StatusCode),
+                new BlockNode([missingStream, BuildStatusResult(operation, int.Parse(response.StatusCode), stream, includeHeaders: true)])));
+        }
+    }
+
+    /// <summary>Adds a result branch for every documented non-streaming status, including responses without content.</summary>
     /// <param name="operation">The operation whose response contract is generated.</param>
     /// <param name="statements">The function statements receiving the response branches.</param>
-    private void AddStatusResultBranches(IrOperation operation, List<StatementNode> statements)
+    /// <param name="includeHeaders">Whether this operation exposes the received headers.</param>
+    private void AddStatusResultBranches(IrOperation operation, List<StatementNode> statements, bool includeHeaders)
     {
-        var resultTypeName = _resultsBuilder.ResultTypeName(operation.MethodName);
         var responseStatus = Member(Id("response"), "status");
         var responseData = Id("responseData");
 
-        foreach (var response in operation.Responses.Where(r => int.TryParse(r.StatusCode, out _)))
+        foreach (var response in operation.Responses.Where(r => int.TryParse(r.StatusCode, out _) && !IsStreamingResponse(operation, r)))
         {
             var statusCode = int.Parse(response.StatusCode);
-            var isSuccessful = statusCode >= 200 && statusCode < 300;
             var body = TypeScriptResponseMedia.SelectBody(operation, response, variant => BuildResponseBody(operation, variant, responseData));
-
-            var returnObject = new CastExpressionNode(
-                Simple(resultTypeName),
-                TypeScriptResponseHeaders.Attach(Object(
-                    ("status", Number(statusCode)),
-                    ("body", body),
-                    ("isSuccessful", Bool(isSuccessful)),
-                    ("isFailed", Bool(!isSuccessful))), _includeResponseHeaders),
-                useAsOperator: true);
 
             statements.Add(new IfStatementNode(
                 new BinaryExpressionNode(responseStatus, BinaryOperator.Equal, Number(statusCode)),
-                new BlockNode(ImmutableList.Create<StatementNode>(new ReturnStatementNode(returnObject)))));
+                new BlockNode([BuildStatusResult(operation, statusCode, body, includeHeaders)])));
         }
+    }
+
+    /// <summary>Returns the documented result with the status, body, and optional received headers.</summary>
+    /// <param name="operation">The operation providing the result type.</param>
+    /// <param name="statusCode">The received status that matched the declaration.</param>
+    /// <param name="body">The unread or decoded body of the response.</param>
+    /// <param name="includeHeaders">Whether this operation exposes the received headers.</param>
+    /// <returns>A return statement preserving the result discriminants.</returns>
+    private ReturnStatementNode BuildStatusResult(IrOperation operation, int statusCode, ExpressionNode body, bool includeHeaders)
+    {
+        var isSuccessful = statusCode is >= 200 and < 300;
+        var result = TypeScriptResponseHeaders.Attach(Object(("status", Number(statusCode)), ("body", body),
+            ("isSuccessful", Bool(isSuccessful)), ("isFailed", Bool(!isSuccessful))), includeHeaders);
+        return new ReturnStatementNode(new CastExpressionNode(Simple(_resultsBuilder.ResultTypeName(operation.MethodName)),
+            result, useAsOperator: true));
     }
 
     /// <summary>Returns an undocumented response as the discriminable fallback failure.</summary>
     /// <param name="operation">The operation whose fallback result is returned.</param>
+    /// <param name="includeHeaders">Whether this operation exposes the received headers.</param>
     /// <returns>The return statement preserving the actual status and decoded body.</returns>
-    private ReturnStatementNode BuildFallbackResult(IrOperation operation)
+    private ReturnStatementNode BuildFallbackResult(IrOperation operation, bool includeHeaders)
     {
         var resultTypeName = _resultsBuilder.ResultTypeName(operation.MethodName);
         // Undocumented status → catch-all `…ResultOther`, a literal failure so the union stays discriminable.
@@ -604,7 +659,7 @@ public sealed class NextjsClientAstBuilder : AstBuilderBase
                 ("status", Member(Id("response"), "status")),
                 ("body", Id("responseData")),
                 ("isSuccessful", Bool(false)),
-                ("isFailed", Bool(true))), _includeResponseHeaders),
+                ("isFailed", Bool(true))), includeHeaders),
             useAsOperator: true));
     }
 
