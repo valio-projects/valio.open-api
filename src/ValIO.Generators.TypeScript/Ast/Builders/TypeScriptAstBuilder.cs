@@ -317,13 +317,13 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
         return BuildType(UnwrapMemberOptional(property.Type));
     }
 
-    /// <summary>Удаляет обёртки optional на уровне члена, сохраняя обёртки nullable.</summary>
-    /// <param name="type">Исходный тип члена.</param>
-    /// <returns>Тип значения без обёрток optional на уровне члена.</returns>
+    /// <summary>Removes member-level optional wrappers while preserving nullable values.</summary>
+    /// <param name="type">The original member type.</param>
+    /// <returns>The member value type with its nullable wrappers retained.</returns>
     private static IrType UnwrapMemberOptional(IrType type) => type switch
     {
         IrOptionalType optional => UnwrapMemberOptional(optional.InnerType),
-        IrNullableType nullable => nullable with { InnerType = UnwrapMemberOptional(nullable.InnerType) },
+        IrNullableType nullable => new IrNullableType(nullable) { InnerType = UnwrapMemberOptional(nullable.InnerType) },
         _ => type
     };
 

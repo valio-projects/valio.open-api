@@ -1,4 +1,5 @@
 using ValIO.Core.Interfaces;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Utilities;
 using ValIO.Core.Plugins;
 using ValIO.Generators.Ruby.Ast.Builders;
