@@ -46,7 +46,10 @@ public sealed class IrBuilderParameterIdentityTests
         var withDiagnostics = await BuildAsync(CollisionDocument, warnings);
         var withoutDiagnostics = await BuildAsync(CollisionDocument);
 
-        withDiagnostics.Clients.Should().BeEquivalentTo(withoutDiagnostics.Clients);
+        withDiagnostics.Clients.Should().BeEquivalentTo(withoutDiagnostics.Clients, options => options
+            .ComparingByMembers<IrClient>()
+            .ComparingByMembers<IrOperation>()
+            .ComparingByMembers<IrResponse>());
         warnings.Should().NotBeEmpty();
         warnings.Should().OnlyContain(warning => warning.Contains("identifier", StringComparison.Ordinal));
     }
@@ -80,7 +83,10 @@ public sealed class IrBuilderParameterIdentityTests
         var warnings = new List<string>();
         var withDiagnostics = await BuildAsync(json, warnings);
         var withoutDiagnostics = await BuildAsync(json);
-        withDiagnostics.Clients.Should().BeEquivalentTo(withoutDiagnostics.Clients);
+        withDiagnostics.Clients.Should().BeEquivalentTo(withoutDiagnostics.Clients, options => options
+            .ComparingByMembers<IrClient>()
+            .ComparingByMembers<IrOperation>()
+            .ComparingByMembers<IrResponse>());
         var parameter = withDiagnostics.Clients.Single().Operations.Single().QueryParameters.Should().ContainSingle().Which;
         parameter.Type.Should().BeOfType<IrPrimitiveType>().Which.PrimitiveKind.Should().Be(IrPrimitiveKind.Integer);
         warnings.Should().ContainSingle().Which.Should().Contain("duplicate query parameter 'limit'");

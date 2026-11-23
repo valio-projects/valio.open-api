@@ -135,7 +135,8 @@ public sealed class IrBuilderDeclarationRegressionTests
         var ir = await IrTestHarness.BuildIrAsync(json, new NameAffixOptions { ModelSuffix = "Model", EnumSuffix = "Enum" });
         var extracted = new IrTypeDependencyGraphBuilder().Build(ir.Models, ir.Enums);
 
-        ir.TypeDependencies.Should().BeEquivalentTo(extracted);
+        ir.TypeDependencies.Dependencies.Should().BeEquivalentTo(extracted.Dependencies);
+        ir.TypeDependencies.TopologicalOrder.Should().Equal(extracted.TopologicalOrder);
         ir.TypeDependencies.TopologicalOrder.Should().OnlyHaveUniqueItems();
         ir.TypeDependencies.Dependencies["BaseModel"].Should().Contain("ModeEnum");
         ir.TypeDependencies.Dependencies["ChildModel"].Should().Contain("BaseModel").And.Contain("ChildModel");
