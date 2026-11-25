@@ -25,6 +25,73 @@ namespace ValIO.Generators.CSharp.Tests;
 [NonParallelizable]
 public sealed class CSharpGeneratedCompilationTests
 {
+    /// <summary>Accepts quoted numeric model values only where the OpenAPI type explicitly allows strings.</summary>
+    /// <returns>The isolated compilation and JSON serialization assertions.</returns>
+    [Test]
+    public async Task NumericStringProperties_KeepExactValueAndDoNotRelaxOtherProperties()
+    {
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes("""
+            {
+              "openapi": "3.1.0", "info": {"title": "Exact revisions", "version": "1"}, "paths": {},
+              "components": {"schemas": {"Receipt": {"type": "object", "properties": {
+                "revision": {"type": ["integer", "string"], "format": "int64"},
+                "previous": {"type": ["integer", "string", "null"], "format": "int64"},
+                "strict": {"type": "integer", "format": "int64"}
+              }}}}
+            }
+            """));
+        var parsed = await OpenApiDocument.LoadAsync(input, "json");
+        var context = new GenerationContext
+        {
+            IrDocument = new IrBuilder(new SchemaResolver(parsed.Document!), new NamingConverter())
+                .BuildFromOpenApi(parsed.Document!),
+            Configuration = new GenerationConfiguration { Namespace = "Generated.Contracts" }
+        };
+        await new CSharpModelsStep(new CSharpNamingConverter(), new CSharpAstRenderer()).ExecuteAsync(context);
+
+        var directory = Path.Combine(Path.GetTempPath(), "ValIO.CSharp.NumericStrings", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            await File.WriteAllTextAsync(Path.Combine(directory, "Receipt.cs"), context.GeneratedFiles.Single().Content);
+            await File.WriteAllTextAsync(Path.Combine(directory, "Smoke.csproj"),
+                """<Project Sdk="Microsoft.NET.Sdk"><PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup></Project>""");
+            await File.WriteAllTextAsync(Path.Combine(directory, "NuGet.Config"), "<configuration><packageSources><clear /></packageSources></configuration>");
+            await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), """"
+                using System;
+                using System.Text.Json;
+                using Generated.Contracts;
+
+                const long revision = long.MaxValue;
+                foreach (var wire in new[] { "9223372036854775807", "\"9223372036854775807\"" })
+                {
+                    var receipt = JsonSerializer.Deserialize<Receipt>($$"""{"revision":{{wire}},"previous":null,"strict":2}""");
+                    if (receipt.revision != revision || receipt.previous is not null || receipt.@strict != 2 ||
+                        !JsonSerializer.Serialize(receipt).Contains("\"revision\":9223372036854775807"))
+                        throw new InvalidOperationException("Expected an exact round trip with numeric output.");
+                }
+
+                foreach (var invalid in new[] {
+                    """{"revision":"9223372036854775808","strict":2}""",
+                    """{"revision":"1.5","strict":2}""",
+                    """{"revision":1,"strict":"2"}"""
+                })
+                {
+                    try { JsonSerializer.Deserialize<Receipt>(invalid); }
+                    catch (JsonException) { continue; }
+                    throw new InvalidOperationException($"Invalid input was accepted: {invalid}");
+                }
+                """");
+
+            var result = await RunGeneratedProject(directory);
+            result.ExitCode.Should().Be(0, "generated C# must honor the declared numeric wire alternatives: {0}", result.Output);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     /// <summary>
     /// Projects required and repeated multipart parts as borrowed streams and retains byte arrays in the shared JSON model.
     /// </summary>

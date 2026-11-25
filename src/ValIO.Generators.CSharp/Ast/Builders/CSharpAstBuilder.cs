@@ -218,6 +218,12 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
     private bool RequiresJsonPropertyName(IrProperty property) =>
         UsePascalCaseProperties || property.Name != property.OriginalName;
 
+    /// <summary>Identifies numeric model properties whose schema declares an alternate quoted wire value.</summary>
+    /// <param name="property">The emitted model property.</param>
+    /// <returns>True when the property should deserialize numeric strings using its numeric type.</returns>
+    private static bool AcceptsNumericString(IrProperty property) =>
+        UnwrapNullableOrOptional(property.Type) is IrPrimitiveType { AcceptsNumericString: true };
+
     /// <summary>Builds a typed property with wire metadata, validation, and safe initialization.</summary>
     /// <param name="property">The normalized schema property.</param>
     /// <param name="model">The containing model used for validation metadata.</param>
@@ -250,6 +256,13 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 name: new IdentifierNode("JsonPropertyName"),
                 arguments: new[] { new LiteralExpressionNode(property.OriginalName, LiteralKind.String) }.ToImmutableList());
             attributes.Add(jsonPropertyNameAttr);
+        }
+
+        if (AcceptsNumericString(property))
+        {
+            attributes.Add(new AttributeNode(new IdentifierNode("JsonNumberHandling"),
+                [new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("JsonNumberHandling")),
+                    new IdentifierNode("AllowReadingFromString"))]));
         }
         
         // Добавляем атрибуты валидации, если включено
@@ -1088,7 +1101,7 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
         // Используем только системные типы и типы из других namespace'ов, если они нужны
         var dependencies = new HashSet<string>();
         
-        if (model.Properties.Any(RequiresJsonPropertyName))
+        if (model.Properties.Any(property => RequiresJsonPropertyName(property) || AcceptsNumericString(property)))
             dependencies.Add("System.Text.Json.Serialization");
         
         // Добавляем using для атрибутов валидации, если они используются

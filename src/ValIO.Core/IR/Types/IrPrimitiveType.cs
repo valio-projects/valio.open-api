@@ -21,6 +21,7 @@ public sealed class IrPrimitiveType : IrType
         Constraints = source.Constraints;
         PrimitiveKind = source.PrimitiveKind;
         Format = source.Format;
+        AcceptsNumericString = source.AcceptsNumericString;
     }
 
     /// <summary>
@@ -37,14 +38,19 @@ public sealed class IrPrimitiveType : IrType
     /// </remarks>
     public string? Format { get; init; }
 
+    /// <summary>Preserves a schema's quoted alternative for a scalar mapped to a numeric type.</summary>
+    /// <value>True when the source type accepts both a number and its string representation.</value>
+    public bool AcceptsNumericString { get; init; }
+
     /// <inheritdoc />
     public override IrType WithConstraints(IrPropertyConstraints? constraints) => new IrPrimitiveType(this) { Constraints = constraints };
 
     /// <inheritdoc />
     protected override bool EqualsType(IrType other) =>
         EqualityComparer<IrPrimitiveKind>.Default.Equals(PrimitiveKind, ((IrPrimitiveType)other).PrimitiveKind)
-        && EqualityComparer<string?>.Default.Equals(Format, ((IrPrimitiveType)other).Format);
+        && EqualityComparer<string?>.Default.Equals(Format, ((IrPrimitiveType)other).Format)
+        && AcceptsNumericString == ((IrPrimitiveType)other).AcceptsNumericString;
 
     /// <inheritdoc />
-    protected override int GetTypeHashCode() => HashCode.Combine(PrimitiveKind, Format);
+    protected override int GetTypeHashCode() => HashCode.Combine(PrimitiveKind, Format, AcceptsNumericString);
 }

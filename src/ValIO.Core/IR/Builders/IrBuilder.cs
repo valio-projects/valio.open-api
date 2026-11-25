@@ -878,7 +878,13 @@ public class IrBuilder
         if (IsStringCoercionPrimitiveUnion(flags))
         {
             var kind = ResolveStringCoercionUnionPrimitiveKind(schema, flags);
-            IrType inner = new IrPrimitiveType { PrimitiveKind = kind, Format = NormalizePrimitiveFormat(schema.Format) };
+            IrType inner = new IrPrimitiveType
+            {
+                PrimitiveKind = kind,
+                Format = NormalizePrimitiveFormat(schema.Format),
+                AcceptsNumericString = flags.Count == 2 &&
+                    kind is IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number
+            };
             return hasNull ? new IrNullableType { InnerType = inner } : inner;
         }
         
