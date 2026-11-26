@@ -21,7 +21,7 @@ public sealed class NullableReferenceUnionTests
     public async Task NullableReferencesPreserveWireSemantics(string validator)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("CoreIR/nullable-reference-unions-3.1.json"));
+        var document = await OpenApiFixture.LoadAsync("CoreIR/nullable-reference-unions-3.1.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validator });
         var content = context.GeneratedFiles.Single(file => file.RelativePath.Replace('\\', '/').EndsWith("nullableReferences/nullableReferences.ts", StringComparison.Ordinal)).Content;
         content.Should().MatchRegex(@"country\s*:\s*NullableCountry\s*\|\s*null");

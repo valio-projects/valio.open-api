@@ -32,16 +32,6 @@ public sealed class PythonPipelineTestHarness : IDisposable
 
     public IServiceProvider Services => _services;
 
-    public static async Task<OpenApiDocument> LoadDocumentAsync(string resourceName)
-    {
-        var assembly = typeof(PythonPipelineTestHarness).Assembly;
-        var fullName = $"ValIO.Generators.Python.Tests.TestData.{resourceName}";
-        await using var stream = assembly.GetManifestResourceStream(fullName)
-            ?? throw new InvalidOperationException($"Embedded resource not found: {fullName}");
-        var result = await OpenApiDocument.LoadAsync(stream, "json");
-        return result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-    }
-
     public async Task<GenerationContext> RunAsync(
         OpenApiDocument document,
         PythonGenerationOptions? opts = null)

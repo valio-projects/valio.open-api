@@ -25,4 +25,24 @@ public interface ITypeScriptAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitPropertySignature(PropertySignatureNode node);
     TResult VisitSpreadExpression(SpreadExpressionNode node);
     TResult VisitArrowFunctionExpression(ArrowFunctionExpressionNode node);
+
+    /// <summary>Visits a callback signature used as a TypeScript type.</summary>
+    /// <param name="node">The function type to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitFunctionType(FunctionTypeNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a re-export from another module.</summary>
+    /// <param name="node">The exported clause.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitModuleReExport(ModuleReExportNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a type selected from a module export.</summary>
+    /// <param name="node">The imported type to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitImportType(ImportTypeNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a lookup of a member type.</summary>
+    /// <param name="node">The type and index used by the lookup.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitIndexedAccessType(IndexedAccessTypeNode node) => DefaultVisit(node);
 }

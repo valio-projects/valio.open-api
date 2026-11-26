@@ -54,11 +54,10 @@ public sealed class TypeScriptModelsStep : ICodeGenerationStep
     {
         var fileOrg = context.Configuration.FileOrganization;
         var sourceFile = builder.BuildSourceFile(model, fileOrganization: fileOrg);
-        var content = _renderer.Render(sourceFile);
         var fileName = _namingConverter.ToCamelCase(model.OriginalName);
         var relativePath = fileOrg.SeparateModels
             ? $"{modelsPath}/{fileName}/{fileName}.ts"
             : $"{modelsPath}/{fileName}.ts";
-        context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+        TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, _renderer.Render);
     }
 }

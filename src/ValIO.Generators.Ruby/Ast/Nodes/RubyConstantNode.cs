@@ -12,27 +12,34 @@ namespace ValIO.Generators.Ruby.Ast.Nodes;
 /// </summary>
 public sealed class RubyConstantNode : DeclarationNode
 {
-    /// <summary>Pre-rendered Ruby literal (e.g. <c>'admin'</c>, <c>42</c>).</summary>
-    public string ValueLiteral { get; }
+    /// <summary>Gets the expression that initializes the constant.</summary>
+    /// <value>The initializer AST.</value>
+    public ExpressionNode Initializer { get; }
 
+    /// <inheritdoc />
     public override IReadOnlyList<AstNode> Children
     {
         get
         {
-            var children = new List<AstNode> { Name };
+            var children = new List<AstNode> { Name, Initializer };
             if (Documentation != null) children.Add(Documentation);
             return children;
         }
     }
 
+    /// <summary>Declares a constant with a typed initializer.</summary>
+    /// <param name="name">The constant identifier.</param>
+    /// <param name="initializer">The value to assign to the constant.</param>
+    /// <param name="documentation">The optional documentation.</param>
+    /// <param name="metadata">Metadata retained by the declaration.</param>
     public RubyConstantNode(
         IdentifierNode name,
-        string valueLiteral,
+        ExpressionNode initializer,
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation, attributes: null, metadata)
     {
-        ValueLiteral = valueLiteral ?? throw new ArgumentNullException(nameof(valueLiteral));
+        Initializer = initializer;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -43,10 +50,11 @@ public sealed class RubyConstantNode : DeclarationNode
             "RubyConstantNode is rendered through RubyAstRenderer's declaration dispatch.");
     }
 
+    /// <inheritdoc />
     public override AstNode Clone() =>
         new RubyConstantNode(
             (IdentifierNode)Name.Clone(),
-            ValueLiteral,
+            (ExpressionNode)Initializer.Clone(),
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary());
 }

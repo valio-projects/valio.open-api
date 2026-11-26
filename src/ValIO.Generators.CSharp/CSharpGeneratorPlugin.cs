@@ -32,6 +32,7 @@ public sealed class CSharpGeneratorPlugin : IGeneratorPlugin
             new CSharpModelsStep(namingConverter, renderer),
             new CSharpEnumsStep(namingConverter, renderer),
             new CSharpClientStep(namingConverter, renderer),
+            new CSharpSignalRStep(renderer),
         };
         return new CodeGenerationPipeline(steps);
     }

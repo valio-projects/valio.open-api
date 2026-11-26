@@ -18,9 +18,7 @@ public sealed class IrBuilderDeclarationRegressionTests
     [Test]
     public async Task EnumDescriptions_AlignWithNumericDeclarations()
     {
-        var ir = await IrTestHarness.BuildIrFromSchemasAsync("3.0.3",
-            ("Priority", """{"type":"integer","enum":[10,30],"x-enum-descriptions":["Regular","Urgent"]}"""),
-            ("Partial", """{"type":"integer","enum":[10,30],"x-enum-descriptions":["Ambiguous"]}"""));
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read("CoreIR/enum-descriptions.json"));
 
         ir.Enums.Single(item => item.Name == "Priority").Values.Select(member => member.Description)
             .Should().Equal("Regular", "Urgent");

@@ -9,7 +9,7 @@ namespace ValIO.Generators.Swift.Ast.Nodes;
 /// <summary>
 /// Swift function declaration:
 ///   <c>[attrs] [access] func name(params) [async] [throws] -> Return { body }</c>
-/// Body lines are pre-rendered strings to keep the AST minimal.
+/// The body is a block of Swift statement nodes.
 /// </summary>
 public sealed class SwiftFunctionDeclarationNode : DeclarationNode
 {
@@ -25,8 +25,9 @@ public sealed class SwiftFunctionDeclarationNode : DeclarationNode
     /// <summary>If true, emit the <c>throws</c> modifier.</summary>
     public bool IsThrowing { get; }
 
-    /// <summary>Body lines (pre-rendered, without outer indent).</summary>
-    public IReadOnlyList<string> Body { get; }
+    /// <summary>Gets the executable statements in the function.</summary>
+    /// <value>The complete body AST.</value>
+    public BlockNode Body { get; }
 
     /// <summary>Access modifier (e.g. <c>public</c>, <c>private</c>).</summary>
     public string? AccessModifier { get; }
@@ -40,6 +41,7 @@ public sealed class SwiftFunctionDeclarationNode : DeclarationNode
     /// <summary>True for initializers (rendered as <c>init(...)</c> rather than <c>func name(...)</c>).</summary>
     public bool IsInitializer { get; }
 
+    /// <inheritdoc/>
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -49,15 +51,29 @@ public sealed class SwiftFunctionDeclarationNode : DeclarationNode
             children.AddRange(SwiftAttributes);
             children.AddRange(Parameters);
             if (ReturnType != null) children.Add(ReturnType);
+            children.Add(Body);
             return children;
         }
     }
 
+    /// <summary>Creates a Swift function or initializer declaration.</summary>
+    /// <param name="name">The declaration identifier.</param>
+    /// <param name="parameters">The arguments in signature order.</param>
+    /// <param name="returnType">The optional result annotation.</param>
+    /// <param name="body">The ordered statements to execute.</param>
+    /// <param name="isAsync">Whether the declaration can await.</param>
+    /// <param name="isThrowing">Whether it can propagate an error.</param>
+    /// <param name="accessModifier">The optional Swift access modifier.</param>
+    /// <param name="isStatic">Whether it belongs to the type itself.</param>
+    /// <param name="attributes">The attached Swift attributes.</param>
+    /// <param name="documentation">The optional documentation comment.</param>
+    /// <param name="isInitializer">Whether to render the member as an initializer.</param>
+    /// <param name="metadata">The associated AST metadata.</param>
     public SwiftFunctionDeclarationNode(
         IdentifierNode name,
         IReadOnlyList<SwiftParameterNode>? parameters = null,
         TypeNode? returnType = null,
-        IReadOnlyList<string>? body = null,
+        BlockNode? body = null,
         bool isAsync = false,
         bool isThrowing = false,
         string? accessModifier = null,
@@ -70,7 +86,7 @@ public sealed class SwiftFunctionDeclarationNode : DeclarationNode
     {
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<SwiftParameterNode>.Empty;
         ReturnType = returnType;
-        Body = body?.ToImmutableList() ?? ImmutableList<string>.Empty;
+        Body = body ?? new BlockNode();
         IsAsync = isAsync;
         IsThrowing = isThrowing;
         AccessModifier = accessModifier;
@@ -86,12 +102,13 @@ public sealed class SwiftFunctionDeclarationNode : DeclarationNode
         throw new NotSupportedException("Visitor must implement ISwiftAstVisitor<TResult> to visit SwiftFunctionDeclarationNode");
     }
 
+    /// <inheritdoc/>
     public override AstNode Clone() =>
         new SwiftFunctionDeclarationNode(
             (IdentifierNode)Name.Clone(),
             Parameters.Select(p => (SwiftParameterNode)p.Clone()).ToImmutableList(),
             ReturnType != null ? (TypeNode)ReturnType.Clone() : null,
-            Body.ToImmutableList(),
+            (BlockNode)Body.Clone(),
             IsAsync,
             IsThrowing,
             AccessModifier,

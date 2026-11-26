@@ -11,7 +11,7 @@ namespace ValIO.Generators.Kotlin.Ast.Nodes;
 /// Kotlin function declaration:
 ///   <c>[suspend] fun name(p: T): R { body }</c>
 ///   <c>[suspend] fun name(p: T): R = expression</c>
-/// Supports structured statement blocks and existing text-backed declarations.
+/// Both statement blocks and expression bodies carry structured syntax.
 /// </summary>
 public sealed class KotlinFunctionDeclarationNode : DeclarationNode
 {
@@ -24,11 +24,8 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
     /// <summary>Return type. Null = <c>Unit</c> (omit annotation).</summary>
     public TypeNode? ReturnType { get; }
 
-    /// <summary>Body lines (pre-rendered).</summary>
-    public IReadOnlyList<string> Body { get; }
-
     /// <summary>Gets a structured function body when the declaration uses shared statement AST nodes.</summary>
-    /// <value>The body block, or null for legacy text-backed declarations.</value>
+    /// <value>The body block when the function is declared with braces.</value>
     public BlockNode? StructuredBody { get; }
 
     /// <summary>Gets whether this declaration implements an inherited or interface function.</summary>
@@ -41,11 +38,9 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
     /// <summary>Visibility modifier (e.g. <c>private</c>, <c>internal</c>).</summary>
     public string? Visibility { get; }
 
-    /// <summary>
-    /// When true, emit the function as <c>fun name(...) = expression</c>
-    /// (the body's first non-blank line is used as the expression).
-    /// </summary>
-    public bool IsExpressionBody { get; }
+    /// <summary>Gets the result expression of an expression-bodied declaration.</summary>
+    /// <value>The expression printed after the equals sign, if present.</value>
+    public ExpressionNode? ExpressionBody { get; }
 
     /// <inheritdoc/>
     public override IReadOnlyList<AstNode> Children
@@ -58,6 +53,7 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
             children.AddRange(Parameters);
             if (ReturnType != null) children.Add(ReturnType);
             if (StructuredBody != null) children.Add(StructuredBody);
+            if (ExpressionBody is not null) children.Add(ExpressionBody);
             return children;
         }
     }
@@ -66,26 +62,24 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
     /// <param name="name">The function identifier.</param>
     /// <param name="parameters">The ordered function parameters.</param>
     /// <param name="returnType">The return type, or null to omit Unit.</param>
-    /// <param name="body">Existing text-backed body lines.</param>
     /// <param name="isSuspend">Whether the function can suspend.</param>
     /// <param name="annotations">The function annotations.</param>
     /// <param name="visibility">The optional Kotlin visibility modifier.</param>
     /// <param name="documentation">The optional generated documentation.</param>
-    /// <param name="isExpressionBody">Whether text-backed lines form an expression body.</param>
+    /// <param name="expressionBody">An expression-bodied result.</param>
     /// <param name="metadata">Optional node metadata.</param>
     /// <param name="structuredBody">The structured statement block.</param>
     /// <param name="isOverride">Whether the function implements an inherited declaration.</param>
-    /// <exception cref="ArgumentException">Structured and text-backed body representations are combined.</exception>
+    /// <exception cref="ArgumentException">Both expression and block bodies are specified.</exception>
     public KotlinFunctionDeclarationNode(
         IdentifierNode name,
         IReadOnlyList<KotlinParameterNode>? parameters = null,
         TypeNode? returnType = null,
-        IReadOnlyList<string>? body = null,
         bool isSuspend = false,
         IReadOnlyList<KotlinAnnotationNode>? annotations = null,
         string? visibility = null,
         CommentNode? documentation = null,
-        bool isExpressionBody = false,
+        ExpressionNode? expressionBody = null,
         IReadOnlyDictionary<string, object>? metadata = null,
         BlockNode? structuredBody = null,
         bool isOverride = false)
@@ -94,14 +88,13 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
         IsSuspend = isSuspend;
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<KotlinParameterNode>.Empty;
         ReturnType = returnType;
-        Body = body?.ToImmutableList() ?? ImmutableList<string>.Empty;
         KotlinAnnotations = annotations?.ToImmutableList() ?? ImmutableList<KotlinAnnotationNode>.Empty;
         Visibility = visibility;
-        IsExpressionBody = isExpressionBody;
+        ExpressionBody = expressionBody;
         StructuredBody = structuredBody;
         IsOverride = isOverride;
-        if (structuredBody != null && (Body.Count != 0 || isExpressionBody))
-            throw new ArgumentException("A structured block body cannot be combined with legacy text or an expression body.", nameof(structuredBody));
+        if (structuredBody is not null && expressionBody is not null)
+            throw new ArgumentException("Choose one function body.", nameof(structuredBody));
     }
 
     /// <inheritdoc/>
@@ -118,12 +111,11 @@ public sealed class KotlinFunctionDeclarationNode : DeclarationNode
             (IdentifierNode)Name.Clone(),
             Parameters.Select(p => (KotlinParameterNode)p.Clone()).ToImmutableList(),
             ReturnType != null ? (TypeNode)ReturnType.Clone() : null,
-            Body.ToImmutableList(),
             IsSuspend,
             KotlinAnnotations.Select(a => (KotlinAnnotationNode)a.Clone()).ToImmutableList(),
             Visibility,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
-            IsExpressionBody,
+            (ExpressionNode?)ExpressionBody?.Clone(),
             Metadata.ToImmutableDictionary(),
             StructuredBody == null ? null : (BlockNode)StructuredBody.Clone(),
             IsOverride);

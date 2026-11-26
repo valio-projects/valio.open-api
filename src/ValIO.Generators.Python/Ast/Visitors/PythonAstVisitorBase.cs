@@ -22,6 +22,12 @@ public abstract class PythonAstVisitorBase<TResult> : BaseAstVisitor<TResult>, I
     public abstract TResult VisitPythonClassDeclaration(PythonClassDeclarationNode node);
     public abstract TResult VisitPythonAttributeAssignment(PythonAttributeAssignmentNode node);
     public abstract TResult VisitPythonFunctionDeclaration(PythonFunctionDeclarationNode node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitPythonDictionaryExpression(PythonDictionaryExpressionNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitPythonKeywordUnpack(PythonKeywordUnpackNode node) => VisitDefault(node);
     public abstract TResult VisitPythonParameter(PythonParameterNode node);
     public abstract TResult VisitPythonEnumDeclaration(PythonEnumDeclarationNode node);
     public abstract TResult VisitPythonEnumMember(PythonEnumMemberNode node);

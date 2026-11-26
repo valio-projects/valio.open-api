@@ -89,18 +89,18 @@ public sealed class StdEnumAstBuilder
         {
             new CppFreeFunctionNode(
                 new IdentifierNode("to_json"),
-                new RawTypeNode("void"),
+                new SimpleTypeNode(new IdentifierNode("void")),
                 [
-                    new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("nlohmann::json"), isReference: true),
+                    new CppParameterNode(new IdentifierNode("j"), new SimpleTypeNode(new IdentifierNode("nlohmann::json")), isReference: true),
                     new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isConst: true, isReference: true),
                 ],
                 isDeclarationOnly: true,
                 documentation: BuildCodecDocumentation(enumName, isToJson: true)),
             new CppFreeFunctionNode(
                 new IdentifierNode("from_json"),
-                new RawTypeNode("void"),
+                new SimpleTypeNode(new IdentifierNode("void")),
                 [
-                    new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("const nlohmann::json"), isReference: true),
+                    new CppParameterNode(new IdentifierNode("j"), new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("nlohmann::json")), isConst: true), isReference: true),
                     new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isReference: true),
                 ],
                 isDeclarationOnly: true,
@@ -142,7 +142,7 @@ public sealed class StdEnumAstBuilder
                     [new CallExpressionNode(
                         StdExpressions.Ident("ValIO::ReadJson"),
                         [StdExpressions.Ident("j")],
-                        genericTypeName: wireCppType)])),
+                        genericTypeArgument: new SimpleTypeNode(new IdentifierNode(wireCppType)))])),
             new IfStatementNode(
                 StdExpressions.Ident("parsed"),
                 new BlockNode(
@@ -182,18 +182,18 @@ public sealed class StdEnumAstBuilder
                         .. wireFunctions,
                         new CppFreeFunctionNode(
                             new IdentifierNode("to_json"),
-                            new RawTypeNode("void"),
+                            new SimpleTypeNode(new IdentifierNode("void")),
                             [
-                                new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("nlohmann::json"), isReference: true),
+                                new CppParameterNode(new IdentifierNode("j"), new SimpleTypeNode(new IdentifierNode("nlohmann::json")), isReference: true),
                                 new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isConst: true, isReference: true),
                             ],
                             body: toJsonBody,
                             documentation: BuildCodecDocumentation(enumName, isToJson: true)),
                         new CppFreeFunctionNode(
                             new IdentifierNode("from_json"),
-                            new RawTypeNode("void"),
+                            new SimpleTypeNode(new IdentifierNode("void")),
                             [
-                                new CppParameterNode(new IdentifierNode("j"), new RawTypeNode("const nlohmann::json"), isReference: true),
+                                new CppParameterNode(new IdentifierNode("j"), new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("nlohmann::json")), isConst: true), isReference: true),
                                 new CppParameterNode(new IdentifierNode("value"), new SimpleTypeNode(new IdentifierNode(enumName)), isReference: true),
                             ],
                             body: fromJsonBody,

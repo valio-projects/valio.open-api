@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class TypeScriptResultsStepTests
     [Test]
     public async Task SingleSuccessResponse_GeneratesResultUnionWithDefaultVariant()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var resultsFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -42,7 +43,7 @@ public class TypeScriptResultsStepTests
     [Test]
     public async Task ResultTypeSuffix_RenamesUnionAliasOnly_VariantsKeepResultBase()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -65,7 +66,7 @@ public class TypeScriptResultsStepTests
     [Test]
     public async Task SuccessVariant_FlagsIsSuccessfulTrue()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var resultsFile = ctx.GeneratedFiles.First(f =>
@@ -78,7 +79,7 @@ public class TypeScriptResultsStepTests
     [Test]
     public async Task ResponsesReferencingArrayOfModels_ImportModelType()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // findPetsByStatus returns `Pet[]`. results.ts must import `Pet`
@@ -92,7 +93,7 @@ public class TypeScriptResultsStepTests
     [Test]
     public async Task EmptyResponse_GeneratesVoidAlias()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // deletePet / deleteOrder respond without a body in any schema-defined status.

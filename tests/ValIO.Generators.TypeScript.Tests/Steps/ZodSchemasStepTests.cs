@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -19,7 +20,7 @@ public class ZodSchemasStepTests
     [Test]
     public async Task Zod3_UsesPlainZodImport()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -29,14 +30,14 @@ public class ZodSchemasStepTests
         var schema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal)
             && !f.RelativePath.Contains(".params.schema", StringComparison.Ordinal));
-        schema.Content.Should().Contain("from 'zod'");
-        schema.Content.Should().NotContain("from 'zod/v4'");
+        schema.Content.Should().Contain("from \"zod\"");
+        schema.Content.Should().NotContain("from \"zod/v4\"");
     }
 
     [Test]
     public async Task Zod4_UsesZodV4ImportPath()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -46,13 +47,13 @@ public class ZodSchemasStepTests
         var schema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal)
             && !f.RelativePath.Contains(".params.schema", StringComparison.Ordinal));
-        schema.Content.Should().Contain("from 'zod/v4'");
+        schema.Content.Should().Contain("from \"zod/v4\"");
     }
 
     [Test]
     public async Task ModelSchema_IsColocatedWithModel_AndImportsTypeFromSameDirectory()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -72,7 +73,7 @@ public class ZodSchemasStepTests
     [Test]
     public async Task DependencyImports_AreCamelCased()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -82,14 +83,14 @@ public class ZodSchemasStepTests
         // Pet schema imports CategorySchema and TagSchema from sibling directories.
         var petSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.Replace('\\', '/').EndsWith("models/pet/pet.schema.ts", StringComparison.Ordinal));
-        petSchema.Content.Should().Contain("'../category/category.schema'");
-        petSchema.Content.Should().Contain("'../tag/tag.schema'");
+        petSchema.Content.Should().Contain("\"../category/category.schema\"");
+        petSchema.Content.Should().Contain("\"../tag/tag.schema\"");
     }
 
     [Test]
     public async Task EnumSchema_ReusesModelValues_ViaZEnum()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -109,7 +110,7 @@ public class ZodSchemasStepTests
     [Test]
     public async Task OneOfWithDiscriminator_UsesSafeExclusiveUnion()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("discriminated-oneof.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/discriminated-oneof.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -128,24 +129,7 @@ public class ZodSchemasStepTests
     [Test]
     public async Task ZodSchemas_ImportUsedBoundsAndInlinePatterns()
     {
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync("""
-            {
-              "openapi":"3.1.0",
-              "info":{"title":"Constraints","version":"1"},
-              "paths":{"/items/{id}":{"get":{
-                "operationId":"getItem",
-                "parameters":[
-                  {"in":"path","name":"id","required":true,"schema":{"type":"integer","minimum":1}},
-                  {"in":"query","name":"code","schema":{"type":"string","pattern":"^[a-z]+$"}}
-                ],
-                "responses":{"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/PatternOnly"}}}}}
-              }}},
-              "components":{"schemas":{
-                "PatternOnly":{"type":"object","properties":{"code":{"type":"string","pattern":"^[a-z]+$"}}},
-                "Bounded":{"type":"object","properties":{"code":{"type":"string","minLength":2,"pattern":"^[a-z]+$"}}}
-              }}
-            }
-            """);
+        var document = await OpenApiFixture.LoadAsync("Validators/bounds-and-patterns.json");
         var context = await _harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],

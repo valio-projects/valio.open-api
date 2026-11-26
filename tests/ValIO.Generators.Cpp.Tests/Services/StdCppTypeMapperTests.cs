@@ -1,3 +1,6 @@
+using ValIO.Generators.Cpp.Ast.Renderers;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Ast.Nodes.Types;
@@ -127,29 +130,33 @@ public class StdCppTypeMapperTests
     [TestCase(IrPrimitiveKind.String, null)]
     [TestCase(IrPrimitiveKind.Null, "nullptr")]
     public void DefaultValue_ForPrimitives(IrPrimitiveKind kind, string? expected)
-        => _mapper.GetDefaultValue(Prim(kind)).Should().Be(expected);
+    {
+        var value = _mapper.BuildDefaultValue(Prim(kind));
+        var text = value is null ? null : new CppAstRenderer().Visit(value);
+        text.Should().Be(expected);
+    }
 
     /// <summary>Checks enum wire text dispatch works for both integer-backed and string-backed enums.</summary>
     [Test]
-    public void FormatQueryLiteral_BoolIntegerEnum()
+    public void BuildParameterText_BoolIntegerEnum()
     {
-        _mapper.FormatQueryLiteral(Prim(IrPrimitiveKind.Boolean), "IncludeDeleted")
+        new CppAstRenderer().Visit(_mapper.BuildParameterText(Prim(IrPrimitiveKind.Boolean), new IdentifierExpressionNode(new IdentifierNode("IncludeDeleted"))))
             .Should().Be("(IncludeDeleted ? \"true\" : \"false\")");
-        _mapper.FormatQueryLiteral(Prim(IrPrimitiveKind.Long), "Id")
+        new CppAstRenderer().Visit(_mapper.BuildParameterText(Prim(IrPrimitiveKind.Long), new IdentifierExpressionNode(new IdentifierNode("Id"))))
             .Should().Be("std::to_string(Id)");
-        _mapper.FormatQueryLiteral(new IrModelReference { ModelName = "OrderStatus" }, "Status")
+        new CppAstRenderer().Visit(_mapper.BuildParameterText(new IrModelReference { ModelName = "OrderStatus" }, new IdentifierExpressionNode(new IdentifierNode("Status"))))
             .Should().Be("ToWireText(Status)");
-        _mapper.FormatQueryLiteral(Prim(IrPrimitiveKind.String), "Filter")
+        new CppAstRenderer().Visit(_mapper.BuildParameterText(Prim(IrPrimitiveKind.String), new IdentifierExpressionNode(new IdentifierNode("Filter"))))
             .Should().Be("Filter");
     }
 
     /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
     /// <summary>Verifies reference behavior against the constructor's finalized declaration indexes.</summary>
     [Test]
-    public void FormatQueryLiteral_ModelReference_SerializesToJsonDump()
+    public void BuildParameterText_ModelReference_SerializesToJsonDump()
     {
         // Модель в query-параметре — компилируемое wire-представление: JSON-строка.
-        _mapper.FormatQueryLiteral(new IrModelReference { ModelName = "BuildingModel" }, "Filter")
+        new CppAstRenderer().Visit(_mapper.BuildParameterText(new IrModelReference { ModelName = "BuildingModel" }, new IdentifierExpressionNode(new IdentifierNode("Filter"))))
             .Should().Be("ValIO::Dump(Filter)");
     }
 

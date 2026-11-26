@@ -67,14 +67,14 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         string modelsPath,
         bool separateModels)
     {
-        var content = renderer.Render(builder.BuildModelSchemaSourceFile(model, separateModels));
+        var sourceFile = builder.BuildModelSchemaSourceFile(model, separateModels);
         var fileName = _namingConverter.ToCamelCase(model.OriginalName);
         // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
         var relativePath = separateModels
             ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
             : $"{modelsPath}/{fileName}.schema.ts";
 
-        context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+        TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, renderer.Render);
     }
 
     private void AddEnumSchema(
@@ -85,13 +85,13 @@ public sealed class ValibotSchemasStep : ICodeGenerationStep
         string modelsPath,
         bool separateModels)
     {
-        var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum, separateModels));
+        var sourceFile = builder.BuildEnumSchemaSourceFile(irEnum, separateModels);
         var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
         // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
         var relativePath = separateModels
             ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
             : $"{modelsPath}/{fileName}.schema.ts";
 
-        context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+        TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, renderer.Render);
     }
 }

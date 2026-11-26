@@ -33,6 +33,15 @@ public abstract class CSharpAstVisitorBase<TResult> : BaseAstVisitor<TResult>, I
     /// <inheritdoc />
     public abstract TResult VisitTypeOfExpression(TypeOfExpressionNode node);
 
+    /// <inheritdoc/>
+    public virtual TResult VisitCollectionExpression(CollectionExpressionNode node) => VisitDefault(node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitLambdaExpression(LambdaExpressionNode node) => VisitDefault(node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitNullForgivingExpression(NullForgivingExpressionNode node) => VisitDefault(node);
+
     // Namespace/Class/Struct/Field — универсальные узлы Core; Visit-методы
     // наследуются из IAstVisitor (virtual-default в BaseAstVisitor),
     // рендерер переопределяет их напрямую.

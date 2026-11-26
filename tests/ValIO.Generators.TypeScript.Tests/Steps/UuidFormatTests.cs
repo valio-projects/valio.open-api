@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Plugins;
@@ -34,7 +35,7 @@ public class UuidFormatTests
     [Test]
     public async Task DefaultGuid_Zod_EmitsUuidValidator_NoFormatsFile()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("uuid-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/uuid-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -49,7 +50,7 @@ public class UuidFormatTests
     [Test]
     public async Task StringMode_Zod_EmitsPlainString_NoFormatsFile()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("uuid-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/uuid-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -67,7 +68,7 @@ public class UuidFormatTests
     [Test]
     public async Task RegexMode_Zod_ModelAndParams_ReuseSharedRegexConst()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("uuid-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/uuid-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -95,7 +96,7 @@ public class UuidFormatTests
     [Test]
     public async Task RegexMode_Valibot_UsesRegexActionAndImportsConst()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("uuid-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/uuid-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -112,7 +113,7 @@ public class UuidFormatTests
     [Test]
     public async Task RegexMode_TypeBox_UsesPatternOptionAndImportsConst()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("uuid-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/uuid-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -129,7 +130,7 @@ public class UuidFormatTests
     [Test]
     public async Task StringMode_TypeBox_EmitsPlainStringWithoutFormat()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("uuid-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/uuid-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],

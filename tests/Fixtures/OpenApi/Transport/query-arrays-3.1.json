@@ -1,0 +1,20 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Query arrays", "version": "1" },
+  "paths": {
+    "/items": {
+      "get": {
+        "operationId": "list",
+        "parameters": [
+          { "name": "ids", "in": "query", "schema": { "type": "array", "items": { "type": "string" } } },
+          { "name": "explicit", "in": "query", "style": "form", "explode": true, "schema": { "type": ["array", "null"], "items": { "type": "integer" } } },
+          { "name": "csv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer" } } },
+          { "name": "precise", "in": "query", "schema": { "type": "array", "items": { "type": "integer", "format": "int64" } } },
+          { "name": "preciseCsv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer", "format": "int64" } } },
+          { "name": "filter", "in": "query", "style": "deepObject", "explode": true, "schema": { "type": "object", "properties": { "term": { "type": "string" } } } }
+        ],
+        "responses": { "204": { "description": "No content" } }
+      }
+    }
+  }
+}

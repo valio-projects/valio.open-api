@@ -29,6 +29,15 @@ public interface ICppAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitCppAsyncActivateImplementation(CppAsyncActivateImplementationNode node);
     TResult VisitCppLambdaExpression(CppLambdaExpressionNode node);
 
+    /// <summary>Visits a const or reference-qualified C++ type.</summary>
+    TResult VisitCppQualifiedType(CppQualifiedTypeNode node);
+
+    /// <summary>Visits a C++ type referenced in an expression.</summary>
+    TResult VisitCppTypeExpression(CppTypeExpressionNode node);
+
+    /// <summary>Visits a braced C++ initializer list.</summary>
+    TResult VisitCppListInitialization(CppListInitializationNode node);
+
     // Unreal Engine специфичные узлы
     TResult VisitUStruct(UStructDeclarationNode node);
     TResult VisitUPropertyField(UPropertyFieldNode node);

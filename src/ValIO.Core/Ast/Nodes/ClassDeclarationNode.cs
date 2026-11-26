@@ -26,6 +26,10 @@ public sealed class ClassDeclarationNode : TypeDeclarationNode
     /// </summary>
     public bool IsPartial { get; }
 
+    /// <summary>Gets whether the class requires a concrete implementation.</summary>
+    /// <value>Whether to emit the abstract modifier.</value>
+    public bool IsAbstract { get; init; }
+
 
     /// <summary>
     /// Конструктор
@@ -65,7 +69,7 @@ public sealed class ClassDeclarationNode : TypeDeclarationNode
             Members.Select(m => (DeclarationNode)m.Clone()).ToImmutableList(),
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Attributes.Select(a => (AttributeNode)a.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary()) { IsAbstract = IsAbstract };
     }
 
     public override string ToString()

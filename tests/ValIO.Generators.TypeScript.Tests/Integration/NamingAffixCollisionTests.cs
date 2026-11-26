@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Models;
@@ -14,24 +15,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 [TestFixture]
 public class NamingAffixCollisionTests
 {
-    private const string CollisionDoc = """
-    {
-      "openapi":"3.0.3",
-      "info":{"title":"T","version":"1.0.0"},
-      "paths":{
-        "/journals/schema":{
-          "post":{
-            "operationId":"CreateJournalSchema",
-            "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateJournalSchema"}}}},
-            "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateJournalSchema"}}}}}
-          }
-        }
-      },
-      "components":{"schemas":{
-        "CreateJournalSchema":{"type":"object","required":["title"],"properties":{"title":{"type":"string"}}}
-      }}
-    }
-    """;
+    private const string CollisionDoc = "TypeScript/naming-affix-collision.json";
 
     private static string Norm(string p) => p.Replace('\\', '/');
 
@@ -39,7 +23,7 @@ public class NamingAffixCollisionTests
     public async Task ModelSuffix_DisambiguatesDtoFromOperationFunction_KeepsFilePaths()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(CollisionDoc);
+        var doc = await OpenApiFixture.LoadAsync(CollisionDoc);
 
         var ctx = await harness.RunAsync(
             doc,
@@ -79,7 +63,7 @@ public class NamingAffixCollisionTests
     public async Task NoAffix_ProducesUnchangedNames()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(CollisionDoc);
+        var doc = await OpenApiFixture.LoadAsync(CollisionDoc);
 
         var ctx = await harness.RunAsync(
             doc,

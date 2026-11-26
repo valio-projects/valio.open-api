@@ -1,5 +1,6 @@
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -26,14 +27,15 @@ public sealed class DartEnumAstBuilder(INamingConverter namingConverter)
         {
             var memberName = namingConverter.ToCamelCase(v.Name);
             var safe = DartReservedNames.Avoid(memberName);
-            var lit = v.Value switch
+            var kind = v.Value switch
             {
-                string s => $"'{s.Replace("'", "\\'", StringComparison.Ordinal)}'",
-                bool b => b ? "true" : "false",
-                null => "null",
-                _ => v.Value!.ToString()!,
+                string => LiteralKind.String,
+                bool => LiteralKind.Boolean,
+                null => LiteralKind.Null,
+                _ => LiteralKind.Number,
             };
-            members.Add(new DartEnumMemberNode(new IdentifierNode(safe), lit));
+            var value = new LiteralExpressionNode(v.Value, kind);
+            members.Add(new DartEnumMemberNode(new IdentifierNode(safe), value));
         }
 
         var en = new DartEnumDeclarationNode(

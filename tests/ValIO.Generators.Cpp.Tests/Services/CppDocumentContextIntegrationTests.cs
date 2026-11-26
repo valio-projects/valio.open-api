@@ -1,3 +1,5 @@
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NUnit.Framework;
@@ -32,8 +34,8 @@ public sealed class CppDocumentContextIntegrationTests
 
         ((SimpleTypeNode)ueModelMapper.MapType(reference)).Name.Name.Should().Be("FShared");
         ((SimpleTypeNode)ueEnumMapper.MapType(reference)).Name.Name.Should().Be("EShared");
-        stdModelMapper.FormatQueryLiteral(reference, "value").Should().Be("ValIO::Dump(value)");
-        stdEnumMapper.FormatQueryLiteral(reference, "value").Should().Be("ToWireText(value)");
+        new CppAstRenderer().Visit(stdModelMapper.BuildParameterText(reference, new IdentifierExpressionNode(new IdentifierNode("value")))).Should().Be("ValIO::Dump(value)");
+        new CppAstRenderer().Visit(stdEnumMapper.BuildParameterText(reference, new IdentifierExpressionNode(new IdentifierNode("value")))).Should().Be("ToWireText(value)");
         stdModelMapper.DocumentContext.Should().BeSameAs(modelContext);
         ueEnumMapper.DocumentContext.Should().BeSameAs(enumContext);
     }

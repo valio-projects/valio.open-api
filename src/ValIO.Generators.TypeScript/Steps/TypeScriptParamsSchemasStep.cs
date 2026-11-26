@@ -62,9 +62,8 @@ public sealed class TypeScriptParamsSchemasStep : ICodeGenerationStep
                     continue;
 
                 var fileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
-                var content = _renderer.Render(sourceFile);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.params.schema.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+                TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, _renderer.Render);
             }
         }
 

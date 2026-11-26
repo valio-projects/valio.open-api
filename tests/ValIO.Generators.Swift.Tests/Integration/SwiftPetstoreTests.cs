@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Swift.Options;
@@ -19,7 +20,7 @@ public class SwiftPetstoreTests
     [Test]
     public async Task Petstore_GeneratesModelsForCoreSchemas()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().Contain(f => f.RelativePath.Contains("Pet", StringComparison.OrdinalIgnoreCase));
@@ -29,7 +30,7 @@ public class SwiftPetstoreTests
     [Test]
     public async Task Petstore_ModelsAreCodableStructs()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var petFile = ctx.GeneratedFiles.First(f =>
@@ -42,7 +43,7 @@ public class SwiftPetstoreTests
     [Test]
     public async Task Petstore_ClientUsesURLSessionAsync()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

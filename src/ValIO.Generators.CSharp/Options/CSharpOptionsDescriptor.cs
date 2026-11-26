@@ -74,6 +74,8 @@ public sealed class CSharpOptionsDescriptor : IGeneratorOptionsDescriptor
             Kind: OptionKind.Bool, Group: "Validation"),
         new("queryParametersStyle", "Query argument convention; currently only IndividualParameters is implemented.", "IndividualParameters", false,
             Kind: OptionKind.String, Group: "Clients"),
+        new("generateSignalRHubs", "Generate typed ASP.NET Core hub bases for declared SignalR contracts.", "false", false,
+            Kind: OptionKind.Bool, Group: "SignalR"),
         new("generateInterfaces", "Generate interfaces for HTTP clients.", "false", false,
             Kind: OptionKind.Bool, Group: "Clients"),
         new("generateResponseMetadata", "Emit opt-in WithResponse methods with typed payloads, status, and headers.", "false", false,

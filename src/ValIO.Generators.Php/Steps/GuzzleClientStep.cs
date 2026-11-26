@@ -51,21 +51,8 @@ public sealed class GuzzleClientStep : ICodeGenerationStep
 
         if (opts.GenerateComposerJson)
         {
-            const string composer = """
-{
-    "require": {
-        "php": ">=8.2",
-        "guzzlehttp/guzzle": "^7.0",
-        "psr/http-message": "^2.0"
-    },
-    "autoload": {
-        "psr-4": {
-            "App\\Generated\\": "."
-        }
-    }
-}
-""";
-            context.GeneratedFiles.Add(new GeneratedFile("composer.json", composer));
+            context.GeneratedFiles.Add(new GeneratedFile("composer.json",
+                SourceResource.Read(typeof(GuzzleClientStep).Assembly, "ValIO.Resources.composer.json")));
         }
 
         return Task.CompletedTask;

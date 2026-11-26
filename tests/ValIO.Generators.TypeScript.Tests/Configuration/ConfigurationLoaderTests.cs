@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -80,7 +81,7 @@ Projects:
     [Test]
     public void MapToGenerationConfiguration_DelegatesOptionParsingToPlugin()
     {
-        using var doc = JsonDocument.Parse(@"{ ""transports"": [""ky""], ""validation"": ""zod3"" }");
+        using var doc = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "transport-and-validator"));
         var proj = new ProjectConfig
         {
             Language = "typescript",
@@ -122,7 +123,7 @@ Projects:
     [Test]
     public void MapToGenerationConfiguration_InvalidOption_Throws()
     {
-        using var doc = JsonDocument.Parse(@"{ ""transports"": [""mystery""] }");
+        using var doc = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "unknown-transport"));
         var proj = new ProjectConfig
         {
             Language = "typescript", Schema = "x", OutputPath = "y",

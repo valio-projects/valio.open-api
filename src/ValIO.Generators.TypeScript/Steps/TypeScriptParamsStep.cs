@@ -57,9 +57,8 @@ public sealed class TypeScriptParamsStep : ICodeGenerationStep
                     importPath: null,
                     fileOrganization: fileOrg,
                     currentOperationName: operation.MethodName);
-                var content = _renderer.Render(sourceFile);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.params.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+                TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, _renderer.Render);
             }
         }
 

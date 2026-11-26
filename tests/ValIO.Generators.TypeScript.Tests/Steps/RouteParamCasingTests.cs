@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -42,7 +43,7 @@ public class RouteParamCasingTests
     [TestCase("ofetch", "getDictionaryItemsList.ofetch.ts")]
     public async Task Transport_InterpolatesRouteParam_DespiteCasingMismatch(string transport, string fileSuffix)
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("route-param-casing.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/route-param-casing.json", allowReaderErrors: true);
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = [transport] });
 
         var client = ctx.GeneratedFiles.First(f =>
@@ -57,7 +58,7 @@ public class RouteParamCasingTests
     [Test]
     public async Task Axios_WithZod_InterpolatesParsedRouteField()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("route-param-casing.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/route-param-casing.json", allowReaderErrors: true);
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],
@@ -75,7 +76,7 @@ public class RouteParamCasingTests
     [Test]
     public async Task AngularRxjsService_InterpolatesRouteParam_DespiteCasingMismatch()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("route-param-casing.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/route-param-casing.json", allowReaderErrors: true);
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         var service = ctx.GeneratedFiles.First(f =>

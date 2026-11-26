@@ -26,11 +26,22 @@ public sealed class CompilationUnitNode : AstNode
     public IReadOnlyList<DeclarationNode> Declarations { get; }
     
     
+    /// <summary>Gets whether nullable reference analysis is enabled for this file.</summary>
+    /// <value>Whether to emit the nullable directive.</value>
+    public bool EnableNullable { get; init; }
+
+    /// <summary>Gets the optional comment preceding this compilation unit.</summary>
+    /// <value>The file header if declared.</value>
+    public CommentNode? FileHeader { get; init; }
+
+    /// <inheritdoc />
     public override IReadOnlyList<AstNode> Children
     {
         get
         {
             var children = new List<AstNode>();
+            if (FileHeader is not null)
+                children.Add(FileHeader);
             children.AddRange(Usings);
             children.AddRange(Namespaces);
             children.AddRange(Declarations);
@@ -62,12 +73,17 @@ public sealed class CompilationUnitNode : AstNode
         throw new NotSupportedException($"Visitor must implement ICSharpAstVisitor<TResult> to visit CompilationUnitNode");
     }
     
+    /// <inheritdoc />
     public override AstNode Clone()
     {
         return new CompilationUnitNode(
             Usings.Select(u => (UsingDirectiveNode)u.Clone()).ToImmutableList(),
             Namespaces.Select(n => (NamespaceDeclarationNode)n.Clone()).ToImmutableList(),
             Declarations.Select(d => (DeclarationNode)d.Clone()).ToImmutableList(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary())
+        {
+            EnableNullable = EnableNullable,
+            FileHeader = (CommentNode?)FileHeader?.Clone(),
+        };
     }
 }

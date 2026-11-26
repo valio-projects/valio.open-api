@@ -21,4 +21,8 @@
     <PackageReference Include="Microsoft.OpenApi" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="ValIO.Generators.TypeScript.Tests" />
+  </ItemGroup>
+
 </Project>

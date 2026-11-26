@@ -66,17 +66,17 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         bool separateModels)
     {
         var fileName = _namingConverter.ToCamelCase(model.OriginalName);
-        var content = renderer.Render(builder.BuildModelSchemaSourceFile(
+        var sourceFile = builder.BuildModelSchemaSourceFile(
             model,
             currentFileName: fileName,
-            schemasPath: modelsPath));
+            schemasPath: modelsPath);
 
         // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
         var relativePath = separateModels
             ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
             : $"{modelsPath}/{fileName}.schema.ts";
 
-        context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+        TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, renderer.Render);
     }
 
     private void AddEnumSchema(
@@ -87,7 +87,7 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
         string modelsPath,
         bool separateModels)
     {
-        var content = renderer.Render(builder.BuildEnumSchemaSourceFile(irEnum, separateModels));
+        var sourceFile = builder.BuildEnumSchemaSourceFile(irEnum, separateModels);
 
         var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
         // Co-locate the schema with its model under modelsPath (not the separate schemas/ tree).
@@ -95,6 +95,6 @@ public sealed class TypeBoxSchemasStep : ICodeGenerationStep
             ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
             : $"{modelsPath}/{fileName}.schema.ts";
 
-        context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+        TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, renderer.Render);
     }
 }

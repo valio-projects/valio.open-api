@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Tests.TestHelpers;
@@ -22,7 +23,7 @@ public class PythonPetstoreFileCountTests
     [Test]
     public async Task Petstore_GeneratesAllSixModels()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         // Six Petstore models: Pet, Category, Tag, Order, User, ApiResponse.
@@ -38,7 +39,7 @@ public class PythonPetstoreFileCountTests
     [Test]
     public async Task Petstore_ClientFilesGenerated_AtLeastOnePerTag()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFiles = ctx.GeneratedFiles
@@ -52,7 +53,7 @@ public class PythonPetstoreFileCountTests
     [Test]
     public async Task EveryGeneratedFile_HasNonEmptyContent()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -62,7 +63,7 @@ public class PythonPetstoreFileCountTests
     [Test]
     public async Task Petstore_PetModel_ReferencesCategoryAndTag()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var pet = ctx.GeneratedFiles.First(f =>

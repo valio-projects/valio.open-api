@@ -21,4 +21,8 @@
     <PackageReference Include="Microsoft.OpenApi" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources/composer.json" LogicalName="ValIO.Resources.composer.json" />
+  </ItemGroup>
+
 </Project>

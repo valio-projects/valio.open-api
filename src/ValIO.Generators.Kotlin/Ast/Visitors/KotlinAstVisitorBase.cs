@@ -26,6 +26,9 @@ public abstract class KotlinAstVisitorBase<TResult> : BaseAstVisitor<TResult>, I
     public abstract TResult VisitKotlinEnumDeclaration(KotlinEnumDeclarationNode node);
     public abstract TResult VisitKotlinEnumMember(KotlinEnumMemberNode node);
     public abstract TResult VisitKotlinFunctionDeclaration(KotlinFunctionDeclarationNode node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitKotlinTrailingLambdaCall(KotlinTrailingLambdaCallNode node) => VisitDefault(node);
     public abstract TResult VisitKotlinParameter(KotlinParameterNode node);
     /// <inheritdoc/>
     public abstract TResult VisitKotlinObjectExpression(KotlinObjectExpressionNode node);

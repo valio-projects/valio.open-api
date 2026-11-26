@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Tests.TestHelpers;
@@ -22,7 +23,7 @@ public sealed class AngularRxjsTscSmoke
     public async Task GeneratedAngularOutput_CompilesUnderTscStrict()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["angular-rxjs"],

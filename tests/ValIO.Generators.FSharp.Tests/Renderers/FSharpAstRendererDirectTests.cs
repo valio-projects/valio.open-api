@@ -1,7 +1,10 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using NUnit.Framework;
+using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Generators.FSharp.Ast.Nodes;
 using ValIO.Generators.FSharp.Ast.Renderers;
@@ -106,6 +109,7 @@ public class FSharpAstRendererDirectTests
         rendered.Should().Contain("    | Wrapped of int");
     }
 
+    /// <summary>Prints statements in the declared function body before its final value.</summary>
     [Test]
     public void VisitFSharpFunction_EmitsLetBindingWithBody()
     {
@@ -117,11 +121,15 @@ public class FSharpAstRendererDirectTests
                 new FSharpFunctionNode.Parameter("id", Simple("int")),
             },
             returnType: Simple("IRestResponse"),
-            bodyLines: new[]
-            {
-                "let req = RestRequest(\"/users/{id}\", Method.Get)",
-                "client.Execute(req)",
-            });
+            body: new BlockNode([
+                new VariableDeclarationStatementNode(new("req"), initializer: new CallExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("RestRequest")),
+                    [new LiteralExpressionNode("/users/{id}", LiteralKind.String),
+                        new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Method")), new("Get"))])),
+                new ExpressionStatementNode(new CallExpressionNode(
+                    new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("client")), new("Execute")),
+                    [new IdentifierExpressionNode(new IdentifierNode("req"))])),
+            ]));
 
         var rendered = _renderer.VisitFSharpFunction(fn);
         rendered.Should().Contain("let getUser (client: RestClient) (id: int) : IRestResponse =");

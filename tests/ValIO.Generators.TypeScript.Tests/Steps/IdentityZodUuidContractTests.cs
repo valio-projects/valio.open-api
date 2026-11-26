@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.ComponentModel;
 using System.Diagnostics;
 using FluentAssertions;
@@ -20,7 +21,7 @@ public sealed class IdentityZodUuidContractTests
     private static async Task<GenerationContext> Generate(string fixture, string validation, string transport = "axios")
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentAsync(fixture);
+        var document = await OpenApiFixture.LoadAsync(fixture);
         return await harness.RunAsync(document, new TypeScriptGenerationOptions
         { Transports = [transport], ValidationLibrary = validation, UuidFormat = "regex" });
     }
@@ -34,7 +35,7 @@ public sealed class IdentityZodUuidContractTests
         [Values("axios", "fetch", "solid", "nextjs", "got", "ky", "ofetch", "undici", "angular-promise", "angular-rxjs")] string transport,
         [Values("zod3", "zod4", "valibot", "typebox")] string validation)
     {
-        var context = await Generate("uuid-only-body.json", validation, transport);
+        var context = await Generate("TypeScript/uuid-only-body.json", validation, transport);
         context.GeneratedFiles.Should().Contain(file => file.RelativePath.Replace('\\', '/').EndsWith("models/formats.ts", StringComparison.Ordinal));
         await GeneratedTypeScriptCompiler.Compile(context.GeneratedFiles
             .Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray(),
@@ -48,7 +49,7 @@ public sealed class IdentityZodUuidContractTests
     [TestCase("zod4")]
     public async Task GeneratedSchemasAndClientsUseConsistentLineEndings(string version)
     {
-        var context = await Generate("zod-contract.json", version);
+        var context = await Generate("TypeScript/zod-contract.json", version);
         var schema = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.schema.ts", StringComparison.Ordinal));
         var client = context.GeneratedFiles.First(f => f.RelativePath.EndsWith(".axios.ts", StringComparison.Ordinal));
         schema.Content.Should().Contain("z.record(z.string(), z.array(z.string()))");
@@ -74,7 +75,7 @@ public sealed class IdentityZodUuidContractTests
     [TestCase("zod4")]
     public async Task Model_distinguishes_absence_from_null_and_keeps_dictionary_values(string version)
     {
-        var context = await Generate("zod-contract.json", version);
+        var context = await Generate("TypeScript/zod-contract.json", version);
         var schema = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.schema.ts", StringComparison.Ordinal)).Content;
         schema.Should().Contain("requiredValue: z.string()");
         schema.Should().NotContain("requiredValue: z.string().optional()");
@@ -96,7 +97,7 @@ public sealed class IdentityZodUuidContractTests
     [TestCase("zod4")]
     public async Task Generated_model_rejects_invalid_nulls_and_dictionary_values(string version)
     {
-        var context = await Generate("zod-contract.json", version);
+        var context = await Generate("TypeScript/zod-contract.json", version);
         var file = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.schema.ts", StringComparison.Ordinal)).Content;
         var startIndex = file.IndexOf("= z.object({", StringComparison.Ordinal);
         startIndex.Should().BeGreaterThanOrEqualTo(0);
@@ -148,11 +149,11 @@ public sealed class IdentityZodUuidContractTests
         Directory.CreateDirectory(temporary);
         try
         {
-            var context = await Generate("zod-contract.json", version);
+            var context = await Generate("TypeScript/zod-contract.json", version);
             var schema = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.schema.ts", StringComparison.Ordinal)).Content;
             var model = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.ts", StringComparison.Ordinal)).Content;
-            schema = schema.Replace("from 'zod/v4'", "from 'zod4'", StringComparison.Ordinal)
-                .Replace("from 'zod'", "from 'zod3'", StringComparison.Ordinal);
+            schema = schema.Replace("from \"zod/v4\"", "from \"zod4\"", StringComparison.Ordinal)
+                .Replace("from \"zod\"", "from \"zod3\"", StringComparison.Ordinal);
             await File.WriteAllTextAsync(Path.Combine(temporary, "contract.ts"), model);
             var schemaPath = Path.Combine(temporary, "contract.schema.ts");
             await File.WriteAllTextAsync(schemaPath, schema);
@@ -180,7 +181,7 @@ public sealed class IdentityZodUuidContractTests
     [TestCase("zod4")]
     public async Task Inline_dictionaries_use_two_argument_record(string version)
     {
-        var context = await Generate("zod-contract.json", version);
+        var context = await Generate("TypeScript/zod-contract.json", version);
         var schema = context.GeneratedFiles.First(f => f.RelativePath.EndsWith("postDictionaries.results.schemas.ts", StringComparison.Ordinal)).Content;
         const string recordPattern = @"z\.record\(\s*z\.string\(\)\s*,\s*z\.array\(\s*z\.string\(\)\s*\)\s*\)";
         schema.Should().MatchRegex(recordPattern);
@@ -191,14 +192,14 @@ public sealed class IdentityZodUuidContractTests
     /// <summary>Проверяет общее обнаружение UUID, даже если ни одна модель не содержит UUID.</summary>
     /// <param name="fixture">Документ с одним использованием UUID.</param>
     /// <returns>Задача, завершающаяся после проверки обнаружения UUID и общих импортов.</returns>
-    [TestCase("uuid-only-response.json")]
-    [TestCase("uuid-only-body.json")]
-    [TestCase("uuid-only-header.json")]
+    [TestCase("TypeScript/uuid-only-response.json")]
+    [TestCase("TypeScript/uuid-only-body.json")]
+    [TestCase("TypeScript/uuid-only-header.json")]
     public async Task Inline_uuid_uses_generate_shared_formats(string fixture)
     {
         var context = await Generate(fixture, "zod4");
         context.GeneratedFiles.Should().Contain(f => f.RelativePath.Replace('\\', '/').EndsWith("models/formats.ts", StringComparison.Ordinal));
-        if (fixture == "uuid-only-response.json")
+        if (fixture == "TypeScript/uuid-only-response.json")
         {
             var result = context.GeneratedFiles.First(f => f.RelativePath.EndsWith("getResponseOnly.results.schemas.ts", StringComparison.Ordinal)).Content;
             result.Should().Contain("import { UUID_REGEX } from \"../../models/formats\"");
@@ -211,7 +212,7 @@ public sealed class IdentityZodUuidContractTests
     [Test]
     public async Task Generated_uuid_regex_rejects_every_trailing_character()
     {
-        var context = await Generate("uuid-only-response.json", "zod4");
+        var context = await Generate("TypeScript/uuid-only-response.json", "zod4");
         var formats = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/formats.ts", StringComparison.Ordinal)).Content;
         var js = formats.Replace("export const ", "const ", StringComparison.Ordinal) + "\n" +
             "const u='78d459e0-1269-40cf-b520-d31c21b13178';" +

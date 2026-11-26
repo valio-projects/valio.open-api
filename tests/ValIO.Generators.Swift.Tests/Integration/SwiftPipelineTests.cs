@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Swift.Options;
@@ -22,7 +23,7 @@ public class SwiftPipelineTests
     [Test]
     public async Task SimpleSchema_GeneratesAtLeastOneModelClientAndEnum()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -32,7 +33,7 @@ public class SwiftPipelineTests
     [Test]
     public async Task ModelFile_ContainsCodableStruct()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -46,7 +47,7 @@ public class SwiftPipelineTests
     [Test]
     public async Task EnumFile_ContainsStringBackedEnum()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -59,7 +60,7 @@ public class SwiftPipelineTests
     [Test]
     public async Task ClientFile_UsesURLSession()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

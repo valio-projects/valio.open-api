@@ -65,14 +65,11 @@ public sealed class KotlinStructuredCallbackTests
 
     /// <summary>Checks that one declaration cannot silently prefer one conflicting body representation.</summary>
     [Test]
-    public void StructuredBodyRejectsTextAndExpressionBodyCombinations()
+    public void StructuredBodyRejectsCombinedBlockAndExpression()
     {
-        var withText = () => new KotlinFunctionDeclarationNode(new IdentifierNode("invoke"),
-            body: ["return"], structuredBody: new BlockNode([]));
-        var withExpression = () => new KotlinFunctionDeclarationNode(new IdentifierNode("invoke"),
-            isExpressionBody: true, structuredBody: new BlockNode([]));
+        var create = () => new KotlinFunctionDeclarationNode(new IdentifierNode("invoke"),
+            expressionBody: new IdentifierExpressionNode(new IdentifierNode("Unit")), structuredBody: new BlockNode([]));
 
-        withText.Should().Throw<ArgumentException>();
-        withExpression.Should().Throw<ArgumentException>();
+        create.Should().Throw<ArgumentException>();
     }
 }

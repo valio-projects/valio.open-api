@@ -100,10 +100,7 @@ public sealed class UEModelAstBuilder : AstBuilderBase
     private UPropertyFieldNode BuildField(IrProperty property, string category)
     {
         var type = _typeMapper.MapType(property.Type);
-        var defaultValueStr = _typeMapper.GetDefaultValue(property.Type);
-        ExpressionNode? defaultValue = defaultValueStr != null
-            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
-            : null;
+        var defaultValue = _typeMapper.BuildDefaultValue(property.Type);
 
         return new UPropertyFieldNode(
             name: new IdentifierNode(_naming.PropertyName(property.Name)),

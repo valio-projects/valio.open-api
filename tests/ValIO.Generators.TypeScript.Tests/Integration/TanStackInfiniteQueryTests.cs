@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Plugins;
@@ -16,7 +17,7 @@ public sealed class TanStackInfiniteQueryTests
     public async Task Mapper_ExposesOnlyTheOperationsQueryParameters()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var document = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var generated = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["axios"], QueryWrapper = "tanstack-react" });
         var modules = generated.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".query.ts", StringComparison.Ordinal))
             .ToDictionary(file => Path.GetFileName(file.RelativePath), file => file.Content);
@@ -31,7 +32,7 @@ public sealed class TanStackInfiniteQueryTests
     public async Task QueryClient_RequestsDistinctPagesWithoutMutatingOriginalFilters()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var document = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var generated = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["axios"], QueryWrapper = "tanstack-react" });
         var files = generated.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToList();
         files.Add(new GeneratedFile("infinite-query-consumer.ts", """

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -19,7 +20,7 @@ public class TypeScriptModelsStepTests
     [Test]
     public async Task GeneratesOneFilePerModel_InCamelCaseDirectories()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var modelFiles = ctx.GeneratedFiles
@@ -33,7 +34,7 @@ public class TypeScriptModelsStepTests
     [Test]
     public async Task ExportsInterfaceWithCorrectName()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -46,7 +47,7 @@ public class TypeScriptModelsStepTests
     [Test]
     public async Task Composition_AllOf_GeneratesIntersectionOrExtension()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // Petstore has no allOf at top-level. Just verify Pet has its property structure.
@@ -58,7 +59,7 @@ public class TypeScriptModelsStepTests
     [Test]
     public async Task TopologicalOrder_DependentModelsAfterTheirDeps()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // Pet references Category and Tag → those must be in the IR dep graph.

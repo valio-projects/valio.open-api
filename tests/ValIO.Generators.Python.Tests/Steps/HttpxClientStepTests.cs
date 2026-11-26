@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Options;
@@ -19,7 +20,7 @@ public class HttpxClientStepTests
     [Test]
     public async Task EmitsAsyncClassWithHttpx_ByDefault()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFiles = ctx.GeneratedFiles
@@ -37,7 +38,7 @@ public class HttpxClientStepTests
     [Test]
     public async Task UsesSnakeCaseMethodNames_FromOperationId()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -51,7 +52,7 @@ public class HttpxClientStepTests
     [Test]
     public async Task RaisesForStatus_AndCallsModelValidate_ForPydanticReturn()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -63,7 +64,7 @@ public class HttpxClientStepTests
     [Test]
     public async Task PathParamsRenderedAsFStrings()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -74,7 +75,7 @@ public class HttpxClientStepTests
     [Test]
     public async Task SyncMode_UsesHttpxClient_AndDoesNotEmitAsyncKeyword()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new PythonGenerationOptions { HttpxMode = PythonOptionIds.HttpxMode.Sync });
 
         var clientFile = ctx.GeneratedFiles.First(f =>

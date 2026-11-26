@@ -8,7 +8,7 @@ namespace ValIO.Generators.Cpp.Ast.Builders.Std;
 /// </summary>
 internal static class StdExpressions
 {
-    /// <summary>Идентификатор; также — официально задокументированный способ встроить сырой C++-токен/выражение.</summary>
+    /// <summary>Builds a reference to an existing C++ name.</summary>
     internal static IdentifierExpressionNode Ident(string name) => new(new IdentifierNode(name));
 
     /// <summary>Цепочка scope-доступа A::B::C.</summary>

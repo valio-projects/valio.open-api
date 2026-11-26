@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -28,7 +29,7 @@ public sealed class WireParameterSerializationTests
     public async Task TransportUsesOriginalNamesOnWireAndSanitizedNamesForAccess(string transport, string validationLibrary)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(CreateWireNamesDocument());
+        var document = await OpenApiFixture.LoadAsync("Transport/wire-parameter-names.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],
@@ -84,72 +85,4 @@ public sealed class WireParameterSerializationTests
             parameterSchema.Content.Should().Contain("from \"zod/v4\"");
     }
 
-    /// <summary>Creates a minimal OpenAPI document containing three parameter names that require sanitization.</summary>
-    /// <returns>The OpenAPI document as JSON.</returns>
-    private static string CreateWireNamesDocument() =>
-        """
-        {
-          "openapi": "3.0.3",
-          "info": {
-            "title": "Wire parameter names",
-            "version": "1.0.0"
-          },
-          "paths": {
-            "/widgets/{item-id}": {
-              "get": {
-                "operationId": "getWidget",
-                "tags": ["Wire"],
-                "parameters": [
-                  {
-                    "name": "item-id",
-                    "in": "path",
-                    "required": true,
-                    "schema": { "type": "string" }
-                  },
-                  {
-                    "name": "Paging.Offset",
-                    "in": "query",
-                    "required": true,
-                    "schema": { "type": "integer", "format": "int32" }
-                  },
-                  {
-                    "name": "UserId",
-                    "in": "query",
-                    "required": true,
-                    "schema": { "type": "string", "format": "uuid" }
-                  },
-                  {
-                    "name": "Filter.By",
-                    "in": "query",
-                    "required": false,
-                    "schema": { "type": "string" }
-                  },
-                  {
-                    "name": "X-Request-ID",
-                    "in": "header",
-                    "required": true,
-                    "schema": { "type": "string" }
-                  },
-                  {
-                    "name": "X-Trace-ID",
-                    "in": "header",
-                    "required": false,
-                    "schema": { "type": "string" }
-                  }
-                ],
-                "responses": {
-                  "200": {
-                    "description": "Success",
-                    "content": {
-                      "application/json": {
-                        "schema": { "type": "string" }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        """;
 }

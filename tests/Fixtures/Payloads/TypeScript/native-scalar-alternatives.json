@@ -1,0 +1,5 @@
+{
+  "unquoted": {"action":1,"total":9007199254740993,"latest":9007199254740993},
+  "quoted": {"action":1,"total":"9007199254740993","latest":9007199254740993},
+  "invalid-action": {"action":{},"total":9007199254740993,"latest":9007199254740993}
+}

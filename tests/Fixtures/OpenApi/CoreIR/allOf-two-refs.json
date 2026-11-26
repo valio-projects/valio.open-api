@@ -1,0 +1,17 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "X", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "A": { "type": "object", "properties": { "a": { "type": "string" } } },
+      "B": { "type": "object", "properties": { "b": { "type": "string" } } },
+      "C": {
+        "allOf": [
+          { "$ref": "#/components/schemas/A" },
+          { "$ref": "#/components/schemas/B" }
+        ]
+      }
+    }
+  }
+}

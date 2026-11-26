@@ -146,7 +146,7 @@ public sealed class TanStackAngularHookAstBuilder : AstBuilderBase
         var injectCall = new CallExpressionNode(
             Id("injectQuery"),
             ImmutableList.Create<ExpressionNode>(arrow),
-            genericTypeName: resultTypeName);
+            genericTypeArgument: resultTypeName is null ? null : new SimpleTypeNode(new IdentifierNode(resultTypeName)));
 
         var parameters = new List<ParameterDeclarationNode>();
         if (hasParams && paramsTypeName != null)
@@ -196,13 +196,13 @@ public sealed class TanStackAngularHookAstBuilder : AstBuilderBase
         var optsObj = new ObjectLiteralExpressionNode(mutationOptions.ToImmutableList(), preferMultilineFormat: true);
         var arrow = new ArrowFunctionExpressionNode(ImmutableList<ParameterDeclarationNode>.Empty, optsObj);
 
-        var generic = resultTypeName != null
-            ? $"{resultTypeName}, Error, {RenderTypeName(variablesType)}"
+        TypeNode[]? generic = resultTypeName is not null
+            ? [new SimpleTypeNode(new IdentifierNode(resultTypeName)), new SimpleTypeNode(new IdentifierNode("Error")), variablesType]
             : null;
         var injectCall = new CallExpressionNode(
             Id("injectMutation"),
             ImmutableList.Create<ExpressionNode>(arrow),
-            genericTypeName: generic);
+            typeArguments: generic);
 
         return new FunctionDeclarationNode(
             name: new IdentifierNode($"use{hookBaseName}"),
@@ -225,6 +225,4 @@ public sealed class TanStackAngularHookAstBuilder : AstBuilderBase
     private static LiteralExpressionNode String(string value) =>
         new(value, LiteralKind.String);
 
-    private static string RenderTypeName(TypeNode type) =>
-        type is SimpleTypeNode simple ? simple.Name.Name : type.ToString() ?? "unknown";
 }

@@ -20,4 +20,12 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
 
+  <ItemGroup>
+    <EmbeddedResource Include="Resources/build.gradle.kts" LogicalName="ValIO.Resources.build.gradle.kts" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources/gradle.properties" LogicalName="ValIO.Resources.gradle.properties" />
+  </ItemGroup>
+
 </Project>

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Models;
@@ -25,7 +26,7 @@ public class ZodParamsSchemasStepTests
     [Test]
     public async Task NoZodValidation_NoParamsSchemaFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -35,7 +36,7 @@ public class ZodParamsSchemasStepTests
     [Test]
     public async Task Zod3WithPathParam_EmitsRouteParamsSchema()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -52,7 +53,7 @@ public class ZodParamsSchemasStepTests
     [Test]
     public async Task Zod_ParamsSchema_IsTypedWithParamsInterface()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -72,7 +73,7 @@ public class ZodParamsSchemasStepTests
     [Test]
     public async Task Zod_QueryParams_Coerce_Default_AndDescribe()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("numeric-query-param.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/numeric-query-param.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -91,7 +92,7 @@ public class ZodParamsSchemasStepTests
     [Test]
     public async Task Zod4_UsesZodV4ImportPath()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -109,7 +110,7 @@ public class ZodParamsSchemasStepTests
         // Regression: a query param that $refs a named enum renders as `UserRoleSchema`
         // in the Zod params schema, but the import for it was dropped (TS2304 / ReferenceError),
         // even though the params interface correctly imported the `UserRole` type.
-        var doc = await PipelineTestHarness.LoadDocumentAsync("enum-query-param.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/enum-query-param.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -131,7 +132,7 @@ public class ZodParamsSchemasStepTests
     {
         // When SeparateModels is false, schema files are flat ({schemas}/{name}.schema.ts),
         // so the dependency import must not include the per-name subfolder.
-        var doc = await PipelineTestHarness.LoadDocumentAsync("enum-query-param.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/enum-query-param.json");
         var ctx = await _harness.RunAsync(
             doc,
             new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = "zod3" },
@@ -154,7 +155,7 @@ public class ZodParamsSchemasStepTests
     [Test]
     public async Task OperationWithoutPathOrQueryParams_SkipsParamsSchemaFile()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],

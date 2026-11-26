@@ -16,7 +16,7 @@ public sealed class AngularPromiseClientStepTests
     public async Task AngularModes_GenerateDistinctServices()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/runtime-contracts-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["angular-rxjs", "angular-promise"] });
 
         var services = context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".service.ts", StringComparison.Ordinal)).ToList();
@@ -42,7 +42,7 @@ public sealed class AngularPromiseClientStepTests
     public async Task AngularPromise_PreservesFormAndBodylessContracts(string? validation)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/runtime-contracts-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["angular-promise"], ValidationLibrary = validation });
         var service = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(".service.ts", StringComparison.Ordinal)).Content;
 

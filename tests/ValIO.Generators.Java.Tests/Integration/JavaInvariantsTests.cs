@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Java.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class JavaInvariantsTests
     [Test]
     public async Task EveryJavaFile_StartsWithPackageDeclaration()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -35,7 +36,7 @@ public class JavaInvariantsTests
     [Test]
     public async Task EveryJavaFile_BalancedBraces()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -52,7 +53,7 @@ public class JavaInvariantsTests
     [Test]
     public async Task EnumFile_ContainsEnumKeyword()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>
@@ -63,7 +64,7 @@ public class JavaInvariantsTests
     [Test]
     public async Task ModelFile_IsImmutable_RecordOrFinalFields()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>

@@ -31,7 +31,7 @@ public sealed class StringFormatRuntimeIntegrationTests
     public async Task GeneratedFormats_AgreeOnWireValues(string version, string validator)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read($"Validators/validator-runtime-{version}.json"));
+        var document = await OpenApiFixture.LoadAsync($"Validators/validator-runtime-{version}.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validator });
         using var vectors = JsonDocument.Parse(OpenApiFixture.Read("Validators/string-format-vectors.json"));
         var parse = validator switch

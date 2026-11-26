@@ -95,12 +95,9 @@ public sealed class PythonGeneratedRuntimeTests
                 await File.WriteAllTextAsync(filePath, generatedFile.Content, new UTF8Encoding(false));
             }
 
-            await using var resource = typeof(PythonGeneratedRuntimeTests).Assembly.GetManifestResourceStream(
-                "ValIO.Generators.Python.Tests.TestData.runtime_assertions.py")
-                ?? throw new InvalidOperationException("The portable Python runtime assertions resource is missing.");
-            using var reader = new StreamReader(resource);
             var scriptPath = Path.Combine(directory, "runtime_assertions.py");
-            await File.WriteAllTextAsync(scriptPath, await reader.ReadToEndAsync(), new UTF8Encoding(false));
+            var script = FixtureFile.Read("Runtime/Python/runtime_assertions.py");
+            await File.WriteAllTextAsync(scriptPath, script, new UTF8Encoding(false));
 
             using var process = new Process
             {

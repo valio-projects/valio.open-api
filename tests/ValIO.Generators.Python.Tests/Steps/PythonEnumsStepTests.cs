@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class PythonEnumsStepTests
     [Test]
     public async Task StringEnum_GeneratesStrEnumWithUppercaseMembers()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>
@@ -33,7 +34,7 @@ public class PythonEnumsStepTests
     [Test]
     public async Task EnumFiles_LiveAlongsideModels_InSnakeCase()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().Contain(f =>

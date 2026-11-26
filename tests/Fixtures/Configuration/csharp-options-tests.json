@@ -1,0 +1,32 @@
+{
+  "model-generation": {
+    "propertyAccessor": "Init",
+    "useRequired": true,
+    "generateEqualityMembers": false,
+    "useSealed": true
+  },
+  "unsupported-model-type": {
+    "modelType": "Record"
+  },
+  "unsupported-query-style": {
+    "queryParametersStyle": "ModelClass"
+  },
+  "unsupported-nullable-references": {
+    "nullableReferenceTypes": false
+  },
+  "unsupported-nullable-activity": {
+    "nullableActivity": false
+  },
+  "unsupported-access-modifier": {
+    "clientAccessModifier": "Private"
+  },
+  "invalid-equality-flag": {
+    "generateEqualityMembers": "false"
+  },
+  "invalid-property-accessor": {
+    "propertyAccessor": "Unknown"
+  },
+  "unknown-option": {
+    "misspelledOption": true
+  }
+}

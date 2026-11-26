@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Dart.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class DartPipelineTests
     [Test]
     public async Task FullPipeline_EmitsModelsEnumsAndClient()
     {
-        var doc = await DartPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var paths = ctx.GeneratedFiles.Select(f => f.RelativePath.Replace('\\', '/')).ToList();
@@ -30,7 +31,7 @@ public class DartPipelineTests
     [Test]
     public async Task EveryFile_HasNonEmptyContent()
     {
-        var doc = await DartPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -40,7 +41,7 @@ public class DartPipelineTests
     [Test]
     public async Task UserClass_DeclaresClassKeyword()
     {
-        var doc = await DartPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var user = ctx.GeneratedFiles.First(f =>
@@ -51,7 +52,7 @@ public class DartPipelineTests
     [Test]
     public async Task UserRoleEnum_DeclaresEnumKeyword()
     {
-        var doc = await DartPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var role = ctx.GeneratedFiles.First(f =>
@@ -62,7 +63,7 @@ public class DartPipelineTests
     [Test]
     public async Task EveryDartFile_BalancedBraces()
     {
-        var doc = await DartPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".dart")))
@@ -81,7 +82,7 @@ public class DartPipelineTests
     [Test]
     public async Task ServiceFile_ImportsDio()
     {
-        var doc = await DartPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var service = ctx.GeneratedFiles.First(f =>
@@ -92,7 +93,7 @@ public class DartPipelineTests
     [Test]
     public async Task PluginRegistry_FindsPluginByAlias()
     {
-        var doc = await DartPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         await _harness.RunAsync(doc);
 
         var registry = (ValIO.Core.Plugins.IGeneratorRegistry)

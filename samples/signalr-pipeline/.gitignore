@@ -1,0 +1,4 @@
+client/generated/
+client/dist/
+client/node_modules/
+server/Generated/

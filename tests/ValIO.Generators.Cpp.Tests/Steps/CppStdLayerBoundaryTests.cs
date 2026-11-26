@@ -34,7 +34,8 @@ public sealed class CppStdLayerBoundaryTests
         var context = await Generate(emitSerializers: true);
         var files = context.GeneratedFiles.ToDictionary(f => f.RelativePath, f => f.Content);
         files.Keys.Where(path => path.StartsWith("Runtime/", StringComparison.Ordinal))
-            .Should().BeEquivalentTo(["Runtime/ValIOJsonTypes.h", "Runtime/ValIOJsonValidation.h"]);
+            .Should().BeEquivalentTo(["Runtime/ValIOJsonBackend.h", "Runtime/ValIOJsonTypesBase.h",
+                "Runtime/ValIOJsonTypes.h", "Runtime/ValIOJsonValidation.h"]);
         files["Models/Probe.h"].Should().NotContainAny(["nlohmann", "httplib", "Runtime/"]);
         files["Serializers/ProbeJson.h"].Should().Contain("nlohmann/json_fwd.hpp").And.NotContain("nlohmann/json.hpp");
         files["Serializers/ProbeJson.cpp"].Should().Contain("nlohmann/json.hpp").And.Contain("Runtime/ValIOJsonTypes.h");

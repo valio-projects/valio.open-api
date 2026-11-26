@@ -139,6 +139,39 @@ public static class IrNameAffixer
         };
     }
 
+    /// <summary>Applies finalized declaration names to SignalR argument and result references.</summary>
+    /// <param name="hubs">The hubs expressed in source declaration names.</param>
+    /// <param name="models">The finalized model declarations.</param>
+    /// <param name="enums">The finalized enum declarations.</param>
+    /// <returns>Hubs referencing the same generated types as the HTTP surface.</returns>
+    internal static IReadOnlyList<IrSignalRHub> ApplyToSignalRHubs(IReadOnlyList<IrSignalRHub> hubs,
+        IReadOnlyList<IrModel> models, IReadOnlyList<IrEnum> enums)
+    {
+        if (hubs.Count == 0)
+            return hubs;
+
+        var rename = models.Select(model => (model.OriginalName, model.Name))
+            .Concat(enums.Select(item => (item.OriginalName, item.Name)))
+            .ToDictionary(item => item.OriginalName, item => item.Name, StringComparer.Ordinal);
+
+        return hubs.Select(hub => hub with
+        {
+            Methods = hub.Methods.Select(call => RewriteSignalRCall(call, rename)).ToArray(),
+            Events = hub.Events.Select(call => RewriteSignalRCall(call, rename)).ToArray()
+        }).ToArray();
+    }
+
+    /// <summary>Updates the generated type references while preserving the exact SignalR wire name.</summary>
+    /// <param name="call">The original method or notification.</param>
+    /// <param name="rename">The finalized declaration names by source name.</param>
+    /// <returns>The call with translated argument and result types.</returns>
+    private static IrSignalRCall RewriteSignalRCall(IrSignalRCall call, IReadOnlyDictionary<string, string> rename) =>
+        call with
+        {
+            Result = call.Result is null ? null : RewriteType(call.Result, rename),
+            Parameters = call.Parameters.Select(parameter => parameter with { Type = RewriteType(parameter.Type, rename) }).ToArray()
+        };
+
     private static IrType RewriteType(IrType type, IReadOnlyDictionary<string, string> rename) => type switch
     {
         IrModelReference r => new IrModelReference(r)

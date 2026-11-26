@@ -1,5 +1,6 @@
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Generators.Ruby.Ast.Nodes;
@@ -22,7 +23,8 @@ public sealed class RubyEnumAstBuilder(INamingConverter namingConverter)
         foreach (var v in irEnum.Values)
         {
             var constName = ToScreamingSnakeCase(v.Name);
-            var literal = RenderEnumLiteral(v.Value, isString);
+            var literal = isString ? new LiteralExpressionNode(v.Value?.ToString() ?? "", LiteralKind.String) :
+                new LiteralExpressionNode(v.Value ?? 0, LiteralKind.Number);
             members.Add(new RubyConstantNode(
                 new IdentifierNode(constName),
                 literal,
@@ -48,18 +50,4 @@ public sealed class RubyEnumAstBuilder(INamingConverter namingConverter)
         var snake = namingConverter.ToSnakeCase(name);
         return string.IsNullOrEmpty(snake) ? "_" : snake.ToUpperInvariant();
     }
-
-    private static string RenderEnumLiteral(object value, bool isString)
-    {
-        if (isString)
-        {
-            var s = value?.ToString() ?? "";
-            return $"'{EscapeSingleQuoted(s)}'";
-        }
-        return value?.ToString() ?? "0";
-    }
-
-    private static string EscapeSingleQuoted(string s) =>
-        s.Replace("\\", "\\\\", StringComparison.Ordinal)
-         .Replace("'", "\\'", StringComparison.Ordinal);
 }

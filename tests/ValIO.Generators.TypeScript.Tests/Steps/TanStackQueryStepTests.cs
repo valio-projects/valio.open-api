@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -19,7 +20,7 @@ public class TanStackQueryStepTests
     [Test]
     public async Task NoQueryWrapper_NoQueryFilesEmitted()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -29,7 +30,7 @@ public class TanStackQueryStepTests
     [Test]
     public async Task TanStackReact_GeneratesUseQueryAndQueryKey()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -46,7 +47,7 @@ public class TanStackQueryStepTests
     [Test]
     public async Task TanStackReact_PostMethod_GeneratesUseMutation()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -63,7 +64,7 @@ public class TanStackQueryStepTests
     [Test]
     public async Task TanStackReact_TanStackTypeSymbols_AreImportedAsTypeOnly()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -86,7 +87,7 @@ public class TanStackQueryStepTests
     [Test]
     public async Task TanStackReact_ParameterlessMutation_DoesNotForwardVoidVariables()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("parameterless-mutation.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/parameterless-mutation.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -107,7 +108,7 @@ public class TanStackQueryStepTests
     [Test]
     public async Task TanStackReact_ClientImport_MatchesPrimaryTransport()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],

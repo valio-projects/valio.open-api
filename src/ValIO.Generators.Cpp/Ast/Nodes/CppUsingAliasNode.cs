@@ -9,12 +9,12 @@ namespace ValIO.Generators.Cpp.Ast.Nodes;
 /// Узел using alias для C++.
 /// Пример: using FValIOClientRef = TSharedRef&lt;FValIOClient&gt;;
 /// </summary>
-public sealed class CppUsingAliasNode : AstNode
+public sealed class CppUsingAliasNode : DeclarationNode
 {
     /// <summary>
     /// Имя алиаса
     /// </summary>
-    public IdentifierNode Alias { get; }
+    public IdentifierNode Alias => Name;
 
     /// <summary>
     /// Целевой тип, на который ссылается алиас
@@ -22,7 +22,7 @@ public sealed class CppUsingAliasNode : AstNode
     public TypeNode TargetType { get; }
 
 
-    public override IReadOnlyList<AstNode> Children => new AstNode[] { Alias, TargetType };
+    public override IReadOnlyList<AstNode> Children => [..base.Children, TargetType];
 
     /// <summary>
     /// Конструктор
@@ -30,10 +30,10 @@ public sealed class CppUsingAliasNode : AstNode
     public CppUsingAliasNode(
         IdentifierNode alias,
         TypeNode targetType,
-        IReadOnlyDictionary<string, object>? metadata = null)
-        : base(metadata)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        CommentNode? documentation = null)
+        : base(alias, documentation, metadata: metadata)
     {
-        Alias = alias ?? throw new ArgumentNullException(nameof(alias));
         TargetType = targetType ?? throw new ArgumentNullException(nameof(targetType));
     }
 
@@ -49,7 +49,8 @@ public sealed class CppUsingAliasNode : AstNode
         return new CppUsingAliasNode(
             (IdentifierNode)Alias.Clone(),
             (TypeNode)TargetType.Clone(),
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            (CommentNode?)Documentation?.Clone());
     }
 
     public override string ToString()

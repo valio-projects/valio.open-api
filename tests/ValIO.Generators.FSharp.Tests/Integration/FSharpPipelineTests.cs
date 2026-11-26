@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.FSharp.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class FSharpPipelineTests
     [Test]
     public async Task SimpleSchema_ProducesAtLeastOneFsFile()
     {
-        var doc = await FSharpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -31,7 +32,7 @@ public class FSharpPipelineTests
     [Test]
     public async Task EveryGeneratedFile_IsNonEmpty()
     {
-        var doc = await FSharpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -43,7 +44,7 @@ public class FSharpPipelineTests
     [Test]
     public async Task EveryFsFile_StartsWithModuleDeclaration()
     {
-        var doc = await FSharpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -56,7 +57,7 @@ public class FSharpPipelineTests
     [Test]
     public async Task ModelFile_ContainsRecordType()
     {
-        var doc = await FSharpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -68,7 +69,7 @@ public class FSharpPipelineTests
     [Test]
     public async Task EnumFile_ContainsDiscriminatedUnion()
     {
-        var doc = await FSharpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -81,7 +82,7 @@ public class FSharpPipelineTests
     [Test]
     public async Task ClientFile_OpensRestSharpAndExecutes()
     {
-        var doc = await FSharpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

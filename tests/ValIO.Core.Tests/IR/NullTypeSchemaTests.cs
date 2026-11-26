@@ -14,14 +14,13 @@ namespace ValIO.Core.Tests.IR;
 [TestFixture]
 public class NullTypeSchemaTests
 {
-    // Standalone {"type":"null"} свойство не должно падать и должно маппиться в IrPrimitiveKind.Null.
+    /// <summary>Maps a property that accepts only null to a null primitive.</summary>
+    /// <returns>The asynchronous assertion.</returns>
     [Test]
     public async Task StandaloneNullTypeProperty_MapsToNullPrimitive()
     {
-        var model = await IrTestHarness.BuildSingleModelAsync(
-            "Envelope",
-            """{"type":"object","required":["result","error"],"properties":{"result":{"type":"object","properties":{"id":{"type":"string"}}},"error":{"type":"null"}}}""",
-            "3.1.0");
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read("CoreIR/standalone-null-3.1.json"));
+        var model = ir.Models.Single(model => model.Name == "Envelope");
 
         var error = model.Properties.Single(p => p.OriginalName == "error");
         error.Type.Should().BeOfType<IrPrimitiveType>()
@@ -40,29 +39,12 @@ public class NullTypeSchemaTests
         capacity.Type.Should().BeOfType<IrNullableType>();
     }
 
-    // Некорректная схема сообщает endpoint + операцию + ответ + путь свойства в тексте ошибки.
+    /// <summary>Reports the endpoint, operation, response and property for a malformed schema.</summary>
+    /// <returns>The asynchronous assertion.</returns>
     [Test]
     public async Task MalformedSchema_ErrorMessageIncludesLocationContext()
     {
-        const string doc = """
-        {
-          "openapi":"3.1.0",
-          "info":{"title":"T","version":"1.0.0"},
-          "paths":{
-            "/api/apartments":{
-              "get":{
-                "operationId":"getApartments",
-                "responses":{
-                  "200":{
-                    "description":"ok",
-                    "content":{"application/json":{"schema":{"type":"object","properties":{"data":{"type":"array"}}}}}
-                  }
-                }
-              }
-            }
-          }
-        }
-        """;
+        var doc = OpenApiFixture.Read("CoreIR/malformed-response-array-3.1.json");
 
         var act = async () => await IrTestHarness.BuildIrAsync(doc);
 

@@ -40,7 +40,7 @@ public sealed class ReqwestClientStep : ICodeGenerationStep
         var builder = new ReqwestClientAstBuilder(_namingConverter, _typeMapper);
         foreach (var client in context.IrDocument.Clients)
         {
-            var file = builder.BuildFile(client);
+            var file = builder.BuildFile(client, context.DocumentContext);
             var content = _renderer.Render(file);
             var snake = _namingConverter.ToSnakeCase(client.Name);
             var relativePath = $"{apiDir}/{snake}.rs";

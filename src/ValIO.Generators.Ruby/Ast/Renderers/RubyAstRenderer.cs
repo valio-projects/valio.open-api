@@ -112,6 +112,10 @@ public sealed class RubyAstRenderer : RubyAstVisitorBase<string>, IRubyAstRender
 
     public override string VisitRubyMethod(RubyMethodNode node) => RenderMethod(node, indent: 0);
 
+    /// <summary>Renders a Ruby method from its parameter and body nodes.</summary>
+    /// <param name="node">The method to render.</param>
+    /// <param name="indent">The indentation of the declaration.</param>
+    /// <returns>The rendered Ruby method.</returns>
     private string RenderMethod(RubyMethodNode node, int indent)
     {
         var sb = new StringBuilder();
@@ -120,11 +124,11 @@ public sealed class RubyAstRenderer : RubyAstVisitorBase<string>, IRubyAstRender
         if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
             AppendDocComment(sb, indent, node.Documentation.Text);
 
-        var paramText = node.Parameters.Count == 0 ? "" : "(" + string.Join(", ", node.Parameters) + ")";
+        var paramText = node.Parameters.Count == 0 ? "" : "(" + string.Join(", ", node.Parameters.Select(VisitParameterDeclaration)) + ")";
         sb.AppendLine($"{prefix}def {node.Name.Name}{paramText}");
 
         var bodyIndent = indent + 1;
-        if (node.Body.Count == 0)
+        if (node.Body.Statements.Count == 0)
         {
             // Ruby methods with empty bodies are syntactically valid but render
             // a comment placeholder so the result is greppable.
@@ -132,15 +136,8 @@ public sealed class RubyAstRenderer : RubyAstVisitorBase<string>, IRubyAstRender
         }
         else
         {
-            foreach (var line in node.Body)
-            {
-                if (string.IsNullOrEmpty(line))
-                {
-                    sb.AppendLine();
-                    continue;
-                }
-                sb.AppendLine($"{Indent(bodyIndent)}{line}");
-            }
+            foreach (var line in VisitBlock(node.Body).Split('\n'))
+                sb.AppendLine($"{Indent(bodyIndent)}{line.TrimEnd('\r')}");
         }
 
         sb.AppendLine($"{prefix}end");
@@ -158,13 +155,17 @@ public sealed class RubyAstRenderer : RubyAstVisitorBase<string>, IRubyAstRender
                 $"Cannot render declaration of type {declaration.GetType().Name} in Ruby file")
         };
 
+    /// <summary>Prints a constant with its typed initializer.</summary>
+    /// <param name="node">The constant.</param>
+    /// <param name="indent">The declaration indentation.</param>
+    /// <returns>The Ruby declaration.</returns>
     private string RenderConstant(RubyConstantNode node, int indent)
     {
         var sb = new StringBuilder();
         var prefix = Indent(indent);
         if (node.Documentation != null && !string.IsNullOrWhiteSpace(node.Documentation.Text))
             AppendDocComment(sb, indent, node.Documentation.Text);
-        sb.AppendLine($"{prefix}{node.Name.Name} = {node.ValueLiteral}");
+        sb.AppendLine($"{prefix}{node.Name.Name} = {Visit(node.Initializer)}");
         return sb.ToString();
     }
 
@@ -261,6 +262,36 @@ public sealed class RubyAstRenderer : RubyAstVisitorBase<string>, IRubyAstRender
     public override string VisitAwaitExpression(AwaitExpressionNode node) => Visit(node.Expression);
     public override string VisitCastExpression(CastExpressionNode node) => Visit(node.Expression);
 
+    /// <inheritdoc/>
+    public override string VisitIndexAccessExpression(IndexAccessExpressionNode node) => $"{Visit(node.Object)}[{Visit(node.Index)}]";
+
+    /// <inheritdoc/>
+    public override string VisitRubyCallWithBlock(RubyCallWithBlockNode node)
+    {
+        var lines = new List<string> { $"{Visit(node.Call)} do |{node.Parameter.Name}|" };
+        if (node.Body.Statements.Count == 0)
+            lines.Add($"{Indent(1)}# no parameters");
+        else
+            lines.AddRange(VisitBlock(node.Body).Split('\n').Select(line => Indent(1) + line.TrimEnd('\r')));
+        lines.Add("end");
+        return string.Join("\n", lines);
+    }
+
+    /// <inheritdoc/>
+    public override string VisitRubyUnlessStatement(RubyUnlessStatementNode node) =>
+        $"{Visit(node.Statement)} unless {Visit(node.Condition)}";
+
+    /// <inheritdoc/>
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        var parts = node.Parts.Select(part => part is LiteralExpressionNode { Value: string value }
+            ? value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal)
+                .Replace("#", "\\#", StringComparison.Ordinal).Replace("\r", "\\r", StringComparison.Ordinal)
+                .Replace("\n", "\\n", StringComparison.Ordinal)
+            : "#{" + Visit(part) + "}");
+        return $"\"{string.Concat(parts)}\"";
+    }
+
     public override string VisitReturnStatement(ReturnStatementNode node) =>
         node.Value == null ? "return" : $"return {Visit(node.Value)}";
 
@@ -318,7 +349,9 @@ public sealed class RubyAstRenderer : RubyAstVisitorBase<string>, IRubyAstRender
 
     public override string VisitPropertyDeclaration(PropertyDeclarationNode node) => VisitDefault(node);
     public override string VisitMethodDeclaration(MethodDeclarationNode node) => VisitDefault(node);
-    public override string VisitParameterDeclaration(ParameterDeclarationNode node) => VisitDefault(node);
+    /// <inheritdoc/>
+    public override string VisitParameterDeclaration(ParameterDeclarationNode node) =>
+        node.DefaultValue is { } fallback ? $"{node.Name.Name}: {Visit(fallback)}" : node.Name.Name;
     public override string VisitEnumMemberDeclaration(EnumMemberDeclarationNode node) => VisitDefault(node);
     public override string VisitEnumDeclaration(EnumDeclarationNode node) => VisitDefault(node);
     public override string VisitInterfaceDeclaration(InterfaceDeclarationNode node) => VisitDefault(node);

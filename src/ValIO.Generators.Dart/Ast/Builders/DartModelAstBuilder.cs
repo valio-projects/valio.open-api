@@ -15,7 +15,10 @@ namespace ValIO.Generators.Dart.Ast.Builders;
 public sealed class DartModelAstBuilder(INamingConverter namingConverter, DartIrTypeMapper typeMapper)
 {
 
-    public DartFileNode BuildFile(IrModel model)
+    /// <summary>Builds the model and the imports for related property types.</summary>
+    /// <param name="model">The effective model, including inherited properties.</param>
+    /// <param name="context">The original model and enum names in the document.</param>
+    public DartFileNode BuildFile(IrModel model, IrDocumentContext context)
     {
         var className = namingConverter.ToPascalCase(model.Name);
         var fields = new List<DartFieldNode>(model.Properties.Count);
@@ -31,7 +34,7 @@ public sealed class DartModelAstBuilder(INamingConverter namingConverter, DartIr
             fields.Add(new DartFieldNode(
                 new IdentifierNode(safe),
                 mapped,
-                isNullable: isOptional,
+                isNullable: isOptional && mapped is not NullableTypeNode,
                 isFinal: true,
                 jsonKey: !string.Equals(prop.OriginalName, safe, StringComparison.Ordinal)
                     ? prop.OriginalName
@@ -41,17 +44,17 @@ public sealed class DartModelAstBuilder(INamingConverter namingConverter, DartIr
                     : null));
 
             ctorParams.Add(new DartParameterNode(
-                new IdentifierNode("this." + safe),
+                new IdentifierNode(safe),
                 mapped,
                 isRequired: !isOptional,
-                isNamed: true));
+                isNamed: true,
+                isFieldFormal: true));
         }
 
         var ctor = new DartMethodNode(
             new IdentifierNode(className),
             returnType: null,
             parameters: ctorParams,
-            bodyLines: null,
             isAsync: false,
             isStatic: false,
             isConstructor: true);
@@ -64,7 +67,7 @@ public sealed class DartModelAstBuilder(INamingConverter namingConverter, DartIr
                 ? new CommentNode(model.Description!, CommentKind.MultiLine)
                 : null);
 
-        var imports = new List<DartImportNode> { new("dart:typed_data") };
+        var imports = DartImports.Build(context, namingConverter, model.Properties.Select(property => property.Type), "", model.Name);
         return new DartFileNode(declarations: new[] { cls }, imports: imports);
     }
 }

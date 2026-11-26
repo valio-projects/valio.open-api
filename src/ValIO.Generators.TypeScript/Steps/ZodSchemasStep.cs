@@ -3,6 +3,8 @@ using ValIO.Core.Plugins;
 using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Zod;
+using ValIO.Generators.TypeScript.Ast.Renderers;
+using ValIO.Generators.TypeScript.Zod.Ast.Renderers;
 
 namespace ValIO.Generators.TypeScript.Steps;
 
@@ -68,7 +70,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         var fileName = _namingConverter.ToCamelCase(model.OriginalName);
         // importPath=null — renderer построит относительный путь к модели
         // из schemasPath + currentFileName сам.
-        var content = renderer.RenderFromIr(model,
+        var sourceFile = renderer.BuildModel(model,
             importPath: null,
             currentFileName: fileName,
             schemasPath: schemasPath);
@@ -78,7 +80,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
             ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
             : $"{modelsPath}/{fileName}.schema.ts";
 
-        context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+        TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, new TypeScriptAstRenderer([new ZodNodeRenderer()]).Render);
     }
 
     private void AddEnumSchema(
@@ -90,7 +92,7 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
         bool separateModels)
     {
         var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
-        var content = renderer.RenderEnumFromIr(irEnum,
+        var sourceFile = renderer.BuildEnum(irEnum,
             importPath: null,
             currentFileName: fileName,
             schemasPath: schemasPath);
@@ -100,6 +102,6 @@ public sealed class ZodSchemasStep : ICodeGenerationStep
             ? $"{modelsPath}/{fileName}/{fileName}.schema.ts"
             : $"{modelsPath}/{fileName}.schema.ts";
 
-        context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+        TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, new TypeScriptAstRenderer([new ZodNodeRenderer()]).Render);
     }
 }

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -30,7 +31,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task QueryKey_FlatRouteParam_InlinesParamValue()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -53,7 +54,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task QueryKey_RouteAndQuery_InlinesRouteIdAndAppendsQueryObjectTail()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -78,7 +79,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task QueryOptions_MergesCallerQueryOptions()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -100,7 +101,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task MutationOptions_MergesCallerMutationOptions()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -119,7 +120,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task Mutation_NoQueryKeysModuleEmitted()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -134,7 +135,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task Hybrid_NextjsAndAxios_ShareOneCacheKeysModule()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs", "axios"],
@@ -165,7 +166,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task CacheTags_AreHierarchicalAndInlineRouteId()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
 
         var keys = ctx.GeneratedFiles.First(f =>
@@ -182,7 +183,7 @@ public class TanStackQueryCacheKeyTests
     [Test]
     public async Task CacheTags_QueryOnly_UsesCompatibleUnusedParameterName()
     {
-        var document = await PipelineTestHarness.LoadDocumentAsync("apartments.json");
+        var document = await OpenApiFixture.LoadAsync("TypeScript/apartments.json");
         var context = await _harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs", "axios"],

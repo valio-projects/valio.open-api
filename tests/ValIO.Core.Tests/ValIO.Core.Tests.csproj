@@ -19,8 +19,5 @@
         <ProjectReference Include="..\..\src\ValIO.Parsers\ValIO.Parsers.csproj" />
     </ItemGroup>
 
-    <ItemGroup>
-        <EmbeddedResource Include="TestData\**\*" />
-    </ItemGroup>
 
 </Project>

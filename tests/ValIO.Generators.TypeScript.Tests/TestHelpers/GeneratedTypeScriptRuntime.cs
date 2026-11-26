@@ -8,7 +8,7 @@ internal static class GeneratedTypeScriptRuntime
 {
     /// <summary>Transpiles generated modules and executes assertions against their runtime behavior.</summary>
     /// <param name="context">The completed generation pipeline result.</param>
-    /// <param name="runtimeScript">JavaScript assertions with root, path, assert, and require available.</param>
+    /// <param name="runtimeScript">JavaScript assertions with root, path, assert, require, and readFixture available.</param>
     /// <param name="requiredPackages">Additional packages required only by this scenario.</param>
     /// <returns>The process output after successful execution.</returns>
     public static async Task<string> Run(GenerationContext context, string runtimeScript, params string[] requiredPackages)
@@ -39,6 +39,8 @@ internal static class GeneratedTypeScriptRuntime
         };
         const ts = require(path.join({{JsonSerializer.Serialize(modules)}}, 'typescript', 'lib', 'typescript.js'));
         const root = {{JsonSerializer.Serialize(workspace)}};
+        const fixtures = {{JsonSerializer.Serialize(Path.Combine(AppContext.BaseDirectory, "Fixtures"))}};
+        const readFixture = relativePath => fs.readFileSync(path.join(fixtures, relativePath), 'utf8');
         const files = {{JsonSerializer.Serialize(sourcePaths)}};
         for (const file of files) {
           const result = ts.transpileModule(fs.readFileSync(file, 'utf8'), {

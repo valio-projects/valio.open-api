@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
@@ -20,7 +21,7 @@ public class PythonPipelineTests
     [Test]
     public async Task FullPipeline_GeneratesModels_Enums_AndClient()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var paths = ctx.GeneratedFiles.Select(f => f.RelativePath.Replace('\\', '/')).ToList();
@@ -33,7 +34,7 @@ public class PythonPipelineTests
     public void OptionsDescriptor_ParsesValidValues()
     {
         using var jsonDoc = JsonDocument.Parse(
-            "{\"pythonVersion\":\"3.12\",\"httpxMode\":\"sync\",\"validator\":\"pydantic\",\"rootModule\":\"my_api\"}");
+            FixtureFile.ReadJsonCase("Configuration/python-pipeline-tests.json", "sync-pydantic"));
         var raw = new Dictionary<string, JsonElement>();
         foreach (var prop in jsonDoc.RootElement.EnumerateObject())
             raw[prop.Name] = prop.Value;
@@ -52,7 +53,7 @@ public class PythonPipelineTests
     [Test]
     public void OptionsDescriptor_FlagsUnknownHttpxMode()
     {
-        using var jsonDoc = JsonDocument.Parse("{\"httpxMode\":\"mystery\"}");
+        using var jsonDoc = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/python-pipeline-tests.json", "unknown-httpx-mode"));
         var raw = new Dictionary<string, JsonElement>
         {
             ["httpxMode"] = jsonDoc.RootElement.GetProperty("httpxMode")
@@ -67,7 +68,7 @@ public class PythonPipelineTests
     [Test]
     public async Task PluginRegistry_FindsPlugin_ByAlias()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         await _harness.RunAsync(doc);
 
         var registry = (ValIO.Core.Plugins.IGeneratorRegistry)
@@ -82,7 +83,7 @@ public class PythonPipelineTests
     [Test]
     public async Task GeneratedFiles_AreNonEmpty()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();

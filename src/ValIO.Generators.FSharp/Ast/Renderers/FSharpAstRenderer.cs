@@ -90,6 +90,7 @@ public sealed class FSharpAstRenderer : FSharpAstVisitorBase<string>, IFSharpAst
         return sb.ToString();
     }
 
+    /// <inheritdoc />
     public override string VisitFSharpFunction(FSharpFunctionNode node)
     {
         var sb = new StringBuilder();
@@ -104,22 +105,14 @@ public sealed class FSharpAstRenderer : FSharpAstVisitorBase<string>, IFSharpAst
             ? $" : {RenderType(node.ReturnType)}"
             : string.Empty;
 
-        if (node.BodyLines.Count == 0)
+        if (node.Body.Statements.Count == 0)
         {
             sb.AppendLine($"let {node.Name.Name} {paramText}{returnAnnotation} = ()");
             return sb.ToString();
         }
 
         sb.AppendLine($"let {node.Name.Name} {paramText}{returnAnnotation} =");
-        foreach (var line in node.BodyLines)
-        {
-            if (string.IsNullOrEmpty(line))
-            {
-                sb.AppendLine();
-                continue;
-            }
-            sb.AppendLine($"{Indent(1)}{line}");
-        }
+        sb.AppendLine(IndentLines(VisitBlock(node.Body), 1));
         return sb.ToString();
     }
 
@@ -195,11 +188,13 @@ public sealed class FSharpAstRenderer : FSharpAstVisitorBase<string>, IFSharpAst
     public override string VisitIdentifierExpression(IdentifierExpressionNode node) =>
         node.Identifier.Name;
 
+    /// <inheritdoc />
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
         var args = string.Join(", ", node.Arguments.Select(Visit));
-        return $"{target}({args})";
+        var types = node.GenericTypeArgument is null ? "" : $"<{RenderType(node.GenericTypeArgument)}>";
+        return $"{target}{types}({args})";
     }
 
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) =>
@@ -216,6 +211,7 @@ public sealed class FSharpAstRenderer : FSharpAstVisitorBase<string>, IFSharpAst
         return $"{op}{Visit(node.Operand)}";
     }
 
+    /// <inheritdoc />
     public override string VisitBinaryExpression(BinaryExpressionNode node)
     {
         var left = Visit(node.Left);
@@ -236,6 +232,7 @@ public sealed class FSharpAstRenderer : FSharpAstVisitorBase<string>, IFSharpAst
             BinaryOperator.GreaterThanOrEqual => ">=",
             BinaryOperator.LogicalAnd         => "&&",
             BinaryOperator.LogicalOr          => "||",
+            BinaryOperator.Pipe               => "|>",
             _ => throw new NotSupportedException($"Operator {node.Operator} not supported in F# renderer"),
         };
         return $"{left} {op} {right}";
@@ -253,18 +250,55 @@ public sealed class FSharpAstRenderer : FSharpAstVisitorBase<string>, IFSharpAst
     public override string VisitReturnStatement(ReturnStatementNode node) =>
         node.Value == null ? "()" : Visit(node.Value);
 
+    /// <inheritdoc />
     public override string VisitIfStatement(IfStatementNode node)
     {
-        var sb = new StringBuilder();
-        sb.AppendLine($"if {Visit(node.Condition)} then");
-        sb.AppendLine(Visit(node.ThenBlock));
-        if (node.ElseBlock != null)
-        {
-            sb.AppendLine("else");
-            sb.AppendLine(Visit(node.ElseBlock));
-        }
-        return sb.ToString();
+        var text = $"if {Visit(node.Condition)} then\n{IndentLines(VisitBlock(node.ThenBlock), 1)}";
+        if (node.ElseBlock is { } alternative)
+            text += $"\nelse\n{IndentLines(VisitBlock(alternative), 1)}";
+        return text;
     }
+
+    /// <inheritdoc />
+    public override string VisitFSharpTaskExpression(FSharpTaskExpressionNode node)
+    {
+        var statements = node.Body.Statements.Select(statement =>
+            statement is ReturnStatementNode ? $"return {Visit(statement)}" : Visit(statement));
+        return $"task {{\n{IndentLines(string.Join("\n", statements), 1)}\n}}";
+    }
+
+    /// <inheritdoc />
+    public override string VisitFSharpAwaitBinding(FSharpAwaitBindingNode node) =>
+        $"let! {node.Name.Name} = {Visit(node.Computation)}";
+
+    /// <inheritdoc />
+    public override string VisitFSharpMatchOption(FSharpMatchOptionNode node) =>
+        $"match {Visit(node.Option)} with\n| Some {node.PresentName.Name} -> {Visit(node.Present)}\n| None -> ()";
+
+    /// <inheritdoc />
+    public override string VisitFSharpApplication(FSharpApplicationNode node)
+    {
+        var argument = Visit(node.Argument);
+        return node.Argument is FSharpApplicationNode
+            ? $"{Visit(node.Function)} ({argument})"
+            : $"{Visit(node.Function)} {argument}";
+    }
+
+    /// <inheritdoc />
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        var parts = node.Parts.Select(part => part is LiteralExpressionNode { Value: string text }
+            ? EscapeStringLiteral(text.Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal))
+            : "{" + Visit(part) + "}");
+        return "$\"" + string.Concat(parts) + "\"";
+    }
+
+    /// <summary>Prepends indentation to every generated line in a nested F# block.</summary>
+    /// <param name="source">The syntax printed for the nested block.</param>
+    /// <param name="level">The additional indentation.</param>
+    /// <returns>The block with indentation applied to every source line.</returns>
+    private static string IndentLines(string source, int level) =>
+        string.Join("\n", source.Split('\n').Select(line => Indent(level) + line.TrimEnd('\r')));
 
     public override string VisitForEachStatement(ForEachStatementNode node) =>
         $"for {node.Variable.Name} in {Visit(node.Collection)} do\n{Visit(node.Body)}";
@@ -278,10 +312,11 @@ public sealed class FSharpAstRenderer : FSharpAstVisitorBase<string>, IFSharpAst
         return $"let {node.Name.Name}{initializer}";
     }
 
+    /// <inheritdoc />
     public override string VisitThrowStatement(ThrowStatementNode node) =>
         node.Expression == null
             ? "raise (System.Exception())"
-            : $"raise {Visit(node.Expression)}";
+            : $"raise ({Visit(node.Expression)})";
 
     public override string VisitUsingStatement(UsingStatementNode node) =>
         $"use _ = {Visit(node.Resource)}\n{Visit(node.Body)}";

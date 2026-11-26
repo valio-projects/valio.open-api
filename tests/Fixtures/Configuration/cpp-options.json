@@ -1,0 +1,39 @@
+{
+  "unrecognized-runtime": {
+    "runtime": "qt"
+  },
+  "string-standard": {
+    "cxxStandard": "20"
+  },
+  "invalid-standard": {
+    "cxxStandard": true
+  },
+  "unrecognized-api-style": {
+    "apiStyle": "coroutines"
+  },
+  "trimmed-namespace": {
+    "namespace": "  Petstore  "
+  },
+  "cmake-enabled": {
+    "emitCmake": true
+  },
+  "invalid-cmake-flag": {
+    "emitCmake": "yes"
+  },
+  "include-paths": {
+    "httpInclude": "wrappers/http.h",
+    "jsonInclude": "wrappers/json.hpp"
+  },
+  "unreal": {
+    "moduleApiMacro": "GAME_API",
+    "blueprintCategory": "Game",
+    "addUnrealEngineIncludesInHeaders": false,
+    "baseAsyncActionClassName": "UCustomAsync"
+  },
+  "serializers-disabled": {
+    "emitSerializers": false
+  },
+  "invalid-serializers-flag": {
+    "emitSerializers": "no"
+  }
+}

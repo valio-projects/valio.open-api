@@ -1,9 +1,13 @@
+using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
 using ValIO.Core.IR.Utilities;
+using ValIO.Generators.Cpp.Ast.Builders.Std;
+using ValIO.Generators.Cpp.Ast.Nodes;
 using ValIO.Generators.Cpp.Models;
 using ValIO.Generators.Cpp.Runtime;
 
@@ -137,50 +141,46 @@ public sealed class StdCppTypeMapper
     /// <summary>Provides explicit scalar initializers while leaving value initialization to the model builder.</summary>
     /// <param name="irType">The field's scalar or wrapped type.</param>
     /// <returns>The initializer expression, or null when the builder should use value initialization.</returns>
-    public string? GetDefaultValue(IrType irType)
+    public ExpressionNode? BuildDefaultValue(IrType irType)
     {
-        if (IsNativeStringValue(irType)) return "{}";
+        if (IsNativeStringValue(irType)) return new CppListInitializationNode([]);
         return irType switch
         {
             IrPrimitiveType p => p.PrimitiveKind switch
             {
-                IrPrimitiveKind.Number => "0.0",
-                IrPrimitiveKind.Integer or IrPrimitiveKind.Long => "0",
-                IrPrimitiveKind.Boolean => "false",
-                IrPrimitiveKind.Null => "nullptr",
+                IrPrimitiveKind.Number => new LiteralExpressionNode("0.0", LiteralKind.Number),
+                IrPrimitiveKind.Integer or IrPrimitiveKind.Long => new LiteralExpressionNode(0, LiteralKind.Number),
+                IrPrimitiveKind.Boolean => new LiteralExpressionNode(false, LiteralKind.Boolean),
+                IrPrimitiveKind.Null => new LiteralExpressionNode(null, LiteralKind.Null),
                 _ => null,
             },
-            IrNullableType n => GetDefaultValue(n.InnerType),
-            IrOptionalType o => GetDefaultValue(o.InnerType),
+            IrNullableType n => BuildDefaultValue(n.InnerType),
+            IrOptionalType o => BuildDefaultValue(o.InnerType),
             _ => null,
         };
     }
 
-    /// <summary>
-    /// Formats a value for a query, header, path, or form field using its typed IR contract.
-    /// </summary>
-    /// <param name="irType">The value's schema type.</param>
-    /// <param name="expression">The generated value expression.</param>
-    /// <returns>A C++ expression yielding the wire text.</returns>
-    public string FormatQueryLiteral(IrType irType, string expression)
+    /// <summary>Builds the text conversion for a scalar path or form value.</summary>
+    /// <param name="type">The value's source schema type.</param>
+    /// <param name="value">The expression supplying the value.</param>
+    /// <returns>The expression that produces the wire text.</returns>
+    public ExpressionNode BuildParameterText(IrType type, ExpressionNode value)
     {
-        if (IsNativeStringValue(irType))
-            return $"ValIO::ToWireText({expression}, ValIO::JsonStringFormat::{StdJsonWireFormat.Name(irType)})";
-        return irType switch
+        type = IrTypeQueries.UnwrapNullableOptional(type);
+        if (IsNativeStringValue(type))
+            return new CallExpressionNode(StdExpressions.Scope("ValIO", "ToWireText"),
+                [value, StdJsonWireFormat.BuildArgument(type)]);
+
+        return type switch
         {
-            IrPrimitiveType p => p.PrimitiveKind switch
-            {
-                IrPrimitiveKind.Boolean => $"({expression} ? \"true\" : \"false\")",
-                IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number => $"std::to_string({expression})",
-                _ => expression,
-            },
-            IrModelReference modelRef when IsEnumReference(modelRef.ModelName)
-                => $"ToWireText({expression})",
-            IrModelReference
-                => $"ValIO::Dump({expression})", // модель в query-параметре — JSON-строка (сериализатор включён в клиентском .cpp)
-            IrNullableType n => FormatQueryLiteral(n.InnerType, expression),
-            IrOptionalType o => FormatQueryLiteral(o.InnerType, expression),
-            _ => expression,
+            IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Boolean } => new ConditionalExpressionNode(value,
+                new LiteralExpressionNode("true", LiteralKind.String), new LiteralExpressionNode("false", LiteralKind.String)),
+            IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number }
+                => new CallExpressionNode(StdExpressions.Scope("std", "to_string"), [value]),
+            IrModelReference reference when IsEnumReference(reference.ModelName)
+                => new CallExpressionNode(StdExpressions.Ident("ToWireText"), [value]),
+            IrModelReference => new CallExpressionNode(StdExpressions.Scope("ValIO", "Dump"), [value]),
+            _ => value,
         };
     }
 
@@ -215,9 +215,9 @@ public sealed class StdCppTypeMapper
         {
             case IrPrimitiveType primitive:
                 if (_options.UuidBackend != CppUuidBackend.String && primitive.PrimitiveKind == IrPrimitiveKind.Uuid)
-                    includes.Add(UuidRuntimeTemplates.TypesHeaderFileName);
+                    includes.Add(StdRuntimeTemplates.UuidTypesHeaderFileName);
                 if (_options.TemporalBackend != CppTemporalBackend.String && TemporalTypeName(primitive) != null)
-                    includes.Add(TemporalRuntimeTemplates.TypesHeaderFileName);
+                    includes.Add(StdRuntimeTemplates.TemporalTypesHeaderFileName);
                 break;
             case IrNullableType nullable: CollectProviderIncludes(nullable.InnerType, includes); break;
             case IrOptionalType optional: CollectProviderIncludes(optional.InnerType, includes); break;

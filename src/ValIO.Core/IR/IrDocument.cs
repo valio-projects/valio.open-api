@@ -19,6 +19,7 @@ public sealed class IrDocument : IEquatable<IrDocument>
         Models = source.Models;
         Enums = source.Enums;
         Clients = source.Clients;
+        SignalRHubs = source.SignalRHubs;
         TypeDependencies = source.TypeDependencies;
     }
 
@@ -41,6 +42,10 @@ public sealed class IrDocument : IEquatable<IrDocument>
     /// HTTP клиенты
     /// </summary>
     public required IReadOnlyList<IrClient> Clients { get; init; }
+
+    /// <summary>Gets the hub contracts declared by the source document.</summary>
+    /// <value>The SignalR hubs, or an empty collection for HTTP-only descriptions.</value>
+    public IReadOnlyList<IrSignalRHub> SignalRHubs { get; init; } = [];
     
     /// <summary>
     /// Граф зависимостей типов
@@ -55,13 +60,14 @@ public sealed class IrDocument : IEquatable<IrDocument>
         && EqualityComparer<IReadOnlyList<IrModel>>.Default.Equals(Models, other.Models)
         && EqualityComparer<IReadOnlyList<IrEnum>>.Default.Equals(Enums, other.Enums)
         && EqualityComparer<IReadOnlyList<IrClient>>.Default.Equals(Clients, other.Clients)
+        && EqualityComparer<IReadOnlyList<IrSignalRHub>>.Default.Equals(SignalRHubs, other.SignalRHubs)
         && EqualityComparer<IrTypeDependencyGraph>.Default.Equals(TypeDependencies, other.TypeDependencies);
 
     /// <inheritdoc />
     public override bool Equals(object? obj) => obj is IrDocument other && Equals(other);
 
     /// <inheritdoc />
-    public override int GetHashCode() => HashCode.Combine(Metadata, Models, Enums, Clients, TypeDependencies);
+    public override int GetHashCode() => HashCode.Combine(Metadata, Models, Enums, Clients, SignalRHubs, TypeDependencies);
 
     /// <summary>Compares two values for equality.</summary>
     /// <param name="left">The first value.</param>

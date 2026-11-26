@@ -30,15 +30,25 @@ public class JavaIrTypeMapperComprehensiveTests
     [TestCase(IrPrimitiveKind.DateTime,  "OffsetDateTime")]
     [TestCase(IrPrimitiveKind.Time,      "OffsetTime")]
     [TestCase(IrPrimitiveKind.Uuid,      "UUID")]
-    [TestCase(IrPrimitiveKind.Binary,    "byte[]")]
-    [TestCase(IrPrimitiveKind.ByteArray, "byte[]")]
-    [TestCase(IrPrimitiveKind.File,      "byte[]")]
     [TestCase(IrPrimitiveKind.Any,       "Object")]
     [TestCase(IrPrimitiveKind.Void,      "void")]
     public void AllPrimitives_DefaultBoxedForm(IrPrimitiveKind kind, string expected)
     {
         var simple = (SimpleTypeNode)_mapper.MapType(Prim(kind));
         simple.Name.Name.Should().Be(expected);
+    }
+
+    /// <summary>Verifies that binary wire values use a primitive Java byte array.</summary>
+    /// <param name="kind">The binary schema type.</param>
+    [TestCase(IrPrimitiveKind.Binary)]
+    [TestCase(IrPrimitiveKind.ByteArray)]
+    [TestCase(IrPrimitiveKind.File)]
+    public void BinaryPrimitives_AreByteArrayTypes(IrPrimitiveKind kind)
+    {
+        var array = _mapper.MapType(Prim(kind)).Should().BeOfType<ArrayTypeNode>().Which;
+        var element = array.ElementType.Should().BeOfType<SimpleTypeNode>().Which;
+        element.Name.Name.Should().Be("byte");
+        element.IsPrimitive.Should().BeTrue();
     }
 
     [TestCase(IrPrimitiveKind.Integer, "int")]

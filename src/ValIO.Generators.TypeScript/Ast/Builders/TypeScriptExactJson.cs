@@ -25,8 +25,9 @@ internal static class TypeScriptExactJson
     /// <summary>The runtime import for schema source files assembled as text.</summary>
     public const string ImportLine = """import * as valioLosslessJson from "lossless-json";""";
 
-    /// <summary>The qualified type usable by generated DTOs without a runtime import.</summary>
-    public const string LosslessNumberType = "import(\"lossless-json\").LosslessNumber";
+    /// <summary>References the exact number type without importing a runtime binding.</summary>
+    /// <returns>The type selected from the lossless JSON package.</returns>
+    public static ImportTypeNode LosslessNumber() => new(PackageName, new IdentifierNode("LosslessNumber"));
 
     /// <summary>Recognizes numeric formats whose tokens must survive JavaScript conversion.</summary>
     /// <param name="type">The original scalar IR type.</param>
@@ -121,7 +122,7 @@ internal static class TypeScriptExactJson
     /// <param name="document">The model declarations shared by the current SDK.</param>
     /// <param name="visited">The model names already expanded during this search.</param>
     /// <returns>Whether the type contains an exact numeric scalar.</returns>
-    private static bool HasExact(IrType type, IrDocumentContext document, HashSet<string> visited) => Unwrap(type) switch
+    internal static bool HasExact(IrType type, IrDocumentContext document, HashSet<string> visited) => Unwrap(type) switch
     {
         IrPrimitiveType primitive => IsExact(primitive),
         IrArrayType array => HasExact(array.ElementType, document, visited),
@@ -133,6 +134,8 @@ internal static class TypeScriptExactJson
             (model.ScalarType is { } scalar && HasExact(scalar, document, visited))
             || model.Properties.Any(property => HasExact(property.Type, document, visited))
             || model.Composition?.Types.Any(variant => HasExact(variant, document, visited)) == true,
+        IrModelReference reference when document.EnumsByName.TryGetValue(reference.ModelName, out var enumType) =>
+            enumType.BaseType == IrEnumBaseType.Integer && enumType.OriginalSchema?.Format is "int64" or "uint64",
         _ => false,
     };
 
@@ -206,7 +209,7 @@ internal static class TypeScriptExactJson
         var text = Member(value, "value");
         var isInt64 = type.PrimitiveKind == IrPrimitiveKind.Long;
         var schema = new CallExpressionNode(Member(Id("z"), "custom"), [Runtime("isLosslessNumber"),
-            String("Expected an exact JSON number.")], genericTypeName: LosslessNumberType);
+            String("Expected an exact JSON number.")], genericTypeArgument: LosslessNumber());
         ExpressionNode valid = Call(Runtime("isNumber"), text);
         if (isInt64)
         {

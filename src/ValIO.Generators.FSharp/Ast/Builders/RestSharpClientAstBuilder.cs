@@ -1,6 +1,8 @@
 using System.Text;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -88,87 +90,133 @@ public sealed class RestSharpClientAstBuilder(INamingConverter namingConverter, 
             : typeMapper.MapType(successResponse.Type);
         TypeNode returnType = new GenericTypeNode(new IdentifierNode("Task"), [payload]);
 
-        var bodyLines = BuildFunctionBody(op, successResponse?.Type);
+        var resultType = successResponse?.Type is null ? null : payload;
+        var body = BuildFunctionBody(op, resultType);
 
         return new FSharpFunctionNode(
             new IdentifierNode(methodName),
             parameters,
             returnType,
-            bodyLines,
+            body,
             documentation: BuildDocstring(op));
     }
 
     /// <summary>Builds request construction and typed asynchronous response handling.</summary>
     /// <param name="op">The operation whose parameters retain their original wire names.</param>
-    /// <param name="responseType">The selected success payload, or null for bodyless operations.</param>
-    /// <returns>The function body lines rendered by the F# AST renderer.</returns>
-    private IReadOnlyList<string> BuildFunctionBody(IrOperation op, IrType? responseType)
+    /// <param name="responseType">The selected success type, or null for bodyless operations.</param>
+    /// <returns>The AST for the RestSharp computation.</returns>
+    private BlockNode BuildFunctionBody(IrOperation op, TypeNode? responseType)
     {
-        var lines = new List<string> { "task {", "    cancellationToken.ThrowIfCancellationRequested()" };
-        var httpMethod = ToMethodCase(op.HttpMethod);
-        lines.Add($"    let req = RestRequest(\"{EscapeStringLiteral(op.Path)}\", Method.{httpMethod})");
+        var cancellation = Ref("cancellationToken");
+        var verifyCancellation = new ExpressionStatementNode(Call(Member(cancellation, "ThrowIfCancellationRequested")));
+        var request = Ref("req");
+        var route = Call(Ref("RestRequest"), Text(op.Path), Member(Ref("Method"), ToMethodCase(op.HttpMethod)));
+        var statements = new List<StatementNode>
+        {
+            verifyCancellation,
+            new VariableDeclarationStatementNode(new("req"), initializer: route),
+        };
         foreach (var parameter in op.PathParameters)
-        {
-            var camel = FSharpReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name));
-            lines.Add($"    req.AddUrlSegment(\"{EscapeStringLiteral(parameter.OriginalName)}\", string {camel}) |> ignore");
-        }
+            statements.Add(WriteParameter("AddUrlSegment", parameter, Ref(ParameterName(parameter))));
 
-        foreach (var p in op.QueryParameters)
-        {
-            var camel = FSharpReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
-            var wireName = EscapeStringLiteral(p.OriginalName);
-            if (p.IsRequired)
-            {
-                lines.Add($"    req.AddQueryParameter(\"{wireName}\", string {camel}) |> ignore");
-            }
-            else
-            {
-                lines.Add($"    match {camel} with");
-                lines.Add($"    | Some v -> req.AddQueryParameter(\"{wireName}\", string v) |> ignore");
-                lines.Add("    | None -> ()");
-            }
-        }
+        foreach (var parameter in op.QueryParameters)
+            statements.Add(BindParameter("AddQueryParameter", parameter));
 
         foreach (var parameter in op.HeaderParameters)
-        {
-            var camel = FSharpReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name));
-            var wireName = EscapeStringLiteral(parameter.OriginalName);
-            if (parameter.IsRequired)
-                lines.Add($"    req.AddHeader(\"{wireName}\", string {camel}) |> ignore");
-            else
-            {
-                lines.Add($"    match {camel} with");
-                lines.Add($"    | Some v -> req.AddHeader(\"{wireName}\", string v) |> ignore");
-                lines.Add("    | None -> ()");
-            }
-        }
+            statements.Add(BindParameter("AddHeader", parameter));
 
-        if (op.RequestBody != null)
-        {
-            lines.Add("    req.AddJsonBody(body) |> ignore");
-        }
+        if (op.RequestBody is not null)
+            statements.Add(Ignore(Call(Member(request, "AddJsonBody"), Ref("body"))));
 
-        if (responseType == null)
-            lines.Add("    let! response = client.ExecuteAsync(req, cancellationToken)");
+        var send = new CallExpressionNode(Member(Ref("client"), "ExecuteAsync"), [request, cancellation], genericTypeArgument: responseType);
+        statements.Add(new FSharpAwaitBindingNode(new("response"), send));
+        statements.Add(verifyCancellation);
+
+        var response = Ref("response");
+        var status = Member(response, "StatusCode");
+        var message = new InterpolatedStringExpressionNode([
+            Text("HTTP "), Apply("int", status), Text(": "), Member(response, "Content"),
+        ]);
+        var failure = Call(Ref("System.Net.Http.HttpRequestException"), message,
+            Member(response, "ErrorException"), Call(Ref("Nullable"), status));
+        var unsuccessful = new UnaryExpressionNode(UnaryOperator.LogicalNot, Member(response, "IsSuccessful"));
+        statements.Add(new IfStatementNode(unsuccessful, new BlockNode([new ThrowStatementNode(failure)])));
+
+        if (responseType is null)
+        {
+            statements.Add(new ReturnStatementNode());
+        }
         else
         {
-            var renderedType = new Renderers.FSharpAstRenderer().Visit(typeMapper.MapType(responseType));
-            lines.Add($"    let! response = client.ExecuteAsync<{renderedType}>(req, cancellationToken)");
+            var data = Member(response, "Data");
+            var isNull = Apply("isNull", Apply("box", data));
+            var invalidData = Call(Ref("System.IO.InvalidDataException"),
+                Text("The successful HTTP response did not contain a valid payload."));
+            statements.Add(new IfStatementNode(isNull, new BlockNode([new ThrowStatementNode(invalidData)])));
+            statements.Add(new ReturnStatementNode(data));
         }
-        lines.Add("    cancellationToken.ThrowIfCancellationRequested()");
-        lines.Add("    if not response.IsSuccessful then");
-        lines.Add("        raise (System.Net.Http.HttpRequestException($\"HTTP {int response.StatusCode}: {response.Content}\", response.ErrorException, Nullable(response.StatusCode)))");
-        if (responseType == null)
-            lines.Add("    return ()");
-        else
-        {
-            lines.Add("    if isNull (box response.Data) then");
-            lines.Add("        raise (System.IO.InvalidDataException(\"The successful HTTP response did not contain a valid payload.\"))");
-            lines.Add("    return response.Data");
-        }
-        lines.Add("}");
-        return lines;
+
+        var task = new FSharpTaskExpressionNode(new BlockNode(statements));
+        return new BlockNode([new ExpressionStatementNode(task)]);
     }
+
+    /// <summary>Writes a required parameter or matches an optional parameter before writing.</summary>
+    /// <param name="method">The request method that receives the wire value.</param>
+    /// <param name="parameter">The declared header or query parameter.</param>
+    /// <returns>The write or option match statement.</returns>
+    private StatementNode BindParameter(string method, IrParameter parameter)
+    {
+        var argument = Ref(ParameterName(parameter));
+        return parameter.IsRequired ? WriteParameter(method, parameter, argument) :
+            new FSharpMatchOptionNode(argument, new("v"), WriteParameter(method, parameter, Ref("v")));
+    }
+
+    /// <summary>Passes the original wire name and stringified value to the request.</summary>
+    /// <param name="method">The request mutator.</param>
+    /// <param name="parameter">The source parameter.</param>
+    /// <param name="argument">The supplied required or unwrapped value.</param>
+    /// <returns>A statement discarding the RestSharp fluent return.</returns>
+    private static ExpressionStatementNode WriteParameter(string method, IrParameter parameter, ExpressionNode argument) =>
+        Ignore(Call(Member(Ref("req"), method), Text(parameter.OriginalName), Apply("string", argument)));
+
+    /// <summary>Produces a local F# identifier for a request argument.</summary>
+    /// <param name="parameter">The source parameter.</param>
+    /// <returns>The same name emitted in the declaration.</returns>
+    private string ParameterName(IrParameter parameter) => FSharpReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name));
+
+    /// <summary>References an identifier or qualified symbol.</summary>
+    /// <param name="name">The identifier in scope.</param>
+    /// <returns>The symbol reference.</returns>
+    private static IdentifierExpressionNode Ref(string name) => new(new IdentifierNode(name));
+
+    /// <summary>Selects a member of an F# value.</summary>
+    /// <param name="target">The receiver.</param>
+    /// <param name="name">The member name.</param>
+    /// <returns>The member access expression.</returns>
+    private static MemberAccessExpressionNode Member(ExpressionNode target, string name) => new(target, new(name));
+
+    /// <summary>Invokes a method or constructor using a tuple of arguments.</summary>
+    /// <param name="target">The method or constructor reference.</param>
+    /// <param name="arguments">The positional arguments.</param>
+    /// <returns>The call expression.</returns>
+    private static CallExpressionNode Call(ExpressionNode target, params ExpressionNode[] arguments) => new(target, arguments);
+
+    /// <summary>Applies an F# function to its argument.</summary>
+    /// <param name="function">The name of the function.</param>
+    /// <param name="argument">The input expression.</param>
+    /// <returns>The application expression.</returns>
+    private static FSharpApplicationNode Apply(string function, ExpressionNode argument) => new(Ref(function), argument);
+
+    /// <summary>Discards a fluent method's return value.</summary>
+    /// <param name="value">The expression that performs the mutation.</param>
+    /// <returns>A statement that evaluates and discards the value.</returns>
+    private static ExpressionStatementNode Ignore(ExpressionNode value) =>
+        new(new BinaryExpressionNode(value, BinaryOperator.Pipe, Ref("ignore")));
+
+    /// <summary>Captures string data so the renderer can escape it.</summary>
+    /// <param name="value">The input text.</param>
+    /// <returns>The literal expression.</returns>
+    private static LiteralExpressionNode Text(string value) => new(value, LiteralKind.String);
 
     /// <summary>Maps an HTTP verb to the corresponding RestSharp enumeration member.</summary>
     /// <param name="httpMethod">The source HTTP verb.</param>
@@ -196,11 +244,4 @@ public sealed class RestSharpClientAstBuilder(INamingConverter namingConverter, 
         sb.AppendLine().Append("Uses the caller-owned RestClient and its interceptors/authenticator. The cancellation token reaches the HTTP transport.");
         return new CommentNode(sb.ToString(), CommentKind.MultiLine);
     }
-
-    /// <summary>Escapes source values embedded in a generated F# string literal.</summary>
-    /// <param name="s">The unescaped wire value.</param>
-    /// <returns>The literal contents without surrounding quotes.</returns>
-    private static string EscapeStringLiteral(string s) =>
-        s.Replace("\\", "\\\\", StringComparison.Ordinal)
-         .Replace("\"", "\\\"", StringComparison.Ordinal);
 }

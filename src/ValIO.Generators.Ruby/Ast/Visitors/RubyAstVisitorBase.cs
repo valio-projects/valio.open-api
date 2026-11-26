@@ -20,6 +20,12 @@ public abstract class RubyAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IRu
     public abstract TResult VisitRubyFile(RubyFileNode node);
     public abstract TResult VisitRubyClass(RubyClassNode node);
     public abstract TResult VisitRubyMethod(RubyMethodNode node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitRubyCallWithBlock(RubyCallWithBlockNode node) => VisitDefault(node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitRubyUnlessStatement(RubyUnlessStatementNode node) => VisitDefault(node);
     public abstract TResult VisitRubyAttribute(RubyAttributeNode node);
 
     // IAstVisitor — shared.

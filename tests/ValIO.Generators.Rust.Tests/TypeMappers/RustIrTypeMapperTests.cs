@@ -3,6 +3,7 @@ using NUnit.Framework;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.Rust.Ast.Nodes;
 
 namespace ValIO.Generators.Rust.Tests.TypeMappers;
 
@@ -73,8 +74,9 @@ public class RustIrTypeMapperTests
     public void DateTime_MapsToChronoDateTimeUtc()
     {
         var mapped = _mapper.MapType(Prim(IrPrimitiveKind.DateTime));
-        mapped.Should().BeOfType<SimpleTypeNode>()
-            .Which.Name.Name.Should().Be("chrono::DateTime<chrono::Utc>");
+        var generic = mapped.Should().BeOfType<GenericTypeNode>().Which;
+        generic.Name.Name.Should().Be("chrono::DateTime");
+        generic.TypeArguments.Single().Should().BeOfType<SimpleTypeNode>().Which.Name.Name.Should().Be("chrono::Utc");
     }
 
     [Test]
@@ -124,8 +126,7 @@ public class RustIrTypeMapperTests
     public void Void_MapsToUnit()
     {
         var mapped = _mapper.MapType(Prim(IrPrimitiveKind.Void));
-        mapped.Should().BeOfType<SimpleTypeNode>()
-            .Which.Name.Name.Should().Be("()");
+        mapped.Should().BeOfType<RustUnitTypeNode>();
     }
 
     [Test]

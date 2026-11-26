@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR;
@@ -16,7 +17,7 @@ public class IrTypeDependencyGraphTests
 {
     private static async Task<IrDocument> BuildIrAsync(string resourceName)
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync(resourceName);
+        var doc = await OpenApiFixture.LoadAsync(resourceName);
         var converter = new NamingConverter();
         var resolver = new SchemaResolver(doc);
         return new IrBuilder(resolver, converter).BuildFromOpenApi(doc);
@@ -25,7 +26,7 @@ public class IrTypeDependencyGraphTests
     [Test]
     public async Task SimpleSchema_GraphContainsAllModels()
     {
-        var ir = await BuildIrAsync("simple-schema.json");
+        var ir = await BuildIrAsync("Examples/simple-schema.json");
         ir.TypeDependencies.TopologicalOrder.Should().Contain("User");
         ir.TypeDependencies.Dependencies.Should().ContainKey("User");
     }
@@ -33,7 +34,7 @@ public class IrTypeDependencyGraphTests
     [Test]
     public async Task Petstore_EveryModelInDependenciesIsInTopologicalOrder()
     {
-        var ir = await BuildIrAsync("petstore.json");
+        var ir = await BuildIrAsync("Examples/petstore.json");
         // Invariant: every key in Dependencies must appear in TopologicalOrder.
         ir.TypeDependencies.Dependencies.Keys.Should().BeSubsetOf(ir.TypeDependencies.TopologicalOrder);
     }
@@ -41,7 +42,7 @@ public class IrTypeDependencyGraphTests
     [Test]
     public async Task Petstore_TopologicalOrder_HasNoDuplicates()
     {
-        var ir = await BuildIrAsync("petstore.json");
+        var ir = await BuildIrAsync("Examples/petstore.json");
         var order = ir.TypeDependencies.TopologicalOrder;
         order.Should().HaveCount(order.Distinct().Count(),
             "topological order must not contain duplicates");
@@ -50,7 +51,7 @@ public class IrTypeDependencyGraphTests
     [Test]
     public async Task ComplexSchema_DogDependsOnAnimalBase()
     {
-        var ir = await BuildIrAsync("complex-schema.json");
+        var ir = await BuildIrAsync("TypeScript/complex-schema.json");
         if (ir.TypeDependencies.Dependencies.TryGetValue("Dog", out var deps))
         {
             deps.Should().Contain("AnimalBase");
@@ -60,7 +61,7 @@ public class IrTypeDependencyGraphTests
     [Test]
     public async Task ComplexSchema_AnimalBaseAppearsBeforeDog()
     {
-        var ir = await BuildIrAsync("complex-schema.json");
+        var ir = await BuildIrAsync("TypeScript/complex-schema.json");
         var order = ir.TypeDependencies.TopologicalOrder.ToList();
         var baseIdx = order.IndexOf("AnimalBase");
         var dogIdx = order.IndexOf("Dog");
@@ -73,7 +74,7 @@ public class IrTypeDependencyGraphTests
     [Test]
     public async Task ComplexSchema_RecursiveTypeStillInOrder()
     {
-        var ir = await BuildIrAsync("complex-schema.json");
+        var ir = await BuildIrAsync("TypeScript/complex-schema.json");
         // TreeNode references itself — must still appear exactly once.
         var occurrences = ir.TypeDependencies.TopologicalOrder.Count(t => t == "TreeNode");
         occurrences.Should().Be(1);

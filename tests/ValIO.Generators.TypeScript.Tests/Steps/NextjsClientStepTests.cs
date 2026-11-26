@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class NextjsClientStepTests
     [Test]
     public async Task NoNextjsTransport_NoNextjsFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -33,7 +34,7 @@ public class NextjsClientStepTests
     [Test]
     public async Task GetOperation_UsesSharedCacheTags_NextTags_AndRevalidateHelper()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
 
         var getPet = ctx.GeneratedFiles.First(f =>
@@ -59,7 +60,7 @@ public class NextjsClientStepTests
     [Test]
     public async Task NextjsClient_IsServerSafe_NoUseClientDirective()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
 
         var getPet = ctx.GeneratedFiles.First(f =>
@@ -70,7 +71,7 @@ public class NextjsClientStepTests
     [Test]
     public async Task Mutation_IsNotCacheable_NoCacheTagOrNextConfig()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
 
         var addPet = ctx.GeneratedFiles.First(f =>
@@ -86,7 +87,7 @@ public class NextjsClientStepTests
     [Test]
     public async Task DefaultRevalidate_EmitsRevalidateInNextConfig()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],
@@ -101,7 +102,7 @@ public class NextjsClientStepTests
     [Test]
     public async Task GenerateRevalidateHelpersFalse_KeepsNextTagsButOmitsHelper()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],

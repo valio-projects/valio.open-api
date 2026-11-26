@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Java.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class OkHttpClientStepTests
     [Test]
     public async Task EmitsClientWithConstructorInjection()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFiles = ctx.GeneratedFiles
@@ -40,7 +41,7 @@ public class OkHttpClientStepTests
     [Test]
     public async Task MethodsDeclareThrowsIOException()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -51,7 +52,7 @@ public class OkHttpClientStepTests
     [Test]
     public async Task UsesCamelCaseMethodNames_FromOperationId()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -65,7 +66,7 @@ public class OkHttpClientStepTests
     [Test]
     public async Task PathParametersAreInterpolatedViaStringConcat()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -79,7 +80,7 @@ public class OkHttpClientStepTests
     [Test]
     public async Task UsesTryWithResourcesForResponse()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -90,7 +91,7 @@ public class OkHttpClientStepTests
     [Test]
     public async Task DeserializesModelResponse_ViaObjectMapper()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>

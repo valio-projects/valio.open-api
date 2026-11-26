@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Plugins;
@@ -27,7 +28,7 @@ public class TypeScriptIndexStepTests
     [Test]
     public async Task EmitsIndexAtRoot()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var index = ctx.GeneratedFiles.FirstOrDefault(f => f.RelativePath.Replace('\\', '/') == "index.ts");
@@ -37,7 +38,7 @@ public class TypeScriptIndexStepTests
     [Test]
     public async Task ReExportsAreRelativeToRootNotApi()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var index = IndexOf(ctx);
@@ -51,7 +52,7 @@ public class TypeScriptIndexStepTests
     [Test]
     public async Task ReExportsHaveExportStarSyntax()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var index = IndexOf(ctx);
@@ -64,7 +65,7 @@ public class TypeScriptIndexStepTests
     [Test]
     public async Task CollidingExportNames_AreDeduplicatedInBarrel()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("barrel-collision.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/barrel-collision.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -86,7 +87,7 @@ public class TypeScriptIndexStepTests
     [Test]
     public async Task NoSelfReferenceToOtherIndexFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var index = IndexOf(ctx);

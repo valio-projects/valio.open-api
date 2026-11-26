@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
@@ -39,15 +40,15 @@ public sealed class ZodStrictNumericTests
         try
         {
             using var harness = new PipelineTestHarness();
-            var document = await PipelineTestHarness.LoadDocumentAsync("strict-numeric.json");
+            var document = await OpenApiFixture.LoadAsync("TypeScript/strict-numeric.json");
             var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
             { Transports = ["fetch"], ValidationLibrary = version });
             foreach (var file in context.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".ts", StringComparison.Ordinal)))
             {
                 var destination = Path.Combine(temporary, file.RelativePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                var contents = file.Content.Replace("from 'zod/v4'", "from 'zod4'", StringComparison.Ordinal)
-                    .Replace("from 'zod'", "from 'zod3'", StringComparison.Ordinal);
+                var contents = file.Content.Replace("from \"zod/v4\"", "from \"zod4\"", StringComparison.Ordinal)
+                    .Replace("from \"zod\"", "from \"zod3\"", StringComparison.Ordinal);
                 await File.WriteAllTextAsync(destination, contents);
             }
             var schemaPath = Path.Combine(temporary, "models", "numericModel", "numericModel.schema.ts");

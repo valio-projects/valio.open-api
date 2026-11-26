@@ -42,6 +42,15 @@ public abstract class CppAstVisitorBase<TResult> : BaseAstVisitor<TResult>, ICpp
     public abstract TResult VisitCppAsyncActivateImplementation(CppAsyncActivateImplementationNode node);
     public abstract TResult VisitCppLambdaExpression(CppLambdaExpressionNode node);
 
+    /// <inheritdoc />
+    public abstract TResult VisitCppQualifiedType(CppQualifiedTypeNode node);
+
+    /// <inheritdoc />
+    public abstract TResult VisitCppTypeExpression(CppTypeExpressionNode node);
+
+    /// <inheritdoc />
+    public abstract TResult VisitCppListInitialization(CppListInitializationNode node);
+
     // Unreal Engine специфичные узлы
     public abstract TResult VisitUStruct(UStructDeclarationNode node);
     public abstract TResult VisitUPropertyField(UPropertyFieldNode node);

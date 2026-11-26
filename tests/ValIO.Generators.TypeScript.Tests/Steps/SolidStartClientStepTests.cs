@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class SolidStartClientStepTests
     [Test]
     public async Task NoSolidTransport_NoSolidFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -33,7 +34,7 @@ public class SolidStartClientStepTests
     [Test]
     public async Task SolidTransport_EmitsUseServerDirectiveAsFirstLine()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["solid"] });
 
         var solid = ctx.GeneratedFiles.First(f =>
@@ -50,7 +51,7 @@ public class SolidStartClientStepTests
     [Test]
     public async Task SolidTransport_PerOperationFileNamingAndFetchBody()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["solid"] });
 
         // File naming: {clientsPath}/{op}/{op}.solid.ts, one per IR operation.

@@ -20,7 +20,7 @@ public sealed class TransportRuntimeIntegrationTests
     public async Task NextJs_RespectsDeclaredBodylessStatusesAndDecodesJsonAccepted(bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(AcceptedResponsesDocument);
+        var document = await OpenApiFixture.LoadAsync(AcceptedResponsesDocument);
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],
@@ -55,56 +55,7 @@ public sealed class TransportRuntimeIntegrationTests
     }
 
     /// <summary>Describes bodyless follow-up responses and a separate JSON acceptance receipt.</summary>
-    private const string AcceptedResponsesDocument = """
-        {
-          "openapi": "3.1.0",
-          "info": { "title": "Accepted responses", "version": "1" },
-          "paths": {
-            "/submit": {
-              "post": {
-                "operationId": "submit",
-                "responses": {
-                  "202": { "description": "Accepted" },
-                  "204": { "description": "No content" },
-                  "205": { "description": "Reset content" },
-                  "304": { "description": "Not modified" },
-                  "400": {
-                    "description": "Bad request",
-                    "content": {
-                      "application/json": {
-                        "schema": {
-                          "type": "object",
-                          "required": ["message"],
-                          "properties": { "message": { "type": "string" } }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "/submit-with-receipt": {
-              "post": {
-                "operationId": "submitWithReceipt",
-                "responses": {
-                  "202": {
-                    "description": "Accepted",
-                    "content": {
-                      "application/json": {
-                        "schema": {
-                          "type": "object",
-                          "required": ["receipt"],
-                          "properties": { "receipt": { "type": "string" } }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        """;
+    private const string AcceptedResponsesDocument = "Transport/accepted-responses-3.1.json";
 
     /// <summary>Uses repeated keys for default and explicit explode, and comma delimiters for explode disabled.</summary>
     /// <remarks>Empty, absent, and null arrays emit no query parameter. The Axios case also retains deep-object and escaped string values.</remarks>
@@ -118,7 +69,7 @@ public sealed class TransportRuntimeIntegrationTests
     public async Task QueryArrays_UseOpenApiFormDefaultsAndRespectExplodeOverride(string transport, bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(QueryArrayDocument);
+        var document = await OpenApiFixture.LoadAsync(QueryArrayDocument);
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],
@@ -164,28 +115,7 @@ public sealed class TransportRuntimeIntegrationTests
     }
 
     /// <summary>Describes omitted, explicit, and overridden OpenAPI form array serialization settings.</summary>
-    private const string QueryArrayDocument = """
-        {
-          "openapi": "3.1.0",
-          "info": { "title": "Query arrays", "version": "1" },
-          "paths": {
-            "/items": {
-              "get": {
-                "operationId": "list",
-                "parameters": [
-                  { "name": "ids", "in": "query", "schema": { "type": "array", "items": { "type": "string" } } },
-                  { "name": "explicit", "in": "query", "style": "form", "explode": true, "schema": { "type": ["array", "null"], "items": { "type": "integer" } } },
-                  { "name": "csv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer" } } },
-                  { "name": "precise", "in": "query", "schema": { "type": "array", "items": { "type": "integer", "format": "int64" } } },
-                  { "name": "preciseCsv", "in": "query", "style": "form", "explode": false, "schema": { "type": "array", "items": { "type": "integer", "format": "int64" } } },
-                  { "name": "filter", "in": "query", "style": "deepObject", "explode": true, "schema": { "type": "object", "properties": { "term": { "type": "string" } } } }
-                ],
-                "responses": { "204": { "description": "No content" } }
-              }
-            }
-          }
-        }
-        """;
+    private const string QueryArrayDocument = "Transport/query-arrays-3.1.json";
 
     /// <summary>Verifies actual wire field values and omitted bodies through each generated transport boundary.</summary>
     /// <param name="transport">The generated HTTP client transport.</param>
@@ -203,7 +133,7 @@ public sealed class TransportRuntimeIntegrationTests
     public async Task GeneratedRequests_PreserveMultipartHeadersAndNoContentSemantics(string transport)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Document());
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],
@@ -272,7 +202,7 @@ public sealed class TransportRuntimeIntegrationTests
               assert.equal(headers().has('Content-Type'), false, 'multipart boundary must be generated by the transport');
               assert.equal(await captured.body.get('file').text(), 'picture');
               assert.equal(captured.body.get('Title.Text'), 'wire caption');
-              assert.equal(captured.body.get('metadata'), '{"published":true}');
+              assert.equal(captured.body.get('metadata'), JSON.stringify(form.metadata));
               assert.deepEqual(captured.body.getAll('tags'), ['one', 'two']);
               assert.deepEqual(Array.from(new Uint8Array(await captured.body.get('bytes').arrayBuffer())), [0, 255]);
 
@@ -321,7 +251,7 @@ public sealed class TransportRuntimeIntegrationTests
     public async Task VoidMutation_ResolvesForNoContentAndRejectsHttpFailure(string transport, bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Document());
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],
@@ -360,11 +290,13 @@ public sealed class TransportRuntimeIntegrationTests
     public async Task TypedResponse_ExposesLocationAndPreservesDocumentedFailures(string transport)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Document());
-        using var options = JsonDocument.Parse($$"""
-            {"transports":["{{transport}}"],"includeResponseHeaders":true,"validation":"zod4"}
-            """);
-        var rawOptions = options.RootElement.EnumerateObject().ToDictionary(property => property.Name, property => property.Value);
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
+        var rawOptions = new Dictionary<string, JsonElement>
+        {
+            ["transports"] = JsonSerializer.SerializeToElement(new[] { transport }),
+            ["includeResponseHeaders"] = JsonSerializer.SerializeToElement(true),
+            ["validation"] = JsonSerializer.SerializeToElement("zod4"),
+        };
         var configured = (TypeScriptGenerationOptions)new TypeScriptOptionsDescriptor().ParseOptions(rawOptions, out var errors)!;
         errors.Should().BeEmpty();
         var context = await harness.RunAsync(document, configured);
@@ -422,7 +354,7 @@ public sealed class TransportRuntimeIntegrationTests
     public async Task ResponseMetadata_SelectsTheSchemaByStatusAndMediaType(string transport, bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/response-metadata-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/response-metadata-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],
@@ -465,7 +397,8 @@ public sealed class TransportRuntimeIntegrationTests
               assert.equal(numberError.body, 42);
               const textError = await read(400, '42', { 'Content-Type': 'TEXT/PLAIN; charset=utf-8' });
               assert.equal(textError.body, '42');
-              const problem = await read(400, '{"issueCode":"conflict"}', { 'Content-Type': 'Application/Problem+JSON; charset=utf-8' });
+              const problemPayload = readFixture('Payloads/TypeScript/report-problem.json');
+              const problem = await read(400, problemPayload, { 'Content-Type': 'Application/Problem+JSON; charset=utf-8' });
               assert.deepEqual(problem.body, { issueCode: 'conflict' });
 
               await assert.rejects(read(400, '42', { 'Content-Type': 'application/problem+json' }));
@@ -478,7 +411,4 @@ public sealed class TransportRuntimeIntegrationTests
         output.Should().Contain("response metadata passed");
     }
 
-    /// <summary>Creates multipart, optional multipart, and mixed typed/no-body response contracts.</summary>
-    /// <returns>The OpenAPI request serialization fixture.</returns>
-    private static string Document() => OpenApiFixture.Read("Transport/runtime-contracts-3.0.json");
 }

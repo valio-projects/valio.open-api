@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
@@ -20,7 +21,7 @@ public class KotlinPipelineTests
     [Test]
     public async Task FullPipeline_GeneratesModels_Enums_AndClient()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var paths = ctx.GeneratedFiles.Select(f => f.RelativePath.Replace('\\', '/')).ToList();
@@ -33,7 +34,7 @@ public class KotlinPipelineTests
     public void OptionsDescriptor_ParsesValidValues()
     {
         using var jsonDoc = JsonDocument.Parse(
-            "{\"package\":\"com.acme.gen\",\"serialization\":\"kotlinx\",\"generateBuildFiles\":false}");
+            FixtureFile.ReadJsonCase("Configuration/kotlin-pipeline-tests.json", "serialization-options"));
         var raw = new Dictionary<string, JsonElement>();
         foreach (var prop in jsonDoc.RootElement.EnumerateObject())
             raw[prop.Name] = prop.Value;
@@ -51,7 +52,7 @@ public class KotlinPipelineTests
     [Test]
     public void OptionsDescriptor_FlagsUnknownSerialization()
     {
-        using var jsonDoc = JsonDocument.Parse("{\"serialization\":\"mystery\"}");
+        using var jsonDoc = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/kotlin-pipeline-tests.json", "unknown-serialization"));
         var raw = new Dictionary<string, JsonElement>
         {
             ["serialization"] = jsonDoc.RootElement.GetProperty("serialization")
@@ -66,7 +67,7 @@ public class KotlinPipelineTests
     [Test]
     public async Task PluginRegistry_FindsPlugin_ByAlias()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         await _harness.RunAsync(doc);
 
         var registry = (ValIO.Core.Plugins.IGeneratorRegistry)
@@ -81,7 +82,7 @@ public class KotlinPipelineTests
     [Test]
     public async Task GeneratedFiles_AreNonEmpty()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -92,7 +93,7 @@ public class KotlinPipelineTests
     [Test]
     public async Task TypeMapper_RespectsScalarMappings()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>

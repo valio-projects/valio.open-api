@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -29,7 +30,7 @@ public class ParamsConstraintsTests
     [Test]
     public async Task ParamsInterface_EmitsExportedConstraintConstants()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("constrained-params.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/constrained-params.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = "zod4" });
 
         var paramsFile = ctx.GeneratedFiles.First(f =>
@@ -48,7 +49,7 @@ public class ParamsConstraintsTests
     [Test]
     public async Task ZodParamsSchema_ReferencesImportedConstraintConstants()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("constrained-params.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/constrained-params.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = "zod4" });
 
         var schema = ctx.GeneratedFiles.First(f =>
@@ -66,7 +67,7 @@ public class ParamsConstraintsTests
     [Test]
     public async Task ValibotParamsSchema_InlinesLiteralConstraints()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("constrained-params.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/constrained-params.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = "valibot" });
 
         var schema = ctx.GeneratedFiles.First(f =>
@@ -82,7 +83,7 @@ public class ParamsConstraintsTests
     [Test]
     public async Task TypeBoxParamsSchema_InlinesConstraintOptions()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("constrained-params.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/constrained-params.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = "typebox" });
 
         var schema = ctx.GeneratedFiles.First(f =>

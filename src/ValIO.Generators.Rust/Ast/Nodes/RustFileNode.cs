@@ -10,7 +10,8 @@ namespace ValIO.Generators.Rust.Ast.Nodes;
 /// </summary>
 public sealed class RustFileNode : AstNode
 {
-    public IReadOnlyList<string> Uses { get; }
+    /// <summary>Gets the imported Rust modules and declarations.</summary>
+    public IReadOnlyList<ImportNode> Uses { get; }
     public IReadOnlyList<DeclarationNode> Declarations { get; }
     public CommentNode? ModuleDoc { get; }
 
@@ -20,6 +21,7 @@ public sealed class RustFileNode : AstNode
         {
             var children = new List<AstNode>();
             if (ModuleDoc != null) children.Add(ModuleDoc);
+            children.AddRange(Uses);
             children.AddRange(Declarations);
             return children;
         }
@@ -27,12 +29,12 @@ public sealed class RustFileNode : AstNode
 
     public RustFileNode(
         IReadOnlyList<DeclarationNode>? declarations = null,
-        IReadOnlyList<string>? uses = null,
+        IReadOnlyList<ImportNode>? uses = null,
         CommentNode? moduleDoc = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
-        Uses = uses?.ToImmutableList() ?? ImmutableList<string>.Empty;
+        Uses = uses?.ToImmutableList() ?? ImmutableList<ImportNode>.Empty;
         Declarations = declarations?.ToImmutableList() ?? ImmutableList<DeclarationNode>.Empty;
         ModuleDoc = moduleDoc;
     }
@@ -47,7 +49,7 @@ public sealed class RustFileNode : AstNode
     public override AstNode Clone() =>
         new RustFileNode(
             Declarations.Select(d => (DeclarationNode)d.Clone()).ToImmutableList(),
-            Uses.ToImmutableList(),
+            Uses.Select(use => (ImportNode)use.Clone()).ToImmutableList(),
             ModuleDoc != null ? (CommentNode)ModuleDoc.Clone() : null,
             Metadata.ToImmutableDictionary());
 }

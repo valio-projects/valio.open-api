@@ -1,7 +1,10 @@
 using System.Collections.Immutable;
 using FluentAssertions;
 using NUnit.Framework;
+using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Generators.Ruby.Ast.Nodes;
 using ValIO.Generators.Ruby.Ast.Renderers;
@@ -66,16 +69,22 @@ public class RubyAstRendererDirectTests
         output.Should().Contain("@return [String]");
     }
 
+    /// <summary>Renders a method with a positional parameter and a structured interpolation.</summary>
     [Test]
     public void VisitRubyMethod_RendersDefWithBodyAndEnd()
     {
         var method = new RubyMethodNode(
             new IdentifierNode("greet"),
-            parameters: ["name"],
-            body: ["puts \"Hello, #{name}\""]);
+            parameters: [new(new("name"), type: null)],
+            body: new BlockNode([new ExpressionStatementNode(new CallExpressionNode(
+                new IdentifierExpressionNode(new IdentifierNode("puts")),
+                [new InterpolatedStringExpressionNode([
+                    new LiteralExpressionNode("Hello, ", LiteralKind.String),
+                    new IdentifierExpressionNode(new IdentifierNode("name")),
+                ])]))]));
         var output = _renderer.VisitRubyMethod(method);
         output.Should().Contain("def greet(name)");
-        output.Should().Contain("puts \"Hello, #{name}\"");
+        output.Should().Contain("puts(\"Hello, #{name}\")");
         output.Should().EndWith("end" + System.Environment.NewLine);
     }
 

@@ -31,11 +31,11 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
 
         if (node.Uses.Count > 0)
         {
-            foreach (var use in node.Uses
+            foreach (var use in node.Uses.Select(VisitImport)
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(u => u, StringComparer.Ordinal))
             {
-                sb.AppendLine($"use {use};");
+                sb.AppendLine(use);
             }
             sb.AppendLine();
         }
@@ -165,6 +165,10 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
     public override string VisitRustFunction(RustFunctionNode node) =>
         RenderFunction(node, indent: 0);
 
+    /// <summary>Prints the function's declarations, statements and optional implicit result.</summary>
+    /// <param name="node">The function to render.</param>
+    /// <param name="indent">The declaration indentation.</param>
+    /// <returns>The complete Rust declaration.</returns>
     private string RenderFunction(RustFunctionNode node, int indent)
     {
         var sb = new StringBuilder();
@@ -182,7 +186,7 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
 
         var header = $"{prefix}{visibility}{asyncMod}fn {node.Name.Name}({paramText}){returnSuffix}";
 
-        if (node.Body.Count == 0)
+        if (node.Body.Statements.Count == 0 && node.Tail is null)
         {
             sb.AppendLine(header + " {}");
             return sb.ToString();
@@ -190,15 +194,10 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
 
         sb.AppendLine(header + " {");
         var blockIndent = indent + 1;
-        foreach (var line in node.Body)
-        {
-            if (string.IsNullOrEmpty(line))
-            {
-                sb.AppendLine();
-                continue;
-            }
-            sb.AppendLine($"{Indent(blockIndent)}{line}");
-        }
+        foreach (var statement in node.Body.Statements)
+            sb.AppendLine($"{Indent(blockIndent)}{Visit(statement)}");
+        if (node.Tail is not null)
+            sb.AppendLine($"{Indent(blockIndent)}{Visit(node.Tail)}");
         sb.AppendLine($"{prefix}}}");
         return sb.ToString();
     }
@@ -261,6 +260,12 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
         return $"std::collections::HashMap<{key}, {value}>";
     }
 
+    /// <inheritdoc />
+    public override string VisitRustReferenceType(RustReferenceTypeNode node) => $"&{Visit(node.TargetType)}";
+
+    /// <inheritdoc />
+    public override string VisitRustUnitType(RustUnitTypeNode node) => "()";
+
     public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
 
     private string RenderType(TypeNode type) => type.Accept(this);
@@ -279,11 +284,56 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
     public override string VisitBlock(BlockNode node) =>
         string.Join("\n", node.Statements.Select(Visit));
 
-    public override string VisitImport(ImportNode node) => string.Empty;
+    /// <inheritdoc />
+    public override string VisitImport(ImportNode node)
+    {
+        var path = node.Items.Count switch
+        {
+            0 => node.From,
+            1 => node.From + "::" + node.Items[0].Name,
+            _ => node.From + "::{" + string.Join(", ", node.Items.Select(item => item.Name)) + "}",
+        };
+        return $"use {path};";
+    }
     public override string VisitExport(ExportNode node) => string.Empty;
 
     public override string VisitLiteralExpression(LiteralExpressionNode node) =>
         RenderLiteralValue(node.Value, node.LiteralKind);
+
+    /// <inheritdoc />
+    public override string VisitRustBorrow(RustBorrowNode node) => $"&{Visit(node.Operand)}";
+
+    /// <inheritdoc />
+    public override string VisitRustTry(RustTryNode node) => $"{Visit(node.Operand)}?";
+
+    /// <inheritdoc />
+    public override string VisitRustTuple(RustTupleNode node) => $"({string.Join(", ", node.Elements.Select(Visit))}{(node.Elements.Count == 1 ? "," : "")})";
+
+    /// <inheritdoc />
+    public override string VisitRustLet(RustLetNode node) => $"let {(node.Mutable ? "mut " : "")}{node.Name.Name}{(node.Type is { } type ? ": " + RenderType(type) : "")} = {Visit(node.Initializer)};";
+
+    /// <inheritdoc />
+    public override string VisitRustIfSome(RustIfSomeNode node) => $"if let Some({node.Binding.Name}) = {Visit(node.Option)} {{ {string.Join(" ", node.Body.Statements.Select(Visit))} }}";
+
+    /// <inheritdoc />
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        var format = new StringBuilder();
+        var arguments = new List<string>();
+        foreach (var part in node.Parts)
+        {
+            if (part is LiteralExpressionNode { Value: string literal })
+            {
+                format.Append(literal.Replace("{", "{{", StringComparison.Ordinal).Replace("}", "}}", StringComparison.Ordinal));
+                continue;
+            }
+
+            format.Append("{}");
+            arguments.Add(Visit(part));
+        }
+        var literalFormat = RenderLiteralValue(format.ToString(), LiteralKind.String);
+        return $"format!({string.Join(", ", arguments.Prepend(literalFormat))})";
+    }
 
     public override string VisitIdentifierExpression(IdentifierExpressionNode node) =>
         node.Identifier.Name;
@@ -295,8 +345,9 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
         return $"{target}({args})";
     }
 
+    /// <inheritdoc />
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) =>
-        $"{Visit(node.Object)}.{node.Member.Name}";
+        $"{Visit(node.Object)}{(node.UseScopeOperator ? "::" : ".")}{node.Member.Name}";
 
     public override string VisitUnaryExpression(UnaryExpressionNode node)
     {

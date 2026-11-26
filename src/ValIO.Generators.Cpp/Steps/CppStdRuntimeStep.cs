@@ -1,4 +1,7 @@
+using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Plugins;
+using ValIO.Generators.Cpp.Ast.Nodes;
 using ValIO.Generators.Cpp.Ast.Renderers;
 using ValIO.Generators.Cpp.Runtime;
 using ValIO.Generators.Cpp.Models;
@@ -34,31 +37,128 @@ public sealed class CppStdRuntimeStep(ICppAstRenderer renderer) : CppStdStepBase
         if (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0 && !options.EmitSerializers)
             throw new InvalidOperationException("Standalone C++ clients require emitSerializers=true; disable client generation for pure DTO output.");
         if (options.TemporalBackend != CppTemporalBackend.String)
-            AddRuntimeFile(context, TemporalRuntimeTemplates.TypesHeaderFileName, TemporalRuntimeTemplates.TypesHeader(options.TemporalBackend));
+        {
+            var providerTypes = $"ValIOTemporal{options.TemporalBackend}Types.h";
+            AddFixedFile(context, $"Runtime/{providerTypes}");
+            AddFixedFile(context, "Runtime/ValIOTemporalTypesBase.h");
+            AddIncludeFile(context, StdRuntimeTemplates.TemporalTypesHeaderFileName, [new(providerTypes), new("ValIOTemporalTypesBase.h")]);
+        }
         if (options.UuidBackend != CppUuidBackend.String)
-            AddRuntimeFile(context, UuidRuntimeTemplates.TypesHeaderFileName, UuidRuntimeTemplates.TypesHeader(options.UuidBackend));
+            AddUuidTypes(context, options.UuidBackend);
         var hasCodecs = (options.EmitSerializers && ((context.Configuration.GenerateModels && context.IrDocument.Models.Count > 0)
                 || (context.Configuration.GenerateEnums && context.IrDocument.Enums.Count > 0)))
             || (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0);
         if (!hasCodecs) return Task.CompletedTask;
         if (options.TemporalBackend != CppTemporalBackend.String)
-            AddRuntimeFile(context, TemporalRuntimeTemplates.JsonHeaderFileName, TemporalRuntimeTemplates.JsonHeader(options.TemporalBackend));
+            AddTemporalJson(context, options.TemporalBackend);
         if (options.UuidBackend != CppUuidBackend.String)
-            AddRuntimeFile(context, UuidRuntimeTemplates.JsonHeaderFileName, UuidRuntimeTemplates.JsonHeader(options.UuidBackend));
-        AddRuntimeFile(context, StdRuntimeTemplates.JsonTypesHeaderFileName,
-            StdRuntimeTemplates.JsonTypesHeader(options.JsonInclude, options.TemporalBackend, options.UuidBackend));
-        AddRuntimeFile(context, JsonValidationTemplates.HeaderFileName, JsonValidationTemplates.Header(options.JsonInclude));
+            AddUuidJson(context, options.UuidBackend);
+        AddJsonRuntime(context, options);
         if (context.Configuration.GenerateClients && context.IrDocument.Clients.Count > 0)
         {
-            AddRuntimeFile(context, StdRuntimeTemplates.CancellationHeaderFileName, StdRuntimeTemplates.CancellationHeader());
-            AddRuntimeFile(context, StdRuntimeTemplates.ExpectedHeaderFileName, StdRuntimeTemplates.ExpectedHeader());
-            AddRuntimeFile(context, StdRuntimeTemplates.ErrorHeaderFileName, StdRuntimeTemplates.ErrorHeader());
-            AddRuntimeFile(context, StdRuntimeTemplates.HttpHeaderFileName, StdRuntimeTemplates.HttpHeader());
-            AddRuntimeFile(context, RequestParameterRuntimeTemplates.HeaderFileName, RequestParameterRuntimeTemplates.Header());
-            AddRuntimeFile(context, StdRuntimeTemplates.HttpSourceFileName, StdRuntimeTemplates.HttpSource(options.HttpInclude));
-            AddRuntimeFile(context, StdRuntimeTemplates.JsonHeaderFileName, StdRuntimeTemplates.JsonHeader(options.JsonInclude));
+            AddFixedFile(context, StdRuntimeTemplates.CancellationHeaderFileName);
+            AddFixedFile(context, StdRuntimeTemplates.ExpectedHeaderFileName);
+            AddFixedFile(context, StdRuntimeTemplates.ErrorHeaderFileName);
+            AddFixedFile(context, StdRuntimeTemplates.HttpHeaderFileName);
+            AddFixedFile(context, "Runtime/Impl/ValIORequest.inl");
+            AddFixedFile(context, StdRuntimeTemplates.HttpSourceFileName);
+            AddFixedFile(context, StdRuntimeTemplates.JsonHeaderFileName);
+            AddIncludeFile(context, "Runtime/ValIOHttpBackend.h", [new CppIncludeDirectiveNode(options.HttpInclude)]);
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>Declares the native UUID alias with its selected provider's only type dependency.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <param name="backend">The native UUID provider.</param>
+    private void AddUuidTypes(GenerationContext context, CppUuidBackend backend)
+    {
+        var (include, typeName) = backend switch
+        {
+            CppUuidBackend.BoostUuid => ("boost/uuid/uuid.hpp", "boost::uuids::uuid"),
+            CppUuidBackend.StdUuid => ("uuid.h", "uuids::uuid"),
+            CppUuidBackend.ModernUuid => ("modern-uuid/uuid.h", "muuid::uuid"),
+            _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "A native UUID provider is required."),
+        };
+        var type = new SimpleTypeNode(new IdentifierNode(typeName));
+        var alias = new CppUsingAliasNode(new IdentifierNode("Uuid"), type,
+            documentation: new CommentNode("Application UUID representation selected by the generation configuration."));
+        var scope = new NamespaceDeclarationNode(new IdentifierNode("ValIO"), [alias]);
+        var header = new CppHeaderFileNode("ValIOUuidTypes.h", includes: [new(include, isSystemInclude: true)], declarations: [scope]);
+        AddRuntimeFile(context, StdRuntimeTemplates.UuidTypesHeaderFileName, Renderer.Render(header));
+    }
+
+    /// <summary>Composes the strict UUID codec with the selected native provider adapter.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <param name="backend">The native UUID provider.</param>
+    private void AddUuidJson(GenerationContext context, CppUuidBackend backend)
+    {
+        var provider = backend switch
+        {
+            CppUuidBackend.BoostUuid => "ValIOUuidBoostJson.h",
+            CppUuidBackend.StdUuid => "ValIOUuidStdJson.h",
+            CppUuidBackend.ModernUuid => "ValIOUuidModernJson.h",
+            _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "A native UUID provider is required."),
+        };
+        AddFixedFile(context, $"Runtime/{provider}");
+        AddFixedFile(context, "Runtime/ValIOUuidJsonCodec.h");
+        AddIncludeFile(context, "Runtime/ValIOUuidJson.h", [new(provider), new("ValIOUuidJsonCodec.h")]);
+    }
+
+    /// <summary>Composes the temporal codecs with the selected provider's calendar, clock, and interval operations.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <param name="backend">The native temporal provider.</param>
+    private void AddTemporalJson(GenerationContext context, CppTemporalBackend backend)
+    {
+        var provider = $"ValIOTemporal{backend}Json.h";
+        AddFixedFile(context, "Runtime/ValIOTemporalJsonSupport.h");
+        AddFixedFile(context, $"Runtime/{provider}");
+        var includes = new List<CppIncludeDirectiveNode> { new(provider) };
+        if (backend is CppTemporalBackend.Chrono or CppTemporalBackend.HowardDate)
+            AddFixedFile(context, "Runtime/ValIOTemporalChronoJsonSupport.h");
+        if (backend != CppTemporalBackend.Valio)
+        {
+            AddFixedFile(context, "Runtime/ValIOTemporalFixedDurationJson.h");
+            includes.Add(new("ValIOTemporalFixedDurationJson.h"));
+        }
+        AddFixedFile(context, "Runtime/ValIOTemporalJsonCodecs.h");
+        includes.Add(new("ValIOTemporalJsonCodecs.h"));
+        AddIncludeFile(context, "Runtime/ValIOTemporalJson.h", includes);
+    }
+
+    /// <summary>Publishes the fixed JSON code and the profile-specific include declarations it needs.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <param name="options">The selected JSON and scalar backends.</param>
+    private void AddJsonRuntime(GenerationContext context, CppGenerationOptions options)
+    {
+        AddFixedFile(context, "Runtime/ValIOJsonValidation.h");
+        AddFixedFile(context, "Runtime/ValIOJsonTypesBase.h");
+        AddIncludeFile(context, "Runtime/ValIOJsonBackend.h", [new CppIncludeDirectiveNode(options.JsonInclude)]);
+        var includes = new List<CppIncludeDirectiveNode> { new("ValIOJsonTypesBase.h") };
+        if (options.TemporalBackend != CppTemporalBackend.String)
+            includes.Add(new("ValIOTemporalJson.h"));
+        if (options.UuidBackend != CppUuidBackend.String)
+            includes.Add(new("ValIOUuidJson.h"));
+        AddIncludeFile(context, StdRuntimeTemplates.JsonTypesHeaderFileName, includes);
+    }
+
+    /// <summary>Copies a checked-in runtime file to its canonical path in the SDK.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <param name="path">The relative output path.</param>
+    private static void AddFixedFile(GenerationContext context, string path)
+    {
+        var source = SourceResource.Read(typeof(CppStdRuntimeStep).Assembly, $"ValIO.Runtime.{Path.GetFileName(path)}");
+        AddRuntimeFile(context, path, source);
+    }
+
+    /// <summary>Prints a header containing the configured include directives.</summary>
+    /// <param name="context">The current generation request.</param>
+    /// <param name="path">The relative output path.</param>
+    /// <param name="includes">The directives in dependency order.</param>
+    private void AddIncludeFile(GenerationContext context, string path, IReadOnlyList<CppIncludeDirectiveNode> includes)
+    {
+        var header = new CppHeaderFileNode(Path.GetFileName(path), includes: includes);
+        AddRuntimeFile(context, path, Renderer.Render(header));
     }
 
     /// <summary>Adds a canonical runtime file once even if a pipeline is resumed or executed repeatedly.</summary>

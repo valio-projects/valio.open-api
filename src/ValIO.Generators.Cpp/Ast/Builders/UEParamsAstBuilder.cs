@@ -273,10 +273,7 @@ public sealed class UEParamsAstBuilder : AstBuilderBase
     private UPropertyFieldNode BuildParamField(IrParameter param, string category)
     {
         var type = _typeMapper.MapType(param.Type);
-        var defaultValueStr = _typeMapper.GetDefaultValue(param.Type);
-        ExpressionNode? defaultValue = defaultValueStr != null
-            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
-            : null;
+        var defaultValue = _typeMapper.BuildDefaultValue(param.Type);
 
         return new UPropertyFieldNode(
             name: new IdentifierNode(_naming.PropertyName(param.Name)),

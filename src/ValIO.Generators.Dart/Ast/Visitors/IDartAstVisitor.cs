@@ -16,4 +16,14 @@ public interface IDartAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitDartField(DartFieldNode node);
     TResult VisitDartMethod(DartMethodNode node);
     TResult VisitDartParameter(DartParameterNode node);
+
+    /// <summary>Visits a DartMapLiteralNode expression.</summary>
+    /// <param name="node">The expression to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitDartMapLiteral(DartMapLiteralNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a DartNamedArgumentNode expression.</summary>
+    /// <param name="node">The expression to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitDartNamedArgument(DartNamedArgumentNode node) => DefaultVisit(node);
 }

@@ -262,7 +262,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         // BuildRequestBuilder(Params) -> UValIORequestBuilder* (Blueprint)
         publicMembers.Add(new UFunctionDeclarationNode(
             name: new IdentifierNode("BuildRequestBuilder"),
-            returnType: new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder*")),
+            returnType: new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder")), isPointer: true),
             parameters: new[]
             {
                 new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
@@ -336,7 +336,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         var displayName = FormatDisplayName(operation.MethodName);
         publicMembers.Add(new UFunctionDeclarationNode(
             name: new IdentifierNode(operation.MethodName),
-            returnType: new SimpleTypeNode(new IdentifierNode($"{className}*")),
+            returnType: new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode(className)), isPointer: true),
             parameters: factoryParams,
             specifiers: UFunctionSpecifiers.AsyncFactory(category, displayName),
             isStatic: true,
@@ -372,7 +372,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         {
             new VariableDeclarationStatementNode(
                 worldContextVar,
-                new SimpleTypeNode(new IdentifierNode("UObject*")),
+                new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("UObject")), isPointer: true),
                 worldContextGet),
             new ExpressionStatementNode(new CallExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("checkf")),
@@ -385,7 +385,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         });
         protectedMembers.Add(new UFunctionDeclarationNode(
             name: new IdentifierNode("GetWorldContext"),
-            returnType: new SimpleTypeNode(new IdentifierNode("UObject*")),
+            returnType: new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("UObject")), isPointer: true),
             isVirtual: true, isOverride: true, isConst: true,
             body: getWorldContextBody));
 
@@ -475,47 +475,57 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         if (pathParamTypeName != null && pathParamName != null)
             parameters.Add(new(new IdentifierNode(pathParamName), new SimpleTypeNode(new IdentifierNode(pathParamTypeName)), isConst: true, isReference: true));
 
-        var pathPrefix = pathParamName != null ? pathParamName + "." : "";
-
-        var pathParamSpecs = operation.PathParameters.Select(p =>
-        {
-            var propName = _naming.PropertyName(p.Name);
-            var pathValueAccess = pathPrefix + propName;
-            var isGuid = _typeMapper.IsGuidType(p.Type);
-            var intermediateVarName = isGuid ? propName + "Str" : null;
-            var printfArgExpr = _typeMapper.GetPrintfArgumentExpression(p.Type, pathValueAccess, intermediateVarName);
-            return (OriginalName: p.Name, PathValueAccess: pathValueAccess, PropertyName: propName, PrintfSpecifier: _typeMapper.GetPrintfSpecifier(p.Type),
-                PrintfArgExpression: printfArgExpr, IsGuid: isGuid, IntermediateVarName: intermediateVarName);
-        }).ToList();
-
         var statements = new List<StatementNode>();
-        foreach (var param in pathParamSpecs)
+        var values = new Dictionary<string, ExpressionNode>(StringComparer.Ordinal);
+        var specifiers = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var parameter in operation.PathParameters)
         {
-            if (param.IsGuid && param.IntermediateVarName != null)
+            var name = _naming.PropertyName(parameter.Name);
+            ExpressionNode value = new IdentifierExpressionNode(new IdentifierNode(name));
+            if (pathParamName is not null)
             {
-                var pathExpr = BuildExpressionFromPath(param.PathValueAccess);
-                var toStrCall = new CallExpressionNode(
-                    new MemberAccessExpressionNode(pathExpr, new IdentifierNode("ToString")),
-                    new ExpressionNode[] { new MemberAccessExpressionNode(
-                        new IdentifierExpressionNode(new IdentifierNode("EGuidFormats")),
-                        new IdentifierNode("DigitsWithHyphens"),
-                        useScopeOperator: true) }.ToImmutableList());
-                statements.Add(new VariableDeclarationStatementNode(
-                    new IdentifierNode(param.IntermediateVarName),
-                    new SimpleTypeNode(new IdentifierNode("const FString")),
-                    toStrCall));
+                var request = new IdentifierExpressionNode(new IdentifierNode(pathParamName));
+                value = new MemberAccessExpressionNode(request, new IdentifierNode(name));
+            }
+
+            var isGuid = _typeMapper.IsGuidType(parameter.Type);
+            if (isGuid)
+            {
+                var guidFormat = new MemberAccessExpressionNode(
+                    new IdentifierExpressionNode(new IdentifierNode("EGuidFormats")),
+                    new IdentifierNode("DigitsWithHyphens"), useScopeOperator: true);
+                var toString = new CallExpressionNode(new MemberAccessExpressionNode(value, new IdentifierNode("ToString")), [guidFormat]);
+                var variable = new IdentifierNode(name + "Str");
+                var constString = new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("FString")), isConst: true);
+                statements.Add(new VariableDeclarationStatementNode(variable, constString, toString));
+                value = new IdentifierExpressionNode(variable);
+            }
+
+            var dereference = isGuid || _typeMapper.NeedsDereference(parameter.Type);
+            values[parameter.OriginalName] = dereference ? new UnaryExpressionNode(UnaryOperator.Dereference, value) : value;
+            specifiers[parameter.OriginalName] = _typeMapper.GetPrintfSpecifier(parameter.Type);
+        }
+
+        var route = OpenApiPathExpressionBuilder.Build(operation,
+            parameter => new IdentifierExpressionNode(new IdentifierNode(parameter.OriginalName)));
+        var formatParts = new List<string>();
+        var substitutions = new List<ExpressionNode>();
+        foreach (var part in route.Parts)
+        {
+            if (part is LiteralExpressionNode { Value: string text })
+            {
+                formatParts.Add(text.Replace("%", "%%", StringComparison.Ordinal));
+            }
+            else if (part is IdentifierExpressionNode placeholder)
+            {
+                var name = placeholder.Identifier.Name;
+                formatParts.Add(specifiers[name]);
+                substitutions.Add(values[name]);
             }
         }
-        var formatStr = pathParamSpecs.Aggregate(operation.Path, (acc, p) =>
-            acc.Replace($"{{{p.OriginalName}}}", p.PrintfSpecifier));
-        var printfArgs = new List<ExpressionNode> { UeText(formatStr) };
-        printfArgs.AddRange(pathParamSpecs.Select(p =>
-        {
-            var needsDeref = p.PrintfArgExpression.StartsWith("*");
-            var pathOrIdent = needsDeref ? p.PrintfArgExpression.TrimStart('*') : p.PrintfArgExpression;
-            var expr = BuildExpressionFromPath(pathOrIdent);
-            return needsDeref ? new UnaryExpressionNode(UnaryOperator.Dereference, expr) : expr;
-        }));
+
+        var printfArgs = new List<ExpressionNode> { UeText(string.Concat(formatParts)) };
+        printfArgs.AddRange(substitutions);
         var printfCall = new CallExpressionNode(
             new MemberAccessExpressionNode(
                 new IdentifierExpressionNode(new IdentifierNode("FString")),
@@ -524,7 +534,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
             printfArgs.ToImmutableList());
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("Url"),
-            new SimpleTypeNode(new IdentifierNode("const FString")),
+            new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("FString")), isConst: true),
             printfCall));
         statements.Add(new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("Url"))));
         return (parameters, new BlockNode(statements.ToImmutableList()));
@@ -585,7 +595,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         var statements = new List<StatementNode>();
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("Path"),
-            new SimpleTypeNode(new IdentifierNode("const FString")),
+            new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("FString")), isConst: true),
             pathCall));
 
         var constructorArgs = new List<ExpressionNode>
@@ -607,7 +617,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         foreach (var qp in operation.QueryParameters)
         {
             var propName = queryPrefix + _naming.PropertyName(qp.Name);
-            var valueExpr = (ExpressionNode)new IdentifierExpressionNode(new IdentifierNode(propName));
+            var valueExpr = BuildExpressionFromPath(propName);
             var methodName = IsQueryParamEnum(qp) ? "AddQueryParamEnumAsString" : "AddQueryParam";
             var addQueryCall = new CallExpressionNode(
                 new MemberAccessExpressionNode(
@@ -660,7 +670,8 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         if (operation.RequestBody == null) return statements;
 
         var formDataPath = hasMultipleParamGroups ? "Params.Form" : "Params.Body";
-        var bodyDataPath = "Params.Body";
+        var requestBodyExpression = new MemberAccessExpressionNode(
+            new IdentifierExpressionNode(new IdentifierNode("Params")), new IdentifierNode("Body"));
 
         if (hasBody)
         {
@@ -669,8 +680,8 @@ public sealed class UEApiAstBuilder : AstBuilderBase
                 new MemberAccessExpressionNode(
                     new IdentifierExpressionNode(new IdentifierNode("RequestBuilder")),
                     new IdentifierNode("SetJsonBodyFromStruct")),
-                new ExpressionNode[] { new IdentifierExpressionNode(new IdentifierNode(bodyDataPath)) }.ToImmutableList(),
-                genericTypeName: bodyTypeName);
+                new ExpressionNode[] { requestBodyExpression }.ToImmutableList(),
+                genericTypeArgument: new SimpleTypeNode(new IdentifierNode(bodyTypeName)));
             statements.Add(new ExpressionStatementNode(setJsonCall));
             return statements;
         }
@@ -696,7 +707,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
                     var bytesCopyVar = $"BytesCopy_{propName}";
                     statements.Add(new VariableDeclarationStatementNode(
                         new IdentifierNode(bytesCopyVar),
-                        new SimpleTypeNode(new IdentifierNode("TArray<uint8>")),
+                        new GenericTypeNode(new IdentifierNode("TArray"), [new SimpleTypeNode(new IdentifierNode("uint8"), isPrimitive: true)]),
                         BuildExpressionFromPath(dataAccessPath)));
                     var addFileCall = new CallExpressionNode(
                         new MemberAccessExpressionNode(
@@ -855,7 +866,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
                 buildCall),
             new VariableDeclarationStatementNode(
                 new IdentifierNode("BlueprintRequestBuilder"),
-                new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder*")),
+                new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder")), isPointer: true),
                 fromCall),
             new ReturnStatementNode(new IdentifierExpressionNode(new IdentifierNode("BlueprintRequestBuilder")))
         };
@@ -863,7 +874,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         return new CppAsyncFactoryImplementationNode(
             className: new IdentifierNode(libraryClassName),
             methodName: new IdentifierNode("BuildRequestBuilder"),
-            returnType: new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder*")),
+            returnType: new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("UValIORequestBuilder")), isPointer: true),
             parameters: new[]
             {
                 new CppParameterNode(new IdentifierNode("Params"), new SimpleTypeNode(new IdentifierNode(paramsTypeName)), isConst: true, isReference: true)
@@ -954,7 +965,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         var parseName = _naming.ParseFunctionName(operation.MethodName);
         var resultTypeName = _naming.ResultStructName(operation.MethodName);
         var hasSuccessBody = _resultBuilder.HasSuccessBody(operation);
-        var successBodyTypeName = GetSuccessBodyTypeName(operation);
+        var successBodyType = GetSuccessBodyType(operation);
 
         const string ResponseParamName = "Response";
         var parameters = new List<CppParameterNode>
@@ -1003,14 +1014,14 @@ public sealed class UEApiAstBuilder : AstBuilderBase
                 {
                     new VariableDeclarationStatementNode(
                         new IdentifierNode("Dto"),
-                        new SimpleTypeNode(new IdentifierNode($"const TOptional<{successBodyTypeName}>")),
+                        new CppQualifiedTypeNode(new GenericTypeNode(new IdentifierNode("TOptional"), [successBodyType]), isConst: true),
                         new CallExpressionNode(
                             new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(ResponseParamName)), new IdentifierNode("GetBodyAs")),
                             Array.Empty<ExpressionNode>().ToImmutableList(),
-                            genericTypeName: successBodyTypeName)),
+                            genericTypeArgument: successBodyType)),
                     new VariableDeclarationStatementNode(
                         new IdentifierNode("bDtoIsSet"),
-                        new SimpleTypeNode(new IdentifierNode("const bool"), isPrimitive: true),
+                        new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("bool"), isPrimitive: true), isConst: true),
                         new CallExpressionNode(
                             new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Dto")), new IdentifierNode("IsSet")),
                             Array.Empty<ExpressionNode>().ToImmutableList())),
@@ -1030,7 +1041,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
                 };
             var bIsSuccessDecl = new VariableDeclarationStatementNode(
                 new IdentifierNode("bIsSuccess"),
-                new SimpleTypeNode(new IdentifierNode("const bool"), isPrimitive: true),
+                new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("bool"), isPrimitive: true), isConst: true),
                 new CallExpressionNode(
                     new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(ResponseParamName)), new IdentifierNode("IsSuccess")),
                     Array.Empty<ExpressionNode>().ToImmutableList()));
@@ -1087,11 +1098,11 @@ public sealed class UEApiAstBuilder : AstBuilderBase
                 new IdentifierExpressionNode(new IdentifierNode("ClientNameArg")),
                 new IdentifierExpressionNode(new IdentifierNode("Params"))
             }.ToImmutableList(),
-            genericTypeName: className);
+            genericTypeArgument: new SimpleTypeNode(new IdentifierNode(className)));
         implementations.Add(new CppAsyncFactoryImplementationNode(
             className: new IdentifierNode(className),
             methodName: new IdentifierNode(operation.MethodName),
-            returnType: new SimpleTypeNode(new IdentifierNode($"{className}*")),
+            returnType: new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode(className)), isPointer: true),
             parameters: new[]
             {
                 new CppParameterNode(new IdentifierNode("WorldContextObject"), new SimpleTypeNode(new IdentifierNode("UObject")), isPointer: true),
@@ -1146,7 +1157,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
             new ReturnStatementNode(rawCall)
         }.ToImmutableList());
         var activateLambda = new CppLambdaExpressionNode(
-            new[] { "this" },
+            [new IdentifierExpressionNode(new IdentifierNode("this"))],
             new[] { new CppParameterNode(new IdentifierNode("Client"), new SimpleTypeNode(new IdentifierNode("FValIOClientRef"))) },
             lambdaBody);
         var runWithCall = new CallExpressionNode(
@@ -1155,7 +1166,7 @@ public sealed class UEApiAstBuilder : AstBuilderBase
                 new IdentifierNode("RunWithClientAndComplete"),
                 useArrowOperator: true),
             new ExpressionNode[] { activateLambda }.ToImmutableList(),
-            genericTypeName: $"{className}, {resultTypeName}");
+            typeArguments: [new SimpleTypeNode(new IdentifierNode(className)), new SimpleTypeNode(new IdentifierNode(resultTypeName))]);
         implementations.Add(new CppAsyncActivateImplementationNode(
             className: new IdentifierNode(className),
             body: new BlockNode(new StatementNode[]
@@ -1215,20 +1226,20 @@ public sealed class UEApiAstBuilder : AstBuilderBase
     private BlockNode BuildBodyBlockForResponse(IrResponse response, string responseParamName = "Response")
     {
         var fieldName = _naming.ResultBodyFieldName(response.StatusCode);
-        var typeName = GetResponseBodyTypeName(response);
 
-        if (response.Type != null)
+        if (response.Type is { } responseType)
         {
+            var type = _typeMapper.MapType(responseType);
             var varName = $"{_naming.ResultBodyFieldName(response.StatusCode)}Opt";
             var statements = new List<StatementNode>
             {
                 new VariableDeclarationStatementNode(
                     new IdentifierNode(varName),
-                    new SimpleTypeNode(new IdentifierNode($"const TOptional<{typeName}>")),
+                    new CppQualifiedTypeNode(new GenericTypeNode(new IdentifierNode("TOptional"), [type]), isConst: true),
                     new CallExpressionNode(
                         new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(responseParamName)), new IdentifierNode("GetBodyAs")),
                         Array.Empty<ExpressionNode>().ToImmutableList(),
-                        genericTypeName: typeName)),
+                        genericTypeArgument: type)),
                 new IfStatementNode(
                     new CallExpressionNode(
                         new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode(varName)), new IdentifierNode("IsSet")),
@@ -1261,20 +1272,6 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         }
     }
 
-    private string GetResponseBodyTypeName(IrResponse response)
-    {
-        if (response.Type is IrModelReference modelRef)
-            return _typeMapper.IsEnumReference(modelRef.ModelName)
-                ? _naming.EnumName(modelRef.ModelName)
-                : _naming.StructName(modelRef.ModelName);
-        if (response.Type != null)
-        {
-            var mapped = _typeMapper.MapType(response.Type);
-            return mapped.ToString() ?? "FString";
-        }
-        return "FString";
-    }
-
     /// <summary>
     /// Проверяет, является ли параметр query enum-типом (для AddQueryParamEnumAsString).
     /// </summary>
@@ -1296,23 +1293,15 @@ public sealed class UEApiAstBuilder : AstBuilderBase
         return prim.PrimitiveKind is IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File;
     }
 
-    private string GetSuccessBodyTypeName(IrOperation operation)
+    /// <summary>Maps the first success payload as a C++ type for response deserialization.</summary>
+    /// <param name="operation">The operation with the declared response payloads.</param>
+    private TypeNode GetSuccessBodyType(IrOperation operation)
     {
-        var successResponse = operation.Responses.FirstOrDefault(r =>
-            r.StatusCode.StartsWith('2') && r.Type != null);
-
-        if (successResponse?.Type is IrModelReference modelRef)
-            return _typeMapper.IsEnumReference(modelRef.ModelName)
-                ? _naming.EnumName(modelRef.ModelName)
-                : _naming.StructName(modelRef.ModelName);
-
-        if (successResponse?.Type != null)
-        {
-            var mapped = _typeMapper.MapType(successResponse.Type);
-            return mapped.ToString() ?? "void";
-        }
-
-        return "void";
+        var successResponse = operation.Responses.FirstOrDefault(response =>
+            response.StatusCode.StartsWith('2') && response.Type is not null);
+        return successResponse?.Type is { } type
+            ? _typeMapper.MapType(type)
+            : new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true);
     }
 
     private bool HasMultipleParamGroups(IrOperation operation)

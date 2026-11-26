@@ -1,32 +1,29 @@
+using Microsoft.OpenApi;
+
 namespace ValIO.Tests.Fixtures;
 
-/// <summary>Reads explicit OpenAPI fixture documents copied beside each test assembly.</summary>
-/// <remarks>The fixture location is independent of the working directory and source checkout.</remarks>
+/// <summary>Loads OpenAPI fixtures copied beside each test assembly.</summary>
 internal static class OpenApiFixture
 {
-    /// <summary>Loads a fixture document without changing its schemas or specification version.</summary>
-    /// <param name="relativePath">The slash-separated path relative to the shared OpenAPI fixture directory.</param>
-    /// <returns>The fixture contents exactly as stored on disk.</returns>
-    /// <exception cref="ArgumentException">The path is empty, absolute, or contains a parent-directory segment.</exception>
-    /// <exception cref="FileNotFoundException">The fixture was not copied to the test output directory.</exception>
+    /// <summary>Reads the document exactly as it appears in the fixture file.</summary>
+    /// <param name="relativePath">The path relative to the OpenAPI fixture directory.</param>
+    /// <returns>The original JSON or YAML document.</returns>
     /// <exception cref="IOException">The fixture cannot be read.</exception>
-    /// <exception cref="UnauthorizedAccessException">Reading the fixture is not permitted.</exception>
-    public static string Read(string relativePath)
+    public static string Read(string relativePath) => FixtureFile.Read(Path.Combine("OpenApi", relativePath));
+
+    /// <summary>Parses an OpenAPI fixture using the reader for its file extension.</summary>
+    /// <param name="relativePath">The path relative to the OpenAPI fixture directory.</param>
+    /// <param name="allowReaderErrors">Whether to accept a parsed document for a regression fixture with known reader diagnostics.</param>
+    /// <returns>The parsed OpenAPI document.</returns>
+    /// <exception cref="InvalidOperationException">The reader produced no document or reported unexpected errors.</exception>
+    public static async Task<OpenApiDocument> LoadAsync(string relativePath, bool allowReaderErrors = false)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(relativePath);
-        var segments = relativePath.Replace('\\', '/').Split('/');
-        if (Path.IsPathRooted(relativePath) || segments.Contains("..", StringComparer.Ordinal))
-        {
-            throw new ArgumentException("A fixture path must stay within Fixtures/OpenApi.", nameof(relativePath));
-        }
-
-        var path = Path.Combine(AppContext.BaseDirectory, "Fixtures", "OpenApi", Path.Combine(segments));
-        if (!File.Exists(path))
-        {
-            throw new FileNotFoundException(
-                $"OpenAPI fixture '{relativePath}' is missing. Build the test project to copy its shared fixtures.", path);
-        }
-
-        return File.ReadAllText(path);
+        await using var stream = FixtureFile.Open(Path.Combine("OpenApi", relativePath));
+        var format = Path.GetExtension(relativePath).TrimStart('.');
+        var result = await OpenApiDocument.LoadAsync(stream, format);
+        var errors = result.Diagnostic?.Errors.Select(error => error.Message).ToArray() ?? [];
+        if (result.Document is null || (!allowReaderErrors && errors.Length > 0))
+            throw new InvalidOperationException($"Unable to parse fixture '{relativePath}'. {string.Join(Environment.NewLine, errors)}");
+        return result.Document;
     }
 }

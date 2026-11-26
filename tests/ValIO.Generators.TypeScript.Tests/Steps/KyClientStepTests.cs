@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class KyClientStepTests
     [Test]
     public async Task NoKyTransport_NoKyFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -35,7 +36,7 @@ public class KyClientStepTests
     [Test]
     public async Task KyClient_GetByPathParam_EmitsKyGetCall()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ky"] });
 
         var ky = ctx.GeneratedFiles.First(f =>
@@ -48,7 +49,7 @@ public class KyClientStepTests
     [Test]
     public async Task KyClient_SchemaImportPath_IsCamelCase()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["ky"],
@@ -67,7 +68,7 @@ public class KyClientStepTests
     [Test]
     public async Task KyClient_HeadersAreCast_ToOptionsHeaders()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ky"] });
 
         // Petstore's deletePet has an `api_key` header. Ky's typed headers
@@ -80,7 +81,7 @@ public class KyClientStepTests
     [Test]
     public async Task KyClient_ArrayQueryParams_CastToOptionsSearchParams()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ky"] });
 
         // findPetsByTags accepts tags as a string[]. Ky's SearchParamsObject
@@ -94,7 +95,7 @@ public class KyClientStepTests
     [Test]
     public async Task KyClient_BinaryBody_UsesBodyOptionAndAccessesParamsBody()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ky"] });
 
         var upload = ctx.GeneratedFiles.First(f =>
@@ -108,7 +109,7 @@ public class KyClientStepTests
     [Test]
     public async Task KyClient_JsonBody_UsesJsonOption()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ky"] });
 
         var addPet = ctx.GeneratedFiles.First(f =>

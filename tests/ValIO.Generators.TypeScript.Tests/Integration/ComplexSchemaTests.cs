@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using Microsoft.OpenApi;
 using NUnit.Framework;
@@ -9,7 +10,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 
 /// <summary>
 /// Integration tests that exercise the pipeline against
-/// <c>TestData/complex-schema.json</c> — designed to cover edge cases that
+/// <c>Fixtures/OpenApi/TypeScript/complex-schema.json</c> — designed to cover edge cases that
 /// Petstore doesn't: oneOf polymorphism, allOf inheritance, recursive
 /// references, dictionary-of-objects, and multipart with binary fields.
 /// </summary>
@@ -23,7 +24,7 @@ public class ComplexSchemaTests
     public async Task OneTimeSetup()
     {
         _harness = new PipelineTestHarness();
-        _document = await PipelineTestHarness.LoadDocumentAsync("complex-schema.json");
+        _document = await OpenApiFixture.LoadAsync("TypeScript/complex-schema.json");
     }
 
     [OneTimeTearDown]

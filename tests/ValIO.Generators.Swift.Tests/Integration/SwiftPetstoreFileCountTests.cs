@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Swift.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class SwiftPetstoreFileCountTests
     [Test]
     public async Task Petstore_GeneratesAllExpectedModels()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var expected = new[] { "Pet.swift", "Category.swift", "Tag.swift", "Order.swift", "User.swift", "ApiResponse.swift" };
@@ -36,7 +37,7 @@ public class SwiftPetstoreFileCountTests
     [Test]
     public async Task EveryFile_HasNonEmptyContent()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -46,7 +47,7 @@ public class SwiftPetstoreFileCountTests
     [Test]
     public async Task EverySwiftFile_HasNoTabs()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".swift")))
@@ -56,7 +57,7 @@ public class SwiftPetstoreFileCountTests
     [Test]
     public async Task Petstore_PetStruct_ReferencesCategoryAndTag()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var pet = ctx.GeneratedFiles.First(f =>

@@ -1,0 +1,36 @@
+{
+  "openapi":"3.1.0",
+  "info":{"title":"Exact JSON","version":"1.0"},
+  "paths":{
+    "/changes/{revision}":{
+      "post":{
+        "operationId":"save",
+        "parameters":[
+          {"name":"revision","in":"path","required":true,"schema":{"type":"integer","format":"int64"}},
+          {"name":"after","in":"query","schema":{"type":"integer","format":"int64","default":9007199254740995}},
+          {"name":"X-Revision","in":"header","required":true,"schema":{"type":"integer","format":"int64"}}
+        ],
+        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Change"}}}},
+        "responses":{
+          "200":{"description":"Saved","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Change"}}}},
+          "204":{"description":"No content"}
+        }
+      }
+    }
+  },
+  "components":{"schemas":{"ChangeState":{"type":"integer","format":"int32","enum":[0,1]},"Change":{
+    "type":"object",
+    "required":["revision","amount","ledgerAmount","rates","label","count","otherAmount","state"],
+    "properties":{
+      "revision":{"type":"integer","format":"int64"},
+      "amount":{"type":"number","format":"decimal","minimum":0.100000000000000001},
+      "ledgerAmount":{"type":"number","format":"decimal","maximum":999999999999999999.9999999999},
+      "rates":{"type":"array","items":{"type":"number","format":"double"}},
+      "label":{"type":"string"},
+      "count":{"type":"integer","format":"int32"},
+      "state":{"$ref":"#/components/schemas/ChangeState"},
+      "otherAmount":{"type":["number","null"],"format":"decimal"},
+      "omitted":{"type":"number","format":"decimal"}
+    }
+  }}}
+}

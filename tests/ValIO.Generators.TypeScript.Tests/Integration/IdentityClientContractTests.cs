@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR;
@@ -100,7 +101,7 @@ public sealed class IdentityClientContractTests
     public async Task AllOfFixtureGeneratesRequiredNonNullIntersection()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentAsync("allof-narrowing.json");
+        var document = await OpenApiFixture.LoadAsync("TypeScript/allof-narrowing.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["axios"] });
         var child = context.GeneratedFiles.Single(file => file.RelativePath.Replace('\\', '/')
             .EndsWith("models/child/child.ts", StringComparison.Ordinal)).Content;

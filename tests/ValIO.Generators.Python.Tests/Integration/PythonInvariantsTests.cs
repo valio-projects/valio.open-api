@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Options;
@@ -24,7 +25,7 @@ public class PythonInvariantsTests
     [Test]
     public async Task EveryFile_StartsWithFutureAnnotations_Or_NoSyntaxError()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".py")))
@@ -39,7 +40,7 @@ public class PythonInvariantsTests
     [Test]
     public async Task ModelFile_HasClassKeyword()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -52,7 +53,7 @@ public class PythonInvariantsTests
     {
         // Platform-dependent: Environment.NewLine is CRLF on Windows, LF on Unix.
         // What matters is that whichever ending the renderer uses, it's used uniformly.
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -70,7 +71,7 @@ public class PythonInvariantsTests
     [Test]
     public async Task PythonAsyncMode_GeneratesAsyncDef()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new PythonGenerationOptions { HttpxMode = "async" });
 
         var client = ctx.GeneratedFiles.First(f =>
@@ -83,7 +84,7 @@ public class PythonInvariantsTests
     [Test]
     public async Task PythonSyncMode_GeneratesPlainDef()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new PythonGenerationOptions { HttpxMode = "sync" });
 
         var client = ctx.GeneratedFiles.First(f =>
@@ -95,7 +96,7 @@ public class PythonInvariantsTests
     [Test]
     public async Task EnumFile_DeclaresStrAndEnum()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>

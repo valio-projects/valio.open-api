@@ -88,10 +88,7 @@ public sealed class StdModelAstBuilder : AstBuilderBase
     {
         var mapped = QualifyHiddenTypes(StdPropertyTypes.MapField(property, _typeMapper), rootNamespace, memberNames);
         var isOptional = StdPropertyTypes.IsOptional(property) || property.Type is IrNullableType;
-        var defaultValueStr = isOptional ? null : _typeMapper.GetDefaultValue(property.Type);
-        ExpressionNode? defaultValue = defaultValueStr != null
-            ? new IdentifierExpressionNode(new IdentifierNode(defaultValueStr))
-            : null;
+        var defaultValue = isOptional ? null : _typeMapper.BuildDefaultValue(property.Type);
         if (!isOptional && property.Type is IrModelReference reference && EnumsByName.TryGetValue(reference.ModelName, out var declaration))
             defaultValue = BuildEnumDefault(property, reference, declaration, mapped, rootNamespace);
 

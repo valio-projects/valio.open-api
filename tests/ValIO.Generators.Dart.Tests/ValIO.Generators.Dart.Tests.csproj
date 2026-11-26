@@ -21,8 +21,9 @@
         <ProjectReference Include="..\..\src\ValIO.Generators.Dart\ValIO.Generators.Dart.csproj" />
     </ItemGroup>
 
+
     <ItemGroup>
-        <EmbeddedResource Include="TestData\**\*" />
+        <Compile Include="../Shared/AllOfModelsContractTests.cs" Link="Fixtures/AllOfModelsContractTests.cs" />
     </ItemGroup>
 
 </Project>

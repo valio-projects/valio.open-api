@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using Microsoft.OpenApi;
 using NUnit.Framework;
@@ -14,7 +15,7 @@ public class ParserEdgeCasesTests
     [Test]
     public async Task Petstore_HasAtLeastOnePathWithMultipleOperations()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         // /pet path has POST, PUT in Petstore 3.0.
         doc.Paths!["/pet"].Operations.Should().HaveCountGreaterThanOrEqualTo(2);
     }
@@ -22,7 +23,7 @@ public class ParserEdgeCasesTests
     [Test]
     public async Task Petstore_ResolvesNestedReferences()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var pet = doc.Components!.Schemas["Pet"];
         pet.Should().NotBeNull();
         // Pet references Category and Tag.
@@ -33,7 +34,7 @@ public class ParserEdgeCasesTests
     [Test]
     public async Task ComplexSchema_AnimalOneOfHasDiscriminator()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("complex-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/complex-schema.json");
         var animal = doc.Components!.Schemas["Animal"];
         animal!.Discriminator.Should().NotBeNull();
         animal.Discriminator!.PropertyName.Should().Be("kind");
@@ -43,7 +44,7 @@ public class ParserEdgeCasesTests
     [Test]
     public async Task ComplexSchema_TreeNode_ChildrenIsArrayOfTreeNode()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("complex-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("TypeScript/complex-schema.json");
         var tree = doc.Components!.Schemas["TreeNode"];
         var children = tree!.Properties["children"];
         children.Type?.ToString().Should().ContainEquivalentOf("array");
@@ -54,7 +55,7 @@ public class ParserEdgeCasesTests
     [Test]
     public async Task SimpleSchema_OperationIds_ArePresent()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var op = doc.Paths!["/users"].Operations.First().Value;
         op.OperationId.Should().Be("getUsers");
     }
@@ -62,7 +63,7 @@ public class ParserEdgeCasesTests
     [Test]
     public async Task Petstore_OperationsTagged()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var addPet = doc.Paths!["/pet"].Operations[HttpMethod.Post];
         addPet.Tags.Should().NotBeNullOrEmpty();
     }

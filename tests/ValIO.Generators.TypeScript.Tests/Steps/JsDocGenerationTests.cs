@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Plugins;
@@ -37,7 +38,7 @@ public class JsDocGenerationTests
     [Test]
     public async Task ModelEnumResults_HaveFileHeaders()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ShouldHaveHeader(File(ctx, "models/user/user.ts"), "user.ts", "models/user");
@@ -48,7 +49,7 @@ public class JsDocGenerationTests
     [Test]
     public async Task SchemasAndClients_HaveFileHeaders()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["ky"],
@@ -66,7 +67,7 @@ public class JsDocGenerationTests
     [Test]
     public async Task EnumModel_UnionAndValues_AreDocumented()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var enumFile = File(ctx, "models/userRole/userRole.ts");
@@ -81,7 +82,7 @@ public class JsDocGenerationTests
     [Test]
     public async Task ValibotSchemaOutputAlias_IsDocumented()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],

@@ -119,6 +119,23 @@ public sealed class PhpAstRenderer : PhpAstVisitorBase<string>, IPhpAstRenderer
         _ => node.Value?.ToString() ?? "null",
     };
 
+    /// <inheritdoc />
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        if (node.Parts.All(part => part is LiteralExpressionNode))
+        {
+            var path = string.Concat(node.Parts.Cast<LiteralExpressionNode>().Select(part => part.Value));
+            return Visit(new LiteralExpressionNode(path, LiteralKind.String));
+        }
+
+        var format = string.Concat(node.Parts.Select(part => part is LiteralExpressionNode literal
+            ? ((string)literal.Value!).Replace("%", "%%", StringComparison.Ordinal)
+            : "%s"));
+        var args = node.Parts.Where(part => part is not LiteralExpressionNode).Select(Visit);
+        var formatLiteral = Visit(new LiteralExpressionNode(format, LiteralKind.String));
+        return $"sprintf({formatLiteral}, {string.Join(", ", args)})";
+    }
+
     public override string VisitIdentifierExpression(IdentifierExpressionNode node) => node.Identifier.Name;
 
     public override string VisitCallExpression(CallExpressionNode node)

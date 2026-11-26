@@ -67,4 +67,10 @@ public abstract class DartAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IDa
     public virtual TResult VisitHeaderParameter(HeaderParameterNode node) => VisitDefault(node);
     public virtual TResult VisitRequestBody(RequestBodyNode node) => VisitDefault(node);
     public virtual TResult VisitResponseType(ResponseTypeNode node) => VisitDefault(node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitDartMapLiteral(DartMapLiteralNode node) => VisitDefault(node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitDartNamedArgument(DartNamedArgumentNode node) => VisitDefault(node);
 }

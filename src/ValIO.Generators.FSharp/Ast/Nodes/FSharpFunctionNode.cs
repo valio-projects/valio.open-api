@@ -66,9 +66,11 @@ public sealed class FSharpFunctionNode : DeclarationNode
     /// <summary>Annotated return type. Null = inferred / unit (renderer omits the annotation).</summary>
     public TypeNode? ReturnType { get; }
 
-    /// <summary>Body lines (pre-rendered, without outer indent).</summary>
-    public IReadOnlyList<string> BodyLines { get; }
+    /// <summary>Gets the executable syntax of the function.</summary>
+    /// <value>The ordered statements in the body.</value>
+    public BlockNode Body { get; }
 
+    /// <inheritdoc />
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -78,22 +80,30 @@ public sealed class FSharpFunctionNode : DeclarationNode
             foreach (var p in Parameters)
                 children.Add(p.Type);
             if (ReturnType != null) children.Add(ReturnType);
+            children.Add(Body);
             return children;
         }
     }
 
+    /// <summary>Creates a typed F# function declaration.</summary>
+    /// <param name="name">The identifier of the function.</param>
+    /// <param name="parameters">The curried formal arguments.</param>
+    /// <param name="returnType">The optional result annotation.</param>
+    /// <param name="body">The executable syntax of the function.</param>
+    /// <param name="documentation">The optional documentation.</param>
+    /// <param name="metadata">The associated metadata.</param>
     public FSharpFunctionNode(
         IdentifierNode name,
         IReadOnlyList<Parameter>? parameters = null,
         TypeNode? returnType = null,
-        IReadOnlyList<string>? bodyLines = null,
+        BlockNode? body = null,
         CommentNode? documentation = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(name, documentation, attributes: null, metadata)
     {
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<Parameter>.Empty;
         ReturnType = returnType;
-        BodyLines = bodyLines?.ToImmutableList() ?? ImmutableList<string>.Empty;
+        Body = body ?? new BlockNode();
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -103,12 +113,13 @@ public sealed class FSharpFunctionNode : DeclarationNode
         throw new NotSupportedException("Visitor must implement IFSharpAstVisitor<TResult> to visit FSharpFunctionNode");
     }
 
+    /// <inheritdoc />
     public override AstNode Clone() =>
         new FSharpFunctionNode(
             (IdentifierNode)Name.Clone(),
             Parameters.Select(p => new Parameter(p.Name, (TypeNode)p.Type.Clone())).ToImmutableList(),
             ReturnType != null ? (TypeNode)ReturnType.Clone() : null,
-            BodyLines.ToImmutableList(),
+            (BlockNode)Body.Clone(),
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
             Metadata.ToImmutableDictionary());
 }

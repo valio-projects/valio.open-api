@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Swift.Options;
@@ -19,7 +20,7 @@ public class SwiftStepSnapshotTests
     [Test]
     public async Task UserStruct_MatchesSnapshot()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -30,7 +31,7 @@ public class SwiftStepSnapshotTests
     [Test]
     public async Task UserRoleEnum_MatchesSnapshot()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var roleFile = ctx.GeneratedFiles.First(f =>

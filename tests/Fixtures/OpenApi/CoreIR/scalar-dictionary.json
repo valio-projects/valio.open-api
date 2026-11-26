@@ -1,0 +1,13 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "X", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Counters": {
+        "type": "object",
+        "additionalProperties": { "type": "integer" }
+      }
+    }
+  }
+}

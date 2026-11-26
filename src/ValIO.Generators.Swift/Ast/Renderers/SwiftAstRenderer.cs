@@ -259,7 +259,7 @@ public sealed class SwiftAstRenderer : SwiftAstVisitorBase<string>, ISwiftAstRen
             header = $"{prefix}{modifierPrefix} {node.Name.Name}({paramText}){asyncThrowingSuffix}{returnSuffix}";
         }
 
-        if (node.Body.Count == 0)
+        if (node.Body.Statements.Count == 0)
         {
             sb.AppendLine(header + " { }");
             return sb.ToString();
@@ -267,25 +267,20 @@ public sealed class SwiftAstRenderer : SwiftAstVisitorBase<string>, ISwiftAstRen
 
         sb.AppendLine(header + " {");
         var blockIndent = indent + 1;
-        foreach (var line in node.Body)
-        {
-            if (string.IsNullOrEmpty(line))
-            {
-                sb.AppendLine();
-                continue;
-            }
-            sb.AppendLine($"{Indent(blockIndent)}{line}");
-        }
+        sb.AppendLine(IndentLines(VisitBlock(node.Body), blockIndent));
         sb.AppendLine($"{prefix}}}");
         return sb.ToString();
     }
 
     public override string VisitSwiftParameter(SwiftParameterNode node) => RenderParameter(node);
 
+    /// <summary>Prints a parameter label, type and optional default value.</summary>
+    /// <param name="node">The parameter declaration.</param>
+    /// <returns>The rendered signature fragment.</returns>
     private string RenderParameter(SwiftParameterNode node)
     {
         var typeText = RenderType(node.Type);
-        var defaultClause = node.DefaultValueLiteral != null ? $" = {node.DefaultValueLiteral}" : "";
+        var defaultClause = node.DefaultValue is { } fallback ? $" = {Visit(fallback)}" : "";
         var labelPrefix = node.ExternalLabel != null && !string.Equals(node.ExternalLabel, node.Name.Name, StringComparison.Ordinal)
             ? node.ExternalLabel + " "
             : "";
@@ -385,8 +380,9 @@ public sealed class SwiftAstRenderer : SwiftAstVisitorBase<string>, ISwiftAstRen
         return $"{target}({args})";
     }
 
+    /// <inheritdoc/>
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) =>
-        $"{Visit(node.Object)}.{node.Member.Name}";
+        $"{Visit(node.Object)}{(node.UseOptionalChaining ? "?." : ".")}{node.Member.Name}";
 
     public override string VisitUnaryExpression(UnaryExpressionNode node)
     {
@@ -399,10 +395,13 @@ public sealed class SwiftAstRenderer : SwiftAstVisitorBase<string>, ISwiftAstRen
         return $"{op}{Visit(node.Operand)}";
     }
 
+    /// <inheritdoc/>
     public override string VisitBinaryExpression(BinaryExpressionNode node)
     {
         var left = Visit(node.Left);
         var right = Visit(node.Right);
+        if (node.IsNamedArgument)
+            return $"{left}: {right}";
         if (node.Operator == BinaryOperator.Assign || node.IsAssignment)
             return $"{left} = {right}";
         var op = node.Operator switch
@@ -430,22 +429,70 @@ public sealed class SwiftAstRenderer : SwiftAstVisitorBase<string>, ISwiftAstRen
     public override string VisitAwaitExpression(AwaitExpressionNode node) =>
         $"await {Visit(node.Expression)}";
 
+    /// <inheritdoc/>
     public override string VisitCastExpression(CastExpressionNode node) =>
-        $"{Visit(node.Expression)} as! {RenderType(node.TargetType)}";
+        $"{Visit(node.Expression)} {(node.UseAsOperator ? "as?" : "as!")} {RenderType(node.TargetType)}";
+
+    /// <inheritdoc/>
+    public override string VisitSwiftBinding(SwiftBindingNode node)
+    {
+        var names = node.Names.Count == 1 ? node.Names[0].Name : $"({string.Join(", ", node.Names.Select(name => name.Name))})";
+        var type = node.Type is null ? "" : $": {RenderType(node.Type)}";
+        return $"{(node.Mutable ? "var" : "let")} {names}{type} = {Visit(node.Initializer)}";
+    }
+
+    /// <inheritdoc/>
+    public override string VisitSwiftGuard(SwiftGuardNode node)
+    {
+        var conditions = string.Join(", ", node.Conditions.Select(Visit));
+        return $"guard {conditions} else {{\n{IndentLines(VisitBlock(node.Otherwise), 1)}\n}}";
+    }
+
+    /// <inheritdoc/>
+    public override string VisitSwiftOptionalBinding(SwiftOptionalBindingNode node) => $"let {node.Name.Name} = {Visit(node.Value)}";
+
+    /// <inheritdoc/>
+    public override string VisitSwiftTryExpression(SwiftTryExpressionNode node) => $"try {Visit(node.Operand)}";
+
+    /// <inheritdoc/>
+    public override string VisitSwiftMetatypeExpression(SwiftMetatypeExpressionNode node) => $"{RenderType(node.ReferencedType)}.self";
+
+    /// <inheritdoc/>
+    public override string VisitSwiftImplicitMember(SwiftImplicitMemberNode node) => $".{node.Name.Name}";
+
+    /// <inheritdoc/>
+    public override string VisitSwiftArrayExpression(SwiftArrayExpressionNode node) => $"[{string.Join(", ", node.Elements.Select(Visit))}]";
+
+    /// <inheritdoc/>
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        var parts = node.Parts.Select(part => part is LiteralExpressionNode { Value: string value }
+            ? EscapeStringLiteral(value)
+            : "\\(" + Visit(part) + ")");
+        return $"\"{string.Concat(parts)}\"";
+    }
+
+    /// <summary>Indents each line of a rendered Swift block.</summary>
+    /// <param name="source">The printed block.</param>
+    /// <param name="level">The additional indentation.</param>
+    /// <returns>The indented block.</returns>
+    private static string IndentLines(string source, int level) =>
+        string.Join(Environment.NewLine, source.Split('\n').Select(line => Indent(level) + line.TrimEnd('\r')));
 
     public override string VisitReturnStatement(ReturnStatementNode node) =>
         node.Value == null ? "return" : $"return {Visit(node.Value)}";
 
+    /// <inheritdoc/>
     public override string VisitIfStatement(IfStatementNode node)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"if {Visit(node.Condition)} {{");
-        sb.AppendLine(Visit(node.ThenBlock));
+        sb.AppendLine(IndentLines(VisitBlock(node.ThenBlock), 1));
         sb.Append("}");
         if (node.ElseBlock != null)
         {
             sb.AppendLine(" else {");
-            sb.AppendLine(Visit(node.ElseBlock));
+            sb.AppendLine(IndentLines(VisitBlock(node.ElseBlock), 1));
             sb.Append("}");
         }
         return sb.ToString();

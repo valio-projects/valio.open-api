@@ -17,6 +17,11 @@ public interface IKotlinAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitKotlinEnumDeclaration(KotlinEnumDeclarationNode node);
     TResult VisitKotlinEnumMember(KotlinEnumMemberNode node);
     TResult VisitKotlinFunctionDeclaration(KotlinFunctionDeclarationNode node);
+
+    /// <summary>Visits a call with a trailing lambda.</summary>
+    /// <param name="node">The call and its lambda argument.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitKotlinTrailingLambdaCall(KotlinTrailingLambdaCallNode node) => DefaultVisit(node);
     TResult VisitKotlinParameter(KotlinParameterNode node);
     /// <summary>Visits an anonymous object implementing a Kotlin interface.</summary>
     /// <param name="node">The structured anonymous object expression.</param>

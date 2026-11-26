@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Options;
@@ -23,7 +24,7 @@ public class PythonPetstoreTests
     [Test]
     public async Task Petstore_GeneratesAllExpectedModels()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         // Models present: Pet, Category, Tag, Order, User, ApiResponse.
@@ -35,7 +36,7 @@ public class PythonPetstoreTests
     [Test]
     public async Task Petstore_ModelsImportPydanticBaseModel()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var anyModel = ctx.GeneratedFiles.First(f =>
@@ -47,7 +48,7 @@ public class PythonPetstoreTests
     [Test]
     public async Task Petstore_ClientImportsHttpxAsyncClient()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var anyClient = ctx.GeneratedFiles.FirstOrDefault(f =>

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Tests.TestHelpers;
@@ -24,7 +25,7 @@ public class PythonModelsStepTests
     [Test]
     public async Task GeneratesOneFilePerModel_InSnakeCase()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var modelFiles = ctx.GeneratedFiles
@@ -40,7 +41,7 @@ public class PythonModelsStepTests
     [Test]
     public async Task EmitsPydanticBaseModelWithConfig()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -55,7 +56,7 @@ public class PythonModelsStepTests
     [Test]
     public async Task RequiredFieldsHaveNoDefault_OptionalGetNone()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -74,7 +75,7 @@ public class PythonModelsStepTests
     [Test]
     public async Task ForwardRefToEnum_QuotedAndImportedUnderTypeChecking()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -94,7 +95,7 @@ public class PythonModelsStepTests
     [Test]
     public async Task IncludesFutureAnnotationsImport()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>

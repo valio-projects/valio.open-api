@@ -64,7 +64,7 @@ catch (ObjectDisposedException)
 }
 await partial;
 
-const string problem = """{"title":"Document missing"}""";
+var problem = File.ReadAllText("payloads.json");
 var failure = RespondAsync(server, null, stream => WriteAsync(stream,
     $"HTTP/1.1 404 Not Found\r\nContent-Type: application/problem+json\r\nContent-Length: {problem.Length}\r\nConnection: close\r\n\r\n{problem}", token), token);
 using (var response = await client.ReadDocument(null, token))

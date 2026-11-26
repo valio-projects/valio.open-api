@@ -40,6 +40,15 @@ public class IrBuilder
         _namingConverter = namingConverter ?? throw new ArgumentNullException(nameof(namingConverter));
     }
     
+    /// <summary>Checks the semantic contract of an optional SignalR extension using normal IR lowering.</summary>
+    /// <param name="document">The parsed OpenAPI source.</param>
+    /// <exception cref="InvalidOperationException">The SignalR contract cannot be resolved.</exception>
+    public void ValidateSignalR(OpenApiDocument document)
+    {
+        if (document.Extensions?.ContainsKey(SignalRContractReader.ExtensionName) == true)
+            BuildFromOpenApi(document);
+    }
+
     /// <summary>
     /// Builds a language-independent IR and its dependency graph from an OpenAPI document.
     /// </summary>
@@ -71,6 +80,10 @@ public class IrBuilder
         foreach (var complete in completeMediaTypes)
             complete();
 
+        var signalRHubs = SignalRContractReader.Read(document, (schema, member) =>
+            WithContext(new SchemaBuildContext { ExtensionMember = $"{SignalRContractReader.ExtensionName}.{member}" },
+                () => BuildType(schema, document)));
+
         // Inline models are declarations and participate in dependency ordering.
         IReadOnlyList<IrModel> allModels = models.Concat(_inlineModels.Values).ToList();
         IReadOnlyList<IrEnum> allEnums = enums;
@@ -78,10 +91,15 @@ public class IrBuilder
 
         // Rename declarations and references before building their dependency graph.
         if (affixOptions is { IsNoOp: false })
+        {
             (allModels, allEnums, allClients) =
                 IrNameAffixer.Apply(allModels, allEnums, allClients, affixOptions, _namingConverter);
+            signalRHubs = IrNameAffixer.ApplyToSignalRHubs(signalRHubs, allModels, allEnums);
+        }
 
-        var typeDependencies = new IrTypeDependencyGraphBuilder().Build(allModels, allEnums);
+        var dependencyBuilder = new IrTypeDependencyGraphBuilder();
+        SignalRContractReader.ValidateReferences(signalRHubs, allModels, allEnums, dependencyBuilder);
+        var typeDependencies = dependencyBuilder.Build(allModels, allEnums);
 
         return new IrDocument
         {
@@ -89,6 +107,7 @@ public class IrBuilder
             Models = allModels,
             Enums = allEnums,
             Clients = allClients,
+            SignalRHubs = signalRHubs,
             TypeDependencies = typeDependencies
         };
     }
@@ -313,6 +332,7 @@ public class IrBuilder
             ContentType = source.ContentType;
             ParameterName = source.ParameterName;
             RootModelName = source.RootModelName;
+            ExtensionMember = source.ExtensionMember;
             PropertyPath = source.PropertyPath;
         }
 
@@ -340,15 +360,21 @@ public class IrBuilder
         /// <summary>Gets the name of the enclosing top-level schema model.</summary>
         /// <value>The model name, when building a component.</value>
         public string? RootModelName { get; init; }
+        /// <summary>Gets the member of an extension whose schema is being lowered.</summary>
+        /// <value>The extension and member path for diagnostics.</value>
+        public string? ExtensionMember { get; init; }
         /// <summary>Gets the nested coordinates relative to the enclosing schema.</summary>
         /// <value>The property path segments in traversal order.</value>
         public IReadOnlyList<string> PropertyPath { get; init; } = Array.Empty<string>();
 
         /// <summary>Человекочитаемое описание места, где строится тип — например
         /// «response 200 (application/json) of operation 'getApartments' [GET /api/apartments], property 'result.data[].error'».</summary>
+        /// <returns>The source location with the schema role and property path.</returns>
         public string Describe()
         {
             var parts = new List<string>(2);
+            if (ExtensionMember is not null)
+                parts.Add(ExtensionMember);
 
             switch (Role)
             {

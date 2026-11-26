@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Java.Options;
@@ -19,7 +20,7 @@ public class JavaAdditionalStepTests
     [Test]
     public async Task ModelFile_HasPackageStatement()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var anyJava = ctx.GeneratedFiles.First(f =>
@@ -30,7 +31,7 @@ public class JavaAdditionalStepTests
     [Test]
     public async Task ModelFile_RecordOrClass_HasFinalFields()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -42,7 +43,7 @@ public class JavaAdditionalStepTests
     [Test]
     public async Task EnumFile_HasJsonSupport()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>
@@ -53,7 +54,7 @@ public class JavaAdditionalStepTests
     [Test]
     public async Task ClientMethod_ReturnsTypedResult()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>

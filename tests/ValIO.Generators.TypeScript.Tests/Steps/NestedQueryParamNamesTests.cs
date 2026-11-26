@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -28,56 +29,18 @@ public class NestedQueryParamNamesTests
     /// Документ с операцией, повторяющей публичный lookup городов PIN: необязательный плоский фильтр
     /// плюс обязательные параметры вложенной модели пагинации с точками в именах.
     /// </summary>
-    private const string NestedPagingSchema = """
-    {
-      "openapi": "3.0.1",
-      "info": { "title": "Handbook", "version": "v1" },
-      "paths": {
-        "/api/public/v1/handbook/cities": {
-          "get": {
-            "operationId": "LookupCities",
-            "parameters": [
-              { "name": "CountryId", "in": "query", "required": false, "schema": { "type": "integer" } },
-              { "name": "Paging.Offset", "in": "query", "required": true, "schema": { "type": "integer" } },
-              { "name": "Paging.Take", "in": "query", "required": true, "schema": { "type": "integer" } }
-            ],
-            "responses": {
-              "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object" } } } }
-            }
-          }
-        }
-      }
-    }
-    """;
+    private const string NestedPagingSchema = "Transport/nested-paging-query.json";
 
     /// <summary>Документ без вложенных параметров — контроль на отсутствие регрессии.</summary>
-    private const string FlatQuerySchema = """
-    {
-      "openapi": "3.0.1",
-      "info": { "title": "Handbook", "version": "v1" },
-      "paths": {
-        "/api/public/v1/handbook/countries": {
-          "get": {
-            "operationId": "LookupCountries",
-            "parameters": [
-              { "name": "Search", "in": "query", "required": false, "schema": { "type": "string" } }
-            ],
-            "responses": {
-              "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object" } } } }
-            }
-          }
-        }
-      }
-    }
-    """;
+    private const string FlatQuerySchema = "Transport/flat-paging-query.json";
 
     /// <summary>
     /// Прогоняет пайплайн с валидацией zod4 — так сконфигурированы все 50 PIN-проектов, поэтому
     /// значения читаются из <c>parsedQuery</c>, а не из сырого <c>params</c>.
     /// </summary>
-    private async Task<string> GenerateAsync(string schemaJson, string transport, string fileSuffix)
+    private async Task<string> GenerateAsync(string fixturePath, string transport, string fileSuffix)
     {
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(schemaJson);
+        var doc = await OpenApiFixture.LoadAsync(fixturePath);
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = [transport],

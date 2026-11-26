@@ -20,12 +20,14 @@ public sealed class PythonFunctionDeclarationNode : DeclarationNode
     /// <summary>Аннотация возвращаемого типа (опционально).</summary>
     public TypeNode? ReturnType { get; }
 
-    /// <summary>Тело функции — список raw-Python-строк (рендерятся с правильным отступом).</summary>
-    public IReadOnlyList<string> Body { get; }
+    /// <summary>Gets the executable statements in the function.</summary>
+    /// <value>The function body AST.</value>
+    public BlockNode Body { get; }
 
     /// <summary>Декораторы функции.</summary>
     public IReadOnlyList<string> Decorators { get; }
 
+    /// <inheritdoc/>
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -34,15 +36,25 @@ public sealed class PythonFunctionDeclarationNode : DeclarationNode
             if (Documentation != null) children.Add(Documentation);
             children.AddRange(Parameters);
             if (ReturnType != null) children.Add(ReturnType);
+            children.Add(Body);
             return children;
         }
     }
 
+    /// <summary>Creates a Python function with executable statements and an optional type annotation.</summary>
+    /// <param name="name">The function name.</param>
+    /// <param name="parameters">The positional and keyword parameters.</param>
+    /// <param name="returnType">The return annotation.</param>
+    /// <param name="body">The ordered statements.</param>
+    /// <param name="isAsync">Whether the function may await.</param>
+    /// <param name="decorators">The names of decorators to apply.</param>
+    /// <param name="documentation">The function docstring.</param>
+    /// <param name="metadata">The optional AST metadata.</param>
     public PythonFunctionDeclarationNode(
         IdentifierNode name,
         IReadOnlyList<PythonParameterNode>? parameters = null,
         TypeNode? returnType = null,
-        IReadOnlyList<string>? body = null,
+        BlockNode? body = null,
         bool isAsync = false,
         IReadOnlyList<string>? decorators = null,
         CommentNode? documentation = null,
@@ -52,7 +64,7 @@ public sealed class PythonFunctionDeclarationNode : DeclarationNode
         IsAsync = isAsync;
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<PythonParameterNode>.Empty;
         ReturnType = returnType;
-        Body = body?.ToImmutableList() ?? ImmutableList<string>.Empty;
+        Body = body ?? new BlockNode();
         Decorators = decorators?.ToImmutableList() ?? ImmutableList<string>.Empty;
     }
 
@@ -63,12 +75,13 @@ public sealed class PythonFunctionDeclarationNode : DeclarationNode
         throw new NotSupportedException("Visitor must implement IPythonAstVisitor<TResult> to visit PythonFunctionDeclarationNode");
     }
 
+    /// <inheritdoc/>
     public override AstNode Clone() =>
         new PythonFunctionDeclarationNode(
             (IdentifierNode)Name.Clone(),
             Parameters.Select(p => (PythonParameterNode)p.Clone()).ToImmutableList(),
             ReturnType != null ? (TypeNode)ReturnType.Clone() : null,
-            Body.ToImmutableList(),
+            (BlockNode)Body.Clone(),
             IsAsync,
             Decorators.ToImmutableList(),
             Documentation != null ? (CommentNode)Documentation.Clone() : null,

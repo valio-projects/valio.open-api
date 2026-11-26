@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Java.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class JavaPetstoreFileCountTests
     [Test]
     public async Task Petstore_GeneratesAllExpectedModelFiles()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var expected = new[] { "Pet.java", "Category.java", "Tag.java", "Order.java", "User.java", "ApiResponse.java" };
@@ -36,7 +37,7 @@ public class JavaPetstoreFileCountTests
     [Test]
     public async Task EveryGeneratedFile_HasNonEmptyContent()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -46,7 +47,7 @@ public class JavaPetstoreFileCountTests
     [Test]
     public async Task EveryJavaFile_StartsWithPackage()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".java")))
@@ -56,7 +57,7 @@ public class JavaPetstoreFileCountTests
     [Test]
     public async Task Petstore_PetClass_ReferencesCategoryAndTag()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var pet = ctx.GeneratedFiles.First(f =>

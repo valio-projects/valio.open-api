@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Java.Options;
@@ -19,7 +20,7 @@ public class JavaPetstoreTests
     [Test]
     public async Task Petstore_GeneratesModelsForCoreSchemas()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().Contain(f => f.RelativePath.Contains("Pet", StringComparison.OrdinalIgnoreCase));
@@ -29,7 +30,7 @@ public class JavaPetstoreTests
     [Test]
     public async Task Petstore_ModelsAreJavaRecordsOrClasses()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var anyModel = ctx.GeneratedFiles.First(f =>
@@ -43,7 +44,7 @@ public class JavaPetstoreTests
     [Test]
     public async Task Petstore_ClientUsesOkHttp()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

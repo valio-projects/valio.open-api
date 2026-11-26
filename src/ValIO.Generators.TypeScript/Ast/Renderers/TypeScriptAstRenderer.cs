@@ -91,7 +91,7 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         // Рендерим declarations (export уже добавлен в RenderInterface, RenderEnum, RenderTypeAlias)
         for (var i = 0; i < node.Declarations.Count; i++)
         {
-            if (i > 0) CodeFormatter.AppendEmptyLine(_sb);
+            if (i > 0 && node.Declarations[i] is not ModuleReExportNode) CodeFormatter.AppendEmptyLine(_sb);
             _sb.Append(RenderDeclaration(node.Declarations[i]));
         }
         
@@ -263,6 +263,32 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
     }
 
     /// <inheritdoc />
+    public override string VisitModuleReExport(ModuleReExportNode node)
+    {
+        var symbols = node.Symbols is null ? "*" : $"{{ {string.Join(", ", node.Symbols.Select(symbol => symbol.Name))} }}";
+        var keyword = node.TypeOnly ? "export type" : "export";
+        var module = CodeEscapeHelper.EscapeTypeScriptString(node.Name.Name);
+        return $"{keyword} {symbols} from \"{module}\";{Environment.NewLine}";
+    }
+
+    /// <inheritdoc />
+    public override string VisitFunctionType(FunctionTypeNode node) =>
+        $"({string.Join(", ", node.Parameters.Select(RenderParameterDeclaration))}) => {RenderType(node.Result)}";
+
+    /// <inheritdoc />
+    public override string VisitIndexedAccessType(IndexedAccessTypeNode node)
+    {
+        var receiver = RenderType(node.Receiver);
+        if (HasUnionSemantics(node.Receiver) || node.Receiver is IntersectionTypeNode or FunctionTypeNode)
+            receiver = $"({receiver})";
+        return $"{receiver}[{RenderType(node.Index)}]";
+    }
+
+    /// <inheritdoc />
+    public override string VisitImportType(ImportTypeNode node) =>
+        $"import(\"{CodeEscapeHelper.EscapeTypeScriptString(node.Module)}\").{node.Name.Name}";
+
+    /// <inheritdoc />
     public override string VisitUnionType(UnionTypeNode node) =>
         ApplyTypeModifiers(string.Join(" | ", node.Types.Select(RenderType)), node);
 
@@ -323,11 +349,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var target = Visit(node.Target);
         if (node.Target is ArrowFunctionExpressionNode)
             target = $"({target})";
-        var generic = node.GenericTypeArgument != null
-            ? $"<{RenderType(node.GenericTypeArgument)}>"
-            : !string.IsNullOrWhiteSpace(node.GenericTypeName)
-                ? $"<{node.GenericTypeName}>"
-                : "";
+        var generic = node.TypeArguments.Count > 0
+            ? $"<{string.Join(", ", node.TypeArguments.Select(RenderType))}>"
+            : node.GenericTypeArgument is { } argument
+                ? $"<{RenderType(argument)}>"
+                : !string.IsNullOrWhiteSpace(node.GenericTypeName)
+                    ? $"<{node.GenericTypeName}>"
+                    : "";
         var prefix = node.IsNewExpression ? "new " : "";
         if (node.Arguments.Count >= 2)
         {
@@ -713,9 +741,11 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
 
     #region Private Helper Methods
 
+    /// <summary>Writes an import and escapes its module specifier.</summary>
+    /// <param name="import">The imported bindings and their module.</param>
     private void RenderImport(ImportNode import)
     {
-        var from = !string.IsNullOrEmpty(import.From) ? $" from \"{import.From}\"" : "";
+        var from = !string.IsNullOrEmpty(import.From) ? $" from \"{CodeEscapeHelper.EscapeTypeScriptString(import.From)}\"" : "";
         var imports = import.Items.Count > 0 
             ? string.Join(", ", import.Items.Select(i => i.Name))
             : "*";

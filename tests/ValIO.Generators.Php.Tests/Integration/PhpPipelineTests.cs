@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Plugins;
@@ -22,7 +23,7 @@ public class PhpPipelineTests
     [Test]
     public async Task SimpleSchema_GeneratesPhpFiles()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -32,7 +33,7 @@ public class PhpPipelineTests
     [Test]
     public async Task UserModel_GeneratesPhpClassWithStrictTypes()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -47,7 +48,7 @@ public class PhpPipelineTests
     [Test]
     public async Task UserModel_HasReadonlyConstructorPromotion()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -60,7 +61,7 @@ public class PhpPipelineTests
     [Test]
     public async Task EnumFile_GeneratesPhp81BackedEnum()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -72,7 +73,7 @@ public class PhpPipelineTests
     [Test]
     public async Task ClientFile_UsesGuzzle()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

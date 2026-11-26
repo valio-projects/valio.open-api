@@ -48,9 +48,8 @@ public sealed class MswStep : ICodeGenerationStep
         var fileOrg = context.Configuration.FileOrganization;
 
         var sourceFile = builder.BuildHandlersSourceFile(context.IrDocument, fileOrg);
-        var content = _renderer.Render(sourceFile);
 
-        context.GeneratedFiles.Add(new GeneratedFile("mocks/handlers.ts", content));
+        TypeScriptModuleFiles.Emit(context, "mocks/handlers.ts", sourceFile, _renderer.Render);
         return Task.CompletedTask;
     }
 }

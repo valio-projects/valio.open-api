@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Rust.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class RustRenderSnapshotTest
     [Test]
     public async Task UserModelFile_LooksReasonable()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -37,7 +38,7 @@ public class RustRenderSnapshotTest
     [Test]
     public async Task ClientFile_LooksReasonable()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class TypeScriptParamsStepTests
     [Test]
     public async Task PathParam_FlatInterface_NoRouteWrapper()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var paramsFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -39,7 +40,7 @@ public class TypeScriptParamsStepTests
     [Test]
     public async Task NoParameters_DoesNotGenerateParamsFile()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // getUsers has no params → no params.ts emitted.
@@ -51,7 +52,7 @@ public class TypeScriptParamsStepTests
     [Test]
     public async Task AggregateLayout_WithMultipleGroups_HasRouteAndQueryFields()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // findPetsByStatus is single-param-group (query only) — flat.
@@ -69,7 +70,7 @@ public class TypeScriptParamsStepTests
     [Test]
     public async Task BinaryRequestBody_AppearsAsBodyField()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // uploadFile takes application/octet-stream → body field must exist.
@@ -81,7 +82,7 @@ public class TypeScriptParamsStepTests
     [Test]
     public async Task BodyDependencies_ImportedRecursively()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // createUsersWithListInput receives `User[]` as body. The params file

@@ -1,5 +1,7 @@
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Generators.Ruby.Ast.Nodes;
@@ -57,21 +59,19 @@ public sealed class RubyModelAstBuilder(INamingConverter namingConverter, RubyIr
         return new RubyFileNode(classes: [classNode]);
     }
 
+    /// <summary>Constructs a model from keyword arguments whose default is nil.</summary>
+    /// <param name="attributeNames">The instance attributes to initialize.</param>
+    /// <returns>The initializer with assignments in declaration order.</returns>
     private static RubyMethodNode BuildInitializer(IReadOnlyList<string> attributeNames)
     {
-        // Use keyword arguments with `nil` default — keeps `initialize` callable
-        // even when only some attributes are known.
-        var parameters = attributeNames.Select(name => $"{name}: nil").ToList();
-
-        var body = new List<string>(attributeNames.Count);
-        foreach (var name in attributeNames)
+        var parameters = attributeNames.Select(name => new ParameterDeclarationNode(new(name), type: null,
+            defaultValue: new LiteralExpressionNode(null, LiteralKind.Null))).ToArray();
+        var assignments = parameters.Select(parameter =>
         {
-            body.Add($"@{name} = {name}");
-        }
-
-        return new RubyMethodNode(
-            new IdentifierNode("initialize"),
-            parameters: parameters,
-            body: body);
+            var value = new IdentifierExpressionNode(parameter.Name);
+            var field = new IdentifierExpressionNode(new IdentifierNode("@" + parameter.Name.Name));
+            return new ExpressionStatementNode(new BinaryExpressionNode(field, BinaryOperator.Assign, value));
+        }).ToArray();
+        return new RubyMethodNode(new("initialize"), parameters, new BlockNode(assignments));
     }
 }

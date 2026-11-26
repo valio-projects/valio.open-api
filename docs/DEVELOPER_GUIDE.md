@@ -35,8 +35,7 @@ Disk / Zip / Stream / InMemory
 ```
 
 Key idea: **IR is language-agnostic; everything language-specific lives in a generator plugin.**
-Within a plugin, code is produced as an **AST** (typed nodes) and then **rendered** to a string —
-never by string concatenation in business logic (a few legacy string-based renderers remain, noted below).
+Within a plugin, builders translate IR and profile options into an **AST**. A language renderer then prints the tree. See the [generation inventory](internal/AST_GENERATION_MATRIX.md) for output owners and verification entry points.
 
 The three frontends (`ValIO.Cli`, `ValIO.Web`, `ValIO.Desktop`) all call the same
 `ValIO.Application` orchestrator; they never contain generation logic.
@@ -117,9 +116,7 @@ the node's structure — so to enrich those you set node fields, not strings.
 library-specific nodes (Zod/Valibot/TypeBox/TanStack) can be rendered by their own renderer without the
 core renderer knowing about them. The plugin wires the chain in `CreatePipeline`.
 
-> **Legacy string-based renderers:** `Zod/Services/ZodSchemaRenderer.cs` builds Zod schema files with a
-> `StringBuilder` rather than AST. New code should prefer AST; when editing the Zod renderer, keep using
-> `CommentGenerator.GenerateJSDocComment` for comments so headers/JSDoc stay consistent.
+Keep target-language syntax in nodes. Model references, member access, generics, and statements belong in the tree. Builders pass wire names, documentation text, and literal values as data. Renderers own escaping and formatting. A complete fixed source or build file can be embedded and copied verbatim. When a profile controls syntax, build the configured declaration through AST, as in the C++ backend include headers.
 
 ---
 
@@ -249,15 +246,17 @@ Use `PipelineTestHarness` (`tests/.../TestHelpers/`) to run the whole plugin aga
 on the generated files:
 
 ```csharp
-var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");   // TestData/*.json (embedded)
+var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
 var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ky"], ValidationLibrary = "zod4" });
 var file = ctx.GeneratedFiles.First(f => f.RelativePath.EndsWith("getUserById.ky.ts", StringComparison.Ordinal));
 file.Content.Should().Contain("z.string().uuid()");
 ```
 
-Fixtures are JSON files under `tests/.../TestData/` (globbed as embedded resources — just drop a new
-`*.json` in). Add a focused fixture when you need a specific shape (e.g. `uuid-schema.json` for uuid
-fields) instead of bending an existing one.
+`tests/Fixtures` is copied beside each test assembly. Load shared contracts from `OpenApi` with
+`OpenApiFixture.LoadAsync` or read their original text with `OpenApiFixture.Read`. Keep one canonical
+file for a reusable contract, such as `OpenApi/Examples/petstore.json`. Use a separate fixture when its
+dialect, format or schema shape is part of the assertion. Named configuration cases live under
+`Configuration`, and exact serialized wire data lives under `Payloads`.
 
 ### Snapshot ("golden file") tests
 

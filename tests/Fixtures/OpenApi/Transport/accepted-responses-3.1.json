@@ -1,0 +1,48 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Accepted responses", "version": "1" },
+  "paths": {
+    "/submit": {
+      "post": {
+        "operationId": "submit",
+        "responses": {
+          "202": { "description": "Accepted" },
+          "204": { "description": "No content" },
+          "205": { "description": "Reset content" },
+          "304": { "description": "Not modified" },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["message"],
+                  "properties": { "message": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/submit-with-receipt": {
+      "post": {
+        "operationId": "submitWithReceipt",
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["receipt"],
+                  "properties": { "receipt": { "type": "string" } }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

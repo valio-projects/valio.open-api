@@ -30,16 +30,7 @@ public sealed class CSharpGeneratedCompilationTests
     [Test]
     public async Task NumericStringProperties_KeepExactValueAndDoNotRelaxOtherProperties()
     {
-        await using var input = new MemoryStream(Encoding.UTF8.GetBytes("""
-            {
-              "openapi": "3.1.0", "info": {"title": "Exact revisions", "version": "1"}, "paths": {},
-              "components": {"schemas": {"Receipt": {"type": "object", "properties": {
-                "revision": {"type": ["integer", "string"], "format": "int64"},
-                "previous": {"type": ["integer", "string", "null"], "format": "int64"},
-                "strict": {"type": "integer", "format": "int64"}
-              }}}}
-            }
-            """));
+        await using var input = new MemoryStream(Encoding.UTF8.GetBytes(OpenApiFixture.Read("CSharp/exact-revisions-3.1.json")));
         var parsed = await OpenApiDocument.LoadAsync(input, "json");
         var context = new GenerationContext
         {
@@ -60,30 +51,28 @@ public sealed class CSharpGeneratedCompilationTests
             await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), """"
                 using System;
                 using System.Text.Json;
+                using System.IO;
                 using Generated.Contracts;
 
+                using var payloads = JsonDocument.Parse(File.ReadAllText("payloads.json"));
                 const long revision = long.MaxValue;
-                foreach (var wire in new[] { "9223372036854775807", "\"9223372036854775807\"" })
+                foreach (var wire in payloads.RootElement.GetProperty("valid").EnumerateArray())
                 {
-                    var receipt = JsonSerializer.Deserialize<Receipt>($$"""{"revision":{{wire}},"previous":null,"strict":2}""");
+                    var receipt = JsonSerializer.Deserialize<Receipt>(wire.GetRawText());
                     if (receipt.revision != revision || receipt.previous is not null || receipt.@strict != 2 ||
                         !JsonSerializer.Serialize(receipt).Contains("\"revision\":9223372036854775807"))
                         throw new InvalidOperationException("Expected an exact round trip with numeric output.");
                 }
 
-                foreach (var invalid in new[] {
-                    """{"revision":"9223372036854775808","strict":2}""",
-                    """{"revision":"1.5","strict":2}""",
-                    """{"revision":1,"strict":"2"}"""
-                })
+                foreach (var invalid in payloads.RootElement.GetProperty("invalid").EnumerateArray())
                 {
-                    try { JsonSerializer.Deserialize<Receipt>(invalid); }
+                    try { JsonSerializer.Deserialize<Receipt>(invalid.GetRawText()); }
                     catch (JsonException) { continue; }
                     throw new InvalidOperationException($"Invalid input was accepted: {invalid}");
                 }
                 """");
 
-            var result = await RunGeneratedProject(directory);
+            var result = await RunGeneratedProject(directory, "Payloads/CSharp/numeric-revisions.json");
             result.ExitCode.Should().Be(0, "generated C# must honor the declared numeric wire alternatives: {0}", result.Output);
         }
         finally
@@ -258,14 +247,9 @@ public sealed class CSharpGeneratedCompilationTests
                 /// <summary>Emits typed and ambiguous replies while asserting the injected HttpClient address is preserved.</summary>
                 internal sealed class FixtureHandler : HttpMessageHandler
                 {
-                    /// <summary>Retains an exact int64 and decimal in a literal JSON payload.</summary>
-                    private const string ReceiptJson = """
-                        {"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":true,"status":"Applied"}
-                        """;
-                    /// <summary>Includes the exact declared error wire label on a rejected financial receipt.</summary>
-                    private const string RejectedJson = """
-                        {"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":false,"status":"Rejected","errorCode":"insufficient_coins"}
-                        """;
+                    /// <summary>Loads the synthetic wire payloads used by the transport scenarios.</summary>
+                    private readonly IReadOnlyDictionary<string, JsonElement> _payloads =
+                        JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(File.ReadAllText("payloads.json"))!;
                     /// <summary>Checks that path parameters use the selected receipt identity.</summary>
                     private readonly Guid _id;
 
@@ -313,23 +297,25 @@ public sealed class CSharpGeneratedCompilationTests
                             !request.Headers.Accept.Any(type => type.MediaType == "application/problem+json"))
                             throw new InvalidOperationException("The configured gateway prefix, identity, or declared Accept values were lost.");
 
+                        var receipt = _payloads["receipt"].GetRawText();
+                        var rejected = _payloads["rejected"].GetRawText();
                         var response = (++Sends) switch
                         {
-                            1 => Json(HttpStatusCode.OK, ReceiptJson, "Application/JSON"),
-                            2 => Json(HttpStatusCode.Conflict, RejectedJson),
+                            1 => Json(HttpStatusCode.OK, receipt, "Application/JSON"),
+                            2 => Json(HttpStatusCode.Conflict, rejected),
                             3 => new HttpResponseMessage(HttpStatusCode.NotFound),
-                            4 => Json(HttpStatusCode.BadRequest, "{\"code\":\"invalid_request\"}", "application/problem+json"),
-                            5 => Json(HttpStatusCode.Conflict, ReceiptJson, "text/html"),
-                            6 => Json(HttpStatusCode.Conflict, "{broken"),
-                            7 => Json(HttpStatusCode.Accepted, ReceiptJson),
-                            8 => Json(HttpStatusCode.NotFound, "{\"code\":\"edge_not_found\"}"),
-                            9 => Json(HttpStatusCode.Conflict, ReceiptJson + new string(' ', 257)),
-                            10 => Json(HttpStatusCode.Conflict, """{"revision":0,"amount":0,"status":"Applied"}"""),
-                            11 => Json(HttpStatusCode.Conflict, ReceiptJson.Replace("\"Applied\"", "1")),
-                            12 => Json(HttpStatusCode.Conflict, ReceiptJson.Replace("Applied", "applied")),
-                            13 => Json(HttpStatusCode.Conflict, RejectedJson.Replace("insufficient_coins", "undeclared_business_error")),
-                            14 => Json(HttpStatusCode.Conflict, RejectedJson.Replace("insufficient_coins", "InsufficientCoins")),
-                            15 => Json(HttpStatusCode.Conflict, """{"revision":0,"amount":0,"accepted":false,"status":"Rejected"}"""),
+                            4 => Json(HttpStatusCode.BadRequest, _payloads["bad-request"].GetRawText(), "application/problem+json"),
+                            5 => Json(HttpStatusCode.Conflict, receipt, "text/html"),
+                            6 => Json(HttpStatusCode.Conflict, _payloads["broken"].GetString()!),
+                            7 => Json(HttpStatusCode.Accepted, receipt),
+                            8 => Json(HttpStatusCode.NotFound, _payloads["edge-not-found"].GetRawText()),
+                            9 => Json(HttpStatusCode.Conflict, receipt + new string(' ', 257)),
+                            10 => Json(HttpStatusCode.Conflict, _payloads["missing-accepted"].GetRawText()),
+                            11 => Json(HttpStatusCode.Conflict, receipt.Replace("\"Applied\"", "1")),
+                            12 => Json(HttpStatusCode.Conflict, receipt.Replace("Applied", "applied")),
+                            13 => Json(HttpStatusCode.Conflict, rejected.Replace("insufficient_coins", "undeclared_business_error")),
+                            14 => Json(HttpStatusCode.Conflict, rejected.Replace("insufficient_coins", "InsufficientCoins")),
+                            15 => Json(HttpStatusCode.Conflict, _payloads["missing-error-code"].GetRawText()),
                             _ => throw new InvalidOperationException("Unexpected request.")
                         };
                         response.Headers.CacheControl = new CacheControlHeaderValue { NoStore = true };
@@ -347,7 +333,7 @@ public sealed class CSharpGeneratedCompilationTests
                 }
                 """");
 
-            var result = await RunGeneratedProject(directory);
+            var result = await RunGeneratedProject(directory, "Payloads/CSharp/response-metadata.json");
             result.ExitCode.Should().Be(0, "the generated response-aware client must compile and preserve evidence:{0}{1}",
                 Environment.NewLine, result.Output);
             result.Output.Should().Contain("CSharp response metadata passed");
@@ -410,7 +396,7 @@ public sealed class CSharpGeneratedCompilationTests
             }
             File.Copy(Path.Combine(AppContext.BaseDirectory, "Fixtures", "BinaryResponseChecks.cs.txt"), Path.Combine(directory, "Program.cs"));
 
-            var result = await RunGeneratedProject(directory);
+            var result = await RunGeneratedProject(directory, "Payloads/Http/binary-not-found.json");
             result.ExitCode.Should().Be(0, "the generated download must compile and stream:{0}{1}", Environment.NewLine, result.Output);
             result.Output.Should().Contain("CSharp binary responses passed");
         }
@@ -456,17 +442,18 @@ public sealed class CSharpGeneratedCompilationTests
         await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), """"
             using System.Text.Json;
             using Generated.Contracts;
-            var empty = JsonSerializer.Deserialize<NullableReferences>("""{"country":null,"state":null,"countries":[null],"states":{"one":null}}""")!;
+            using var payloads = JsonDocument.Parse(File.ReadAllText("payloads.json"));
+            var empty = JsonSerializer.Deserialize<NullableReferences>(payloads.RootElement.GetProperty("all-null").GetRawText())!;
             var emptyJson = JsonSerializer.SerializeToElement(empty);
             if (emptyJson.GetProperty("country").ValueKind != JsonValueKind.Null || emptyJson.GetProperty("state").ValueKind != JsonValueKind.Null) throw new Exception("Null references were lost.");
-            var populated = JsonSerializer.Deserialize<NullableReferences>("""{"country":{"id":7,"name":"DE"},"state":"granted","countries":[null,{"id":9,"name":"US"}],"states":{"one":"pending","two":null}}""")!;
+            var populated = JsonSerializer.Deserialize<NullableReferences>(payloads.RootElement.GetProperty("populated").GetRawText())!;
             var json = JsonSerializer.SerializeToElement(populated);
             if (json.GetProperty("country").GetProperty("id").GetInt32() != 7 || json.GetProperty("state").GetString() != "granted" || json.GetProperty("countries")[1].GetProperty("id").GetInt32() != 9) throw new Exception("Structured references did not round-trip.");
-            try { JsonSerializer.Deserialize<NullableReferences>("""{"country":"DE","state":null,"countries":[],"states":{}}"""); throw new Exception("A model was decoded as string."); } catch (JsonException) { }
-            try { JsonSerializer.Deserialize<NullableReferences>("""{"country":null,"state":"unknown","countries":[],"states":{}}"""); throw new Exception("An invalid enum was accepted."); } catch (JsonException) { }
+            try { JsonSerializer.Deserialize<NullableReferences>(payloads.RootElement.GetProperty("invalid-model").GetRawText()); throw new Exception("A model was decoded as string."); } catch (JsonException) { }
+            try { JsonSerializer.Deserialize<NullableReferences>(payloads.RootElement.GetProperty("invalid-enum").GetRawText()); throw new Exception("An invalid enum was accepted."); } catch (JsonException) { }
             Console.WriteLine("CSharp nullable references passed");
             """");
-        var result = await RunGeneratedProject(directory);
+        var result = await RunGeneratedProject(directory, "Payloads/CSharp/nullable-references.json");
         result.ExitCode.Should().Be(0, "generated nullable references must compile and round-trip. Sources: {0}\n{1}", directory, result.Output);
         result.Output.Should().Contain("CSharp nullable references passed");
     }
@@ -534,7 +521,7 @@ public sealed class CSharpGeneratedCompilationTests
             using System.Xml.Serialization;
 
             var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-            const string requestJson = """{"Id":"42","route-name":"north","state":"in-progress","equals":"base","getHashCode":3}""";
+            var requestJson = File.ReadAllText("payloads.json");
             var request = JsonSerializer.Deserialize<Delivery>(requestJson, options)!;
             if (request.Id != "42" || request.RouteName != "north" || request.State != DeliveryState.InProgress ||
                 request.EqualsValue != "base" || request.GetHashCodeValue != 3)
@@ -588,7 +575,7 @@ public sealed class CSharpGeneratedCompilationTests
             catch (JsonException) { }
             Console.WriteLine("PascalCase wire contract passed");
             """");
-        var result = await RunGeneratedProject(directory);
+        var result = await RunGeneratedProject(directory, "Payloads/CSharp/delivery-request.json");
         result.ExitCode.Should().Be(0, "generated code and its XML docs must compile and JSON must round-trip: {0}\n{1}", directory, result.Output);
         result.Output.Should().Contain("PascalCase wire contract passed");
     }
@@ -753,7 +740,7 @@ public sealed class CSharpGeneratedCompilationTests
                 : string.Empty;
             await File.WriteAllTextAsync(Path.Combine(directory, "Program.cs"), RuntimeProgram.Replace("// TELEMETRY_CHECKS", telemetryChecks, StringComparison.Ordinal));
 
-            var result = await RunGeneratedProject(directory);
+            var result = await RunGeneratedProject(directory, "Payloads/CSharp/combined-model.json");
 
             result.ExitCode.Should().Be(0, "generated C# must compile and pass runtime checks:{0}{1}", Environment.NewLine, result.Output);
             result.Output.Should().Contain("CSharp generated runtime passed");
@@ -766,9 +753,13 @@ public sealed class CSharpGeneratedCompilationTests
 
     /// <summary>Executes the isolated generated program and captures compiler or runtime diagnostics.</summary>
     /// <param name="directory">The temporary project directory owned by this test.</param>
+    /// <param name="payloadFixture">The fixture copied beside the generated program.</param>
     /// <returns>The process exit code and combined diagnostic output.</returns>
-    private static async Task<(int ExitCode, string Output)> RunGeneratedProject(string directory)
+    private static async Task<(int ExitCode, string Output)> RunGeneratedProject(string directory, string payloadFixture)
     {
+        var payloads = FixtureFile.Read(payloadFixture);
+        await File.WriteAllTextAsync(Path.Combine(directory, "payloads.json"), payloads);
+
         var start = new ProcessStartInfo("dotnet")
         {
             WorkingDirectory = directory,
@@ -984,10 +975,7 @@ public sealed class CSharpGeneratedCompilationTests
         using Generated.Contracts;
 
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-        var model = JsonSerializer.Deserialize<Combined>("""
-        {"name":null,"tag":null,"codes":[1,null],"date":"2026-10-11","time":"12:34:56","when":"2026-10-11T12:34:56Z"}
-        """
-        )!;
+        var model = JsonSerializer.Deserialize<Combined>(File.ReadAllText("payloads.json"))!;
         if (model.Message != "default!" || model.State != State.InProgress || model.Codes![1] != null)
             throw new InvalidOperationException("Model default, enum, or nullable-array roundtrip failed.");
         var clone = JsonSerializer.Deserialize<Combined>(JsonSerializer.Serialize(model))!;

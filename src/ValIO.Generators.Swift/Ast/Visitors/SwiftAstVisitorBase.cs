@@ -26,6 +26,27 @@ public abstract class SwiftAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IS
     public abstract TResult VisitSwiftEnumDeclaration(SwiftEnumDeclarationNode node);
     public abstract TResult VisitSwiftEnumMember(SwiftEnumMemberNode node);
     public abstract TResult VisitSwiftFunctionDeclaration(SwiftFunctionDeclarationNode node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitSwiftBinding(SwiftBindingNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitSwiftGuard(SwiftGuardNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitSwiftOptionalBinding(SwiftOptionalBindingNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitSwiftTryExpression(SwiftTryExpressionNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitSwiftMetatypeExpression(SwiftMetatypeExpressionNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitSwiftImplicitMember(SwiftImplicitMemberNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitSwiftArrayExpression(SwiftArrayExpressionNode node) => VisitDefault(node);
     public abstract TResult VisitSwiftParameter(SwiftParameterNode node);
 
     // IAstVisitor — shared.

@@ -124,7 +124,7 @@ public sealed class TanStackSvelteHookAstBuilder : AstBuilderBase
         var arrow = new ArrowFunctionExpressionNode(
             ImmutableList<ParameterDeclarationNode>.Empty,
             new ObjectLiteralExpressionNode(queryOptions.ToImmutableList(), preferMultilineFormat: true));
-        var call = new CallExpressionNode(Id("createQuery"), ImmutableList.Create<ExpressionNode>(arrow), genericTypeName: resultTypeName);
+        var call = new CallExpressionNode(Id("createQuery"), ImmutableList.Create<ExpressionNode>(arrow), genericTypeArgument: resultTypeName is null ? null : new SimpleTypeNode(new IdentifierNode(resultTypeName)));
 
         var parameters = new List<ParameterDeclarationNode>();
         if (hasParams && paramsTypeName != null)
@@ -167,10 +167,10 @@ public sealed class TanStackSvelteHookAstBuilder : AstBuilderBase
         var arrow = new ArrowFunctionExpressionNode(
             ImmutableList<ParameterDeclarationNode>.Empty,
             new ObjectLiteralExpressionNode(mutationOptions.ToImmutableList(), preferMultilineFormat: true));
-        var generic = resultTypeName != null
-            ? $"{resultTypeName}, Error, {RenderTypeName(variablesType)}"
+        TypeNode[]? generic = resultTypeName is not null
+            ? [new SimpleTypeNode(new IdentifierNode(resultTypeName)), new SimpleTypeNode(new IdentifierNode("Error")), variablesType]
             : null;
-        var call = new CallExpressionNode(Id("createMutation"), ImmutableList.Create<ExpressionNode>(arrow), genericTypeName: generic);
+        var call = new CallExpressionNode(Id("createMutation"), ImmutableList.Create<ExpressionNode>(arrow), typeArguments: generic);
 
         return new FunctionDeclarationNode(
             name: new IdentifierNode($"use{hookBaseName}"),
@@ -193,6 +193,4 @@ public sealed class TanStackSvelteHookAstBuilder : AstBuilderBase
     private static LiteralExpressionNode String(string value) =>
         new(value, LiteralKind.String);
 
-    private static string RenderTypeName(TypeNode type) =>
-        type is SimpleTypeNode simple ? simple.Name.Name : type.ToString() ?? "unknown";
 }
