@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -25,7 +26,7 @@ public class StepSnapshotTests
     [Test]
     public async Task UserModel_FetchTransport_MatchesSnapshot()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var userModel = ctx.GeneratedFiles.First(f =>
@@ -36,7 +37,7 @@ public class StepSnapshotTests
     [Test]
     public async Task UserSchema_Zod3_MatchesSnapshot()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -51,7 +52,7 @@ public class StepSnapshotTests
     [Test]
     public async Task GetUserByIdResults_FetchTransport_MatchesSnapshot()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var results = ctx.GeneratedFiles.First(f =>
@@ -62,7 +63,7 @@ public class StepSnapshotTests
     [Test]
     public async Task GetUserByIdKy_Zod3_MatchesSnapshot()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["ky"],
@@ -77,7 +78,7 @@ public class StepSnapshotTests
     [Test]
     public async Task UserRoleEnumSchema_Valibot_MatchesSnapshot()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],

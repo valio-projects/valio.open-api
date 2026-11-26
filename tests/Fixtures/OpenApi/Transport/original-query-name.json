@@ -1,0 +1,3 @@
+{"openapi":"3.0.3","info":{"title":"wire","version":"1"},"paths":{"/items":{"get":{
+  "operationId":"listItems","parameters":[{"name":"Paging.Page","in":"query","required":false,"schema":{"type":"integer"}}],
+  "responses":{"204":{"description":"empty"}}}}}}

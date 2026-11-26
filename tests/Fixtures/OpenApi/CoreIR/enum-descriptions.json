@@ -1,0 +1,33 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Enum descriptions",
+    "version": "1"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Priority": {
+        "type": "integer",
+        "enum": [
+          10,
+          30
+        ],
+        "x-enum-descriptions": [
+          "Regular",
+          "Urgent"
+        ]
+      },
+      "Partial": {
+        "type": "integer",
+        "enum": [
+          10,
+          30
+        ],
+        "x-enum-descriptions": [
+          "Ambiguous"
+        ]
+      }
+    }
+  }
+}

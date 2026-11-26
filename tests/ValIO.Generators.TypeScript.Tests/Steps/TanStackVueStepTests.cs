@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -19,7 +20,7 @@ public class TanStackVueStepTests
     [Test]
     public async Task TanStackVue_GeneratesVueQueryHooks()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -37,7 +38,7 @@ public class TanStackVueStepTests
     [Test]
     public async Task TanStackVue_DoesNotAnnotateExplicitReturnType()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["ky"],
@@ -62,7 +63,7 @@ public class TanStackVueStepTests
     [Test]
     public async Task TanStackVue_Options_TypedAsObjectNotUnknown()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["ky"],
@@ -81,7 +82,7 @@ public class TanStackVueStepTests
     [Test]
     public async Task TanStackVue_ClientImport_MatchesPrimaryTransport()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["ky"],

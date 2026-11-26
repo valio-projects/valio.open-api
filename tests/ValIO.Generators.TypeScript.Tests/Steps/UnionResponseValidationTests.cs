@@ -24,7 +24,7 @@ public class UnionResponseValidationTests
     public async Task OneTimeSetup()
     {
         _harness = new PipelineTestHarness();
-        _document = await PipelineTestHarness.LoadDocumentAsync("status-union-response.json");
+        _document = await OpenApiFixture.LoadAsync("TypeScript/status-union-response.json");
     }
 
     [OneTimeTearDown]
@@ -102,7 +102,7 @@ public class UnionResponseValidationTests
     [Test]
     public async Task Zod_BinaryResponse_UsesBlobSchemaAndAxiosBlobResponseType()
     {
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Validators/binary-response.json"));
+        var document = await OpenApiFixture.LoadAsync("Validators/binary-response.json");
         var context = await _harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],

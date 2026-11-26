@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Kotlin.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class KotlinModelsStepTests
     [Test]
     public async Task GeneratesOneFilePerModel_UnderModelsPackage()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var modelFiles = ctx.GeneratedFiles
@@ -32,7 +33,7 @@ public class KotlinModelsStepTests
     [Test]
     public async Task ModelEmitsDataClassWithSerializableAnnotation()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -46,7 +47,7 @@ public class KotlinModelsStepTests
     [Test]
     public async Task RequiredFieldsHaveNoDefault_OptionalGetNullDefault()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -61,7 +62,7 @@ public class KotlinModelsStepTests
     [Test]
     public async Task ReferencedModelsAreImportedFromTheSamePackage()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -72,7 +73,7 @@ public class KotlinModelsStepTests
     [Test]
     public async Task CustomPackage_FlowsThroughToBothFilesAndDeclarations()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new Options.KotlinGenerationOptions { Package = "com.acme.gen" });
 
         var userFile = ctx.GeneratedFiles.First(f =>

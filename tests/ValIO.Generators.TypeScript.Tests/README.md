@@ -9,7 +9,7 @@ largest suite. NUnit 4 + FluentAssertions.
 - `Steps/`, `Integration/` — **integration** tests via `PipelineTestHarness` (run the plugin against a
   fixture, assert on `GeneratedFile`s).
 - `Snapshots/` + `__snapshots__/` — golden-file tests. Regenerate with `UPDATE_SNAPSHOTS=1`.
-- `TestData/*.json` — OpenAPI fixtures (embedded resources; add a new `*.json` to introduce one).
+- [Shared test fixtures](../Fixtures/) include OpenAPI inputs, configuration cases, and runtime scripts.
 
 ```bash
 dotnet test tests/ValIO.Generators.TypeScript.Tests

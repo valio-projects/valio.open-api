@@ -1,0 +1,16 @@
+{
+  "openapi":"3.0.3",
+  "info":{"title":"T","version":"1.0.0"},
+  "paths":{
+    "/journals/schema":{
+      "post":{
+        "operationId":"CreateJournalSchema",
+        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateJournalSchema"}}}},
+        "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/CreateJournalSchema"}}}}}
+      }
+    }
+  },
+  "components":{"schemas":{
+    "CreateJournalSchema":{"type":"object","required":["title"],"properties":{"title":{"type":"string"}}}
+  }}
+}

@@ -246,15 +246,17 @@ Use `PipelineTestHarness` (`tests/.../TestHelpers/`) to run the whole plugin aga
 on the generated files:
 
 ```csharp
-var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");   // TestData/*.json (embedded)
+var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
 var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ky"], ValidationLibrary = "zod4" });
 var file = ctx.GeneratedFiles.First(f => f.RelativePath.EndsWith("getUserById.ky.ts", StringComparison.Ordinal));
 file.Content.Should().Contain("z.string().uuid()");
 ```
 
-Fixtures are JSON files under `tests/.../TestData/` (globbed as embedded resources — just drop a new
-`*.json` in). Add a focused fixture when you need a specific shape (e.g. `uuid-schema.json` for uuid
-fields) instead of bending an existing one.
+`tests/Fixtures` is copied beside each test assembly. Load shared contracts from `OpenApi` with
+`OpenApiFixture.LoadAsync` or read their original text with `OpenApiFixture.Read`. Keep one canonical
+file for a reusable contract, such as `OpenApi/Examples/petstore.json`. Use a separate fixture when its
+dialect, format or schema shape is part of the assertion. Named configuration cases live under
+`Configuration`, and exact serialized wire data lives under `Payloads`.
 
 ### Snapshot ("golden file") tests
 

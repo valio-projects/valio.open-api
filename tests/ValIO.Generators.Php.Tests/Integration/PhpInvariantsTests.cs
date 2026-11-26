@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Php.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class PhpInvariantsTests
     [Test]
     public async Task EveryPhpFile_StartsWithOpenTag()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -35,7 +36,7 @@ public class PhpInvariantsTests
     [Test]
     public async Task EveryPhpFile_HasNamespaceDeclaration()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -49,7 +50,7 @@ public class PhpInvariantsTests
     [Test]
     public async Task ModelFile_FinalReadonlyClass()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -60,7 +61,7 @@ public class PhpInvariantsTests
     [Test]
     public async Task EveryPhpFile_BalancedBraces()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>

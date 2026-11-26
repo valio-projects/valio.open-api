@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -25,7 +26,7 @@ public class ParamsValidationLibraryTests
 
     private async Task<(string Client, string ParamsSchema)> GetPetByIdFilesAsync(string validation)
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],

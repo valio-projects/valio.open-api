@@ -11,7 +11,7 @@ namespace ValIO.Generators.Ruby.Tests.TestHelpers;
 
 /// <summary>
 /// Reusable harness for running the Ruby plugin pipeline against an
-/// OpenAPI document loaded from <c>TestData/*.json</c>.
+/// OpenAPI document loaded from the shared fixtures.
 /// </summary>
 public sealed class RubyPipelineTestHarness : IDisposable
 {
@@ -30,16 +30,6 @@ public sealed class RubyPipelineTestHarness : IDisposable
     }
 
     public IServiceProvider Services => _services;
-
-    public static async Task<OpenApiDocument> LoadDocumentAsync(string resourceName)
-    {
-        var assembly = typeof(RubyPipelineTestHarness).Assembly;
-        var fullName = $"ValIO.Generators.Ruby.Tests.TestData.{resourceName}";
-        await using var stream = assembly.GetManifestResourceStream(fullName)
-            ?? throw new InvalidOperationException($"Embedded resource not found: {fullName}");
-        var result = await OpenApiDocument.LoadAsync(stream, "json");
-        return result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-    }
 
     public async Task<GenerationContext> RunAsync(
         OpenApiDocument document,

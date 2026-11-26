@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -22,7 +23,7 @@ public class GotClientStepTests
     [Test]
     public async Task NoGotTransport_NoGotFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -34,7 +35,7 @@ public class GotClientStepTests
     [Test]
     public async Task GotClient_EmitsGotCallWithResponseTypeJson()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["got"] });
 
         var got = ctx.GeneratedFiles.First(f =>
@@ -49,7 +50,7 @@ public class GotClientStepTests
     [Test]
     public async Task GotClient_JsonBody_UsesJsonOption()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["got"] });
 
         var addPet = ctx.GeneratedFiles.First(f =>

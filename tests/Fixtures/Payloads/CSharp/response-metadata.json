@@ -1,0 +1,9 @@
+{
+  "receipt": {"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":true,"status":"Applied"},
+  "rejected": {"revision":9007199254740993,"amount":123456789123456789.1234567891,"accepted":false,"status":"Rejected","errorCode":"insufficient_coins"},
+  "bad-request": {"code":"invalid_request"},
+  "edge-not-found": {"code":"edge_not_found"},
+  "broken": "{broken",
+  "missing-accepted": {"revision":0,"amount":0,"status":"Applied"},
+  "missing-error-code": {"revision":0,"amount":0,"accepted":false,"status":"Rejected"}
+}

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.ComponentModel;
 using System.Diagnostics;
 using FluentAssertions;
@@ -27,20 +28,8 @@ public sealed class ClientExecutionContractTests
         var temporary = CreateDirectory(modules);
         try
         {
-            const string json = """
-            {"openapi":"3.0.3","info":{"title":"types","version":"1"},"paths":{},"components":{"schemas":{
-              "ValueModel":{"type":"object","properties":{"name":{"type":"string"}}},
-              "Base":{"type":"object","properties":{"value":{"$ref":"#/components/schemas/ValueModel"}}},
-              "Middle":{"allOf":[{"$ref":"#/components/schemas/Base"}]},
-              "Child":{"allOf":[{"$ref":"#/components/schemas/Middle"},{"type":"object","properties":{"value":{"type":"string"}},"required":["value"]}]},
-              "Nested":{"type":"object","required":["items","scalars"],"properties":{
-                "items":{"type":"array","items":{"type":"array","nullable":true,"items":{"type":"string"}}},
-                "scalars":{"type":"array","items":{"type":"string","nullable":true}}
-              }}
-            }}}
-            """;
             using var harness = new PipelineTestHarness();
-            var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(json);
+            var document = await OpenApiFixture.LoadAsync("TypeScript/compile-nullable-inheritance.json");
             var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"] });
             foreach (var file in context.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".ts", StringComparison.Ordinal)))
             {
@@ -115,13 +104,8 @@ public sealed class ClientExecutionContractTests
     [TestCase("angular-rxjs")]
     public async Task TransportClientsPreserveOriginalQueryNames(string transport)
     {
-        const string json = """
-        {"openapi":"3.0.3","info":{"title":"wire","version":"1"},"paths":{"/items":{"get":{
-          "operationId":"listItems","parameters":[{"name":"Paging.Page","in":"query","required":false,"schema":{"type":"integer"}}],
-          "responses":{"204":{"description":"empty"}}}}}}
-        """;
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(json);
+        var document = await OpenApiFixture.LoadAsync("Transport/original-query-name.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = [transport] });
         var suffix = transport.StartsWith("angular-", StringComparison.Ordinal) ? ".service.ts" : $".{transport}.ts";
         var client = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(suffix, StringComparison.Ordinal));

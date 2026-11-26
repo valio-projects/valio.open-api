@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class AngularRxjsClientStepTests
     [Test]
     public async Task NoAngularTransport_NoServiceFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -34,7 +35,7 @@ public class AngularRxjsClientStepTests
     public async Task AngularTransport_EmitsOneServiceFilePerIrClient()
     {
         // Petstore has three tags — pet / store / user — so we expect three service files.
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         var serviceFiles = ctx.GeneratedFiles
@@ -50,7 +51,7 @@ public class AngularRxjsClientStepTests
     [Test]
     public async Task AngularService_IsInjectableProvidedInRoot_WithHttpClientInjection()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         var petService = ctx.GeneratedFiles.First(f =>
@@ -74,7 +75,7 @@ public class AngularRxjsClientStepTests
     [Test]
     public async Task AngularService_MethodsReturnObservable_AndUseThisHttpVerb()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         var petService = ctx.GeneratedFiles.First(f =>
@@ -94,7 +95,7 @@ public class AngularRxjsClientStepTests
     [Test]
     public async Task AngularService_QueryParameters_UseHttpParamsChain()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         var petService = ctx.GeneratedFiles.First(f =>
@@ -108,7 +109,7 @@ public class AngularRxjsClientStepTests
     [Test]
     public async Task AngularService_HeaderParameters_UseHttpHeadersChain()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         var petService = ctx.GeneratedFiles.First(f =>
@@ -122,7 +123,7 @@ public class AngularRxjsClientStepTests
     [Test]
     public async Task AngularService_PathParamsAreInterpolated_InTemplateUrl()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         var petService = ctx.GeneratedFiles.First(f =>
@@ -137,7 +138,7 @@ public class AngularRxjsClientStepTests
     {
         // Angular transport is per-IrClient, not per-operation. Make sure we don't
         // accidentally emit per-operation `.angular.ts` files alongside the service.
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["angular-rxjs"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>

@@ -1,0 +1,31 @@
+{
+  "openapi":"3.0.3",
+  "info":{"title":"T","version":"1.0.0"},
+  "paths":{
+    "/employees":{
+      "post":{
+        "operationId":"CreateEmployee",
+        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}},
+        "responses":{"201":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}}}
+      }
+    },
+    "/employees/{id}":{
+      "put":{
+        "operationId":"UpdateEmployee",
+        "parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer"}}],
+        "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}},
+        "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}}}
+      }
+    },
+    "/employees/upload":{
+      "post":{
+        "operationId":"UploadEmployeePhoto",
+        "requestBody":{"required":true,"content":{"multipart/form-data":{"schema":{"type":"object","properties":{"file":{"type":"string","format":"binary"},"caption":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"metadata":{"type":"object","properties":{"published":{"type":"boolean"}}},"metadataList":{"type":"array","items":{"type":"object","properties":{"order":{"type":"integer"}}}}}}}}},
+        "responses":{"204":{"description":"ok"}}
+      }
+    }
+  },
+  "components":{"schemas":{
+    "Employee":{"type":"object","required":["name"],"properties":{"id":{"type":"integer"},"name":{"type":"string"}}}
+  }}
+}

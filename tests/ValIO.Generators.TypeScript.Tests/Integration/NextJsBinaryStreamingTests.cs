@@ -19,7 +19,7 @@ public sealed class NextJsBinaryStreamingTests
     public async Task DownloadsReturnTheUnconsumedNativeResponseStream(bool exactJsonNumbers)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("CoreIR/csharp-binary-response-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("CoreIR/csharp-binary-response-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],
@@ -65,7 +65,7 @@ public sealed class NextJsBinaryStreamingTests
               response.end('xyz');
             } else if (scenario === 'missing') {
               response.writeHead(404, {'Content-Type': 'application/problem+json', 'Cache-Control': 'private, no-store'});
-              response.end('{"title":"Document missing"}');
+              response.end(readFixture('Payloads/Http/binary-not-found.json'));
             } else {
               assert(observedClose.has(scenario));
               response.once('close', observedClose.get(scenario).resolve);

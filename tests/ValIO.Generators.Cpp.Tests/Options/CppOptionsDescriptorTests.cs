@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
@@ -17,8 +18,16 @@ public class CppOptionsDescriptorTests
         return doc.RootElement.EnumerateObject().ToDictionary(p => p.Name, p => p.Value.Clone());
     }
 
-    private CppGenerationOptions Parse(string json) =>
-        (CppGenerationOptions)_descriptor.ParseOptions(ParseRaw(json), out _)!;
+    /// <summary>Reads a JSON fixture and passes its options to the descriptor.</summary>
+    /// <param name="json">The configuration case.</param>
+    /// <returns>The parsed C++ generation options.</returns>
+    private CppGenerationOptions Parse(string json) => Parse(ParseRaw(json));
+
+    /// <summary>Parses the option values for a parameterized test.</summary>
+    /// <param name="options">The raw values with their original JSON types.</param>
+    /// <returns>The parsed C++ generation options.</returns>
+    private CppGenerationOptions Parse(Dictionary<string, JsonElement> options) =>
+        (CppGenerationOptions)_descriptor.ParseOptions(options, out _)!;
 
     [Test]
     public void EmptyOptions_ReturnsDefaults()
@@ -45,12 +54,12 @@ public class CppOptionsDescriptorTests
     [TestCase("ue", CppRuntimeProfile.Ue)]
     [TestCase("unreal", CppRuntimeProfile.Ue)]
     public void Runtime_AcceptsCanonicalValuesAndAliases(string raw, CppRuntimeProfile expected)
-        => Parse($$$"""{"runtime":"{{{raw}}}"}""").Runtime.Should().Be(expected);
+        => Parse(new Dictionary<string, JsonElement> { ["runtime"] = JsonSerializer.SerializeToElement(raw) }).Runtime.Should().Be(expected);
 
     [Test]
     public void Runtime_Unknown_AddsError()
     {
-        var result = _descriptor.ParseOptions(ParseRaw("""{"runtime":"qt"}"""), out var errors);
+        var result = _descriptor.ParseOptions(ParseRaw(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "unrecognized-runtime")), out var errors);
         errors.Should().ContainSingle(e => e.Contains("runtime") && e.Contains("qt"));
         result.Should().BeOfType<CppGenerationOptions>();
     }
@@ -59,16 +68,16 @@ public class CppOptionsDescriptorTests
     [TestCase(20)]
     [TestCase(23)]
     public void CxxStandard_AcceptsSupportedNumbers(int standard)
-        => Parse($$$"""{"cxxStandard":{{{standard}}}}""").CxxStandard.Should().Be(standard);
+        => Parse(new Dictionary<string, JsonElement> { ["cxxStandard"] = JsonSerializer.SerializeToElement(standard) }).CxxStandard.Should().Be(standard);
 
     [Test]
     public void CxxStandard_AcceptsStringNumber()
-        => Parse("""{"cxxStandard":"20"}""").CxxStandard.Should().Be(20);
+        => Parse(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "string-standard")).CxxStandard.Should().Be(20);
 
     [Test]
     public void CxxStandard_NonNumeric_AddsError()
     {
-        _descriptor.ParseOptions(ParseRaw("""{"cxxStandard":true}"""), out var errors);
+        _descriptor.ParseOptions(ParseRaw(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "invalid-standard")), out var errors);
         errors.Should().ContainSingle(e => e.Contains("cxxStandard"));
     }
 
@@ -85,12 +94,12 @@ public class CppOptionsDescriptorTests
     [TestCase("async", CppApiStyle.Async)]
     [TestCase("both", CppApiStyle.Both)]
     public void ApiStyle_AcceptsCanonicalValues(string raw, CppApiStyle expected)
-        => Parse($$$"""{"apiStyle":"{{{raw}}}"}""").ApiStyle.Should().Be(expected);
+        => Parse(new Dictionary<string, JsonElement> { ["apiStyle"] = JsonSerializer.SerializeToElement(raw) }).ApiStyle.Should().Be(expected);
 
     [Test]
     public void ApiStyle_Unknown_AddsError()
     {
-        _descriptor.ParseOptions(ParseRaw("""{"apiStyle":"coroutines"}"""), out var errors);
+        _descriptor.ParseOptions(ParseRaw(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "unrecognized-api-style")), out var errors);
         errors.Should().ContainSingle(e => e.Contains("apiStyle") && e.Contains("coroutines"));
     }
 
@@ -98,11 +107,11 @@ public class CppOptionsDescriptorTests
     [TestCase("interface+impl", CppClientShape.InterfaceImpl)]
     [TestCase("interfaceimpl", CppClientShape.InterfaceImpl)]
     public void ClientShape_AcceptsCanonicalValues(string raw, CppClientShape expected)
-        => Parse($$$"""{"clientShape":"{{{raw}}}"}""").ClientShape.Should().Be(expected);
+        => Parse(new Dictionary<string, JsonElement> { ["clientShape"] = JsonSerializer.SerializeToElement(raw) }).ClientShape.Should().Be(expected);
 
     [Test]
     public void Namespace_IsTrimmed()
-        => Parse("""{"namespace":"  Petstore  "}""").Namespace.Should().Be("Petstore");
+        => Parse(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "trimmed-namespace")).Namespace.Should().Be("Petstore");
 
     [TestCase("Pet Store")]
     [TestCase("1Petstore")]
@@ -116,15 +125,15 @@ public class CppOptionsDescriptorTests
     [Test]
     public void EmitCmake_AcceptsBool_AndRejectsOtherTypes()
     {
-        Parse("""{"emitCmake":true}""").EmitCmake.Should().BeTrue();
-        _descriptor.ParseOptions(ParseRaw("""{"emitCmake":"yes"}"""), out var errors);
+        Parse(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "cmake-enabled")).EmitCmake.Should().BeTrue();
+        _descriptor.ParseOptions(ParseRaw(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "invalid-cmake-flag")), out var errors);
         errors.Should().ContainSingle(e => e.Contains("emitCmake"));
     }
 
     [Test]
     public void IncludePaths_AreOverridable()
     {
-        var opts = Parse("""{"httpInclude":"wrappers/http.h","jsonInclude":"wrappers/json.hpp"}""");
+        var opts = Parse(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "include-paths"));
         opts.HttpInclude.Should().Be("wrappers/http.h");
         opts.JsonInclude.Should().Be("wrappers/json.hpp");
         opts.JsonFwdInclude.Should().Be("nlohmann/json_fwd.hpp"); // не задан — default
@@ -146,7 +155,7 @@ public class CppOptionsDescriptorTests
     [Test]
     public void UnrealOptions_ArePreservedBySharedDescriptor()
     {
-        var options = Parse("""{"moduleApiMacro":"GAME_API","blueprintCategory":"Game","addUnrealEngineIncludesInHeaders":false,"baseAsyncActionClassName":"UCustomAsync"}""");
+        var options = Parse(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "unreal"));
         options.ModuleApiMacro.Should().Be("GAME_API");
         options.BlueprintCategory.Should().Be("Game");
         options.AddUnrealEngineIncludesInHeaders.Should().BeFalse();
@@ -157,8 +166,8 @@ public class CppOptionsDescriptorTests
     [Test]
     public void EmitSerializers_ParsesBooleanAndRejectsOtherKinds()
     {
-        Parse("""{"emitSerializers":false}""").EmitSerializers.Should().BeFalse();
-        _descriptor.ParseOptions(ParseRaw("""{"emitSerializers":"no"}"""), out var errors);
+        Parse(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "serializers-disabled")).EmitSerializers.Should().BeFalse();
+        _descriptor.ParseOptions(ParseRaw(FixtureFile.ReadJsonCase("Configuration/cpp-options.json", "invalid-serializers-flag")), out var errors);
         errors.Should().ContainSingle(error => error.Contains("emitSerializers", StringComparison.Ordinal));
         _descriptor.GetOptionDescriptions().Should().Contain(option => option.Name == "emitSerializers");
     }

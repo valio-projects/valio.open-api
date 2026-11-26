@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Php.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class PhpPetstoreTests
     [Test]
     public async Task Petstore_GeneratesModelsForCoreSchemas()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().Contain(f => f.RelativePath.Contains("Pet", StringComparison.OrdinalIgnoreCase));
@@ -28,7 +29,7 @@ public class PhpPetstoreTests
     [Test]
     public async Task Petstore_ModelsHaveReadonlyConstructorPromotion()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var petFile = ctx.GeneratedFiles.First(f =>
@@ -41,7 +42,7 @@ public class PhpPetstoreTests
     [Test]
     public async Task Petstore_ClientUsesGuzzle()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

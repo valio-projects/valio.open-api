@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -32,11 +33,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
         new TypeScriptGeneratorPlugin().ConfigureServices(services);
         _services = services.BuildServiceProvider();
 
-        var assembly = typeof(TypeScriptCodeGeneratorIntegrationTests).Assembly;
-        await using var stream = assembly.GetManifestResourceStream(
-            "ValIO.Generators.TypeScript.Tests.TestData.simple-schema.json")!;
-        var result = await OpenApiDocument.LoadAsync(stream, "json");
-        _document = result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
+        _document = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
     }
 
     private async Task<GenerationContext> RunPipeline(TypeScriptGenerationOptions opts)
@@ -319,7 +316,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
     [Test]
     public void TypeScriptOptionsDescriptor_NormalizesTanStackAlias()
     {
-        using var document = JsonDocument.Parse("{\"queryWrapper\":\"tanstack\"}");
+        using var document = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "legacy-query-wrapper"));
         var rawOptions = new Dictionary<string, JsonElement>
         {
             ["queryWrapper"] = document.RootElement.GetProperty("queryWrapper")
@@ -336,7 +333,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
     [Test]
     public void TypeScriptOptionsDescriptor_NormalizesNewTransportAndValidationAliases()
     {
-        using var document = JsonDocument.Parse("{\"transports\":[\"Ky\"],\"validation\":\"@sinclair/typebox\"}");
+        using var document = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "case-insensitive-transports"));
         var rawOptions = new Dictionary<string, JsonElement>
         {
             ["transports"] = document.RootElement.GetProperty("transports"),
@@ -355,7 +352,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
     [Test]
     public void TypeScriptOptionsDescriptor_ReportsUnknownTransport()
     {
-        using var document = JsonDocument.Parse("{\"transports\":[\"mystery\"]}");
+        using var document = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "unknown-transport"));
         var rawOptions = new Dictionary<string, JsonElement>
         {
             ["transports"] = document.RootElement.GetProperty("transports")
@@ -380,7 +377,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
             .Which.ResultTypeSuffix.Should().Be("Results");
 
         // Preset, case-insensitive → canonical PascalCase.
-        using var preset = JsonDocument.Parse("{\"resultTypeSuffix\":\"RESPONSE\"}");
+        using var preset = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "preset-result-suffix"));
         descriptor.ParseOptions(
                 new Dictionary<string, JsonElement> { ["resultTypeSuffix"] = preset.RootElement.GetProperty("resultTypeSuffix") },
                 out var presetErrors)
@@ -389,7 +386,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
         presetErrors.Should().BeEmpty();
 
         // Alias key `resultSuffix` is honoured.
-        using var alias = JsonDocument.Parse("{\"resultSuffix\":\"result\"}");
+        using var alias = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "legacy-result-suffix"));
         descriptor.ParseOptions(
                 new Dictionary<string, JsonElement> { ["resultSuffix"] = alias.RootElement.GetProperty("resultSuffix") },
                 out _)
@@ -397,7 +394,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
             .Which.ResultTypeSuffix.Should().Be("Result");
 
         // Custom value passes through (first char capitalised), no error.
-        using var custom = JsonDocument.Parse("{\"resultTypeSuffix\":\"outcome\"}");
+        using var custom = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "custom-result-suffix"));
         descriptor.ParseOptions(
                 new Dictionary<string, JsonElement> { ["resultTypeSuffix"] = custom.RootElement.GetProperty("resultTypeSuffix") },
                 out var customErrors)
@@ -423,9 +420,8 @@ public class TypeScriptCodeGeneratorIntegrationTests
             ("pattern", "regex"), ("uuid", "guid"), ("mystery", "guid"),
         })
         {
-            using var d = JsonDocument.Parse($"{{\"uuidFormat\":\"{input}\"}}");
             descriptor.ParseOptions(
-                    new Dictionary<string, JsonElement> { ["uuidFormat"] = d.RootElement.GetProperty("uuidFormat") },
+                    new Dictionary<string, JsonElement> { ["uuidFormat"] = JsonSerializer.SerializeToElement(input) },
                     out _)
                 .Should().BeOfType<TypeScriptGenerationOptions>()
                 .Which.UuidFormat.Should().Be(expected, $"'{input}' should normalise to '{expected}'");
@@ -440,7 +436,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
         // Both path + name → parsed onto opts.Axios, no errors. The .ts extension is kept
         // here (it is stripped later, when the import specifier is emitted).
         using var full = JsonDocument.Parse(
-            "{\"axios\":{\"customInstancePath\":\"@shared/api/api-mutator.ts\",\"customInstanceName\":\"apiMutator\"}}");
+            FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "axios-instance"));
         var parsed = descriptor.ParseOptions(
             new Dictionary<string, JsonElement> { ["axios"] = full.RootElement.GetProperty("axios") },
             out var errors);
@@ -456,7 +452,7 @@ public class TypeScriptCodeGeneratorIntegrationTests
             .Which.Axios.Should().BeNull();
 
         // Partial config (path without name) → validation error.
-        using var partial = JsonDocument.Parse("{\"axios\":{\"customInstancePath\":\"@shared/api/api-mutator\"}}");
+        using var partial = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/typescript-options.json", "incomplete-axios-instance"));
         descriptor.ParseOptions(
             new Dictionary<string, JsonElement> { ["axios"] = partial.RootElement.GetProperty("axios") },
             out var partialErrors);

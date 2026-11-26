@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using Microsoft.OpenApi;
 using NUnit.Framework;
@@ -23,7 +24,7 @@ public class ValidatorNullableRefAllOfTests
     public async Task OneTimeSetup()
     {
         _harness = new PipelineTestHarness();
-        _document = await PipelineTestHarness.LoadDocumentAsync("nullable-ref-allof.json");
+        _document = await OpenApiFixture.LoadAsync("TypeScript/nullable-ref-allof.json");
     }
 
     [OneTimeTearDown]

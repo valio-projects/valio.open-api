@@ -18,7 +18,7 @@ public sealed class ExactJsonNumbersTests
     public async Task GeneratedNextJsPreservesNamedScalarsAndNumericAlternatives()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("CoreIR/native-scalar-union-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("CoreIR/native-scalar-union-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],
@@ -31,7 +31,12 @@ public sealed class ExactJsonNumbersTests
         var sources = context.GeneratedFiles.Where(file => file.RelativePath.EndsWith(".ts", StringComparison.Ordinal)).ToArray();
         await GeneratedTypeScriptCompiler.Compile(sources, "native scalar aliases and numeric alternatives");
 
-        var output = await GeneratedTypeScriptRuntime.Run(context, """
+        const string payloads = "Payloads/TypeScript/native-scalar-alternatives.json";
+        var unquoted = JsonSerializer.Serialize(FixtureFile.ReadJsonCase(payloads, "unquoted"));
+        var quoted = JsonSerializer.Serialize(FixtureFile.ReadJsonCase(payloads, "quoted"));
+        var invalidAction = JsonSerializer.Serialize(FixtureFile.ReadJsonCase(payloads, "invalid-action"));
+
+        var output = await GeneratedTypeScriptRuntime.Run(context, $$"""
             const { LosslessNumber } = require('lossless-json');
             const { ActionCodeSchema } = require(path.join(root, 'models', 'actionCode', 'actionCode.schema.js'));
             const { readPage } = require(path.join(root, 'api', 'readPage', 'readPage.nextjs.js'));
@@ -40,7 +45,7 @@ public sealed class ExactJsonNumbersTests
                 assert.equal(ActionCodeSchema.safeParse(invalid).success, false);
             }
             const width = '9007199254740993';
-            let body = '{"action":1,"total":' + width + ',"latest":' + width + '}';
+            let body = {{unquoted}};
             const fetcher = async url => {
                 assert.equal(url, '/pages?cursor=' + width);
                 return new Response(body, { headers: { 'Content-Type': 'application/json' } });
@@ -52,10 +57,10 @@ public sealed class ExactJsonNumbersTests
                 assert.equal(number.body.latest.toString(), width);
                 assert.equal(number.body.action, 1);
 
-                body = '{"action":1,"total":"' + width + '","latest":' + width + '}';
+                body = {{quoted}};
                 const text = await readPage({ cursor: width }, undefined, undefined, fetcher);
                 assert.equal(text.body.total, width);
-                body = '{"action":{},"total":' + width + ',"latest":' + width + '}';
+                body = {{invalidAction}};
                 await assert.rejects(() => readPage({ cursor: width }, undefined, undefined, fetcher));
                 console.log('native scalar contracts passed');
             })().catch(error => { console.error(error); process.exitCode = 1; });
@@ -77,7 +82,7 @@ public sealed class ExactJsonNumbersTests
     public async Task GeneratedClient_PreservesExactNumbersAcrossTheWire(string transport)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Document);
+        var document = await OpenApiFixture.LoadAsync(Document);
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],
@@ -112,9 +117,7 @@ public sealed class ExactJsonNumbersTests
                 rates: [1.25], label: revision, count: 0, otherAmount: null, state: 0
               }
             };
-            const document = '{"revision":' + revision + ',"amount":' + decimal
-              + ',"ledgerAmount":' + ledgerAmount
-              + ',"rates":[1.25],"label":"' + revision + '","count":0,"otherAmount":null,"state":0}';
+            const document = readFixture('Payloads/TypeScript/exact-json-numbers.json').trimEnd();
             let status = 200;
             let responseBody = document;
 
@@ -191,42 +194,5 @@ public sealed class ExactJsonNumbersTests
     }
 
     /// <summary>Describes a numeric OpenAPI contract with ordinary and exact fields sharing a JSON model.</summary>
-    private const string Document = """
-        {
-          "openapi":"3.1.0",
-          "info":{"title":"Exact JSON","version":"1.0"},
-          "paths":{
-            "/changes/{revision}":{
-              "post":{
-                "operationId":"save",
-                "parameters":[
-                  {"name":"revision","in":"path","required":true,"schema":{"type":"integer","format":"int64"}},
-                  {"name":"after","in":"query","schema":{"type":"integer","format":"int64","default":9007199254740995}},
-                  {"name":"X-Revision","in":"header","required":true,"schema":{"type":"integer","format":"int64"}}
-                ],
-                "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Change"}}}},
-                "responses":{
-                  "200":{"description":"Saved","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Change"}}}},
-                  "204":{"description":"No content"}
-                }
-              }
-            }
-          },
-          "components":{"schemas":{"ChangeState":{"type":"integer","format":"int32","enum":[0,1]},"Change":{
-            "type":"object",
-            "required":["revision","amount","ledgerAmount","rates","label","count","otherAmount","state"],
-            "properties":{
-              "revision":{"type":"integer","format":"int64"},
-              "amount":{"type":"number","format":"decimal","minimum":0.100000000000000001},
-              "ledgerAmount":{"type":"number","format":"decimal","maximum":999999999999999999.9999999999},
-              "rates":{"type":"array","items":{"type":"number","format":"double"}},
-              "label":{"type":"string"},
-              "count":{"type":"integer","format":"int32"},
-              "state":{"$ref":"#/components/schemas/ChangeState"},
-              "otherAmount":{"type":["number","null"],"format":"decimal"},
-              "omitted":{"type":"number","format":"decimal"}
-            }
-          }}}
-        }
-        """;
+    private const string Document = "TypeScript/exact-json-numbers-3.1.json";
 }

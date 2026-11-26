@@ -1,0 +1,16 @@
+{
+  "openapi":"3.1.0",
+  "info":{"title":"Constraints","version":"1"},
+  "paths":{"/items/{id}":{"get":{
+    "operationId":"getItem",
+    "parameters":[
+      {"in":"path","name":"id","required":true,"schema":{"type":"integer","minimum":1}},
+      {"in":"query","name":"code","schema":{"type":"string","pattern":"^[a-z]+$"}}
+    ],
+    "responses":{"200":{"description":"Success","content":{"application/json":{"schema":{"$ref":"#/components/schemas/PatternOnly"}}}}}
+  }}},
+  "components":{"schemas":{
+    "PatternOnly":{"type":"object","properties":{"code":{"type":"string","pattern":"^[a-z]+$"}}},
+    "Bounded":{"type":"object","properties":{"code":{"type":"string","minLength":2,"pattern":"^[a-z]+$"}}}
+  }}
+}

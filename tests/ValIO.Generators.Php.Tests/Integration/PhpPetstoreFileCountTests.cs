@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Php.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class PhpPetstoreFileCountTests
     [Test]
     public async Task Petstore_GeneratesAllExpectedModels()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var expected = new[] { "Pet.php", "Category.php", "Tag.php", "Order.php", "User.php", "ApiResponse.php" };
@@ -36,7 +37,7 @@ public class PhpPetstoreFileCountTests
     [Test]
     public async Task EveryFile_HasNonEmptyContent()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -46,7 +47,7 @@ public class PhpPetstoreFileCountTests
     [Test]
     public async Task EveryPhpFile_StartsWithPhpTag()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".php")))

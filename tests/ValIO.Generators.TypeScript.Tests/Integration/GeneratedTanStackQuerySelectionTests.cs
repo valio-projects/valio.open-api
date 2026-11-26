@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Plugins;
@@ -19,7 +20,7 @@ public sealed class GeneratedTanStackQuerySelectionTests
     public async Task OrdinaryQuery_InfersSelectedDataAndPreservesWireCallbacks(string transport)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var document = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],

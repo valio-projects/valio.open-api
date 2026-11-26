@@ -17,7 +17,7 @@ public sealed class ValidatorBoundaryPipelineTests
     public async Task DictionaryResponse_RetainsKeyAndValueSchemas(string validation)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Validators/dictionary-response.json"));
+        var document = await OpenApiFixture.LoadAsync("Validators/dictionary-response.json");
 
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validation });
         var schema = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("getValues.results.schemas.ts", StringComparison.Ordinal)).Content;
@@ -33,7 +33,7 @@ public sealed class ValidatorBoundaryPipelineTests
     public async Task DateArrayResponse_RetainsDateFormatValidation(string validation)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Validators/date-array-response.json"));
+        var document = await OpenApiFixture.LoadAsync("Validators/date-array-response.json");
 
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validation });
         var schema = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("getDates.results.schemas.ts", StringComparison.Ordinal)).Content;
@@ -47,30 +47,7 @@ public sealed class ValidatorBoundaryPipelineTests
     public async Task NullableNamedRequest_DoesNotImportUnusedZodNamespace()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync("""
-            {
-              "openapi": "3.1.0",
-              "info": {"title": "Items", "version": "1"},
-              "paths": {
-                "/items": {
-                  "post": {
-                    "operationId": "ChangeItem",
-                    "requestBody": {
-                      "content": {
-                        "application/json": {
-                          "schema": {"oneOf": [{"type": "null"}, {"$ref": "#/components/schemas/Item"}]}
-                        }
-                      }
-                    },
-                    "responses": {"204": {"description": "No content"}}
-                  }
-                }
-              },
-              "components": {
-                "schemas": {"Item": {"type": "object", "properties": {"label": {"type": "string"}}}}
-              }
-            }
-            """);
+        var document = await OpenApiFixture.LoadAsync("Validators/nullable-named-request.json");
 
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
@@ -93,7 +70,7 @@ public sealed class ValidatorBoundaryPipelineTests
     public async Task NullableParameter_RetainsConstraints(string validation, string expectedConstraint)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Validators/nullable-parameter.json"));
+        var document = await OpenApiFixture.LoadAsync("Validators/nullable-parameter.json");
 
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validation });
         var schema = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith("findValues.params.schema.ts", StringComparison.Ordinal)).Content;

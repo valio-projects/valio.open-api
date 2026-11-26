@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using Microsoft.OpenApi;
 using NUnit.Framework;
@@ -22,7 +23,7 @@ public class StatusUnionResponseTests
     public async Task OneTimeSetup()
     {
         _harness = new PipelineTestHarness();
-        _document = await PipelineTestHarness.LoadDocumentAsync("status-union-response.json");
+        _document = await OpenApiFixture.LoadAsync("TypeScript/status-union-response.json");
     }
 
     [OneTimeTearDown]

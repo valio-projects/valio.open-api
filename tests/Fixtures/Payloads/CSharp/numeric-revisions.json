@@ -1,0 +1,11 @@
+{
+  "valid": [
+    {"revision":9223372036854775807,"previous":null,"strict":2},
+    {"revision":"9223372036854775807","previous":null,"strict":2}
+  ],
+  "invalid": [
+    {"revision":"9223372036854775808","strict":2},
+    {"revision":"1.5","strict":2},
+    {"revision":1,"strict":"2"}
+  ]
+}

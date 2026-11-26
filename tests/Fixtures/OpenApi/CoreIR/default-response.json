@@ -1,0 +1,19 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "X", "version": "1.0.0" },
+  "paths": {
+    "/x": {
+      "get": {
+        "operationId": "x",
+        "responses": {
+          "default": {
+            "description": "any",
+            "content": {
+              "application/json": { "schema": { "type": "string" } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

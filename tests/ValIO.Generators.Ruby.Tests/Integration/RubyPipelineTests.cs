@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Ruby.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class RubyPipelineTests
     [Test]
     public async Task SimpleSchema_ProducesAtLeastOneModelFile()
     {
-        var doc = await RubyPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -32,7 +33,7 @@ public class RubyPipelineTests
     [Test]
     public async Task SimpleSchema_EveryGeneratedFileIsNonEmpty()
     {
-        var doc = await RubyPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -45,7 +46,7 @@ public class RubyPipelineTests
     [Test]
     public async Task SimpleSchema_EveryRubyFileContainsClassKeyword()
     {
-        var doc = await RubyPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var rubyFiles = ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".rb")).ToList();
@@ -60,7 +61,7 @@ public class RubyPipelineTests
     [Test]
     public async Task SimpleSchema_EveryRubyFileStartsWithFrozenStringLiteralPragma()
     {
-        var doc = await RubyPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var rubyFiles = ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".rb")).ToList();

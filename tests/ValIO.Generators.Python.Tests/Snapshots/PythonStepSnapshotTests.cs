@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Options;
@@ -23,7 +24,7 @@ public class PythonStepSnapshotTests
     [Test]
     public async Task UserModel_MatchesSnapshot()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -36,7 +37,7 @@ public class PythonStepSnapshotTests
     [Test]
     public async Task UserRoleEnum_MatchesSnapshot()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var roleFile = ctx.GeneratedFiles.First(f =>

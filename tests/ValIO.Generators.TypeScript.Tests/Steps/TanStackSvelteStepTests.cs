@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -19,7 +20,7 @@ public class TanStackSvelteStepTests
     [Test]
     public async Task TanStackSvelte_GeneratesCreateQueryHookWithAccessor()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -40,7 +41,7 @@ public class TanStackSvelteStepTests
     [Test]
     public async Task TanStackSvelte_PostOperation_GeneratesCreateMutation()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -56,7 +57,7 @@ public class TanStackSvelteStepTests
     [Test]
     public async Task TanStackSvelte_ClientImport_MatchesPrimaryTransport()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],

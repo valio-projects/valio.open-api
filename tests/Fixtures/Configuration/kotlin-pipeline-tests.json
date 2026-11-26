@@ -1,0 +1,10 @@
+{
+  "serialization-options": {
+    "package": "com.acme.gen",
+    "serialization": "kotlinx",
+    "generateBuildFiles": false
+  },
+  "unknown-serialization": {
+    "serialization": "mystery"
+  }
+}

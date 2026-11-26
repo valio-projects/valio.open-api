@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class UndiciClientStepTests
     [Test]
     public async Task NoUndiciTransport_NoUndiciFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -35,7 +36,7 @@ public class UndiciClientStepTests
     [Test]
     public async Task UndiciClient_EmitsRequestImportAndCall()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["undici"] });
 
         var undici = ctx.GeneratedFiles.First(f =>
@@ -48,7 +49,7 @@ public class UndiciClientStepTests
     [Test]
     public async Task UndiciClient_JsonBody_UsesJsonStringify()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["undici"] });
 
         var addPet = ctx.GeneratedFiles.First(f =>
@@ -59,7 +60,7 @@ public class UndiciClientStepTests
     [Test]
     public async Task UndiciClient_BodyJsonAwaited()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["undici"] });
 
         var get = ctx.GeneratedFiles.First(f =>

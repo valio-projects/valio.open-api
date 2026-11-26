@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR.Builders;
@@ -15,34 +16,12 @@ namespace ValIO.Core.Tests.IR;
 public class IrNameAffixerTests
 {
     // Схема Widget совпадает по имени с operationId "Widget" — это и есть исходная коллизия.
-    private const string Doc = """
-    {
-      "openapi":"3.0.3",
-      "info":{"title":"T","version":"1.0.0"},
-      "paths":{
-        "/widgets":{
-          "post":{
-            "operationId":"Widget",
-            "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Widget"}}}},
-            "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Widget"}}}}}
-          }
-        }
-      },
-      "components":{"schemas":{
-        "Color":{"type":"string","enum":["red","green"]},
-        "Gadget":{"type":"object","properties":{"id":{"type":"string"}}},
-        "Widget":{"type":"object","properties":{
-          "color":{"$ref":"#/components/schemas/Color"},
-          "child":{"$ref":"#/components/schemas/Gadget"}
-        }}
-      }}
-    }
-    """;
+    private const string Doc = "CoreIR/naming-affixes.json";
 
     [Test]
     public async Task ModelAndEnumAffixes_RenameDefinitionsAndReferences_WithDistinctAffixes()
     {
-        var ir = await IrTestHarness.BuildIrAsync(Doc, new NameAffixOptions
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read(Doc), new NameAffixOptions
         {
             ModelSuffix = "Model",
             EnumSuffix = "Enum",
@@ -82,7 +61,7 @@ public class IrNameAffixerTests
     [Test]
     public async Task MethodAffix_RenamesOperation_LeavesModelsUntouched()
     {
-        var ir = await IrTestHarness.BuildIrAsync(Doc, new NameAffixOptions { MethodSuffix = "Method" });
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read(Doc), new NameAffixOptions { MethodSuffix = "Method" });
 
         var op = ir.Clients.SelectMany(c => c.Operations).Single();
         op.MethodName.Should().Be("WidgetMethod");
@@ -95,7 +74,7 @@ public class IrNameAffixerTests
     [Test]
     public async Task PrefixAndSuffix_Compose()
     {
-        var ir = await IrTestHarness.BuildIrAsync(Doc, new NameAffixOptions
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read(Doc), new NameAffixOptions
         {
             ModelPrefix = "Api",
             ModelSuffix = "Dto",
@@ -109,7 +88,7 @@ public class IrNameAffixerTests
     [Test]
     public async Task EmptyAffix_IsNoOp()
     {
-        var ir = await IrTestHarness.BuildIrAsync(Doc, NameAffixOptions.None);
+        var ir = await IrTestHarness.BuildIrAsync(OpenApiFixture.Read(Doc), NameAffixOptions.None);
 
         foreach (var m in ir.Models)
             m.OriginalName.Should().Be(m.Name);

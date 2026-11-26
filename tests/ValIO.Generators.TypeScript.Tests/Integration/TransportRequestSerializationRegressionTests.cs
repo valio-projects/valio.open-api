@@ -106,7 +106,7 @@ public sealed class TransportRequestSerializationRegressionTests
     public async Task HeaderParameters_KeepWireNames(string transport)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/wire-headers-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/wire-headers-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = [transport] });
         var endpoint = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith($".{transport}.ts", StringComparison.Ordinal));
 
@@ -132,7 +132,7 @@ public sealed class TransportRequestSerializationRegressionTests
     public async Task NextjsJsonRequest_NormalizesCallerHeadersAndSetsContentType()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/json-request-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/json-request-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["nextjs"] });
         var content = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith(".nextjs.ts", StringComparison.Ordinal)).Content;
 
@@ -344,8 +344,7 @@ public sealed class TransportRequestSerializationRegressionTests
     private static async Task<string> GenerateUpload(string transport, bool required, string? validationLibrary = null)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read(
-            required ? "Transport/multipart-required-3.0.json" : "Transport/multipart-optional-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync(required ? "Transport/multipart-required-3.0.json" : "Transport/multipart-optional-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],

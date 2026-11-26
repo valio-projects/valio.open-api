@@ -1,0 +1,10 @@
+{
+  "build-output": {
+    "package": "io.acme.api",
+    "useHttpClient": "okhttp",
+    "generateBuildFiles": true
+  },
+  "unknown-client": {
+    "useHttpClient": "mystery"
+  }
+}

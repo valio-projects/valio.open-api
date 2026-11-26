@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Python.Options;
@@ -19,7 +20,7 @@ public class PythonAdditionalStepTests
     [Test]
     public async Task ModelFile_InheritsBaseModel()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -31,7 +32,7 @@ public class PythonAdditionalStepTests
     [Test]
     public async Task ModelFile_ImportsPydantic()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -43,7 +44,7 @@ public class PythonAdditionalStepTests
     [Test]
     public async Task ClientFile_HasAsyncDef()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -55,7 +56,7 @@ public class PythonAdditionalStepTests
     [Test]
     public async Task EnumFile_UsesStrEnum()
     {
-        var doc = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>

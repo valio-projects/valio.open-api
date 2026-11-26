@@ -3,6 +3,7 @@ using NUnit.Framework;
 using ValIO.Core.Plugins;
 using ValIO.Generators.TypeScript.Options;
 using ValIO.Generators.TypeScript.Tests.TestHelpers;
+using ValIO.Tests.Fixtures;
 
 namespace ValIO.Generators.TypeScript.Tests.Integration;
 
@@ -19,12 +20,12 @@ public class SwaggerVariantsRegressionTests
 {
     private static readonly string[] Variants =
     {
-        "variant-inheritance.json",
-        "variant-extendref.json",
-        "variant-inheritance-extendref.json",
-        "variant-inheritance-polymorphism.json",
-        "variant-extendref-polymorphism.json",
-        "variant-inheritance-extendref-polymorphism.json",
+        "TypeScript/variant-inheritance.json",
+        "TypeScript/variant-extendref.json",
+        "TypeScript/variant-inheritance-extendref.json",
+        "TypeScript/variant-inheritance-polymorphism.json",
+        "TypeScript/variant-extendref-polymorphism.json",
+        "TypeScript/variant-inheritance-extendref-polymorphism.json",
     };
 
     private static readonly string[] Validators = { "zod3", "zod4", "valibot", "typebox" };
@@ -40,7 +41,8 @@ public class SwaggerVariantsRegressionTests
     public async Task FullPipeline_CompletesWithoutException_AndEmitsFiles(string variant, string validator)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentAsync(variant);
+        // Preserve the Swashbuckle exports, including their mismatched route parameter casing.
+        var document = await OpenApiFixture.LoadAsync(variant, allowReaderErrors: true);
 
         GenerationContext ctx = null!;
         var run = async () => ctx = await harness.RunAsync(document, new TypeScriptGenerationOptions

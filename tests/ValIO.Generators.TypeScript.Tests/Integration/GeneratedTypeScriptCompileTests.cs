@@ -40,7 +40,7 @@ public sealed class GeneratedTypeScriptCompileTests
     public async Task GeneratedClientAndSchemas_CompileWithStrictTypeChecking(string transport, string validation)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("TypeScriptCompile/compile-contracts-3.1.json"));
+        var document = await OpenApiFixture.LoadAsync("TypeScriptCompile/compile-contracts-3.1.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = [transport],

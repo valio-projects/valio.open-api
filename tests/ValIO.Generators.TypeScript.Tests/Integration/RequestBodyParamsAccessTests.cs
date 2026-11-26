@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -16,39 +17,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 public class RequestBodyParamsAccessTests
 {
     // /employees POST — ТОЛЬКО тело (flat). /employees/{id} PUT — тело + route (aggregate).
-    private const string Doc = """
-    {
-      "openapi":"3.0.3",
-      "info":{"title":"T","version":"1.0.0"},
-      "paths":{
-        "/employees":{
-          "post":{
-            "operationId":"CreateEmployee",
-            "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}},
-            "responses":{"201":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}}}
-          }
-        },
-        "/employees/{id}":{
-          "put":{
-            "operationId":"UpdateEmployee",
-            "parameters":[{"name":"id","in":"path","required":true,"schema":{"type":"integer"}}],
-            "requestBody":{"required":true,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}},
-            "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Employee"}}}}}
-          }
-        },
-        "/employees/upload":{
-          "post":{
-            "operationId":"UploadEmployeePhoto",
-            "requestBody":{"required":true,"content":{"multipart/form-data":{"schema":{"type":"object","properties":{"file":{"type":"string","format":"binary"},"caption":{"type":"string"},"tags":{"type":"array","items":{"type":"string"}},"metadata":{"type":"object","properties":{"published":{"type":"boolean"}}},"metadataList":{"type":"array","items":{"type":"object","properties":{"order":{"type":"integer"}}}}}}}}},
-            "responses":{"204":{"description":"ok"}}
-          }
-        }
-      },
-      "components":{"schemas":{
-        "Employee":{"type":"object","required":["name"],"properties":{"id":{"type":"integer"},"name":{"type":"string"}}}
-      }}
-    }
-    """;
+    private const string Doc = "TypeScript/request-body-access.json";
 
     private static string Norm(string p) => p.Replace('\\', '/');
 
@@ -56,7 +25,7 @@ public class RequestBodyParamsAccessTests
     public async Task Axios_FlatJsonBody_ValidatesAndSendsParamsBody()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(Doc);
+        var doc = await OpenApiFixture.LoadAsync(Doc);
         var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"], ValidationLibrary = "zod4" });
 
         var f = ctx.GeneratedFiles.Single(x => Norm(x.RelativePath) == "api/createEmployee/createEmployee.axios.ts").Content;
@@ -69,7 +38,7 @@ public class RequestBodyParamsAccessTests
     public async Task Axios_AggregateJsonBody_UsesParamsBodyAndParamsRoute()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(Doc);
+        var doc = await OpenApiFixture.LoadAsync(Doc);
         var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"], ValidationLibrary = "zod4" });
 
         var f = ctx.GeneratedFiles.Single(x => Norm(x.RelativePath) == "api/updateEmployee/updateEmployee.axios.ts").Content;
@@ -82,7 +51,7 @@ public class RequestBodyParamsAccessTests
     public async Task Fetch_FlatJsonBody_StringifiesParamsBody()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(Doc);
+        var doc = await OpenApiFixture.LoadAsync(Doc);
         var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = "zod4" });
 
         var f = ctx.GeneratedFiles.Single(x => Norm(x.RelativePath) == "api/createEmployee/createEmployee.fetch.ts").Content;
@@ -94,7 +63,7 @@ public class RequestBodyParamsAccessTests
     public async Task Axios_FlatJsonBody_NoValidation_SendsParamsBodyAsData()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(Doc);
+        var doc = await OpenApiFixture.LoadAsync(Doc);
         var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
 
         var f = ctx.GeneratedFiles.Single(x => Norm(x.RelativePath) == "api/createEmployee/createEmployee.axios.ts").Content;
@@ -106,7 +75,7 @@ public class RequestBodyParamsAccessTests
     public async Task Axios_FlatFormBody_UsesParamsForm()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(Doc);
+        var doc = await OpenApiFixture.LoadAsync(Doc);
         var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"], ValidationLibrary = "zod4" });
 
         var f = ctx.GeneratedFiles.Single(x => Norm(x.RelativePath) == "api/uploadEmployeePhoto/uploadEmployeePhoto.axios.ts").Content;
@@ -127,7 +96,7 @@ public class RequestBodyParamsAccessTests
     public async Task SolidStart_FlatFormBody_MaterializesMultipartFormData()
     {
         using var harness = new PipelineTestHarness();
-        var doc = await PipelineTestHarness.LoadDocumentFromJsonAsync(Doc);
+        var doc = await OpenApiFixture.LoadAsync(Doc);
         var ctx = await harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["solid"], ValidationLibrary = "zod4" });
 
         var f = ctx.GeneratedFiles.Single(x => Norm(x.RelativePath) == "api/uploadEmployeePhoto/uploadEmployeePhoto.solid.ts").Content;

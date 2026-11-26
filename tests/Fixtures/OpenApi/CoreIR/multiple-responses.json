@@ -1,0 +1,16 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "X", "version": "1.0.0" },
+  "paths": {
+    "/x": {
+      "get": {
+        "operationId": "x",
+        "responses": {
+          "200": { "description": "ok" },
+          "404": { "description": "missing" },
+          "500": { "description": "boom" }
+        }
+      }
+    }
+  }
+}

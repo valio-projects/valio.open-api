@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Swift.Options;
@@ -19,7 +20,7 @@ public class SwiftAdditionalStepTests
     [Test]
     public async Task ModelFile_ImportsFoundation()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -30,7 +31,7 @@ public class SwiftAdditionalStepTests
     [Test]
     public async Task ModelFile_StructIsPublicAndSendable()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -42,7 +43,7 @@ public class SwiftAdditionalStepTests
     [Test]
     public async Task EnumFile_HasStringRawTypeAndCases()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>
@@ -54,7 +55,7 @@ public class SwiftAdditionalStepTests
     [Test]
     public async Task ClientFile_UsesAsyncThrows()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>

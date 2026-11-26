@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Kotlin.Options;
@@ -22,7 +23,7 @@ public class KotlinAdditionalStepTests
     [Test]
     public async Task ModelFile_HasSerializableAnnotation()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -33,7 +34,7 @@ public class KotlinAdditionalStepTests
     [Test]
     public async Task EnumFile_HasSerialNameAnnotations()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>
@@ -44,7 +45,7 @@ public class KotlinAdditionalStepTests
     [Test]
     public async Task ClientFile_HasSuspendFun()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.First(f =>
@@ -56,7 +57,7 @@ public class KotlinAdditionalStepTests
     [Test]
     public async Task ClientFile_UsesPackageStatement()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var anyFile = ctx.GeneratedFiles.First(f => f.RelativePath.EndsWith(".kt", StringComparison.OrdinalIgnoreCase));

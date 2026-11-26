@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Text.RegularExpressions;
@@ -31,7 +32,7 @@ public sealed class ZodMutualRecordTests
         try
         {
             using var harness = new PipelineTestHarness();
-            var document = await PipelineTestHarness.LoadDocumentAsync("mutual-record-cycles.json");
+            var document = await OpenApiFixture.LoadAsync("TypeScript/mutual-record-cycles.json");
             var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
                 { Transports = ["fetch"], ValidationLibrary = version });
             foreach (var file in context.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".ts", StringComparison.Ordinal)))
@@ -58,7 +59,7 @@ public sealed class ZodMutualRecordTests
                     match => match.Groups[1].Value + match.Groups[2].Value + ".js" + match.Groups[3].Value);
                 await File.WriteAllTextAsync(file, contents);
             }
-            await File.WriteAllTextAsync(Path.Combine(output, "package.json"), "{\"type\":\"module\"}");
+            await File.WriteAllTextAsync(Path.Combine(output, "package.json"), FixtureFile.Read("Configuration/esm-package.json"));
             var compiled = Path.Combine(output, "models", "alpha", "alpha.schema.js");
             var script = "const {AlphaSchema:s}=await import(process.argv[1]);" +
                 "const ok={name:'root',children:{entry:[{rank:'v',children:{back:{name:'inner'}}}]}};" +

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using NUnit.Framework;
@@ -23,7 +24,7 @@ public class RustPipelineTests
     [Test]
     public async Task SimpleSchema_ProducesAtLeastOneRustFile()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -34,7 +35,7 @@ public class RustPipelineTests
     [Test]
     public async Task EveryRustFile_HasNonEmptyContent()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in RustFiles(ctx))
@@ -44,7 +45,7 @@ public class RustPipelineTests
     [Test]
     public async Task EveryRustModelOrEnumFile_DerivesSerdeTraits()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var modelOrEnumFiles = RustFiles(ctx)
@@ -65,7 +66,7 @@ public class RustPipelineTests
     [Test]
     public async Task EveryRustFile_HasBalancedBraces()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in RustFiles(ctx))
@@ -80,7 +81,7 @@ public class RustPipelineTests
     [Test]
     public async Task ModelFile_ContainsPubStructUser()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.FirstOrDefault(f =>
@@ -92,7 +93,7 @@ public class RustPipelineTests
     [Test]
     public async Task ClientFile_UsesReqwestAndAsyncFn()
     {
-        var doc = await RustPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

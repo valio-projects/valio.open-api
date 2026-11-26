@@ -1,0 +1,17 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "Handbook", "version": "v1" },
+  "paths": {
+    "/api/public/v1/handbook/countries": {
+      "get": {
+        "operationId": "LookupCountries",
+        "parameters": [
+          { "name": "Search", "in": "query", "required": false, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object" } } } }
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Plugins;
@@ -62,25 +63,7 @@ public sealed class ZodRecursiveSchemaTests
     private static async Task<GenerationContext> Generate(string validator)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync("""
-            {
-              "openapi":"3.0.3", "info":{"title":"Recursive schemas","version":"1"}, "paths":{},
-              "components":{"schemas":{
-                "Field":{"type":"object","properties":{
-                  "Value":{"type":"integer","format":"int32"},
-                  "Reference":{"allOf":[{"$ref":"#/components/schemas/Reference"}],"nullable":true},
-                  "Leaf":{"$ref":"#/components/schemas/Leaf"}
-                }},
-                "Reference":{"type":"object","properties":{
-                  "Fields":{"type":"object","additionalProperties":{"$ref":"#/components/schemas/Field"},"nullable":true},
-                  "Children":{"type":"array","items":{"$ref":"#/components/schemas/Field"}}
-                }},
-                "Leaf":{"type":"object","properties":{"Name":{"type":"string"}}},
-                "Tree":{"type":"object","properties":{"Children":{"type":"array","items":{"$ref":"#/components/schemas/Tree"}}}},
-                "Consumer":{"type":"object","properties":{"Field":{"$ref":"#/components/schemas/Field"}}}
-              }}
-            }
-            """);
+        var document = await OpenApiFixture.LoadAsync("Validators/recursive-schemas.json");
         return await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -23,7 +24,7 @@ public class MswStepTests
     [Test]
     public async Task NoMockLibrary_NoHandlersFile()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -33,7 +34,7 @@ public class MswStepTests
     [Test]
     public async Task MswMockLibrary_EmitsSingleHandlersFileWithVerbCalls()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],
@@ -58,7 +59,7 @@ public class MswStepTests
     [Test]
     public async Task MswMockLibrary_PathParamsConvertedToColonSyntax()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["fetch"],

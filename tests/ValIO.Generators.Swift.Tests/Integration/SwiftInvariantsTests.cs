@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Swift.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class SwiftInvariantsTests
     [Test]
     public async Task EverySwiftFile_HasNoTabsInsideIndentation()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -35,7 +36,7 @@ public class SwiftInvariantsTests
     [Test]
     public async Task EverySwiftFile_BalancedBraces()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -51,7 +52,7 @@ public class SwiftInvariantsTests
     [Test]
     public async Task ModelFile_StructWithCodable()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -63,7 +64,7 @@ public class SwiftInvariantsTests
     [Test]
     public async Task EnumFile_HasEnumWithCodable()
     {
-        var doc = await SwiftPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>

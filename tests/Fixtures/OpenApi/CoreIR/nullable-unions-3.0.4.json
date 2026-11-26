@@ -1,0 +1,35 @@
+{
+  "openapi": "3.0.4",
+  "info": {
+    "title": "Nullable unions 3.0.4",
+    "version": "1"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Value": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          }
+        }
+      },
+      "Exclusive": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Value"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

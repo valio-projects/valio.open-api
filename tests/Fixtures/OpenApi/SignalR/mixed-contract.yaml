@@ -1,0 +1,37 @@
+openapi: 3.1.0
+info:
+  title: SignalR probe
+  version: '1'
+paths:
+  /result:
+    get:
+      operationId: ReadResult
+      responses:
+        '200':
+          description: Shared result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SharedResult'
+components:
+  schemas:
+    SharedResult:
+      type: object
+      properties:
+        accepted:
+          type: boolean
+x-valio-signalr:
+  hubs:
+  - name: Support
+    path: /hubs/support
+    methods:
+    - name: Submit
+      parameters:
+      - name: request
+        schema:
+          type: object
+          properties:
+            note:
+              type: string
+      result:
+        $ref: '#/components/schemas/SharedResult'

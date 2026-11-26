@@ -1,0 +1,14 @@
+{"openapi":"3.0.3","info":{"title":"Defaults","version":"1"},
+ "paths":{"/items/{id}":{"get":{"operationId":"getItems","parameters":[
+   {"name":"id","in":"path","required":true,"description":"Путь первая\r\nПуть вторая","schema":{"type":"integer","default":0}},
+   {"name":"active","in":"query","required":true,"description":"Флаг первая\rФлаг вторая","schema":{"type":"boolean","default":false}},
+   {"name":"text","in":"query","description":"Текст первая\nТекст вторая","schema":{"type":"string","default":""}}
+ ],"responses":{"200":{"description":"ok"}}}}},
+ "components":{"schemas":{"Settings":{"type":"object","required":["MobileVisible","Missing","nullableRequired"],"properties":{
+   "MobileVisible":{"type":"boolean","default":true,"description":"Первая строка\nВторая строка\nТретья строка"},"disabled":{"type":"boolean","default":false},
+   "count":{"type":"integer","minimum":0,"default":0},"text":{"type":"string","default":""},
+   "missing":{"type":"string"},"nullable":{"type":"string","nullable":true,"default":null},
+   "nullableRequired":{"type":"string","nullable":true},
+   "items":{"type":"array","items":{"type":"integer"},"default":[0,1]},
+   "config":{"type":"object","default":{"foo-bar":"x","a b":false}}
+ }}}}}

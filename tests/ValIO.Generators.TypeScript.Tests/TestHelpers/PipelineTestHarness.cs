@@ -11,7 +11,7 @@ namespace ValIO.Generators.TypeScript.Tests.TestHelpers;
 
 /// <summary>
 /// Reusable harness for running the TypeScript plugin pipeline against
-/// an OpenAPI document loaded from embedded TestData/*.json.
+/// an OpenAPI document loaded from the shared fixtures.
 /// </summary>
 public sealed class PipelineTestHarness : IDisposable
 {
@@ -31,23 +31,6 @@ public sealed class PipelineTestHarness : IDisposable
     }
 
     public IServiceProvider Services => _services;
-
-    public static async Task<OpenApiDocument> LoadDocumentAsync(string resourceName)
-    {
-        var assembly = typeof(PipelineTestHarness).Assembly;
-        var fullName = $"ValIO.Generators.TypeScript.Tests.TestData.{resourceName}";
-        await using var stream = assembly.GetManifestResourceStream(fullName)
-            ?? throw new InvalidOperationException($"Embedded resource not found: {fullName}");
-        var result = await OpenApiDocument.LoadAsync(stream, "json");
-        return result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-    }
-
-    public static async Task<OpenApiDocument> LoadDocumentFromJsonAsync(string json)
-    {
-        await using var ms = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(json));
-        var result = await OpenApiDocument.LoadAsync(ms, "json");
-        return result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-    }
 
     public async Task<GenerationContext> RunAsync(
         OpenApiDocument document,

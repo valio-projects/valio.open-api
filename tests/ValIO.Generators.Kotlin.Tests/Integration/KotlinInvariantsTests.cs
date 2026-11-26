@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Kotlin.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class KotlinInvariantsTests
     [Test]
     public async Task EveryKtFile_StartsWithPackage()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -35,7 +36,7 @@ public class KotlinInvariantsTests
     [Test]
     public async Task EveryKtFile_BalancedBraces()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f =>
@@ -51,7 +52,7 @@ public class KotlinInvariantsTests
     [Test]
     public async Task ModelFile_DataClassOrRegular()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -64,7 +65,7 @@ public class KotlinInvariantsTests
     [Test]
     public async Task EnumFile_DeclaresEnumClass()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>

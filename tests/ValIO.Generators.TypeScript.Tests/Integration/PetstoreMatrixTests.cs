@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using Microsoft.OpenApi;
 using NUnit.Framework;
@@ -9,7 +10,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 
 /// <summary>
 /// Integration tests that exercise the full TypeScript plugin pipeline
-/// against the canonical Swagger Petstore (`TestData/petstore.json`)
+/// against the canonical Swagger Petstore (`Fixtures/OpenApi/Examples/petstore.json`)
 /// across the matrix of supported options.
 ///
 /// Mirrors the matrix in `Examples/configs/petstore-matrix.json`. These
@@ -27,7 +28,7 @@ public class PetstoreMatrixTests
     public async Task OneTimeSetup()
     {
         _harness = new PipelineTestHarness();
-        _document = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        _document = await OpenApiFixture.LoadAsync("Examples/petstore.json");
     }
 
     [OneTimeTearDown]

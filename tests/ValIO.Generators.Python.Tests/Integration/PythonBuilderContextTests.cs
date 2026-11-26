@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR;
@@ -20,7 +21,7 @@ public sealed class PythonBuilderContextTests
     public async Task Builders_IsolateSameNamedModelAndEnumAcrossDocuments()
     {
         using var harness = new PythonPipelineTestHarness();
-        var source = await PythonPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var source = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var baseline = await harness.RunAsync(source);
         var stateReference = new IrModelReference { ModelName = "State" };
         var stateModel = new IrModel(baseline.IrDocument.Models[0])

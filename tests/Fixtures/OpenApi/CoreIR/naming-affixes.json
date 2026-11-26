@@ -1,0 +1,21 @@
+{
+  "openapi":"3.0.3",
+  "info":{"title":"T","version":"1.0.0"},
+  "paths":{
+    "/widgets":{
+      "post":{
+        "operationId":"Widget",
+        "requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Widget"}}}},
+        "responses":{"200":{"description":"ok","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Widget"}}}}}
+      }
+    }
+  },
+  "components":{"schemas":{
+    "Color":{"type":"string","enum":["red","green"]},
+    "Gadget":{"type":"object","properties":{"id":{"type":"string"}}},
+    "Widget":{"type":"object","properties":{
+      "color":{"$ref":"#/components/schemas/Color"},
+      "child":{"$ref":"#/components/schemas/Gadget"}
+    }}
+  }}
+}

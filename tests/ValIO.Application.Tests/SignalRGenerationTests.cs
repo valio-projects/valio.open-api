@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -91,94 +92,13 @@ public sealed class SignalRGenerationTests
             .And.NotContain("SubscribeTicket");
     }
 
-    /// <summary>Emits ordinary REST clients and the SignalR client when the same document provides both.</summary>
-    /// <returns>The asynchronous generation assertion.</returns>
-    [Test]
-    public async Task CSharp_CombinesRestAndSignalRInTheSameProfile()
-    {
-        const string httpPath = """
-            "paths": {
-              "/health": {
-                "get": {
-                  "operationId": "ReadHealth", "tags": ["Health"],
-                  "responses": { "204": { "description": "Healthy" } }
-                }
-              }
-            }
-            """;
-        var source = OpenApiFixture.Read(Fixture).Replace("\"paths\": {}", httpPath, StringComparison.Ordinal);
-        var result = await GenerateAsync(new GenerationConfiguration { LanguageId = "csharp" }, source);
-        result.Success.Should().BeTrue(result.ErrorMessage);
-        result.Files.Should().Contain(file => file.RelativePath == "SignalR/SupportSignalRClient.cs");
-        result.Files.Should().Contain(file => file.Content.Contains("ReadHealth(", StringComparison.Ordinal));
-    }
-
     /// <summary>Verifies that both input formats generate the same shared HTTP and inline SignalR model references.</summary>
     /// <returns>The asynchronous equivalence assertion.</returns>
     [Test]
     public async Task JsonAndYaml_GenerateTheSameMixedContract()
     {
-        const string yaml = """
-            openapi: 3.1.0
-            info:
-              title: SignalR probe
-              version: '1'
-            paths:
-              /result:
-                get:
-                  operationId: ReadResult
-                  responses:
-                    '200':
-                      description: Shared result
-                      content:
-                        application/json:
-                          schema:
-                            $ref: '#/components/schemas/SharedResult'
-            components:
-              schemas:
-                SharedResult:
-                  type: object
-                  properties:
-                    accepted:
-                      type: boolean
-            x-valio-signalr:
-              hubs:
-              - name: Support
-                path: /hubs/support
-                methods:
-                - name: Submit
-                  parameters:
-                  - name: request
-                    schema:
-                      type: object
-                      properties:
-                        note:
-                          type: string
-                  result:
-                    $ref: '#/components/schemas/SharedResult'
-            """;
-        const string json = """
-            {
-              "openapi": "3.1.0",
-              "info": { "title": "SignalR probe", "version": "1" },
-              "paths": { "/result": { "get": {
-                "operationId": "ReadResult",
-                "responses": { "200": {
-                  "description": "Shared result",
-                  "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SharedResult" } } }
-                } }
-              } } },
-              "components": { "schemas": { "SharedResult": { "type": "object", "properties": {
-                "accepted": { "type": "boolean" }
-              } } } },
-              "x-valio-signalr": { "hubs": [{ "name": "Support", "path": "/hubs/support", "methods": [{
-                "name": "Submit", "parameters": [{ "name": "request", "schema": {
-                  "type": "object", "properties": { "note": { "type": "string" } }
-                } }],
-                "result": { "$ref": "#/components/schemas/SharedResult" }
-              }] }] }
-            }
-            """;
+        var yaml = OpenApiFixture.Read("SignalR/mixed-contract.yaml");
+        var json = OpenApiFixture.Read("SignalR/mixed-contract.json");
         var profile = new GenerationConfiguration
         {
             LanguageId = "csharp",
@@ -192,6 +112,7 @@ public sealed class SignalRGenerationTests
         fromJson.Success.Should().BeTrue(fromJson.ErrorMessage);
         fromYaml.Success.Should().BeTrue(fromYaml.ErrorMessage);
         fromYaml.Files.Should().BeEquivalentTo(fromJson.Files);
+        fromYaml.Files.Should().Contain(file => file.RelativePath == "SignalR/SupportSignalRClient.cs");
         var hub = fromYaml.Files.Single(file => file.RelativePath == "SignalR/SupportHubBase.cs");
         hub.Content.Should().Contain("Task<WireSharedResultDto> Submit(WireInlineModel0Dto @request)");
         fromYaml.Files.Should().Contain(file => file.RelativePath == "Models/InlineModel0.cs" && file.Content.Contains("class WireInlineModel0Dto"));
@@ -203,32 +124,45 @@ public sealed class SignalRGenerationTests
     [Test]
     public async Task TypeScript_RejectsUnquotedExactNumbersInsideReferencedModels()
     {
-        var source = OpenApiFixture.Read(Fixture).Replace(
-            "\"visibleSequence\": { \"type\": \"string\" }",
-            "\"visibleSequence\": { \"type\": \"integer\", \"format\": \"int64\" }", StringComparison.Ordinal);
+        var document = JsonNode.Parse(OpenApiFixture.Read(Fixture))!;
+        var sequence = document["components"]!["schemas"]!["SupportChanged"]!["properties"]!["visibleSequence"]!;
+        sequence["type"] = "integer";
+        sequence["format"] = "int64";
 
-        var result = await GenerateAsync(new GenerationConfiguration { LanguageId = "typescript" }, source);
-
+        var result = await GenerateAsync(new GenerationConfiguration { LanguageId = "typescript" }, document.ToJsonString());
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("unquoted exact JSON numbers");
         result.Files.Should().BeEmpty();
     }
 
-    /// <summary>Rejects references to a missing schema and duplicate hub method names with an actionable diagnostic.</summary>
-    /// <param name="sourceText">The source fragment to replace.</param>
-    /// <param name="replacement">An invalid declaration in its place.</param>
+    /// <summary>Rejects invalid hub declarations with a diagnostic that identifies the contract error.</summary>
+    /// <param name="violation">The change that makes the shared hub contract invalid.</param>
     /// <param name="expected">The diagnostic describing the contract violation.</param>
     /// <returns>The asynchronous generation assertion.</returns>
-    [TestCase("#/components/schemas/RealtimeResult", "#/components/schemas/Missing", "existing local component schema")]
-    [TestCase("\"Heartbeat\"", "\"SubscribeTicket\"", "duplicate wire name")]
-    [TestCase("\"$ref\": \"#/components/schemas/RealtimeResult\"",
-        "\"$ref\": \"#/components/schemas/RealtimeResult\", \"nullable\": true", "additional schema keywords")]
-    public async Task InvalidContract_ReportsTheContractViolation(string sourceText, string replacement, string expected)
+    [TestCase("missing-schema", "existing local component schema")]
+    [TestCase("duplicate-method", "duplicate wire name")]
+    [TestCase("reference-sibling", "additional schema keywords")]
+    public async Task InvalidContract_ReportsTheContractViolation(string violation, string expected)
     {
-        var source = OpenApiFixture.Read(Fixture).Replace(sourceText, replacement, StringComparison.Ordinal);
+        var document = JsonNode.Parse(OpenApiFixture.Read(Fixture))!;
+        var methods = document["x-valio-signalr"]!["hubs"]![0]!["methods"]!.AsArray();
+        var returnType = methods[0]!["result"]!;
+        switch (violation)
+        {
+            case "missing-schema":
+                returnType["$ref"] = "#/components/schemas/Missing";
+                break;
+            case "duplicate-method":
+                methods[1]!["name"] = "SubscribeTicket";
+                break;
+            case "reference-sibling":
+                returnType["nullable"] = true;
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(violation));
+        }
 
-        var result = await GenerateAsync(new GenerationConfiguration { LanguageId = "csharp" }, source);
-
+        var result = await GenerateAsync(new GenerationConfiguration { LanguageId = "csharp" }, document.ToJsonString());
         result.Success.Should().BeFalse();
         result.Files.Should().BeEmpty();
         result.ErrorMessage.Should().Contain("x-valio-signalr").And.Contain(expected);

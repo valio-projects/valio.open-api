@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -22,7 +23,7 @@ public class OFetchClientStepTests
     [Test]
     public async Task NoOFetchTransport_NoOFetchFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -34,7 +35,7 @@ public class OFetchClientStepTests
     [Test]
     public async Task OFetchClient_EmitsRawCallAndIgnoreError()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ofetch"] });
 
         var of = ctx.GeneratedFiles.First(f =>
@@ -48,7 +49,7 @@ public class OFetchClientStepTests
     [Test]
     public async Task OFetchClient_ReadsTypedDataField()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["ofetch"] });
 
         var of = ctx.GeneratedFiles.First(f =>

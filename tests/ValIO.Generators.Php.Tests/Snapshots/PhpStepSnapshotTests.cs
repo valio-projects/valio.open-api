@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Php.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class PhpStepSnapshotTests
     [Test]
     public async Task UserClass_MatchesSnapshot()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -29,7 +30,7 @@ public class PhpStepSnapshotTests
     [Test]
     public async Task UserRoleEnum_MatchesSnapshot()
     {
-        var doc = await PhpPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>

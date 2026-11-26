@@ -1,0 +1,19 @@
+{
+  "openapi": "3.0.1",
+  "info": { "title": "Handbook", "version": "v1" },
+  "paths": {
+    "/api/public/v1/handbook/cities": {
+      "get": {
+        "operationId": "LookupCities",
+        "parameters": [
+          { "name": "CountryId", "in": "query", "required": false, "schema": { "type": "integer" } },
+          { "name": "Paging.Offset", "in": "query", "required": true, "schema": { "type": "integer" } },
+          { "name": "Paging.Take", "in": "query", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object" } } } }
+        }
+      }
+    }
+  }
+}

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
@@ -20,7 +21,7 @@ public class JavaPipelineTests
     [Test]
     public async Task FullPipeline_GeneratesModels_Enums_AndClient()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var paths = ctx.GeneratedFiles.Select(f => f.RelativePath.Replace('\\', '/')).ToList();
@@ -33,7 +34,7 @@ public class JavaPipelineTests
     public void OptionsDescriptor_ParsesValidValues()
     {
         using var jsonDoc = JsonDocument.Parse(
-            "{\"package\":\"io.acme.api\",\"useHttpClient\":\"okhttp\",\"generateBuildFiles\":true}");
+            FixtureFile.ReadJsonCase("Configuration/java-pipeline-tests.json", "build-output"));
         var raw = new Dictionary<string, JsonElement>();
         foreach (var prop in jsonDoc.RootElement.EnumerateObject())
             raw[prop.Name] = prop.Value;
@@ -51,7 +52,7 @@ public class JavaPipelineTests
     [Test]
     public void OptionsDescriptor_FlagsUnknownHttpClient()
     {
-        using var jsonDoc = JsonDocument.Parse("{\"useHttpClient\":\"mystery\"}");
+        using var jsonDoc = JsonDocument.Parse(FixtureFile.ReadJsonCase("Configuration/java-pipeline-tests.json", "unknown-client"));
         var raw = new Dictionary<string, JsonElement>
         {
             ["useHttpClient"] = jsonDoc.RootElement.GetProperty("useHttpClient")
@@ -66,7 +67,7 @@ public class JavaPipelineTests
     [Test]
     public async Task PluginRegistry_FindsPlugin_ByAlias()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         await _harness.RunAsync(doc);
 
         var registry = (ValIO.Core.Plugins.IGeneratorRegistry)
@@ -81,7 +82,7 @@ public class JavaPipelineTests
     [Test]
     public async Task GeneratedFiles_AreNonEmpty()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().NotBeEmpty();
@@ -94,7 +95,7 @@ public class JavaPipelineTests
     [Test]
     public async Task GenerateBuildFiles_EmitsGradleArtifacts()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new JavaGenerationOptions { GenerateBuildFiles = true });
 
         var paths = ctx.GeneratedFiles.Select(f => f.RelativePath.Replace('\\', '/')).ToList();

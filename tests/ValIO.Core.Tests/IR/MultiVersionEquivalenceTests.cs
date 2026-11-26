@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.IR;
@@ -14,14 +15,14 @@ namespace ValIO.Core.Tests.IR;
 [TestFixture]
 public class MultiVersionEquivalenceTests
 {
-    /// <summary>Lists the embedded specification dialects that every test must support.</summary>
+    /// <summary>Lists the shared specification dialects that every test must support.</summary>
     private static readonly string[] Versions = { "2.0", "3.0", "3.1", "3.2" };
 
-    /// <summary>Builds the selected embedded contract without suppressing reader or IR failures.</summary>
-    /// <param name="version">The specification dialect identifying the embedded fixture.</param>
+    /// <summary>Builds the selected shared contract without suppressing reader or IR failures.</summary>
+    /// <param name="version">The specification dialect identifying the shared fixture.</param>
     /// <returns>The complete IR for the selected contract.</returns>
     private static Task<IrDocument> BuildAsync(string version) => IrTestHarness.BuildIrAsync(
-        OpenApiFragments.LoadEmbedded($"multiversion/account-{version}.json"));
+        OpenApiFixture.Read($"CoreIR/MultiVersion/account-{version}.json"));
 
     /// <summary>Requires every supported dialect to expose its declared account model.</summary>
     /// <param name="version">The specification dialect under test.</param>

@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Kotlin.Tests.TestHelpers;
@@ -21,7 +22,7 @@ public class KotlinPetstoreFileCountTests
     [Test]
     public async Task Petstore_GeneratesAllExpectedModels()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var expected = new[] { "Pet.kt", "Category.kt", "Tag.kt", "Order.kt", "User.kt", "ApiResponse.kt" };
@@ -36,7 +37,7 @@ public class KotlinPetstoreFileCountTests
     [Test]
     public async Task EveryFile_HasNonEmptyContent()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles)
@@ -46,7 +47,7 @@ public class KotlinPetstoreFileCountTests
     [Test]
     public async Task EveryKtFile_StartsWithPackageOrImport()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         foreach (var f in ctx.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".kt")))

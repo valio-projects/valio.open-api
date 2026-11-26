@@ -27,7 +27,7 @@ public sealed class NativeTransportInjectionTests
     public async Task NativeClientArgument_AppendsWithoutReplacingTransportOptions(string transport, string clientType, string defaultClient)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/runtime-contracts-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = [transport] });
         var source = context.GeneratedFiles.Single(file => file.RelativePath.EndsWith($"mixed.{transport}.ts", StringComparison.Ordinal)).Content;
 
@@ -47,7 +47,7 @@ public sealed class NativeTransportInjectionTests
     public async Task ConfiguredAxiosExport_CannotBeShadowed(string exportName)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/runtime-contracts-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],
@@ -68,9 +68,9 @@ public sealed class NativeTransportInjectionTests
     public async Task NativeInterceptors_RefreshOnceReplayAndCancel(string transport)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/runtime-contracts-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = [transport], ValidationLibrary = "zod4" });
-        var script = $"const transport = {JsonSerializer.Serialize(transport)};" + Environment.NewLine + ReadScript("native-http-pipeline.cjs");
+        var script = $"const transport = {JsonSerializer.Serialize(transport)};" + Environment.NewLine + FixtureFile.Read("Runtime/TypeScript/native-http-pipeline.cjs");
 
         var output = await GeneratedTypeScriptRuntime.Run(context, script);
 
@@ -84,23 +84,12 @@ public sealed class NativeTransportInjectionTests
     public async Task AngularPromise_AbortSignalUnsubscribesAndPreservesValidation()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read("Transport/runtime-contracts-3.0.json"));
+        var document = await OpenApiFixture.LoadAsync("Transport/runtime-contracts-3.0.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["angular-promise"], ValidationLibrary = "zod4" });
 
-        var output = await GeneratedTypeScriptRuntime.Run(context, ReadScript("angular-promise-abort.cjs"));
+        var output = await GeneratedTypeScriptRuntime.Run(context, FixtureFile.Read("Runtime/TypeScript/angular-promise-abort.cjs"));
 
         output.Should().Contain("Angular Promise cancellation runtime passed");
     }
 
-    /// <summary>Reads an embedded runtime scenario independently from the OpenAPI input fixture.</summary>
-    /// <param name="name">The JavaScript resource file name.</param>
-    /// <returns>The complete Node runtime scenario.</returns>
-    /// <exception cref="InvalidOperationException">The requested embedded runtime scenario is missing.</exception>
-    private static string ReadScript(string name)
-    {
-        using var stream = typeof(NativeTransportInjectionTests).Assembly.GetManifestResourceStream($"ValIO.Generators.TypeScript.Tests.TestData.{name}")
-            ?? throw new InvalidOperationException($"Missing embedded native transport scenario: {name}");
-        using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
-    }
 }

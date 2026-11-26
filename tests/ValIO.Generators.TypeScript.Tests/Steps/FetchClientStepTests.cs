@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -22,7 +23,7 @@ public class FetchClientStepTests
         // FetchClientStep only emits when "fetch" is explicitly listed
         // OR PluginOptions is null entirely. An explicit empty list
         // means "no transports".
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = [] });
 
         ctx.GeneratedFiles.Should().NotContain(f =>
@@ -32,7 +33,7 @@ public class FetchClientStepTests
     [Test]
     public async Task FetchTransport_GeneratesFetchFiles()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         ctx.GeneratedFiles.Should().Contain(f =>
@@ -42,7 +43,7 @@ public class FetchClientStepTests
     [Test]
     public async Task FetchClient_AsyncReturnTypeWrappedInPromise()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var client = ctx.GeneratedFiles.First(f =>
@@ -56,7 +57,7 @@ public class FetchClientStepTests
     [Test]
     public async Task FetchClient_QueryParams_BuiltViaUrlSearchParams()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var findByStatus = ctx.GeneratedFiles.First(f =>
@@ -73,7 +74,7 @@ public class FetchClientStepTests
     [Test]
     public async Task FetchClient_OptionalQuerySource_UsesOptionalChaining()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         // updatePetWithForm has all-optional query params, so params.query itself is optional.
@@ -88,7 +89,7 @@ public class FetchClientStepTests
     [Test]
     public async Task FetchClient_MergesOperationAndCallerHeaders()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["fetch"] });
 
         var deletePet = ctx.GeneratedFiles.First(f =>

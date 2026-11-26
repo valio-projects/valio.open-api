@@ -11,7 +11,7 @@ namespace ValIO.Generators.Dart.Tests.TestHelpers;
 
 /// <summary>
 /// Reusable harness for running the Dart plugin pipeline against an
-/// OpenAPI document loaded from <c>TestData/*.json</c>.
+/// OpenAPI document loaded from the shared fixtures.
 /// </summary>
 public sealed class DartPipelineTestHarness : IDisposable
 {
@@ -29,16 +29,6 @@ public sealed class DartPipelineTestHarness : IDisposable
     }
 
     public IServiceProvider Services => _services;
-
-    public static async Task<OpenApiDocument> LoadDocumentAsync(string resourceName)
-    {
-        var assembly = typeof(DartPipelineTestHarness).Assembly;
-        var fullName = $"ValIO.Generators.Dart.Tests.TestData.{resourceName}";
-        await using var stream = assembly.GetManifestResourceStream(fullName)
-            ?? throw new InvalidOperationException($"Embedded resource not found: {fullName}");
-        var result = await OpenApiDocument.LoadAsync(stream, "json");
-        return result.Document ?? throw new InvalidOperationException("Failed to parse OpenAPI document");
-    }
 
     public async Task<GenerationContext> RunAsync(
         OpenApiDocument document,

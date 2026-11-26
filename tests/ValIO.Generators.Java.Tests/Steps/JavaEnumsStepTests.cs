@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Java.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class JavaEnumsStepTests
     [Test]
     public async Task EmitsBackedEnumWithValueConstructor()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>
@@ -34,7 +35,7 @@ public class JavaEnumsStepTests
     [Test]
     public async Task EnumFiles_LiveAlongsideModels()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().Contain(f =>
@@ -44,7 +45,7 @@ public class JavaEnumsStepTests
     [Test]
     public async Task EnumConstants_AreUppercaseSnakeCase()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var enumFile = ctx.GeneratedFiles.First(f =>

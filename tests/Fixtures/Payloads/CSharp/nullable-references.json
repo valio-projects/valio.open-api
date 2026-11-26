@@ -1,0 +1,6 @@
+{
+  "all-null": {"country":null,"state":null,"countries":[null],"states":{"one":null}},
+  "populated": {"country":{"id":7,"name":"DE"},"state":"granted","countries":[null,{"id":9,"name":"US"}],"states":{"one":"pending","two":null}},
+  "invalid-model": {"country":"DE","state":null,"countries":[],"states":{}},
+  "invalid-enum": {"country":null,"state":"unknown","countries":[],"states":{}}
+}

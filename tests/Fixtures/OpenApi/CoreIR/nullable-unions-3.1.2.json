@@ -1,0 +1,192 @@
+{
+  "openapi": "3.1.2",
+  "info": {
+    "title": "Nullable unions 3.1.2",
+    "version": "1"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Value": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          }
+        }
+      },
+      "Exclusive": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Value"
+              }
+            ]
+          }
+        }
+      },
+      "Inclusive": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Value"
+              }
+            ]
+          }
+        }
+      },
+      "NullableObject": {
+        "type": [
+          "object",
+          "null"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer"
+          }
+        }
+      },
+      "NullableObjectChoice": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NullableObject"
+              }
+            ]
+          }
+        }
+      },
+      "UntypedObject": {
+        "properties": {
+          "id": {
+            "type": "integer"
+          }
+        }
+      },
+      "UntypedObjectChoice": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/UntypedObject"
+              }
+            ]
+          }
+        }
+      },
+      "NullableString": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "NullableStringChoice": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NullableString"
+              }
+            ]
+          }
+        }
+      },
+      "ReferencedValue": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ReferencedValue"
+          }
+        ]
+      },
+      "ReferencedValueChoice": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ReferencedValue"
+              }
+            ]
+          }
+        }
+      },
+      "RepeatedPredicate": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "string",
+                "pattern": "^a"
+              },
+              {
+                "type": "string",
+                "pattern": "^a"
+              }
+            ]
+          }
+        }
+      },
+      "ExclusiveNullOnly": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "oneOf": [
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "InclusiveNullOnly": {
+        "type": "object",
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

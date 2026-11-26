@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Services;
@@ -15,7 +16,7 @@ public class SchemaResolverTests
     [Test]
     public async Task SchemaResolver_ResolvesInlineSchema_Unchanged()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var resolver = new SchemaResolver(doc);
         // User.properties.id is inline (no $ref) — ResolveSchema should return it as-is.
         var idSchema = doc.Components!.Schemas["User"].Properties["id"];
@@ -26,7 +27,7 @@ public class SchemaResolverTests
     [Test]
     public async Task SchemaResolver_ResolvesUserModel_FromComponents()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var resolver = new SchemaResolver(doc);
         var userSchema = doc.Components!.Schemas["User"];
         var resolved = resolver.ResolveSchema(userSchema);
@@ -37,7 +38,7 @@ public class SchemaResolverTests
     [Test]
     public async Task CachingSchemaResolver_DelegatesAndCaches()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var inner = new SchemaResolver(doc);
         var caching = new CachingSchemaResolver(inner);
 
@@ -51,7 +52,7 @@ public class SchemaResolverTests
     [Test]
     public async Task CachingSchemaResolver_DifferentSchemas_AreIndependent()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var inner = new SchemaResolver(doc);
         var caching = new CachingSchemaResolver(inner);
 

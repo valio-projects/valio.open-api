@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Text.Json;
 using FluentAssertions;
 using NUnit.Framework;
@@ -26,7 +27,7 @@ public sealed class CSharpOptionsTests
     {
         var descriptor = new CSharpOptionsDescriptor();
         var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(
-            """{"propertyAccessor":"Init","useRequired":true,"generateEqualityMembers":false,"useSealed":true}""")!;
+            FixtureFile.ReadJsonCase("Configuration/csharp-options-tests.json", "model-generation"))!;
         var options = descriptor.ParseOptions(raw, out var errors);
         errors.Should().BeEmpty();
         var typed = options.Should().BeOfType<CSharpGenerationOptions>().Subject;
@@ -64,18 +65,18 @@ public sealed class CSharpOptionsTests
     }
 
     /// <summary>Rejects unsupported and malformed options instead of silently ignoring them.</summary>
-    /// <param name="json">The invalid or unimplemented option payload.</param>
-    [TestCase("{\"modelType\":\"Record\"}")]
-    [TestCase("{\"queryParametersStyle\":\"ModelClass\"}")]
-    [TestCase("{\"nullableReferenceTypes\":false}")]
-    [TestCase("{\"nullableActivity\":false}")]
-    [TestCase("{\"clientAccessModifier\":\"Private\"}")]
-    [TestCase("{\"generateEqualityMembers\":\"false\"}")]
-    [TestCase("{\"propertyAccessor\":\"Unknown\"}")]
-    [TestCase("{\"misspelledOption\":true}")]
-    public void UnsupportedOptions_ProduceActionableErrors(string json)
+    /// <param name="caseName">The name of the invalid option fixture.</param>
+    [TestCase("unsupported-model-type")]
+    [TestCase("unsupported-query-style")]
+    [TestCase("unsupported-nullable-references")]
+    [TestCase("unsupported-nullable-activity")]
+    [TestCase("unsupported-access-modifier")]
+    [TestCase("invalid-equality-flag")]
+    [TestCase("invalid-property-accessor")]
+    [TestCase("unknown-option")]
+    public void UnsupportedOptions_ProduceActionableErrors(string caseName)
     {
-        var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json)!;
+        var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(FixtureFile.ReadJsonCase("Configuration/csharp-options-tests.json", caseName))!;
 
         var options = new CSharpOptionsDescriptor().ParseOptions(raw, out var errors);
 

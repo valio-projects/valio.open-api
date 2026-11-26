@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Kotlin.Options;
@@ -19,7 +20,7 @@ public class KotlinPetstoreTests
     [Test]
     public async Task Petstore_GeneratesModelsForCoreSchemas()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         ctx.GeneratedFiles.Should().Contain(f => f.RelativePath.Contains("Pet", StringComparison.OrdinalIgnoreCase));
@@ -29,7 +30,7 @@ public class KotlinPetstoreTests
     [Test]
     public async Task Petstore_ModelsAreDataClassesWithSerializable()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var petFile = ctx.GeneratedFiles.First(f =>
@@ -42,7 +43,7 @@ public class KotlinPetstoreTests
     [Test]
     public async Task Petstore_ClientUsesOkHttpWithCoroutines()
     {
-        var doc = await KotlinPipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc);
 
         var clientFile = ctx.GeneratedFiles.FirstOrDefault(f =>

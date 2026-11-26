@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.Java.Tests.TestHelpers;
@@ -18,7 +19,7 @@ public class JavaModelsStepTests
     [Test]
     public async Task GeneratesOneFilePerModel_InModelsFolder()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var modelFiles = ctx.GeneratedFiles
@@ -32,7 +33,7 @@ public class JavaModelsStepTests
     [Test]
     public async Task EmitsPackageAndRecordDeclaration()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -45,7 +46,7 @@ public class JavaModelsStepTests
     [Test]
     public async Task RequiredPrimitives_AreUnboxed_OptionalAreBoxed()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -60,7 +61,7 @@ public class JavaModelsStepTests
     [Test]
     public async Task ReferencesEnumByClassName_NoImportNeededInSamePackage()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc);
 
         var userFile = ctx.GeneratedFiles.First(f =>
@@ -73,7 +74,7 @@ public class JavaModelsStepTests
     [Test]
     public async Task CustomPackage_RespectedInOutput()
     {
-        var doc = await JavaPipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new Java.Options.JavaGenerationOptions { Package = "io.acme.api" });
 
         var userFile = ctx.GeneratedFiles.First(f =>

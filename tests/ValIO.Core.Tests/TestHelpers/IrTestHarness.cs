@@ -42,25 +42,4 @@ internal static class IrTestHarness
         var converter = new NamingConverter();
         return new IrBuilder(resolver, converter).BuildFromOpenApi(doc, warnings: null, affixOptions: affixOptions);
     }
-
-    /// <summary>
-    /// Строит документ с заданными component-схемами и возвращает построенный IR.
-    /// </summary>
-    public static Task<IrDocument> BuildIrFromSchemasAsync(string openapiVersion, params (string name, string body)[] schemas)
-        => BuildIrAsync(OpenApiFragments.DocWithSchemas(openapiVersion, schemas));
-
-    /// <summary>
-    /// Возвращает единственную модель с заданным именем из построенного IR.
-    /// </summary>
-    public static async Task<IrModel> BuildSingleModelAsync(
-        string schemaName,
-        string schemaBody,
-        string openapiVersion = "3.0.3",
-        params (string name, string body)[] extraSchemas)
-    {
-        var all = new List<(string, string)> { (schemaName, schemaBody) };
-        all.AddRange(extraSchemas);
-        var ir = await BuildIrFromSchemasAsync(openapiVersion, all.ToArray());
-        return ir.Models.Single(m => m.Name == schemaName);
-    }
 }

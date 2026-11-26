@@ -1,0 +1,42 @@
+{
+  "legacy-query-wrapper": {
+    "queryWrapper": "tanstack"
+  },
+  "case-insensitive-transports": {
+    "transports": [
+      "Ky"
+    ],
+    "validation": "@sinclair/typebox"
+  },
+  "unknown-transport": {
+    "transports": [
+      "mystery"
+    ]
+  },
+  "preset-result-suffix": {
+    "resultTypeSuffix": "RESPONSE"
+  },
+  "legacy-result-suffix": {
+    "resultSuffix": "result"
+  },
+  "custom-result-suffix": {
+    "resultTypeSuffix": "outcome"
+  },
+  "axios-instance": {
+    "axios": {
+      "customInstancePath": "@shared/api/api-mutator.ts",
+      "customInstanceName": "apiMutator"
+    }
+  },
+  "incomplete-axios-instance": {
+    "axios": {
+      "customInstancePath": "@shared/api/api-mutator"
+    }
+  },
+  "transport-and-validator": {
+    "transports": [
+      "ky"
+    ],
+    "validation": "zod3"
+  }
+}

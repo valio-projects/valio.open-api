@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -19,7 +20,7 @@ public class AxiosClientStepTests
     [Test]
     public async Task AxiosClient_ImportsAxiosAndConfigType()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
 
         var any = ctx.GeneratedFiles.First(f =>
@@ -31,7 +32,7 @@ public class AxiosClientStepTests
     [Test]
     public async Task AxiosClient_TypeImports_AreSplitOnePerLine()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
 
         var any = ctx.GeneratedFiles.First(f =>
@@ -46,7 +47,7 @@ public class AxiosClientStepTests
     [Test]
     public async Task AxiosClient_HeadersAreCast_ToAxiosRequestConfigHeaders()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
 
         var deletePet = ctx.GeneratedFiles.First(f =>
@@ -57,7 +58,7 @@ public class AxiosClientStepTests
     [Test]
     public async Task AxiosClient_WithZod_DeduplicatesModelSchemaImports()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("petstore.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/petstore.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],
@@ -78,7 +79,7 @@ public class AxiosClientStepTests
     [Test]
     public async Task AxiosClient_CustomInstance_ImportsQualifiedExportAndAssignsToAxiosInstance()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["axios"],
@@ -102,7 +103,7 @@ public class AxiosClientStepTests
     [Test]
     public async Task AxiosClient_NoCustomInstance_FallsBackToGlobalAxios()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
 
         var any = ctx.GeneratedFiles.First(f =>
@@ -115,7 +116,7 @@ public class AxiosClientStepTests
     [Test]
     public async Task AxiosClient_NoZod_NoSchemaImports()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions { Transports = ["axios"] });
 
         var any = ctx.GeneratedFiles.First(f =>

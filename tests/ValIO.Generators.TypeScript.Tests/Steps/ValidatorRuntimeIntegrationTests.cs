@@ -31,7 +31,7 @@ public sealed class ValidatorRuntimeIntegrationTests
     public async Task GeneratedSchemas_PreserveCompositionAndPresence(string version, string validation)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read($"Validators/validator-runtime-{version}.json"));
+        var document = await OpenApiFixture.LoadAsync($"Validators/validator-runtime-{version}.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validation });
         var output = await GeneratedTypeScriptRuntime.Run(context, RuntimeScript(validation, version));
         output.Should().Contain("validator runtime passed");
@@ -171,7 +171,7 @@ public sealed class ValidatorRuntimeIntegrationTests
     public async Task CompositionProperties_PreservePresenceAndNullability(string version, string validation)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read($"CoreIR/composition-presence-{version}.json"));
+        var document = await OpenApiFixture.LoadAsync($"CoreIR/composition-presence-{version}.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validation });
         var parse = validation switch
         {
@@ -231,7 +231,7 @@ public sealed class ValidatorRuntimeIntegrationTests
     public async Task CollapsedComposition_PreservesAllConstraintRules(string fixture, string validation)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(OpenApiFixture.Read($"CoreIR/{fixture}.json"));
+        var document = await OpenApiFixture.LoadAsync($"CoreIR/{fixture}.json");
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { Transports = ["fetch"], ValidationLibrary = validation });
         var parse = validation switch
         {

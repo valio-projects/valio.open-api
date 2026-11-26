@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.ComponentModel;
 using System.Diagnostics;
 using FluentAssertions;
@@ -30,7 +31,7 @@ public sealed class ZodAllOfNarrowingTests
         try
         {
             using var harness = new PipelineTestHarness();
-            var document = await PipelineTestHarness.LoadDocumentAsync("allof-narrowing.json");
+            var document = await OpenApiFixture.LoadAsync("TypeScript/allof-narrowing.json");
             var context = await harness.RunAsync(document, new TypeScriptGenerationOptions
             { Transports = ["fetch"], ValidationLibrary = version });
             foreach (var file in context.GeneratedFiles.Where(f => f.RelativePath.EndsWith(".ts", StringComparison.Ordinal)))

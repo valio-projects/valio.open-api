@@ -1,0 +1,11 @@
+{
+  "sync-pydantic": {
+    "pythonVersion": "3.12",
+    "httpxMode": "sync",
+    "validator": "pydantic",
+    "rootModule": "my_api"
+  },
+  "unknown-httpx-mode": {
+    "httpxMode": "mystery"
+  }
+}

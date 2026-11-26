@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using System.Diagnostics;
 using System.Text.Json;
 using FluentAssertions;
@@ -13,22 +14,7 @@ namespace ValIO.Generators.TypeScript.Tests.Integration;
 public sealed class DefaultValuesGenerationTests
 {
     /// <summary>A contract with falsy, nested, null and absent defaults.</summary>
-    private const string Contract = """
-    {"openapi":"3.0.3","info":{"title":"Defaults","version":"1"},
-     "paths":{"/items/{id}":{"get":{"operationId":"getItems","parameters":[
-       {"name":"id","in":"path","required":true,"description":"Путь первая\r\nПуть вторая","schema":{"type":"integer","default":0}},
-       {"name":"active","in":"query","required":true,"description":"Флаг первая\rФлаг вторая","schema":{"type":"boolean","default":false}},
-       {"name":"text","in":"query","description":"Текст первая\nТекст вторая","schema":{"type":"string","default":""}}
-     ],"responses":{"200":{"description":"ok"}}}}},
-     "components":{"schemas":{"Settings":{"type":"object","required":["MobileVisible","Missing","nullableRequired"],"properties":{
-       "MobileVisible":{"type":"boolean","default":true,"description":"Первая строка\nВторая строка\nТретья строка"},"disabled":{"type":"boolean","default":false},
-       "count":{"type":"integer","minimum":0,"default":0},"text":{"type":"string","default":""},
-       "missing":{"type":"string"},"nullable":{"type":"string","nullable":true,"default":null},
-       "nullableRequired":{"type":"string","nullable":true},
-       "items":{"type":"array","items":{"type":"integer"},"default":[0,1]},
-       "config":{"type":"object","default":{"foo-bar":"x","a b":false}}
-     }}}}}
-    """;
+    private const string Contract = "TypeScript/default-values.json";
 
     /// <summary>Checks enabled and disabled output, required presence, constraints and runtime values.</summary>
     /// <param name="enabled">Whether defaults are requested.</param>
@@ -38,7 +24,7 @@ public sealed class DefaultValuesGenerationTests
     public async Task GeneratesOnlyExplicitDefaults(bool enabled)
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Contract);
+        var document = await OpenApiFixture.LoadAsync(Contract);
         var context = await harness.RunAsync(document, new TypeScriptGenerationOptions { GenerateDefaultValues = enabled });
         var model = context.GeneratedFiles.Single(f => f.RelativePath.EndsWith("/settings.ts")).Content;
         var index = context.GeneratedFiles.Single(f => f.RelativePath == "index.ts").Content;
@@ -97,7 +83,7 @@ public sealed class DefaultValuesGenerationTests
     public async Task AffixedDefaultsPreserveOptionalNullableMembers()
     {
         using var harness = new PipelineTestHarness();
-        var document = await PipelineTestHarness.LoadDocumentFromJsonAsync(Contract);
+        var document = await OpenApiFixture.LoadAsync(Contract);
         var context = await harness.RunAsync(document,
             new TypeScriptGenerationOptions { GenerateDefaultValues = true },
             naming: new NamingConventions { ModelPrefix = "Api", MethodPrefix = "Api" });

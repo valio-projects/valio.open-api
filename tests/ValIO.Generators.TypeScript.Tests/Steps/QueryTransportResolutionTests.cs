@@ -1,3 +1,4 @@
+using ValIO.Tests.Fixtures;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Generators.TypeScript.Options;
@@ -28,7 +29,7 @@ public class QueryTransportResolutionTests
     [Test]
     public async Task WrapperWithoutClientTransport_AutoAddsFetch_AndWarns()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],
@@ -47,7 +48,7 @@ public class QueryTransportResolutionTests
     [Test]
     public async Task ExplicitQueryTransport_IsHonoured_AndAutoAdded()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["nextjs"],
@@ -66,7 +67,7 @@ public class QueryTransportResolutionTests
     [Test]
     public async Task QueryTransport_AlreadySelected_NoWarning()
     {
-        var doc = await PipelineTestHarness.LoadDocumentAsync("simple-schema.json");
+        var doc = await OpenApiFixture.LoadAsync("Examples/simple-schema.json");
         var ctx = await _harness.RunAsync(doc, new TypeScriptGenerationOptions
         {
             Transports = ["axios", "nextjs"],
