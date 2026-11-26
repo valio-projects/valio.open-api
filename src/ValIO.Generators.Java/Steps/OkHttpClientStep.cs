@@ -50,33 +50,10 @@ public sealed class OkHttpClientStep : ICodeGenerationStep
 
         if (opts.GenerateBuildFiles)
         {
-            const string buildGradle = """
-plugins {
-    id("java")
-    id("application")
-}
-
-java {
-    toolchain {
-        languageVersion.set(JavaLanguageVersion.of(21))
-    }
-}
-
-repositories {
-    mavenCentral()
-}
-
-dependencies {
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
-    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310:2.17.0")
-}
-""";
-            const string gradleProps = """
-org.gradle.jvmargs=-Xmx2g
-""";
-            context.GeneratedFiles.Add(new GeneratedFile("build.gradle.kts", buildGradle));
-            context.GeneratedFiles.Add(new GeneratedFile("gradle.properties", gradleProps));
+            context.GeneratedFiles.Add(new GeneratedFile("build.gradle.kts",
+                SourceResource.Read(typeof(OkHttpClientStep).Assembly, "ValIO.Resources.build.gradle.kts")));
+            context.GeneratedFiles.Add(new GeneratedFile("gradle.properties",
+                SourceResource.Read(typeof(OkHttpClientStep).Assembly, "ValIO.Resources.gradle.properties")));
         }
 
         return Task.CompletedTask;

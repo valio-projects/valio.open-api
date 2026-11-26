@@ -34,7 +34,7 @@ public sealed class FSharpIrTypeMapper : IIrTypeMapper
         _                  => ObjType(),
     };
 
-    private static SimpleTypeNode MapPrimitive(IrPrimitiveType p) => p.PrimitiveKind switch
+    private static TypeNode MapPrimitive(IrPrimitiveType p) => p.PrimitiveKind switch
     {
         IrPrimitiveKind.String    => new SimpleTypeNode(new IdentifierNode("string"),          isPrimitive: true),
         IrPrimitiveKind.Integer   => new SimpleTypeNode(new IdentifierNode("int"),             isPrimitive: true),
@@ -45,9 +45,9 @@ public sealed class FSharpIrTypeMapper : IIrTypeMapper
         IrPrimitiveKind.DateTime  => new SimpleTypeNode(new IdentifierNode("System.DateTime"), isPrimitive: true),
         IrPrimitiveKind.Time      => new SimpleTypeNode(new IdentifierNode("System.TimeSpan"), isPrimitive: true),
         IrPrimitiveKind.Uuid      => new SimpleTypeNode(new IdentifierNode("string"),          isPrimitive: true),
-        IrPrimitiveKind.Binary    => new SimpleTypeNode(new IdentifierNode("byte[]"),          isPrimitive: true),
-        IrPrimitiveKind.ByteArray => new SimpleTypeNode(new IdentifierNode("byte[]"),          isPrimitive: true),
-        IrPrimitiveKind.File      => new SimpleTypeNode(new IdentifierNode("byte[]"),          isPrimitive: true),
+        IrPrimitiveKind.Binary    => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
+        IrPrimitiveKind.ByteArray => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
+        IrPrimitiveKind.File      => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
         IrPrimitiveKind.Any       => ObjType(),
         IrPrimitiveKind.Void      => new SimpleTypeNode(new IdentifierNode("unit"),            isPrimitive: true),
         _                         => ObjType(),

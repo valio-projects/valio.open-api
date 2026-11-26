@@ -296,9 +296,14 @@ public sealed class TanStackQueryHookAstBuilder : AstBuilderBase
         var model = TypeScriptParameterModel.Create(operation);
         if (!model.HasQuery || paramsTypeName == null) return [];
 
-        var queryType = model.IsFlat ? paramsTypeName : $"NonNullable<{paramsTypeName}[\"query\"]>";
+        var paramsType = new SimpleTypeNode(new IdentifierNode(paramsTypeName));
+        var queryKey = new SimpleTypeNode(new IdentifierNode("string"), literalValue: "query");
+        TypeNode queryType = model.IsFlat ? paramsType : new GenericTypeNode(new IdentifierNode("NonNullable"),
+            [new IndexedAccessTypeNode(paramsType, queryKey)]);
+        var partial = new GenericTypeNode(new IdentifierNode("Partial"), [queryType]);
+        var argument = new ParameterDeclarationNode(new IdentifierNode("pageParam"), new SimpleTypeNode(new IdentifierNode("number")));
         return [new PropertySignatureNode(new IdentifierNode("getPageQuery"),
-            new RawTypeNode($"(pageParam: number) => Partial<{queryType}>"), isRequired: false,
+            new FunctionTypeNode([argument], partial), isRequired: false,
             documentation: new CommentNode("Maps the page parameter to this operation's query fields. Other query fields and route parameters are preserved.", CommentKind.JSDoc))];
     }
 

@@ -1,3 +1,5 @@
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -93,7 +95,7 @@ public sealed class CppUuidBackendTests
         {
             InnerType = new IrDictionaryType { KeyType = new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.String }, ValueType = new IrArrayType { ElementType = new IrNullableType { InnerType = uuid } } },
         }).Should().BeEquivalentTo(["Runtime/ValIOUuidTypes.h"]);
-        mapper.FormatQueryLiteral(uuid, "identifier").Should().Be("ValIO::ToWireText(identifier, ValIO::JsonStringFormat::Uuid)");
+        new CppAstRenderer().Visit(mapper.BuildParameterText(uuid, new IdentifierExpressionNode(new IdentifierNode("identifier")))).Should().Be("ValIO::ToWireText(identifier, ValIO::JsonStringFormat::Uuid)");
         mapper.ProviderIncludesFor(new IrPrimitiveType { PrimitiveKind = IrPrimitiveKind.Date }).Should().BeEmpty();
     }
 

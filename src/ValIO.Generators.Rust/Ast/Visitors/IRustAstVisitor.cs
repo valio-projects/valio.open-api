@@ -37,6 +37,12 @@ public interface IRustAstVisitor<TResult> : IAstVisitor<TResult>
     /// <param name="node">The Rust syntax to visit.</param>
     /// <returns>The visitor-specific result.</returns>
     TResult VisitRustIfSome(RustIfSomeNode node) => DefaultVisit(node);
+    /// <summary>Visits a borrow type in a Rust signature.</summary>
+    TResult VisitRustReferenceType(RustReferenceTypeNode node) => DefaultVisit(node);
+
+    /// <summary>Visits the Rust unit type.</summary>
+    TResult VisitRustUnitType(RustUnitTypeNode node) => DefaultVisit(node);
+
     TResult VisitRustField(RustFieldNode node);
     TResult VisitRustEnumVariant(RustEnumVariantNode node);
 }

@@ -1,0 +1,18 @@
+{
+  "projects": {
+    "hub": {
+      "schema": "../../tests/Fixtures/OpenApi/SignalR/support.json",
+      "language": "CSharp",
+      "namespace": "Generated.Support",
+      "namingConvention": { "properties": "PascalCase" },
+      "options": { "generateSignalRHubs": true },
+      "outputPath": "./server/Generated"
+    },
+    "browser": {
+      "schema": "../../tests/Fixtures/OpenApi/SignalR/support.json",
+      "language": "TypeScript",
+      "fileOrganization": { "modelsPath": "dto", "separateModels": true },
+      "outputPath": "./client/generated"
+    }
+  }
+}

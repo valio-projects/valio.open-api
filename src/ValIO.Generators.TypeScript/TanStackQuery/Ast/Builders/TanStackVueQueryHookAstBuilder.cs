@@ -176,7 +176,7 @@ public sealed class TanStackVueQueryHookAstBuilder : AstBuilderBase
         var useQueryCall = new CallExpressionNode(
             Id("useQuery"),
             ImmutableList.Create<ExpressionNode>(new ObjectLiteralExpressionNode(queryOptions.ToImmutableList(), preferMultilineFormat: true)),
-            genericTypeName: resultTypeName);
+            genericTypeArgument: resultTypeName is null ? null : new SimpleTypeNode(new IdentifierNode(resultTypeName)));
 
         var parameters = new List<ParameterDeclarationNode>();
         if (hasParams && paramsTypeName != null)
@@ -225,13 +225,13 @@ public sealed class TanStackVueQueryHookAstBuilder : AstBuilderBase
                 isSpread: true)
         };
 
-        var generic = resultTypeName != null
-            ? $"{resultTypeName}, Error, {RenderTypeName(variablesType)}"
+        TypeNode[]? generic = resultTypeName is not null
+            ? [new SimpleTypeNode(new IdentifierNode(resultTypeName)), new SimpleTypeNode(new IdentifierNode("Error")), variablesType]
             : null;
         var useMutationCall = new CallExpressionNode(
             Id("useMutation"),
             ImmutableList.Create<ExpressionNode>(new ObjectLiteralExpressionNode(mutationOptions.ToImmutableList(), preferMultilineFormat: true)),
-            genericTypeName: generic);
+            typeArguments: generic);
 
         return new FunctionDeclarationNode(
             name: new IdentifierNode($"use{hookBaseName}"),
@@ -264,6 +264,4 @@ public sealed class TanStackVueQueryHookAstBuilder : AstBuilderBase
     private static LiteralExpressionNode String(string value) =>
         new(value, LiteralKind.String);
 
-    private static string RenderTypeName(TypeNode type) =>
-        type is SimpleTypeNode simple ? simple.Name.Name : type.ToString() ?? "unknown";
 }

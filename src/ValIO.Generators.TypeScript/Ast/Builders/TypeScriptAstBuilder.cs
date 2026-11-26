@@ -740,7 +740,7 @@ public partial class TypeScriptAstBuilder : AstBuilderBase, ITypeScriptAstBuilde
     private TypeNode BuildPrimitiveType(IrPrimitiveType primitiveType)
     {
         if (_options?.ExactJsonNumbers == true && TypeScriptExactJson.IsExact(primitiveType))
-            return new RawTypeNode(TypeScriptExactJson.LosslessNumberType);
+            return TypeScriptExactJson.LosslessNumber();
 
         var typeName = MapPrimitiveToTypeScript(primitiveType.PrimitiveKind);
         return new SimpleTypeNode(

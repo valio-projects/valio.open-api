@@ -15,13 +15,14 @@ namespace ValIO.Generators.Rust.Ast.Builders;
 public sealed class RustModelAstBuilder(INamingConverter namingConverter, RustIrTypeMapper typeMapper)
 {
 
-    public RustFileNode BuildFile(IrModel model)
+    /// <summary>Builds a Rust model file with the imports required by its fields.</summary>
+    /// <param name="model">The effective model, including inherited fields.</param>
+    /// <param name="context">The document's declarations and stable module names.</param>
+    public RustFileNode BuildFile(IrModel model, IrDocumentContext context)
     {
         var fields = new List<RustFieldNode>(model.Properties.Count);
-        var uses = new SortedSet<string>(StringComparer.Ordinal)
-        {
-            "serde::{Deserialize, Serialize}",
-        };
+        var types = model.Properties.Select(property => property.Type);
+        IReadOnlyList<ImportNode> uses = [RustImports.Serde(), .. RustImports.Models(context, namingConverter, types, model.Name)];
 
         foreach (var prop in model.Properties)
         {
@@ -29,9 +30,6 @@ public sealed class RustModelAstBuilder(INamingConverter namingConverter, RustIr
             var mappedType = typeMapper.MapType(prop.Type);
             var isOptional = typeMapper.IsOptionalInLanguage(prop);
             var finalType = isOptional ? EnsureOption(mappedType) : mappedType;
-
-            // Add use directive for chrono types if applicable (scan the rendered tree).
-            ScanForUses(finalType, uses);
 
             // serde rename only if the snake-cased identifier diverges from the wire name.
             var serdeRename = !string.Equals(snakeName, prop.OriginalName, StringComparison.Ordinal)
@@ -55,7 +53,7 @@ public sealed class RustModelAstBuilder(INamingConverter namingConverter, RustIr
                 ? new CommentNode(model.Description, CommentKind.MultiLine)
                 : null);
 
-        return new RustFileNode(declarations: [structNode], uses: uses.ToImmutableList());
+        return new RustFileNode(declarations: [structNode], uses: uses);
     }
 
     private static TypeNode EnsureOption(TypeNode type) =>
@@ -63,37 +61,4 @@ public sealed class RustModelAstBuilder(INamingConverter namingConverter, RustIr
             ? type
             : new GenericTypeNode(new IdentifierNode("Option"), ImmutableList.Create<TypeNode>(type));
 
-    private static void ScanForUses(TypeNode type, SortedSet<string> uses)
-    {
-        switch (type)
-        {
-            case SimpleTypeNode s:
-                MaybeAddChronoUse(s.Name.Name, uses);
-                break;
-            case GenericTypeNode g:
-                MaybeAddChronoUse(g.Name.Name, uses);
-                foreach (var arg in g.TypeArguments)
-                    ScanForUses(arg, uses);
-                break;
-            case ArrayTypeNode a:
-                ScanForUses(a.ElementType, uses);
-                break;
-            case DictionaryTypeNode d:
-                ScanForUses(d.KeyType, uses);
-                ScanForUses(d.ValueType, uses);
-                break;
-            case NullableTypeNode n:
-                ScanForUses(n.InnerType, uses);
-                break;
-            case OptionalTypeNode o:
-                ScanForUses(o.InnerType, uses);
-                break;
-        }
-    }
-
-    private static void MaybeAddChronoUse(string typeName, SortedSet<string> uses)
-    {
-        if (typeName.StartsWith("chrono::", StringComparison.Ordinal))
-            uses.Add("chrono");
-    }
 }

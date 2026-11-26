@@ -133,7 +133,8 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
 
     public override string VisitCppUsingAlias(CppUsingAliasNode node)
     {
-        return $"using {node.Alias.Name} = {RenderType(node.TargetType)};";
+        var documentation = node.Documentation is null ? string.Empty : RenderDoxygenComment(node.Documentation.Text) + Environment.NewLine;
+        return $"{documentation}using {node.Alias.Name} = {RenderType(node.TargetType)};";
     }
 
     // ===================================================================
@@ -403,7 +404,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     public override string VisitCppLambdaExpression(CppLambdaExpressionNode node)
     {
         var sb = new StringBuilder();
-        var captures = node.Captures.Count > 0 ? string.Join(", ", node.Captures) : "";
+        var captures = node.Captures.Count > 0 ? string.Join(", ", node.Captures.Select(Visit)) : "";
         sb.Append($"[{captures}]");
         var pars = string.Join(", ", node.Parameters.Select(RenderParameterInline));
         sb.Append($"({pars}) ");
@@ -534,7 +535,11 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     public override string VisitCallExpression(CallExpressionNode node)
     {
         var target = Visit(node.Target);
-        var genericStr = !string.IsNullOrEmpty(node.GenericTypeName) ? $"<{node.GenericTypeName}>" : "";
+        var genericStr = node.TypeArguments.Count > 0
+            ? $"<{string.Join(", ", node.TypeArguments.Select(RenderType))}>"
+            : node.GenericTypeArgument is { } typeArgument
+                ? $"<{RenderType(typeArgument)}>"
+                : string.Empty;
         var args = string.Join(", ", node.Arguments.Select(Visit));
         return $"{target}{genericStr}({args})";
     }
@@ -594,7 +599,7 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
             LiteralKind.String => $"\"{EscapeCppString(node.Value?.ToString() ?? "")}\"",
             LiteralKind.Number => node.Value?.ToString() ?? "0",
             LiteralKind.Boolean => (node.Value?.ToString() ?? "false").ToLowerInvariant(),
-            LiteralKind.Null => "{}",
+            LiteralKind.Null => "nullptr",
             _ => node.Value?.ToString() ?? "0"
         };
     }
@@ -610,6 +615,17 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
     public override string VisitAttribute(AttributeNode node) => "";
     public override string VisitImport(ImportNode node) => "";
     public override string VisitExport(ExportNode node) => "";
+
+    /// <inheritdoc />
+    public override string VisitCppQualifiedType(CppQualifiedTypeNode node)
+        => $"{(node.IsConst ? "const " : "")}{RenderType(node.ValueType)}{(node.IsPointer ? "*" : "")}{(node.IsReference ? "&" : "")}";
+
+    /// <inheritdoc />
+    public override string VisitCppTypeExpression(CppTypeExpressionNode node) => RenderType(node.ReferencedType);
+
+    /// <inheritdoc />
+    public override string VisitCppListInitialization(CppListInitializationNode node)
+        => $"{{{string.Join(", ", node.Values.Select(Visit))}}}";
 
     public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
     public override string VisitSimpleType(SimpleTypeNode node) => node.Name.Name;
@@ -627,7 +643,9 @@ public sealed class CppAstRenderer : CppAstVisitorBase<string>, ICppAstRenderer
         node.Types.Count > 0 ? RenderType(node.Types[0]) : "FString";
     public override string VisitDictionaryType(DictionaryTypeNode node) =>
         $"TMap<{RenderType(node.KeyType)}, {RenderType(node.ValueType)}>";
-    public override string VisitConditionalExpression(ConditionalExpressionNode node) => "";
+    /// <inheritdoc />
+    public override string VisitConditionalExpression(ConditionalExpressionNode node)
+        => $"({Visit(node.Condition)} ? {Visit(node.TrueExpression)} : {Visit(node.FalseExpression)})";
     public override string VisitAwaitExpression(AwaitExpressionNode node) => "";
 
     public override string VisitCastExpression(CastExpressionNode node)

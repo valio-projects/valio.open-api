@@ -1,3 +1,5 @@
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.IR;
@@ -153,20 +155,20 @@ public sealed class UETypeMapper
     /// <summary>
     /// Получает значение по умолчанию для UE C++ типа
     /// </summary>
-    public string? GetDefaultValue(IrType irType)
+    public ExpressionNode? BuildDefaultValue(IrType irType)
     {
         return irType switch
         {
             IrPrimitiveType p => p.PrimitiveKind switch
             {
-                IrPrimitiveKind.Number => "0.0",
-                IrPrimitiveKind.Integer => "0",
-                IrPrimitiveKind.Long => "0",
-                IrPrimitiveKind.Boolean => "false",
+                IrPrimitiveKind.Number => new LiteralExpressionNode("0.0", LiteralKind.Number),
+                IrPrimitiveKind.Integer => new LiteralExpressionNode(0, LiteralKind.Number),
+                IrPrimitiveKind.Long => new LiteralExpressionNode(0, LiteralKind.Number),
+                IrPrimitiveKind.Boolean => new LiteralExpressionNode(false, LiteralKind.Boolean),
                 _ => null
             },
-            IrNullableType n => GetDefaultValue(n.InnerType),
-            IrOptionalType o => GetDefaultValue(o.InnerType),
+            IrNullableType n => BuildDefaultValue(n.InnerType),
+            IrOptionalType o => BuildDefaultValue(o.InnerType),
             _ => null
         };
     }
@@ -201,7 +203,7 @@ public sealed class UETypeMapper
         return irType switch
         {
             IrPrimitiveType p => p.PrimitiveKind is IrPrimitiveKind.String,
-            IrModelReference => false,
+            IrModelReference => true,
             _ => false
         };
     }
@@ -219,36 +221,6 @@ public sealed class UETypeMapper
     public bool IsGuidType(IrType irType)
     {
         return irType is IrPrimitiveType p && p.PrimitiveKind == IrPrimitiveKind.Uuid;
-    }
-
-    /// <summary>
-    /// Выражение для FGuid: ToString(EGuidFormats::DigitsWithHyphens).
-    /// </summary>
-    public string GetGuidToStringExpression(string propertyName)
-    {
-        return $"{propertyName}.ToString(EGuidFormats::DigitsWithHyphens)";
-    }
-
-    /// <summary>
-    /// Выражение для передачи в FString::Printf.
-    /// Для FGuid — используется промежуточная переменная *VarName.
-    /// </summary>
-    public string GetPrintfArgumentExpression(IrType irType, string propertyName, string? intermediateVarName = null)
-    {
-        if (IsGuidType(irType) && intermediateVarName != null)
-            return $"*{intermediateVarName}";
-
-        return irType switch
-        {
-            IrPrimitiveType p => p.PrimitiveKind switch
-            {
-                IrPrimitiveKind.Uuid => $"*{propertyName}.ToString(EGuidFormats::DigitsWithHyphens)",
-                IrPrimitiveKind.String => $"*{propertyName}",
-                _ => propertyName
-            },
-            IrModelReference => $"*{propertyName}",
-            _ => propertyName
-        };
     }
 
     /// <summary>

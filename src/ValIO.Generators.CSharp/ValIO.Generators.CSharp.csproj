@@ -19,6 +19,16 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
     <PackageReference Include="Microsoft.OpenApi" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ValIO.Generators.CSharp.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Remove="RuntimeSources/*.cs" />
+    <EmbeddedResource Include="RuntimeSources/*.cs" LogicalName="ValIO.Runtime.%(Filename)%(Extension)" />
   </ItemGroup>
 
 </Project>

@@ -40,4 +40,9 @@ public interface ITypeScriptAstVisitor<TResult> : IAstVisitor<TResult>
     /// <param name="node">The imported type to visit.</param>
     /// <returns>The visitor-specific result.</returns>
     TResult VisitImportType(ImportTypeNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a lookup of a member type.</summary>
+    /// <param name="node">The type and index used by the lookup.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitIndexedAccessType(IndexedAccessTypeNode node) => DefaultVisit(node);
 }

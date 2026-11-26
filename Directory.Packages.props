@@ -18,6 +18,11 @@
     <PackageVersion Include="Microsoft.Extensions.Configuration.Json" Version="10.0.1" />
   </ItemGroup>
 
+  <ItemGroup Label="C# syntax">
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.0.0" />
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.0" />
+  </ItemGroup>
+
   <ItemGroup Label="OpenAPI / parsing">
     <PackageVersion Include="Microsoft.OpenApi" Version="3.5.4" />
     <PackageVersion Include="Microsoft.OpenApi.YamlReader" Version="3.5.4" />

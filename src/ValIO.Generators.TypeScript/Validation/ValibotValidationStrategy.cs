@@ -49,7 +49,7 @@ internal sealed class ValibotValidationStrategy : IClientValidationStrategy
 
     /// <inheritdoc/>
     public TypeNode? SchemaTypeAnnotation(string validatedTypeName) =>
-        new RawTypeNode($"v.GenericSchema<{validatedTypeName}>");
+        new GenericTypeNode(new IdentifierNode("v.GenericSchema"), [new SimpleTypeNode(new IdentifierNode(validatedTypeName))]);
 
     private static ImportNode ValibotImport() =>
         new(ImmutableList.Create(new IdentifierNode("v")), "valibot", ImportKind.Namespace);

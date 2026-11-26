@@ -55,7 +55,7 @@ public sealed class ValibotSchemaSourceFileBuilder : AstBuilderBase
         // Для рекурсивных схем TS не может вывести тип из v.lazy(...) без явной аннотации.
         // Декларируем `: v.GenericSchema<{ModelName}>` и подтягиваем тип модели.
         var schemaType = isRecursive
-            ? (TypeNode)new RawTypeNode($"v.GenericSchema<{model.Name}>")
+            ? (TypeNode)new GenericTypeNode(new IdentifierNode("v.GenericSchema"), [new SimpleTypeNode(new IdentifierNode(model.Name))])
             : null;
 
         return new SourceFileNode(
@@ -238,7 +238,8 @@ public sealed class ValibotSchemaSourceFileBuilder : AstBuilderBase
     {
         return new TypeAliasDeclarationNode(
             name: new IdentifierNode($"{name}SchemaOutput"),
-            type: new RawTypeNode($"v.InferOutput<typeof {schemaName}>"),
+            type: new GenericTypeNode(new IdentifierNode("v.InferOutput"),
+                [new TypeQueryTypeNode(new IdentifierExpressionNode(new IdentifierNode(schemaName)))]),
             documentation: TypeScriptDoc.Block(
                 $"Inferred output type of {schemaName}.",
                 ("typedef", $"{{v.InferOutput<typeof {schemaName}>}} {name}SchemaOutput")));

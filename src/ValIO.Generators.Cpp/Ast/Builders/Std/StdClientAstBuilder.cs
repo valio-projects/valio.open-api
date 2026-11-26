@@ -130,7 +130,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         {
             new MethodDeclarationNode(
                 new IdentifierNode(clientClassName),
-                parameters: [new ParameterDeclarationNode(new IdentifierNode("config"), new RawTypeNode("const ValIO::HttpConfig&"))],
+                parameters: [new ParameterDeclarationNode(new IdentifierNode("config"), new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("ValIO::HttpConfig")), isConst: true, isReference: true))],
                 accessModifier: AccessModifier.Public,
                 documentation: StdDocumentation.Create("Creates an owned HTTP transport.", null,
                     "@param config Transport configuration copied into the owned client.",
@@ -275,9 +275,9 @@ public sealed class StdClientAstBuilder : AstBuilderBase
             var valueType = _typeMapper.MapType(body.Type);
             var parameter = new ParameterDeclarationNode(
                 new IdentifierNode("request"),
-                new RawTypeNode(body.IsRequired
-                    ? $"const {StdTypeText.Render(valueType)}&"
-                    : $"const std::optional<{StdTypeText.Render(valueType)}>&"),
+                new CppQualifiedTypeNode(
+                    body.IsRequired ? valueType : new GenericTypeNode(new IdentifierNode("std::optional"), [valueType]),
+                    isConst: true, isReference: true),
                 isRequired: body.IsRequired,
                 defaultValue: body.IsRequired ? null : StdExpressions.Ident("std::nullopt"));
             if (body.IsRequired)
@@ -289,7 +289,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         required.AddRange(optional);
         required.Add(new ParameterDeclarationNode(new IdentifierNode("cancellationToken"),
             new SimpleTypeNode(new IdentifierNode("ValIO::CancellationToken")), isRequired: false,
-            defaultValue: StdExpressions.Ident("{}")));
+            defaultValue: new CppListInitializationNode([])));
         return required;
     }
 
@@ -305,14 +305,12 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         if (parameter.IsRequired)
         {
             return isStructReference
-                ? new ParameterDeclarationNode(new IdentifierNode(name), new RawTypeNode($"const {StdTypeText.Render(type)}&"))
+                ? new ParameterDeclarationNode(new IdentifierNode(name), new CppQualifiedTypeNode(type, isConst: true, isReference: true))
                 : new ParameterDeclarationNode(new IdentifierNode(name), type);
         }
 
         // Optional: std::optional + trailing default.
-        TypeNode optionalType = isStructReference
-            ? new RawTypeNode($"std::optional<{StdTypeText.Render(type)}>")
-            : new GenericTypeNode(new IdentifierNode("std::optional"), [type]);
+        var optionalType = new GenericTypeNode(new IdentifierNode("std::optional"), [type]);
         return new ParameterDeclarationNode(
             new IdentifierNode(name),
             optionalType,
@@ -331,12 +329,12 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         var metadata = new Dictionary<string, object> { [ConstructorMetadataKey] = true };
         ExpressionNode transport = injectTransport
             ? new CallExpressionNode(StdExpressions.Scope("std", "move"), [StdExpressions.Ident("http")])
-            : new CallExpressionNode(StdExpressions.Scope("std", "make_shared"), [StdExpressions.Ident("config")], genericTypeName: "ValIO::HttpClient");
+            : new CallExpressionNode(StdExpressions.Scope("std", "make_shared"), [StdExpressions.Ident("config")], genericTypeArgument: new SimpleTypeNode(new IdentifierNode("ValIO::HttpClient")));
         return new CppFreeFunctionNode(
             new IdentifierNode($"{clientClassName}::{clientClassName}"),
-            new RawTypeNode(string.Empty),
+            new SimpleTypeNode(new IdentifierNode("void")),
             [new CppParameterNode(new IdentifierNode(injectTransport ? "http" : "config"),
-                injectTransport ? SharedHttpType() : new RawTypeNode("const ValIO::HttpConfig&"))],
+                injectTransport ? SharedHttpType() : new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("ValIO::HttpConfig")), isConst: true, isReference: true))],
             body: new BlockNode(injectTransport
                 ? [new IfStatementNode(new UnaryExpressionNode(UnaryOperator.LogicalNot, StdExpressions.Ident("_http")),
                     new BlockNode([new ThrowStatementNode(new CallExpressionNode(StdExpressions.Scope("std", "invalid_argument"),
@@ -361,18 +359,23 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         var name = isAsync ? $"{methodName}Async" : methodName;
         var responsePlan = StdResponsePlan.Create(operation);
         var successType = responsePlan.ResultType;
-        var valueTypeName = successType == null
-            ? "void"
-            : StdTypeText.Render(_typeMapper.MapType(successType));
+        var valueType = successType is null
+            ? new SimpleTypeNode(new IdentifierNode("void"))
+            : _typeMapper.MapType(successType);
+        var expectedType = BuildExpectedType(valueType);
 
         if (isAsync)
         {
-            var captures = new List<string> { "http = _http" };
-            captures.AddRange(operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters).Select(p => _naming.PropertyName(p.Name)));
+            var captures = new List<ExpressionNode>
+            {
+                new BinaryExpressionNode(StdExpressions.Ident("http"), BinaryOperator.Assign, StdExpressions.Ident("_http"), isAssignment: true),
+            };
+            captures.AddRange(operation.PathParameters.Concat(operation.QueryParameters).Concat(operation.HeaderParameters)
+                .Select(parameter => StdExpressions.Ident(_naming.PropertyName(parameter.Name))));
             var hasBody = operation.RequestBody != null;
             if (hasBody)
-                captures.Add("request");
-            captures.Add("cancellationToken");
+                captures.Add(StdExpressions.Ident("request"));
+            captures.Add(StdExpressions.Ident("cancellationToken"));
 
             // Required parameters and the body precede all trailing default arguments.
             var orderedParameters = operation.PathParameters
@@ -395,11 +398,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
 
             return new CppFreeFunctionNode(
                 new IdentifierNode($"{clientClassName}::{name}"),
-                new GenericTypeNode(new IdentifierNode("std::future"),
-                [
-                    new GenericTypeNode(new IdentifierNode("ValIO::Expected"),
-                        [new RawTypeNode(valueTypeName), new SimpleTypeNode(new IdentifierNode("ValIO::Error"))]),
-                ]),
+                new GenericTypeNode(new IdentifierNode("std::future"), [expectedType]),
                 BuildCppParameters(operation),
                 body: new BlockNode(
                 [
@@ -412,7 +411,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
                                 [],
                                 new BlockNode(
                                 [
-                                    new VariableDeclarationStatementNode(new IdentifierNode("worker"), new RawTypeNode(clientClassName),
+                                    new VariableDeclarationStatementNode(new IdentifierNode("worker"), new SimpleTypeNode(new IdentifierNode(clientClassName)),
                                         new CallExpressionNode(StdExpressions.Ident(clientClassName), [StdExpressions.Ident("http")])),
                                     new ReturnStatementNode(new CallExpressionNode(
                                         new MemberAccessExpressionNode(StdExpressions.Ident("worker"), new IdentifierNode(methodName)), callArguments)),
@@ -424,9 +423,9 @@ public sealed class StdClientAstBuilder : AstBuilderBase
 
         return new CppFreeFunctionNode(
             new IdentifierNode($"{clientClassName}::{name}"),
-            new RawTypeNode($"ValIO::Expected<{valueTypeName}, ValIO::Error>"),
+            expectedType,
             BuildCppParameters(operation),
-            body: BuildCheckedSyncBody(operation, enumNames, modelLookup, valueTypeName, routeName, responsePlan),
+            body: BuildCheckedSyncBody(operation, enumNames, modelLookup, valueType, routeName, responsePlan),
             isConst: true);
     }
 
@@ -434,44 +433,44 @@ public sealed class StdClientAstBuilder : AstBuilderBase
     /// <param name="operation">The operation whose request is being serialized.</param>
     /// <param name="enumNames">The known enum type names.</param>
     /// <param name="modelLookup">The finalized document's model index.</param>
-    /// <param name="valueTypeName">The C++ successful result type.</param>
+    /// <param name="valueType">The C++ successful result type.</param>
     /// <param name="routeName">The operation's route constant.</param>
     /// <param name="responsePlan">The operation's successful response policy.</param>
     /// <returns>The checked request, send, and decode body.</returns>
     private BlockNode BuildCheckedSyncBody(IrOperation operation, IReadOnlySet<string> enumNames,
-        IReadOnlyDictionary<string, IrModel> modelLookup, string valueTypeName, string routeName, StdResponsePlan responsePlan)
+        IReadOnlyDictionary<string, IrModel> modelLookup, TypeNode valueType, string routeName, StdResponsePlan responsePlan)
         => new([
             new TryCatchStatementNode(
-                new BlockNode(BuildSyncBodyStatements(operation, enumNames, modelLookup, valueTypeName, routeName, responsePlan)),
-                [BuildSerializationCatch("const nlohmann::json::exception&", valueTypeName),
-                 BuildSerializationCatch("const std::invalid_argument&", valueTypeName)]),
+                new BlockNode(BuildSyncBodyStatements(operation, enumNames, modelLookup, valueType, routeName, responsePlan)),
+                [BuildSerializationCatch("nlohmann::json::exception", valueType),
+                 BuildSerializationCatch("std::invalid_argument", valueType)]),
         ]);
 
     /// <summary>Builds one narrowly typed serialization catch without intercepting allocation or unrelated failures.</summary>
     /// <param name="exceptionType">The known wire-conversion exception type.</param>
-    /// <param name="valueTypeName">The operation's successful C++ result type.</param>
+    /// <param name="valueType">The operation's successful C++ result type.</param>
     /// <returns>The expected-result conversion for this exception.</returns>
-    private static CatchClauseNode BuildSerializationCatch(string exceptionType, string valueTypeName)
+    private static CatchClauseNode BuildSerializationCatch(string exceptionType, TypeNode valueType)
         => new(new BlockNode([
-            new VariableDeclarationStatementNode(new IdentifierNode("error"), new RawTypeNode("ValIO::Error")),
+            new VariableDeclarationStatementNode(new IdentifierNode("error"), new SimpleTypeNode(new IdentifierNode("ValIO::Error"))),
             new ExpressionStatementNode(new BinaryExpressionNode(
                 new MemberAccessExpressionNode(StdExpressions.Ident("error"), new IdentifierNode("What")), BinaryOperator.Assign,
                 StdExpressions.Scope("ValIO", "Error", "Code", "Serialization"), isAssignment: true)),
             new ExpressionStatementNode(new BinaryExpressionNode(
                 new MemberAccessExpressionNode(StdExpressions.Ident("error"), new IdentifierNode("Message")), BinaryOperator.Assign,
                 new CallExpressionNode(new MemberAccessExpressionNode(StdExpressions.Ident("exception"), new IdentifierNode("what"))), isAssignment: true)),
-            new ReturnStatementNode(BuildMakeErrorCall(valueTypeName, StdExpressions.Ident("error"))),
-        ]), new RawTypeNode(exceptionType), new IdentifierNode("exception"));
+            new ReturnStatementNode(BuildMakeErrorCall(valueType, StdExpressions.Ident("error"))),
+        ]), new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode(exceptionType)), isConst: true, isReference: true), new IdentifierNode("exception"));
 
     /// <summary>Builds explicit request construction, transport error handling, and successful payload decoding.</summary>
     /// <param name="operation">The operation contract.</param>
     /// <param name="enumNames">The known enum type names.</param>
     /// <param name="modelLookup">The known request models.</param>
-    /// <param name="valueTypeName">The complete successful result type.</param>
+    /// <param name="valueType">The complete successful result type.</param>
     /// <param name="routeName">The header route constant.</param>
     /// <param name="responsePlan">The status-specific decoding policy.</param>
     /// <returns>The request construction, transport, and decoding statements.</returns>
-    private List<StatementNode> BuildSyncBodyStatements(IrOperation operation, IReadOnlySet<string> enumNames, IReadOnlyDictionary<string, IrModel> modelLookup, string valueTypeName, string routeName, StdResponsePlan responsePlan)
+    private List<StatementNode> BuildSyncBodyStatements(IrOperation operation, IReadOnlySet<string> enumNames, IReadOnlyDictionary<string, IrModel> modelLookup, TypeNode valueType, string routeName, StdResponsePlan responsePlan)
     {
         var statements = new List<StatementNode>();
 
@@ -513,7 +512,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         // 7. sendResult
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("sendResult"),
-            new RawTypeNode("const ValIO::Expected<ValIO::Response, ValIO::Error>"),
+            new CppQualifiedTypeNode(BuildExpectedType(new SimpleTypeNode(new IdentifierNode("ValIO::Response"))), isConst: true),
             new CallExpressionNode(
                 new MemberAccessExpressionNode(StdExpressions.Ident("_http"), new IdentifierNode("Send"), useArrowOperator: true),
                 [StdExpressions.Ident("httpRequest"), StdExpressions.Ident("cancellationToken")])));
@@ -523,14 +522,14 @@ public sealed class StdClientAstBuilder : AstBuilderBase
             new UnaryExpressionNode(UnaryOperator.LogicalNot, StdExpressions.Ident("sendResult")),
             new BlockNode(
             [
-                new ReturnStatementNode(BuildMakeErrorCall(valueTypeName,
+                new ReturnStatementNode(BuildMakeErrorCall(valueType,
                     new CallExpressionNode(new MemberAccessExpressionNode(StdExpressions.Ident("sendResult"), new IdentifierNode("error"))))),
             ])));
 
         // 9. response
         statements.Add(new VariableDeclarationStatementNode(
             new IdentifierNode("response"),
-            new RawTypeNode("const ValIO::Response&"),
+            new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("ValIO::Response")), isConst: true, isReference: true),
             new CallExpressionNode(new MemberAccessExpressionNode(StdExpressions.Ident("sendResult"), new IdentifierNode("value")))));
 
         // 10. не-2xx
@@ -547,7 +546,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
                     new LiteralExpressionNode("300", LiteralKind.Number))),
             new BlockNode(
             [
-                new ReturnStatementNode(BuildMakeErrorCall(valueTypeName,
+                new ReturnStatementNode(BuildMakeErrorCall(valueType,
                     new CallExpressionNode(
                         StdExpressions.Scope("ValIO", "ErrorFromStatus"),
                         [
@@ -562,8 +561,8 @@ public sealed class StdClientAstBuilder : AstBuilderBase
             statements.Add(new IfStatementNode(noContent, new BlockNode(
                 [
                     responsePlan.AllowsNoContent
-                        ? new ReturnStatementNode(new CallExpressionNode(StdExpressions.Ident(valueTypeName)))
-                        : new ReturnStatementNode(BuildMakeErrorCall(valueTypeName,
+                        ? new ReturnStatementNode(new CallExpressionNode(new CppTypeExpressionNode(valueType)))
+                        : new ReturnStatementNode(BuildMakeErrorCall(valueType,
                             new CallExpressionNode(StdExpressions.Scope("ValIO", "ErrorFromStatus"),
                             [new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("StatusCode")),
                              new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("Body"))]))),
@@ -571,13 +570,13 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         }
 
         // Decode only responses whose status permits the declared payload.
-        statements.Add(valueTypeName == "void"
-            ? new ReturnStatementNode(StdExpressions.Ident("{}"))
+        statements.Add(responsePlan.ResultType is null
+            ? new ReturnStatementNode(new CppListInitializationNode([]))
             : new ReturnStatementNode(new CallExpressionNode(
                 StdExpressions.Scope("ValIO", "Parse"),
                 [new MemberAccessExpressionNode(StdExpressions.Ident("response"), new IdentifierNode("Body")),
                  StdJsonWireFormat.BuildArgument(responsePlan.PayloadType!)],
-                genericTypeName: valueTypeName)));
+                genericTypeArgument: valueType)));
 
         return statements;
     }
@@ -605,7 +604,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
                 continue;
             var encoded = new CallExpressionNode(
                 StdExpressions.Scope("ValIO", "UrlEncode"),
-                [StdExpressions.Ident(_typeMapper.FormatQueryLiteral(parameter.Type, _naming.PropertyName(parameter.Name)))]);
+                [_typeMapper.BuildParameterText(parameter.Type, StdExpressions.Ident(_naming.PropertyName(parameter.Name)))]);
             statements.Add(new ExpressionStatementNode(new CallExpressionNode(StdExpressions.Scope("ValIO", "ReplacePathParameter"),
                 [StdExpressions.Ident("path"), new LiteralExpressionNode("{" + placeholder + "}", LiteralKind.String), encoded])));
         }
@@ -800,7 +799,6 @@ public sealed class StdClientAstBuilder : AstBuilderBase
         var bodyStatements = new List<StatementNode>();
         ExpressionNode requestValue = body.IsRequired ? StdExpressions.Ident("request")
             : new UnaryExpressionNode(UnaryOperator.Dereference, StdExpressions.Ident("request"));
-        var requestAccess = body.IsRequired ? "request" : "(*request)";
 
         if (body.IsJson)
         {
@@ -821,7 +819,7 @@ public sealed class StdClientAstBuilder : AstBuilderBase
                     new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("ContentType")),
                     BinaryOperator.Assign, new LiteralExpressionNode("multipart/form-data", LiteralKind.String), isAssignment: true)));
             foreach (var property in GetBodyProperties(body, modelLookup))
-                bodyStatements.Add(BuildFormProperty(property, body.IsMultipartFormData, requestAccess));
+                bodyStatements.Add(BuildFormProperty(property, body.IsMultipartFormData, requestValue));
             if (body.IsFormUrlEncoded)
                 bodyStatements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
                     new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("ContentType")),
@@ -851,33 +849,33 @@ public sealed class StdClientAstBuilder : AstBuilderBase
     /// <param name="isMultipart">Whether binary values are emitted as file parts.</param>
     /// <param name="requestAccess">The present request value, after any outer optional is unwrapped.</param>
     /// <returns>The field conversion and its optional presence guard.</returns>
-    private StatementNode BuildFormProperty(IrProperty property, bool isMultipart, string requestAccess)
+    private StatementNode BuildFormProperty(IrProperty property, bool isMultipart, ExpressionNode requestAccess)
     {
-        var field = $"{requestAccess}.{_naming.PropertyName(property.Name)}";
+        var field = new MemberAccessExpressionNode(requestAccess, new IdentifierNode(_naming.PropertyName(property.Name)));
         var isOptional = StdPropertyTypes.IsOptional(property);
-        var value = isOptional ? $"(*{field})" : field;
+        ExpressionNode value = isOptional ? new UnaryExpressionNode(UnaryOperator.Dereference, field) : field;
         var type = StdPropertyTypes.ValueType(property);
         var isBinary = isMultipart && IrTypeQueries.IsFileOrBinary(type);
         var nullable = type as IrNullableType;
-        var concreteValue = nullable == null ? value : $"(*{value})";
+        var concreteValue = nullable is null ? value : new UnaryExpressionNode(UnaryOperator.Dereference, value);
         var concreteType = nullable?.InnerType ?? type;
 
         StatementNode statement;
         if (isBinary)
         {
-            var fileValue = concreteType is IrArrayType ? "filePart" : concreteValue;
+            var fileValue = concreteType is IrArrayType ? StdExpressions.Ident("filePart") : concreteValue;
             statement = new ExpressionStatementNode(new CallExpressionNode(
                 new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFilePart")),
                 [
                     new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
                     new LiteralExpressionNode(property.OriginalName, LiteralKind.String),
-                    StdExpressions.Ident(fileValue),
+                    fileValue,
                     new LiteralExpressionNode("application/octet-stream", LiteralKind.String),
                 ]));
             if (concreteType is IrArrayType)
-                statement = new ForEachStatementNode(new IdentifierNode("filePart"), StdExpressions.Ident(concreteValue), new BlockNode([statement]));
+                statement = new ForEachStatementNode(new IdentifierNode("filePart"), concreteValue, new BlockNode([statement]));
             if (nullable != null)
-                statement = new IfStatementNode(StdExpressions.Ident(value), new BlockNode([statement]));
+                statement = new IfStatementNode(value, new BlockNode([statement]));
         }
         else
         {
@@ -887,24 +885,24 @@ public sealed class StdClientAstBuilder : AstBuilderBase
             {
                 statement = new ExpressionStatementNode(new CallExpressionNode(
                     new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
-                    [new LiteralExpressionNode(property.OriginalName, LiteralKind.String), StdExpressions.Ident(concreteValue), formatter]));
+                    [new LiteralExpressionNode(property.OriginalName, LiteralKind.String), concreteValue, formatter]));
                 if (nullable is not null)
-                    statement = new IfStatementNode(StdExpressions.Ident(value), new BlockNode([statement]),
+                    statement = new IfStatementNode(value, new BlockNode([statement]),
                         new BlockNode([new ExpressionStatementNode(new CallExpressionNode(
                             new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
                             [new LiteralExpressionNode(property.OriginalName, LiteralKind.String), new LiteralExpressionNode("null", LiteralKind.String)]))]));
             }
             else
             {
-                var literal = _typeMapper.FormatQueryLiteral(concreteType, concreteValue);
-                var wireValue = nullable == null ? literal : $"({value} ? {literal} : \"null\")";
+                var literal = _typeMapper.BuildParameterText(concreteType, concreteValue);
+                var wireValue = nullable is null ? literal : new ConditionalExpressionNode(value, literal, new LiteralExpressionNode("null", LiteralKind.String));
                 statement = new ExpressionStatementNode(new CallExpressionNode(
                     new MemberAccessExpressionNode(StdExpressions.Ident("httpRequest"), new IdentifierNode("AddFormField")),
-                    [new LiteralExpressionNode(property.OriginalName, LiteralKind.String), StdExpressions.Ident(wireValue)]));
+                    [new LiteralExpressionNode(property.OriginalName, LiteralKind.String), wireValue]));
             }
         }
 
-        return isOptional ? new IfStatementNode(StdExpressions.Ident(field), new BlockNode([statement])) : statement;
+        return isOptional ? new IfStatementNode(field, new BlockNode([statement])) : statement;
     }
 
     /// <summary>Retrieves all form model properties, including inherited declarations.</summary>
@@ -918,15 +916,20 @@ public sealed class StdClientAstBuilder : AstBuilderBase
             : [];
     }
 
+    /// <summary>Builds the result type shared by declarations and call implementations.</summary>
+    /// <param name="valueType">The successful response type.</param>
+    private static GenericTypeNode BuildExpectedType(TypeNode valueType)
+        => new(new IdentifierNode("ValIO::Expected"), [valueType, new SimpleTypeNode(new IdentifierNode("ValIO::Error"))]);
+
     /// <summary>Builds the typed expected failure conversion.</summary>
-    /// <param name="valueTypeName">The successful C++ result type.</param>
+    /// <param name="valueType">The successful C++ result type.</param>
     /// <param name="errorExpression">The error value being returned.</param>
     /// <returns>The runtime error-conversion call.</returns>
-    private static CallExpressionNode BuildMakeErrorCall(string valueTypeName, ExpressionNode errorExpression)
+    private static CallExpressionNode BuildMakeErrorCall(TypeNode valueType, ExpressionNode errorExpression)
         => new(
             StdExpressions.Scope("ValIO", "MakeError"),
             [errorExpression],
-            genericTypeName: valueTypeName);
+            genericTypeArgument: valueType);
 
     /// <summary>Creates implementation parameters without repeating declaration default arguments.</summary>
     /// <param name="operation">The operation whose arguments are defined.</param>

@@ -17,7 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Runtime/ValIOCancellation.h" LogicalName="ValIO.Runtime.ValIOCancellation.h" />
+    <EmbeddedResource Include="Runtime/Resources/*" LogicalName="ValIO.Runtime.%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

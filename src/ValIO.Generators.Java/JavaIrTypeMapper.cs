@@ -44,7 +44,7 @@ public sealed class JavaIrTypeMapper : IIrTypeMapper
         _                     => new SimpleTypeNode(new IdentifierNode("Object"), isPrimitive: false),
     };
 
-    private static SimpleTypeNode MapPrimitive(IrPrimitiveType p, bool preferUnboxed)
+    private static TypeNode MapPrimitive(IrPrimitiveType p, bool preferUnboxed)
     {
         return p.PrimitiveKind switch
         {
@@ -65,9 +65,9 @@ public sealed class JavaIrTypeMapper : IIrTypeMapper
             IrPrimitiveKind.DateTime  => new SimpleTypeNode(new IdentifierNode("OffsetDateTime"), isPrimitive: false),
             IrPrimitiveKind.Time      => new SimpleTypeNode(new IdentifierNode("OffsetTime"), isPrimitive: false),
             IrPrimitiveKind.Uuid      => new SimpleTypeNode(new IdentifierNode("UUID"), isPrimitive: false),
-            IrPrimitiveKind.Binary    => new SimpleTypeNode(new IdentifierNode("byte[]"), isPrimitive: true),
-            IrPrimitiveKind.ByteArray => new SimpleTypeNode(new IdentifierNode("byte[]"), isPrimitive: true),
-            IrPrimitiveKind.File      => new SimpleTypeNode(new IdentifierNode("byte[]"), isPrimitive: true),
+            IrPrimitiveKind.Binary    => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
+            IrPrimitiveKind.ByteArray => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
+            IrPrimitiveKind.File      => new ArrayTypeNode(new SimpleTypeNode(new IdentifierNode("byte"), isPrimitive: true)),
             IrPrimitiveKind.Any       => new SimpleTypeNode(new IdentifierNode("Object"), isPrimitive: false),
             IrPrimitiveKind.Void      => new SimpleTypeNode(new IdentifierNode("void"), isPrimitive: true),
             _                         => new SimpleTypeNode(new IdentifierNode("Object"), isPrimitive: false),

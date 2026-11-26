@@ -38,7 +38,7 @@ public sealed class RustEnumAstBuilder(INamingConverter namingConverter)
                 ? new CommentNode(irEnum.Description, CommentKind.MultiLine)
                 : null);
 
-        var uses = ImmutableList.Create("serde::{Deserialize, Serialize}");
+        IReadOnlyList<ImportNode> uses = [RustImports.Serde()];
 
         return new RustFileNode(declarations: [enumNode], uses: uses);
     }

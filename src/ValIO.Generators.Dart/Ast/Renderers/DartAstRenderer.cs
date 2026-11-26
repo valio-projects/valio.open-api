@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Enums;
@@ -107,9 +108,7 @@ public sealed class DartAstRenderer : DartAstVisitorBase<string>, IDartAstRender
         {
             var m = node.Members[i];
             sb.Append(Pad(indent + 1));
-            sb.Append(m.Name.Name);
-            if (m.ValueLiteral != null)
-                sb.Append("(" + m.ValueLiteral + ")");
+            sb.Append(VisitDartEnumMember(m));
             sb.AppendLine(i == node.Members.Count - 1 ? ";" : ",");
         }
 
@@ -126,7 +125,7 @@ public sealed class DartAstRenderer : DartAstVisitorBase<string>, IDartAstRender
     }
 
     public override string VisitDartEnumMember(DartEnumMemberNode node) =>
-        node.ValueLiteral == null ? node.Name.Name : $"{node.Name.Name}({node.ValueLiteral})";
+        node.Value is null ? node.Name.Name : $"{node.Name.Name}({Visit(node.Value)})";
 
     // ------------- Fields / methods / parameters -------------
 
@@ -205,10 +204,12 @@ public sealed class DartAstRenderer : DartAstVisitorBase<string>, IDartAstRender
     {
         var sb = new StringBuilder();
         if (node.IsNamed && node.IsRequired) sb.Append("required ");
-        sb.Append(RenderType(node.Type));
-        sb.Append(" ");
+        if (node.IsFieldFormal)
+            sb.Append("this.");
+        else
+            sb.Append(RenderType(node.Type)).Append(' ');
         sb.Append(node.Name.Name);
-        if (node.DefaultValueLiteral != null) sb.Append(" = " + node.DefaultValueLiteral);
+        if (node.DefaultValue is not null) sb.Append(" = " + Visit(node.DefaultValue));
         return sb.ToString();
     }
 
@@ -247,9 +248,14 @@ public sealed class DartAstRenderer : DartAstVisitorBase<string>, IDartAstRender
 
     /// <inheritdoc/>
     public override string VisitLiteralExpression(LiteralExpressionNode node) =>
-        node is { LiteralKind: LiteralKind.String, Value: string value }
-            ? $"'{EscapeString(value)}'"
-            : VisitDefault(node);
+        node.LiteralKind switch
+        {
+            LiteralKind.String when node.Value is string value => $"'{EscapeString(value)}'",
+            LiteralKind.Number => Convert.ToString(node.Value, CultureInfo.InvariantCulture)!,
+            LiteralKind.Boolean => node.Value is true ? "true" : "false",
+            LiteralKind.Null => "null",
+            _ => throw new NotSupportedException($"Unsupported Dart literal {node.LiteralKind}."),
+        };
 
     /// <inheritdoc/>
     public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) =>

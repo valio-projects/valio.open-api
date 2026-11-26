@@ -1,0 +1,6 @@
+{
+  "name": "valio-signalr-probe",
+  "private": true,
+  "dependencies": { "@microsoft/signalr": "10.0.11" },
+  "devDependencies": { "@types/node": "22.20.5", "typescript": "5.8.3" }
+}

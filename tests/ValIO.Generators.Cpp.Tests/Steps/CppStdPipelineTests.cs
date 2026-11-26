@@ -136,8 +136,11 @@ public class CppStdPipelineTests
             "Runtime/ValIOError.h",
             "Runtime/ValIOHttp.h",
             "Runtime/ValIOHttp.cpp",
+            "Runtime/ValIOHttpBackend.h",
             "Runtime/ValIOJson.h",
             "Runtime/ValIOJsonTypes.h",
+            "Runtime/ValIOJsonTypesBase.h",
+            "Runtime/ValIOJsonBackend.h",
             "Runtime/ValIOJsonValidation.h",
             "Runtime/ValIOCancellation.h",
             "Runtime/Impl/ValIORequest.inl",
@@ -147,7 +150,7 @@ public class CppStdPipelineTests
         });
 
         // Each runtime layer has one canonical output file.
-        files.Keys.Count(f => f.StartsWith("Runtime/")).Should().Be(9);
+        files.Keys.Count(f => f.StartsWith("Runtime/")).Should().Be(12);
     }
 
     [Test]

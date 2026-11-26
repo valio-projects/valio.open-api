@@ -113,6 +113,91 @@ public sealed class SignalRGenerationTests
         result.Files.Should().Contain(file => file.Content.Contains("ReadHealth(", StringComparison.Ordinal));
     }
 
+    /// <summary>Verifies that both input formats generate the same shared HTTP and inline SignalR model references.</summary>
+    /// <returns>The asynchronous equivalence assertion.</returns>
+    [Test]
+    public async Task JsonAndYaml_GenerateTheSameMixedContract()
+    {
+        const string yaml = """
+            openapi: 3.1.0
+            info:
+              title: SignalR probe
+              version: '1'
+            paths:
+              /result:
+                get:
+                  operationId: ReadResult
+                  responses:
+                    '200':
+                      description: Shared result
+                      content:
+                        application/json:
+                          schema:
+                            $ref: '#/components/schemas/SharedResult'
+            components:
+              schemas:
+                SharedResult:
+                  type: object
+                  properties:
+                    accepted:
+                      type: boolean
+            x-valio-signalr:
+              hubs:
+              - name: Support
+                path: /hubs/support
+                methods:
+                - name: Submit
+                  parameters:
+                  - name: request
+                    schema:
+                      type: object
+                      properties:
+                        note:
+                          type: string
+                  result:
+                    $ref: '#/components/schemas/SharedResult'
+            """;
+        const string json = """
+            {
+              "openapi": "3.1.0",
+              "info": { "title": "SignalR probe", "version": "1" },
+              "paths": { "/result": { "get": {
+                "operationId": "ReadResult",
+                "responses": { "200": {
+                  "description": "Shared result",
+                  "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SharedResult" } } }
+                } }
+              } } },
+              "components": { "schemas": { "SharedResult": { "type": "object", "properties": {
+                "accepted": { "type": "boolean" }
+              } } } },
+              "x-valio-signalr": { "hubs": [{ "name": "Support", "path": "/hubs/support", "methods": [{
+                "name": "Submit", "parameters": [{ "name": "request", "schema": {
+                  "type": "object", "properties": { "note": { "type": "string" } }
+                } }],
+                "result": { "$ref": "#/components/schemas/SharedResult" }
+              }] }] }
+            }
+            """;
+        var profile = new GenerationConfiguration
+        {
+            LanguageId = "csharp",
+            NamingConvention = new NamingConventions { ModelPrefix = "Wire", ModelSuffix = "Dto" },
+            PluginOptions = new CSharpGenerationOptions { GenerateSignalRHubs = true },
+        };
+
+        var fromJson = await GenerateAsync(profile, json);
+        var fromYaml = await GenerateAsync(profile, yaml, "yaml");
+
+        fromJson.Success.Should().BeTrue(fromJson.ErrorMessage);
+        fromYaml.Success.Should().BeTrue(fromYaml.ErrorMessage);
+        fromYaml.Files.Should().BeEquivalentTo(fromJson.Files);
+        var hub = fromYaml.Files.Single(file => file.RelativePath == "SignalR/SupportHubBase.cs");
+        hub.Content.Should().Contain("Task<WireSharedResultDto> Submit(WireInlineModel0Dto @request)");
+        fromYaml.Files.Should().Contain(file => file.RelativePath == "Models/InlineModel0.cs" && file.Content.Contains("class WireInlineModel0Dto"));
+        fromYaml.Files.Should().Contain(file => file.Content.Contains("ReadResult(", StringComparison.Ordinal));
+    }
+
     /// <summary>Stops generation when a JSON number would be lossy in the official JavaScript SignalR client.</summary>
     /// <returns>The asynchronous generation assertion.</returns>
     [Test]
@@ -152,8 +237,9 @@ public sealed class SignalRGenerationTests
     /// <summary>Runs the real pipeline against a temporary input file using the production plugin registration.</summary>
     /// <param name="configuration">The profile to exercise.</param>
     /// <param name="source">An optional replacement for the shared fixture.</param>
+    /// <param name="extension">The extension of the input document.</param>
     /// <returns>The generated files and diagnostics.</returns>
-    private static async Task<OrchestrationResult> GenerateAsync(GenerationConfiguration configuration, string? source = null)
+    private static async Task<OrchestrationResult> GenerateAsync(GenerationConfiguration configuration, string? source = null, string extension = "json")
     {
         var services = new ServiceCollection();
         services.AddHttpClient();
@@ -162,7 +248,7 @@ public sealed class SignalRGenerationTests
         using var provider = services.BuildServiceProvider();
         var generator = provider.GetRequiredService<IGenerationOrchestrator>();
         var directory = Directory.CreateTempSubdirectory("valio-signalr-test-");
-        var path = Path.Combine(directory.FullName, "support.json");
+        var path = Path.Combine(directory.FullName, $"support.{extension}");
         try
         {
             await File.WriteAllTextAsync(path, source ?? OpenApiFixture.Read(Fixture));

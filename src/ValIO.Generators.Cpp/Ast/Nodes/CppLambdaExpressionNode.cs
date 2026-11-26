@@ -10,7 +10,8 @@ namespace ValIO.Generators.Cpp.Ast.Nodes;
 /// </summary>
 public sealed class CppLambdaExpressionNode : ExpressionNode
 {
-    public IReadOnlyList<string> Captures { get; }
+    /// <summary>Gets the captured names and initialized captures in declaration order.</summary>
+    public IReadOnlyList<ExpressionNode> Captures { get; }
     public IReadOnlyList<CppParameterNode> Parameters { get; }
     public BlockNode Body { get; }
 
@@ -20,6 +21,7 @@ public sealed class CppLambdaExpressionNode : ExpressionNode
         get
         {
             var list = new List<AstNode>();
+            list.AddRange(Captures);
             list.AddRange(Parameters);
             list.Add(Body);
             return list;
@@ -27,13 +29,13 @@ public sealed class CppLambdaExpressionNode : ExpressionNode
     }
 
     public CppLambdaExpressionNode(
-        IReadOnlyList<string> captures,
+        IReadOnlyList<ExpressionNode> captures,
         IReadOnlyList<CppParameterNode> parameters,
         BlockNode body,
         TypeNode? type = null)
         : base(type)
     {
-        Captures = captures?.ToImmutableList() ?? ImmutableList<string>.Empty;
+        Captures = captures?.ToImmutableList() ?? ImmutableList<ExpressionNode>.Empty;
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<CppParameterNode>.Empty;
         Body = body ?? throw new ArgumentNullException(nameof(body));
     }
@@ -48,7 +50,7 @@ public sealed class CppLambdaExpressionNode : ExpressionNode
     public override AstNode Clone()
     {
         return new CppLambdaExpressionNode(
-            Captures.ToImmutableList(),
+            Captures.Select(capture => (ExpressionNode)capture.Clone()).ToImmutableList(),
             Parameters.Select(p => (CppParameterNode)p.Clone()).ToImmutableList(),
             (BlockNode)Body.Clone(),
             Type != null ? (TypeNode)Type.Clone() : null);

@@ -11,18 +11,19 @@ namespace ValIO.Generators.Dart.Ast.Nodes;
 public sealed class DartEnumMemberNode : AstNode
 {
     public IdentifierNode Name { get; }
-    public string? ValueLiteral { get; }
+    /// <summary>Gets the optional wire-value expression.</summary>
+    public ExpressionNode? Value { get; }
 
-    public override IReadOnlyList<AstNode> Children => new AstNode[] { Name };
+    public override IReadOnlyList<AstNode> Children => Value is null ? [Name] : [Name, Value];
 
     public DartEnumMemberNode(
         IdentifierNode name,
-        string? valueLiteral = null,
+        ExpressionNode? value = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
-        ValueLiteral = valueLiteral;
+        Value = value;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -35,6 +36,6 @@ public sealed class DartEnumMemberNode : AstNode
     public override AstNode Clone() =>
         new DartEnumMemberNode(
             (IdentifierNode)Name.Clone(),
-            ValueLiteral,
+            (ExpressionNode?)Value?.Clone(),
             Metadata.ToImmutableDictionary());
 }

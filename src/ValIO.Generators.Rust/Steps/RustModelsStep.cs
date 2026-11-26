@@ -66,7 +66,7 @@ public sealed class RustModelsStep : ICodeGenerationStep
         foreach (var model in context.IrDocument.Models)
         {
             var effectiveModel = new IrModel(model) { Properties = IrInheritancePlan.FlattenProperties(model, modelLookup) };
-            var file = builder.BuildFile(effectiveModel);
+            var file = builder.BuildFile(effectiveModel, context.DocumentContext);
             var content = _renderer.Render(file);
             var snake = _namingConverter.ToSnakeCase(model.OriginalName);
             var relativePath = $"{modelsDir}/{snake}.rs";

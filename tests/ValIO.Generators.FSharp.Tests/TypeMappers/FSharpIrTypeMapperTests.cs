@@ -47,7 +47,8 @@ public class FSharpIrTypeMapperTests
     public void BinaryFamily_MapsToByteArray(IrPrimitiveKind kind)
     {
         var mapped = _mapper.MapType(Prim(kind));
-        ((SimpleTypeNode)mapped).Name.Name.Should().Be("byte[]");
+        var array = mapped.Should().BeOfType<ArrayTypeNode>().Which;
+        array.ElementType.Should().BeOfType<SimpleTypeNode>().Which.Name.Name.Should().Be("byte");
     }
 
     [Test]

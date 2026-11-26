@@ -25,8 +25,9 @@ internal static class TypeScriptExactJson
     /// <summary>The runtime import for schema source files assembled as text.</summary>
     public const string ImportLine = """import * as valioLosslessJson from "lossless-json";""";
 
-    /// <summary>The qualified type usable by generated DTOs without a runtime import.</summary>
-    public const string LosslessNumberType = "import(\"lossless-json\").LosslessNumber";
+    /// <summary>References the exact number type without importing a runtime binding.</summary>
+    /// <returns>The type selected from the lossless JSON package.</returns>
+    public static ImportTypeNode LosslessNumber() => new(PackageName, new IdentifierNode("LosslessNumber"));
 
     /// <summary>Recognizes numeric formats whose tokens must survive JavaScript conversion.</summary>
     /// <param name="type">The original scalar IR type.</param>
@@ -208,7 +209,7 @@ internal static class TypeScriptExactJson
         var text = Member(value, "value");
         var isInt64 = type.PrimitiveKind == IrPrimitiveKind.Long;
         var schema = new CallExpressionNode(Member(Id("z"), "custom"), [Runtime("isLosslessNumber"),
-            String("Expected an exact JSON number.")], genericTypeName: LosslessNumberType);
+            String("Expected an exact JSON number.")], genericTypeArgument: LosslessNumber());
         ExpressionNode valid = Call(Runtime("isNumber"), text);
         if (isInt64)
         {

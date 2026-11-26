@@ -47,6 +47,9 @@ public abstract class TypeScriptAstVisitorBase<TResult> : BaseAstVisitor<TResult
     /// <inheritdoc/>
     public virtual TResult VisitImportType(ImportTypeNode node) => VisitDefault(node);
 
+    /// <inheritdoc />
+    public virtual TResult VisitIndexedAccessType(IndexedAccessTypeNode node) => VisitDefault(node);
+
     // Абстрактные методы только для TypeScript узлов
     public abstract TResult VisitSourceFile(SourceFileNode node);
     public abstract TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);

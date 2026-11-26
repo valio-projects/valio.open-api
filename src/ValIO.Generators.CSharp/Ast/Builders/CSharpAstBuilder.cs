@@ -3587,7 +3587,11 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("clientName"))
             }.ToImmutableList<ExpressionNode>(),
             isNewExpression: true,
-            genericTypeName: "KeyValuePair<string, object?>");
+            typeArguments:
+            [
+                new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: true)),
+            ]);
         
         var methodTag = new CallExpressionNode(
             target: new IdentifierExpressionNode(new IdentifierNode("KeyValuePair")),
@@ -3597,7 +3601,11 @@ public partial class CSharpAstBuilder : AstBuilderBase, ICSharpAstBuilder
                 new IdentifierExpressionNode(new IdentifierNode("methodName"))
             }.ToImmutableList<ExpressionNode>(),
             isNewExpression: true,
-            genericTypeName: "KeyValuePair<string, object?>");
+            typeArguments:
+            [
+                new SimpleTypeNode(new IdentifierNode("string"), isPrimitive: true),
+                new NullableTypeNode(new SimpleTypeNode(new IdentifierNode("object"), isPrimitive: true)),
+            ]);
         
         // _durationHistogram.Record(duration, clientTag, methodTag);
         var recordCall = new CallExpressionNode(

@@ -16,16 +16,21 @@ public sealed class DartParameterNode : AstNode
     public TypeNode Type { get; }
     public bool IsRequired { get; }
     public bool IsNamed { get; }
-    public string? DefaultValueLiteral { get; }
+    /// <summary>Gets the default expression for an optional argument.</summary>
+    public ExpressionNode? DefaultValue { get; }
 
-    public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Type };
+    /// <summary>Gets whether this parameter initializes a field through a constructor field formal.</summary>
+    public bool IsFieldFormal { get; }
+
+    public override IReadOnlyList<AstNode> Children => DefaultValue is null ? [Name, Type] : [Name, Type, DefaultValue];
 
     public DartParameterNode(
         IdentifierNode name,
         TypeNode type,
         bool isRequired = true,
         bool isNamed = false,
-        string? defaultValueLiteral = null,
+        ExpressionNode? defaultValue = null,
+        bool isFieldFormal = false,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
@@ -33,7 +38,8 @@ public sealed class DartParameterNode : AstNode
         Type = type ?? throw new ArgumentNullException(nameof(type));
         IsRequired = isRequired;
         IsNamed = isNamed;
-        DefaultValueLiteral = defaultValueLiteral;
+        DefaultValue = defaultValue;
+        IsFieldFormal = isFieldFormal;
     }
 
     public override TResult Accept<TResult>(IAstVisitor<TResult> visitor)
@@ -49,6 +55,7 @@ public sealed class DartParameterNode : AstNode
             (TypeNode)Type.Clone(),
             IsRequired,
             IsNamed,
-            DefaultValueLiteral,
+            (ExpressionNode?)DefaultValue?.Clone(),
+            IsFieldFormal,
             Metadata.ToImmutableDictionary());
 }

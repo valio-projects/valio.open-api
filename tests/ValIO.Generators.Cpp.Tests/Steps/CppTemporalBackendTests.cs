@@ -1,3 +1,5 @@
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes;
 using System.Text.Json;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -80,7 +82,7 @@ public sealed class CppTemporalBackendTests
         {
             var leaf = new IrPrimitiveType { PrimitiveKind = kind, Format = format };
             ((SimpleTypeNode)mapper.MapType(leaf)).Name.Name.Should().Be("ValIO::" + name);
-            mapper.FormatQueryLiteral(leaf, "value").Should().Be($"ValIO::ToWireText(value, ValIO::JsonStringFormat::{wire})");
+            new CppAstRenderer().Visit(mapper.BuildParameterText(leaf, new IdentifierExpressionNode(new IdentifierNode("value")))).Should().Be($"ValIO::ToWireText(value, ValIO::JsonStringFormat::{wire})");
             var nested = new IrArrayType { ElementType = new IrNullableType { InnerType = leaf } };
             mapper.ProviderIncludesFor(nested).Should().BeEquivalentTo(["Runtime/ValIOTemporalTypes.h"]);
             StdJsonWireFormat.Name(nested).Should().Be(wire);
@@ -102,9 +104,12 @@ public sealed class CppTemporalBackendTests
     {
         var context = await Generate(backend, false);
         var files = context.GeneratedFiles.ToDictionary(file => file.RelativePath, file => file.Content);
-        files.Keys.Should().BeEquivalentTo(["Models/TemporalBoundary.h", "Runtime/ValIOTemporalTypes.h", "CMakeLists.txt"]);
+        var providerHeader = $"ValIOTemporal{backend}Types.h";
+        files.Keys.Should().BeEquivalentTo(["Models/TemporalBoundary.h", "Runtime/ValIOTemporalTypes.h",
+            $"Runtime/{providerHeader}", "Runtime/ValIOTemporalTypesBase.h", "CMakeLists.txt"]);
         files["Models/TemporalBoundary.h"].Should().Contain("Runtime/ValIOTemporalTypes.h").And.Contain("ValIO::Date");
-        files["Runtime/ValIOTemporalTypes.h"].Should().Contain(providerType).And.NotContain("Json").And.NotContain("httplib");
+        files["Runtime/ValIOTemporalTypes.h"].Should().Contain(providerHeader).And.NotContain("Json").And.NotContain("httplib");
+        files[$"Runtime/{providerHeader}"].Should().Contain(providerType).And.NotContain("Json").And.NotContain("httplib");
         if (backend == CppTemporalBackend.HowardDate) files["CMakeLists.txt"].Should().Contain("date::date");
         if (backend == CppTemporalBackend.BoostDateTime) files["CMakeLists.txt"].Should().Contain("Boost REQUIRED");
     }

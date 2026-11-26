@@ -276,6 +276,15 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         $"({string.Join(", ", node.Parameters.Select(RenderParameterDeclaration))}) => {RenderType(node.Result)}";
 
     /// <inheritdoc />
+    public override string VisitIndexedAccessType(IndexedAccessTypeNode node)
+    {
+        var receiver = RenderType(node.Receiver);
+        if (HasUnionSemantics(node.Receiver) || node.Receiver is IntersectionTypeNode or FunctionTypeNode)
+            receiver = $"({receiver})";
+        return $"{receiver}[{RenderType(node.Index)}]";
+    }
+
+    /// <inheritdoc />
     public override string VisitImportType(ImportTypeNode node) =>
         $"import(\"{CodeEscapeHelper.EscapeTypeScriptString(node.Module)}\").{node.Name.Name}";
 
@@ -340,11 +349,13 @@ public class TypeScriptAstRenderer : TypeScriptAstVisitorBase<string>, ITypeScri
         var target = Visit(node.Target);
         if (node.Target is ArrowFunctionExpressionNode)
             target = $"({target})";
-        var generic = node.GenericTypeArgument != null
-            ? $"<{RenderType(node.GenericTypeArgument)}>"
-            : !string.IsNullOrWhiteSpace(node.GenericTypeName)
-                ? $"<{node.GenericTypeName}>"
-                : "";
+        var generic = node.TypeArguments.Count > 0
+            ? $"<{string.Join(", ", node.TypeArguments.Select(RenderType))}>"
+            : node.GenericTypeArgument is { } argument
+                ? $"<{RenderType(argument)}>"
+                : !string.IsNullOrWhiteSpace(node.GenericTypeName)
+                    ? $"<{node.GenericTypeName}>"
+                    : "";
         var prefix = node.IsNewExpression ? "new " : "";
         if (node.Arguments.Count >= 2)
         {

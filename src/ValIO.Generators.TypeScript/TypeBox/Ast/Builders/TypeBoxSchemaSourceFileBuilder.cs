@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -177,7 +178,8 @@ public sealed class TypeBoxSchemaSourceFileBuilder : AstBuilderBase
     {
         return new TypeAliasDeclarationNode(
             name: new IdentifierNode($"{name}SchemaOutput"),
-            type: new RawTypeNode($"Static<typeof {schemaName}>"),
+            type: new GenericTypeNode(new IdentifierNode("Static"),
+                [new TypeQueryTypeNode(new IdentifierExpressionNode(new IdentifierNode(schemaName)))]),
             documentation: TypeScriptDoc.Block(
                 $"Inferred static type of {schemaName}.",
                 ("typedef", $"{{Static<typeof {schemaName}>}} {name}SchemaOutput")));

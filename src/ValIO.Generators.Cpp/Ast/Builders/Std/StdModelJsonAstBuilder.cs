@@ -95,7 +95,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
     private CppFreeFunctionNode BuildFunctionDeclaration(string structName, bool isToJson)
         => new(
             new IdentifierNode(isToJson ? "to_json" : "from_json"),
-            new RawTypeNode("void"),
+            new SimpleTypeNode(new IdentifierNode("void")),
             BuildParameters(structName, isToJson),
             isDeclarationOnly: true,
             documentation: BuildDocumentation(structName, isToJson));
@@ -108,7 +108,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
     private CppFreeFunctionNode BuildFunctionDefinition(string structName, bool isToJson, BlockNode body)
         => new(
             new IdentifierNode(isToJson ? "to_json" : "from_json"),
-            new RawTypeNode("void"),
+            new SimpleTypeNode(new IdentifierNode("void")),
             BuildParameters(structName, isToJson),
             body: body,
             documentation: BuildDocumentation(structName, isToJson));
@@ -136,11 +136,11 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
         [
             new CppParameterNode(
                 new IdentifierNode("j"),
-                new RawTypeNode(isToJson ? "nlohmann::json" : "const nlohmann::json"),
+                new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("nlohmann::json")), isConst: !isToJson),
                 isReference: true),
             new CppParameterNode(
                 new IdentifierNode("value"),
-                new RawTypeNode(isToJson ? $"const {structName}&" : $"{structName}&")),
+                new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode(structName)), isConst: isToJson, isReference: true)),
         ];
 
     /// <summary>Serializes a complete object, omitting only absent optional keys.</summary>
@@ -154,7 +154,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
             new ExpressionStatementNode(new BinaryExpressionNode(
                 StdExpressions.Ident("j"), BinaryOperator.Assign,
                 new CallExpressionNode(StdExpressions.Ident("nlohmann::json::object")), isAssignment: true)),
-            new ExpressionStatementNode(new CastExpressionNode(new RawTypeNode("void"), StdExpressions.Ident("value"))),
+            new ExpressionStatementNode(new CastExpressionNode(new SimpleTypeNode(new IdentifierNode("void")), StdExpressions.Ident("value"))),
         };
 
         if (plan.UseInheritance)
@@ -164,7 +164,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
                 [
                     StdExpressions.Ident("j"),
                     new CastExpressionNode(
-                        new RawTypeNode($"const {_naming.StructName(plan.BaseModelName!)}&"),
+                        new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode(_naming.StructName(plan.BaseModelName!))), isConst: true, isReference: true),
                         StdExpressions.Ident("value")),
                 ])));
         }
@@ -209,10 +209,10 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
     {
         var statements = new List<StatementNode>
         {
-            new ExpressionStatementNode(new CastExpressionNode(new RawTypeNode("void"),
+            new ExpressionStatementNode(new CastExpressionNode(new SimpleTypeNode(new IdentifierNode("void")),
                 new CallExpressionNode(new MemberAccessExpressionNode(StdExpressions.Ident("j"), new IdentifierNode("get_ref")),
-                    [], genericTypeName: "const nlohmann::json::object_t&"))),
-            new ExpressionStatementNode(new CastExpressionNode(new RawTypeNode("void"), StdExpressions.Ident("value"))),
+                    [], genericTypeArgument: new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode("nlohmann::json::object_t")), isConst: true, isReference: true)))),
+            new ExpressionStatementNode(new CastExpressionNode(new SimpleTypeNode(new IdentifierNode("void")), StdExpressions.Ident("value"))),
         };
 
         if (plan.UseInheritance)
@@ -222,7 +222,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
                 [
                     StdExpressions.Ident("j"),
                     new CastExpressionNode(
-                        new RawTypeNode($"{_naming.StructName(plan.BaseModelName!)}&"),
+                        new CppQualifiedTypeNode(new SimpleTypeNode(new IdentifierNode(_naming.StructName(plan.BaseModelName!))), isReference: true),
                         StdExpressions.Ident("value")),
                 ])));
         }
@@ -235,7 +235,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
 
             if (StdPropertyTypes.IsOptional(property))
             {
-                var innerRendered = StdTypeText.Render(_typeMapper.MapType(StdPropertyTypes.ValueType(property)));
+                var innerType = _typeMapper.MapType(StdPropertyTypes.ValueType(property));
                 statements.Add(new IfStatementNode(
                     BuildContainsCall(wire),
                     new BlockNode(
@@ -243,7 +243,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
                         new ExpressionStatementNode(new CallExpressionNode(
                             new MemberAccessExpressionNode(fieldAccess, new IdentifierNode("emplace")),
                             [
-                            BuildReadCall(wire, innerRendered, property.Type),
+                            BuildReadCall(wire, innerType, property.Type),
                             ])),
                     ]),
                     new BlockNode(
@@ -256,7 +256,7 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
             {
                 statements.Add(new ExpressionStatementNode(new BinaryExpressionNode(
                     fieldAccess, BinaryOperator.Assign,
-                    BuildReadCall(wire, StdTypeText.Render(_typeMapper.MapType(StdPropertyTypes.ValueType(property))), property.Type),
+                    BuildReadCall(wire, _typeMapper.MapType(StdPropertyTypes.ValueType(property)), property.Type),
                     isAssignment: true)));
             }
         }
@@ -293,11 +293,11 @@ public sealed class StdModelJsonAstBuilder : AstBuilderBase
     /// <param name="targetType">The rendered destination type.</param>
     /// <param name="schemaType">The schema type determining its leaf wire format.</param>
     /// <returns>The field conversion expression.</returns>
-    private static CallExpressionNode BuildReadCall(string wire, string targetType, IrType schemaType)
+    private static CallExpressionNode BuildReadCall(string wire, TypeNode targetType, IrType schemaType)
         => new(
             StdExpressions.Ident("ValIO::ReadJson"),
             [BuildAtCall(wire), StdJsonWireFormat.BuildArgument(schemaType)],
-            genericTypeName: targetType);
+            genericTypeArgument: targetType);
 
     /// <summary>Builds serialization that preserves declared base64 and string wire formats.</summary>
     /// <param name="schemaType">The schema type determining its leaf wire format.</param>

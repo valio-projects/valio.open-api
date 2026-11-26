@@ -382,7 +382,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         
         // Проверяем, есть ли generic type argument
         var genericTypeArgStr = "";
-        if (node.GenericTypeArgument != null)
+        if (node.TypeArguments.Count > 0)
+        {
+            genericTypeArgStr = $"<{string.Join(", ", node.TypeArguments.Select(RenderType))}>";
+        }
+        else if (node.GenericTypeArgument != null)
         {
             genericTypeArgStr = $"<{RenderType(node.GenericTypeArgument)}>";
         }

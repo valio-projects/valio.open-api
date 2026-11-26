@@ -1,5 +1,5 @@
 using System.Collections.Immutable;
-using System.Text;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -87,7 +87,8 @@ public sealed class GuzzleClientAstBuilder
         }
 
         // Body: return $this->client->request('METHOD', "/path");
-        var pathExpr = BuildPathExpression(op.Path, op.PathParameters);
+        var pathExpr = OpenApiPathExpressionBuilder.Build(op,
+            parameter => new IdentifierExpressionNode(new IdentifierNode("$" + parameter.Name)));
         var requestCall = new CallExpressionNode(
             target: new MemberAccessExpressionNode(
                 @object: new MemberAccessExpressionNode(
@@ -127,49 +128,6 @@ public sealed class GuzzleClientAstBuilder
             type: typeNode,
             isRequired: p.IsRequired,
             defaultValue: defaultValue);
-    }
-
-    private ExpressionNode BuildPathExpression(string path, IReadOnlyList<IrParameter> pathParameters)
-    {
-        if (pathParameters.Count == 0 || !path.Contains('{'))
-        {
-            return new LiteralExpressionNode(path, LiteralKind.String);
-        }
-
-        // Получаем PHP-интерполированную строку с {$var} и сохраняем её как «raw» строку.
-        // PhpAstRenderer обрабатывает строковые литералы как single-quoted; для интерполяции
-        // нам нужно поставить double-quoted строку. Используем RawTypeNode-нет — нужно
-        // получать выражение нативно. Используем CallExpression к sprintf, как стабильную опцию.
-        var format = new StringBuilder();
-        var args = new List<ExpressionNode>();
-        int i = 0;
-        while (i < path.Length)
-        {
-            if (path[i] == '{')
-            {
-                var end = path.IndexOf('}', i);
-                if (end < 0) { format.Append(path[i++]); continue; }
-                var name = path.Substring(i + 1, end - i - 1);
-                format.Append("%s");
-                args.Add(new IdentifierExpressionNode(new IdentifierNode($"this->encode($" + name + ")")));
-                // Простоты ради: используем имя как $name — реальный код:
-                args[^1] = new IdentifierExpressionNode(new IdentifierNode("$" + _namingConverter.ToCamelCase(name)));
-                i = end + 1;
-            }
-            else
-            {
-                format.Append(path[i++]);
-            }
-        }
-
-        var sprintfArgs = new List<ExpressionNode>
-        {
-            new LiteralExpressionNode(format.ToString(), LiteralKind.String),
-        };
-        sprintfArgs.AddRange(args);
-        return new CallExpressionNode(
-            target: new IdentifierExpressionNode(new IdentifierNode("sprintf")),
-            arguments: sprintfArgs.ToImmutableList());
     }
 
     private static CommentNode? BuildOperationDoc(IrOperation op)

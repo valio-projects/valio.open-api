@@ -5,6 +5,7 @@ using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Enums;
 using ValIO.Core.IR.Types;
+using ValIO.Generators.Rust.Ast.Nodes;
 using ValIO.Generators.Rust.Options;
 
 namespace ValIO.Generators.Rust;
@@ -42,7 +43,7 @@ public sealed class RustIrTypeMapper(RustGenerationOptions? options = null) : II
         IrPrimitiveKind.Number    => new SimpleTypeNode(new IdentifierNode("f64"),    isPrimitive: true),
         IrPrimitiveKind.Boolean   => new SimpleTypeNode(new IdentifierNode("bool"),   isPrimitive: true),
         IrPrimitiveKind.Date      => new SimpleTypeNode(new IdentifierNode("chrono::NaiveDate"), isPrimitive: true),
-        IrPrimitiveKind.DateTime  => new SimpleTypeNode(new IdentifierNode("chrono::DateTime<chrono::Utc>"), isPrimitive: true),
+        IrPrimitiveKind.DateTime  => new GenericTypeNode(new IdentifierNode("chrono::DateTime"), [new SimpleTypeNode(new IdentifierNode("chrono::Utc"))]),
         IrPrimitiveKind.Time      => new SimpleTypeNode(new IdentifierNode("chrono::NaiveTime"), isPrimitive: true),
         IrPrimitiveKind.Uuid      => new SimpleTypeNode(new IdentifierNode("String"), isPrimitive: true),
         IrPrimitiveKind.Binary    => new GenericTypeNode(
@@ -55,7 +56,7 @@ public sealed class RustIrTypeMapper(RustGenerationOptions? options = null) : II
             new IdentifierNode("Vec"),
             ImmutableList.Create<TypeNode>(new SimpleTypeNode(new IdentifierNode("u8"), isPrimitive: true))),
         IrPrimitiveKind.Any       => AnyType(),
-        IrPrimitiveKind.Void      => new SimpleTypeNode(new IdentifierNode("()"), isPrimitive: true),
+        IrPrimitiveKind.Void      => new RustUnitTypeNode(),
         _                         => AnyType(),
     };
 

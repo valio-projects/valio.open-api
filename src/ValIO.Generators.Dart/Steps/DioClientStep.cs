@@ -35,7 +35,7 @@ public sealed class DioClientStep : ICodeGenerationStep
         var builder = new DioClientAstBuilder(_namingConverter, _typeMapper);
         foreach (var client in context.IrDocument.Clients)
         {
-            var file = builder.BuildFile(client);
+            var file = builder.BuildFile(client, context.DocumentContext);
             var content = _renderer.Render(file);
             var fileBase = _namingConverter.ToSnakeCase(client.Name);
             context.GeneratedFiles.Add(new GeneratedFile($"api/{fileBase}_service.dart", content));

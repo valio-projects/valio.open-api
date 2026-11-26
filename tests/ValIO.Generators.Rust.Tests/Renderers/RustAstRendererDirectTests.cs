@@ -154,7 +154,7 @@ public class RustAstRendererDirectTests
         var s = new RustStructNode(new IdentifierNode("Empty"), fields: Array.Empty<RustFieldNode>());
         var file = new RustFileNode(
             declarations: new[] { (DeclarationNode)s },
-            uses: new[] { "serde::{Deserialize, Serialize}", "chrono", "chrono" });
+            uses: [new ImportNode([new("Deserialize"), new("Serialize")], "serde"), new ImportNode([], "chrono"), new ImportNode([], "chrono")]);
 
         var output = _renderer.Render(file);
         output.Should().Contain("use chrono;");

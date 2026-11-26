@@ -6,6 +6,7 @@ using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
+using ValIO.Core.IR.Types;
 using ValIO.Generators.Dart.Ast.Nodes;
 
 namespace ValIO.Generators.Dart.Ast.Builders;
@@ -25,7 +26,10 @@ public sealed class DioClientAstBuilder
         _typeMapper = typeMapper;
     }
 
-    public DartFileNode BuildFile(IrClient client)
+    /// <summary>Builds the service and imports for the models used by its operations.</summary>
+    /// <param name="client">The source operation group.</param>
+    /// <param name="context">The original model and enum names in the document.</param>
+    public DartFileNode BuildFile(IrClient client, IrDocumentContext context)
     {
         var serviceName = _namingConverter.ToPascalCase(client.Name) + "Service";
         var dioField = new DartFieldNode(
@@ -40,10 +44,11 @@ public sealed class DioClientAstBuilder
             parameters: new[]
             {
                 new DartParameterNode(
-                    new IdentifierNode("this._dio"),
+                    new IdentifierNode("_dio"),
                     new SimpleTypeNode(new IdentifierNode("Dio")),
                     isRequired: true,
-                    isNamed: false),
+                    isNamed: false,
+                    isFieldFormal: true),
             },
             isAsync: false,
             isStatic: false,
@@ -58,7 +63,12 @@ public sealed class DioClientAstBuilder
             fields: new[] { dioField },
             methods: methods);
 
-        var imports = new List<DartImportNode> { new("package:dio/dio.dart") };
+        var types = client.Operations.SelectMany(operation => operation.PathParameters.Concat(operation.QueryParameters)
+            .Concat(operation.HeaderParameters).Select(parameter => parameter.Type)
+            .Concat(operation.Responses.Select(response => response.Type).OfType<IrType>())
+            .Concat(operation.RequestBody is { } request ? [request.Type] : []));
+        IReadOnlyList<DartImportNode> imports =
+            [new("package:dio/dio.dart"), .. DartImports.Build(context, _namingConverter, types, "../models/")];
         return new DartFileNode(declarations: new[] { cls }, imports: imports);
     }
 
@@ -81,7 +91,7 @@ public sealed class DioClientAstBuilder
         {
             parameters.Add(new DartParameterNode(
                 new IdentifierNode("body"),
-                _typeMapper.MapType(operation.RequestBody.Type),
+                BuildParameterType(operation.RequestBody.Type, operation.RequestBody.IsRequired),
                 isRequired: operation.RequestBody.IsRequired,
                 isNamed: true));
         }
@@ -107,9 +117,18 @@ public sealed class DioClientAstBuilder
         var safe = ParameterName(p);
         return new DartParameterNode(
             new IdentifierNode(safe),
-            _typeMapper.MapType(p.Type),
+            BuildParameterType(p.Type, p.IsRequired),
             isRequired: p.IsRequired,
             isNamed: true);
+    }
+
+    /// <summary>Maps an omittable Dart argument to a type that can hold its implicit null default.</summary>
+    /// <param name="wireType">The declared OpenAPI type.</param>
+    /// <param name="required">Whether the argument must be provided.</param>
+    private TypeNode BuildParameterType(IrType wireType, bool required)
+    {
+        var type = _typeMapper.MapType(wireType);
+        return required || type is NullableTypeNode ? type : new NullableTypeNode(type);
     }
 
     private TypeNode ResolveReturnType(IrOperation op)

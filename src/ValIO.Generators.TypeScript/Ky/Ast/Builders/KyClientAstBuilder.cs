@@ -24,6 +24,12 @@ namespace ValIO.Generators.TypeScript.Ky.Ast.Builders;
 public sealed class KyClientAstBuilder : AstBuilderBase
 {
 
+    /// <summary>Builds an indexed access to an option on the Ky request type.</summary>
+    /// <param name="property">The option's declared property name.</param>
+    private static IndexedAccessTypeNode BuildOptionType(string property) => new(
+        new SimpleTypeNode(new IdentifierNode("Options")),
+        new SimpleTypeNode(new IdentifierNode("string"), literalValue: property));
+
     private readonly INamingConverter _namingConverter;
     private readonly TypeScriptParamsAstBuilder _paramsBuilder;
     private readonly TypeScriptResultsAstBuilder _resultsBuilder;
@@ -269,7 +275,7 @@ public sealed class KyClientAstBuilder : AstBuilderBase
             initializer: TypeScriptResponseBody.Read(operation, Member(Id("response"), "status"),
                 new AwaitExpressionNode(new CallExpressionNode(
                     Member(Id("response"), "json"),
-                    genericTypeName: "unknown")))));
+                    genericTypeArgument: new SimpleTypeNode(new IdentifierNode("unknown")))))));
         statements.Add(new BlankLineStatementNode());
 
         AddStatusResultBranches(operation, statements);
@@ -359,7 +365,7 @@ public sealed class KyClientAstBuilder : AstBuilderBase
             var wireHeaders = TypeScriptWireParameterObject.BuildHeaders(
                 operation, sources.HeadersSource, sources.HeadersSourceMayBeUndefined);
             var castedHeaders = new CastExpressionNode(
-                new SimpleTypeNode(new IdentifierNode("Options[\"headers\"]"), isPrimitive: false),
+                BuildOptionType("headers"),
                 wireHeaders,
                 useAsOperator: true);
 
@@ -374,7 +380,7 @@ public sealed class KyClientAstBuilder : AstBuilderBase
             var bodyExpression = operation.RequestBody.IsJson
                 ? sources.BodySource
                 : (ExpressionNode)new CastExpressionNode(
-                    new SimpleTypeNode(new IdentifierNode("Options[\"body\"]"), isPrimitive: false),
+                    BuildOptionType("body"),
                     new CastExpressionNode(
                         new SimpleTypeNode(new IdentifierNode("unknown"), isPrimitive: true),
                         sources.BodySource,
@@ -429,7 +435,7 @@ public sealed class KyClientAstBuilder : AstBuilderBase
             literal,
             useAsOperator: true);
         return new CastExpressionNode(
-            new SimpleTypeNode(new IdentifierNode("Options[\"searchParams\"]"), isPrimitive: false),
+            BuildOptionType("searchParams"),
             unknownCast,
             useAsOperator: true);
     }

@@ -20,39 +20,34 @@ namespace ValIO.Generators.Rust.Ast.Builders;
 public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, RustIrTypeMapper typeMapper)
 {
 
-    public RustFileNode BuildFile(IrClient client)
+    /// <summary>Builds the API module and imports for its method signatures.</summary>
+    /// <param name="client">The OpenAPI operation group.</param>
+    /// <param name="context">The document's declarations and stable module names.</param>
+    public RustFileNode BuildFile(IrClient client, IrDocumentContext context)
     {
-        var functions = new List<DeclarationNode>(client.Operations.Count);
-        var uses = new SortedSet<string>(StringComparer.Ordinal)
-        {
-            "reqwest::Client",
-            "serde::{Deserialize, Serialize}",
-        };
-
-        foreach (var op in client.Operations)
-        {
-            functions.Add(BuildOperationFunction(op, uses));
-        }
-
-        return new RustFileNode(declarations: functions, uses: uses.ToImmutableList());
+        var functions = client.Operations.Select(BuildOperationFunction).ToArray();
+        var types = client.Operations.SelectMany(operation => operation.PathParameters.Concat(operation.QueryParameters)
+            .Select(parameter => parameter.Type)
+            .Concat(operation.Responses.Select(response => response.Type).OfType<IrType>())
+            .Concat(operation.RequestBody is { } request ? [request.Type] : []));
+        IReadOnlyList<ImportNode> uses = [new([new("Client")], "reqwest"), .. RustImports.Models(context, namingConverter, types)];
+        return new RustFileNode(declarations: functions, uses: uses);
     }
 
     /// <summary>Builds the declared function and its request body for one HTTP operation.</summary>
     /// <param name="op">The source operation.</param>
-    /// <param name="uses">The imports required by its types.</param>
     /// <returns>The typed function declaration.</returns>
-    private RustFunctionNode BuildOperationFunction(IrOperation op, SortedSet<string> uses)
+    private RustFunctionNode BuildOperationFunction(IrOperation op)
     {
         var methodName = RustReservedNames.Avoid(namingConverter.ToSnakeCase(op.MethodName));
         var parameters = new List<RustParameter>
         {
-            new("client", new SimpleTypeNode(new IdentifierNode("&Client"), isPrimitive: true)),
-            new("base_url", new SimpleTypeNode(new IdentifierNode("&str"), isPrimitive: true)),
+            new("client", new RustReferenceTypeNode(new SimpleTypeNode(new IdentifierNode("Client")))),
+            new("base_url", new RustReferenceTypeNode(new SimpleTypeNode(new IdentifierNode("str"), isPrimitive: true))),
         };
 
         foreach (var p in op.PathParameters)
         {
-            ScanForUses(p.Type, uses);
             parameters.Add(new RustParameter(
                 RustReservedNames.Avoid(namingConverter.ToSnakeCase(p.Name)),
                 typeMapper.MapType(p.Type)));
@@ -60,7 +55,6 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
 
         if (op.RequestBody != null)
         {
-            ScanForUses(op.RequestBody.Type, uses);
             parameters.Add(new RustParameter(
                 "body",
                 typeMapper.MapType(op.RequestBody.Type)));
@@ -68,7 +62,6 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
 
         foreach (var p in op.QueryParameters)
         {
-            ScanForUses(p.Type, uses);
             var mapped = typeMapper.MapType(p.Type);
             if (!p.IsRequired)
                 mapped = EnsureOption(mapped);
@@ -84,7 +77,6 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
         bool isBinaryReturn = false;
         if (successResponse?.Type != null)
         {
-            ScanForUses(successResponse.Type, uses);
             successType = typeMapper.MapType(successResponse.Type);
             isBinaryReturn = successResponse.Type is IrPrimitiveType
             {
@@ -93,7 +85,7 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
         }
 
         // Wrap success in Result<T, reqwest::Error>.
-        var unitType = new SimpleTypeNode(new IdentifierNode("()"), isPrimitive: true);
+        var unitType = new RustUnitTypeNode();
         var returnInner = successType ?? unitType;
         var returnType = new GenericTypeNode(
             new IdentifierNode("Result"),
@@ -226,29 +218,4 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
             ? type
             : new GenericTypeNode(new IdentifierNode("Option"), ImmutableList.Create<TypeNode>(type));
 
-    private static void ScanForUses(IrType irType, SortedSet<string> uses)
-    {
-        // Scan for chrono types in IR types.
-        switch (irType)
-        {
-            case IrPrimitiveType p when p.PrimitiveKind is IrPrimitiveKind.Date
-                                                       or IrPrimitiveKind.DateTime
-                                                       or IrPrimitiveKind.Time:
-                uses.Add("chrono");
-                break;
-            case IrArrayType a:
-                ScanForUses(a.ElementType, uses);
-                break;
-            case IrDictionaryType d:
-                ScanForUses(d.KeyType, uses);
-                ScanForUses(d.ValueType, uses);
-                break;
-            case IrNullableType n:
-                ScanForUses(n.InnerType, uses);
-                break;
-            case IrOptionalType o:
-                ScanForUses(o.InnerType, uses);
-                break;
-        }
-    }
 }

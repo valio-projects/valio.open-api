@@ -127,4 +127,4 @@ standard SignalR JSON protocol. Streaming, client return values, and reflection-
 existing hub classes are outside this profile.
 
 See the [two-hub contract fixture](../tests/Fixtures/OpenApi/SignalR/support.json) for a typed RPC,
-a multi-argument event and independent Inbox, Wallets, and Payments signals.
+a multi-argument event and independent Inbox, Wallets, and Payments signals. The [round-trip probe](../samples/signalr-pipeline/README.md) generates both SDKs and exercises them against a local ASP.NET Core hub.

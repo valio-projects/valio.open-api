@@ -31,11 +31,11 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
 
         if (node.Uses.Count > 0)
         {
-            foreach (var use in node.Uses
+            foreach (var use in node.Uses.Select(VisitImport)
                 .Distinct(StringComparer.Ordinal)
                 .OrderBy(u => u, StringComparer.Ordinal))
             {
-                sb.AppendLine($"use {use};");
+                sb.AppendLine(use);
             }
             sb.AppendLine();
         }
@@ -260,6 +260,12 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
         return $"std::collections::HashMap<{key}, {value}>";
     }
 
+    /// <inheritdoc />
+    public override string VisitRustReferenceType(RustReferenceTypeNode node) => $"&{Visit(node.TargetType)}";
+
+    /// <inheritdoc />
+    public override string VisitRustUnitType(RustUnitTypeNode node) => "()";
+
     public override string VisitRawType(RawTypeNode node) => node.RawTypeString;
 
     private string RenderType(TypeNode type) => type.Accept(this);
@@ -278,7 +284,17 @@ public sealed class RustAstRenderer : RustAstVisitorBase<string>, IRustAstRender
     public override string VisitBlock(BlockNode node) =>
         string.Join("\n", node.Statements.Select(Visit));
 
-    public override string VisitImport(ImportNode node) => string.Empty;
+    /// <inheritdoc />
+    public override string VisitImport(ImportNode node)
+    {
+        var path = node.Items.Count switch
+        {
+            0 => node.From,
+            1 => node.From + "::" + node.Items[0].Name,
+            _ => node.From + "::{" + string.Join(", ", node.Items.Select(item => item.Name)) + "}",
+        };
+        return $"use {path};";
+    }
     public override string VisitExport(ExportNode node) => string.Empty;
 
     public override string VisitLiteralExpression(LiteralExpressionNode node) =>

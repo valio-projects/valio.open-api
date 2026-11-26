@@ -39,6 +39,10 @@ public sealed class CallExpressionNode : ExpressionNode
     /// Generic аргумент типа для вызова generic метода (например, для Deserialize&lt;T&gt;())
     /// </summary>
     public TypeNode? GenericTypeArgument { get; }
+
+    /// <summary>Gets the explicit type arguments of a generic call in their declared order.</summary>
+    /// <value>The typed arguments when the call provides a list of them.</value>
+    public IReadOnlyList<TypeNode> TypeArguments { get; }
     
     /// <summary>
     /// Является ли это лямбда-выражением (для генерации async () => ...)
@@ -74,6 +78,7 @@ public sealed class CallExpressionNode : ExpressionNode
                 children.Add(VariableDeclaration);
             if (GenericTypeArgument != null)
                 children.Add(GenericTypeArgument);
+            children.AddRange(TypeArguments);
             children.AddRange(base.Children);
             return children;
         }
@@ -94,7 +99,8 @@ public sealed class CallExpressionNode : ExpressionNode
         bool isLambda = false,
         ExpressionNode? lambdaBody = null,
         bool isUsingVariable = false,
-        VariableDeclarationStatementNode? variableDeclaration = null)
+        VariableDeclarationStatementNode? variableDeclaration = null,
+        IReadOnlyList<TypeNode>? typeArguments = null)
         : base(type, metadata)
     {
         Target = target ?? throw new ArgumentNullException(nameof(target));
@@ -103,6 +109,7 @@ public sealed class CallExpressionNode : ExpressionNode
         IsConstructorBaseCall = isConstructorBaseCall;
         GenericTypeName = genericTypeName;
         GenericTypeArgument = genericTypeArgument;
+        TypeArguments = typeArguments?.ToImmutableList() ?? ImmutableList<TypeNode>.Empty;
         IsLambda = isLambda;
         LambdaBody = lambdaBody;
         IsUsingVariable = isUsingVariable;
@@ -128,7 +135,8 @@ public sealed class CallExpressionNode : ExpressionNode
             IsLambda,
             LambdaBody != null ? (ExpressionNode)LambdaBody.Clone() : null,
             IsUsingVariable,
-            VariableDeclaration != null ? (VariableDeclarationStatementNode)VariableDeclaration.Clone() : null);
+            VariableDeclaration != null ? (VariableDeclarationStatementNode)VariableDeclaration.Clone() : null,
+            TypeArguments.Select(argument => (TypeNode)argument.Clone()).ToArray());
     }
     
     public override string ToString()
