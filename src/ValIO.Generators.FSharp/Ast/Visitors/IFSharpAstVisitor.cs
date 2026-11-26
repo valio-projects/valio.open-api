@@ -12,4 +12,24 @@ public interface IFSharpAstVisitor<TResult> : IAstVisitor<TResult>
     TResult VisitFSharpRecord(FSharpRecordNode node);
     TResult VisitFSharpDU(FSharpDuNode node);
     TResult VisitFSharpFunction(FSharpFunctionNode node);
+
+    /// <summary>Visits a FSharpTaskExpressionNode syntax node.</summary>
+    /// <param name="node">The F# syntax to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitFSharpTaskExpression(FSharpTaskExpressionNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a FSharpAwaitBindingNode syntax node.</summary>
+    /// <param name="node">The F# syntax to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitFSharpAwaitBinding(FSharpAwaitBindingNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a FSharpMatchOptionNode syntax node.</summary>
+    /// <param name="node">The F# syntax to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitFSharpMatchOption(FSharpMatchOptionNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a FSharpApplicationNode syntax node.</summary>
+    /// <param name="node">The F# syntax to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitFSharpApplication(FSharpApplicationNode node) => DefaultVisit(node);
 }

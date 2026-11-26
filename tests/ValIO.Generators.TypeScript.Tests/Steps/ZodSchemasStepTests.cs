@@ -29,8 +29,8 @@ public class ZodSchemasStepTests
         var schema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal)
             && !f.RelativePath.Contains(".params.schema", StringComparison.Ordinal));
-        schema.Content.Should().Contain("from 'zod'");
-        schema.Content.Should().NotContain("from 'zod/v4'");
+        schema.Content.Should().Contain("from \"zod\"");
+        schema.Content.Should().NotContain("from \"zod/v4\"");
     }
 
     [Test]
@@ -46,7 +46,7 @@ public class ZodSchemasStepTests
         var schema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.EndsWith(".schema.ts", StringComparison.Ordinal)
             && !f.RelativePath.Contains(".params.schema", StringComparison.Ordinal));
-        schema.Content.Should().Contain("from 'zod/v4'");
+        schema.Content.Should().Contain("from \"zod/v4\"");
     }
 
     [Test]
@@ -82,8 +82,8 @@ public class ZodSchemasStepTests
         // Pet schema imports CategorySchema and TagSchema from sibling directories.
         var petSchema = ctx.GeneratedFiles.First(f =>
             f.RelativePath.Replace('\\', '/').EndsWith("models/pet/pet.schema.ts", StringComparison.Ordinal));
-        petSchema.Content.Should().Contain("'../category/category.schema'");
-        petSchema.Content.Should().Contain("'../tag/tag.schema'");
+        petSchema.Content.Should().Contain("\"../category/category.schema\"");
+        petSchema.Content.Should().Contain("\"../tag/tag.schema\"");
     }
 
     [Test]

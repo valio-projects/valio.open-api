@@ -1,4 +1,5 @@
 using System.Text;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
 using ValIO.Core.Ast.Nodes.Expressions;
@@ -152,6 +153,10 @@ public sealed class DartAstRenderer : DartAstVisitorBase<string>, IDartAstRender
 
     public override string VisitDartMethod(DartMethodNode node) => RenderMethod(node, 1);
 
+    /// <summary>Prints a Dart method and its structured statements.</summary>
+    /// <param name="node">The method to emit.</param>
+    /// <param name="indent">The declaration's indentation.</param>
+    /// <returns>The complete Dart method.</returns>
     private string RenderMethod(DartMethodNode node, int indent)
     {
         var sb = new StringBuilder();
@@ -181,18 +186,15 @@ public sealed class DartAstRenderer : DartAstVisitorBase<string>, IDartAstRender
 
         if (node.IsAsync) sb.Append(" async");
 
-        if (node.BodyLines.Count == 0)
+        if (node.Body is null)
         {
             sb.AppendLine(";");
             return sb.ToString();
         }
 
         sb.AppendLine(" {");
-        foreach (var line in node.BodyLines)
-        {
-            // Preserve internal indentation tokens supplied by the builder.
-            sb.AppendLine(Pad(indent + 1) + line);
-        }
+        foreach (var statement in node.Body.Statements)
+            sb.AppendLine(Pad(indent + 1) + Visit(statement));
         sb.AppendLine(Pad(indent) + "}");
         return sb.ToString();
     }
@@ -239,6 +241,67 @@ public sealed class DartAstRenderer : DartAstVisitorBase<string>, IDartAstRender
         sb.Append(")");
         return sb.ToString();
     }
+
+    /// <inheritdoc/>
+    public override string VisitIdentifierExpression(IdentifierExpressionNode node) => node.Identifier.Name;
+
+    /// <inheritdoc/>
+    public override string VisitLiteralExpression(LiteralExpressionNode node) =>
+        node is { LiteralKind: LiteralKind.String, Value: string value }
+            ? $"'{EscapeString(value)}'"
+            : VisitDefault(node);
+
+    /// <inheritdoc/>
+    public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) =>
+        $"{Visit(node.Object)}.{node.Member.Name}";
+
+    /// <inheritdoc/>
+    public override string VisitCallExpression(CallExpressionNode node)
+    {
+        var generic = node.GenericTypeArgument is null ? "" : $"<{RenderType(node.GenericTypeArgument)}>";
+        return $"{Visit(node.Target)}{generic}({string.Join(", ", node.Arguments.Select(Visit))})";
+    }
+
+    /// <inheritdoc/>
+    public override string VisitAwaitExpression(AwaitExpressionNode node) => $"await {Visit(node.Expression)}";
+
+    /// <inheritdoc/>
+    public override string VisitVariableDeclarationStatement(VariableDeclarationStatementNode node) =>
+        $"final {node.Name.Name} = {Visit(node.Initializer!)};";
+
+    /// <inheritdoc/>
+    public override string VisitReturnStatement(ReturnStatementNode node) =>
+        node.Value is null ? "return;" : $"return {Visit(node.Value)};";
+
+    /// <inheritdoc/>
+    public override string VisitExpressionStatement(ExpressionStatementNode node) => $"{Visit(node.Expression)};";
+
+    /// <inheritdoc/>
+    public override string VisitDartNamedArgument(DartNamedArgumentNode node) => $"{node.Name.Name}: {Visit(node.Value)}";
+
+    /// <inheritdoc/>
+    public override string VisitDartMapLiteral(DartMapLiteralNode node)
+    {
+        var entries = string.Join(", ", node.Entries.Select(entry => $"{Visit(entry.Key)}: {Visit(entry.Value)}"));
+        return $"<{RenderType(node.KeyType)}, {RenderType(node.ValueType)}>{{{entries}}}";
+    }
+
+    /// <inheritdoc/>
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        var parts = node.Parts.Select(part => part is LiteralExpressionNode { Value: string value }
+            ? EscapeString(value)
+            : "$" + "{" + Visit(part) + "}");
+        return $"'{string.Concat(parts)}'";
+    }
+
+    /// <summary>Escapes literal content within a Dart single-quoted string.</summary>
+    /// <param name="value">The literal wire string.</param>
+    /// <returns>The encoded string without delimiters.</returns>
+    private static string EscapeString(string value) => value.Replace("\\", "\\\\", StringComparison.Ordinal)
+        .Replace("'", "\\'", StringComparison.Ordinal).Replace("$", "\\$", StringComparison.Ordinal)
+        .Replace("\r", "\\r", StringComparison.Ordinal).Replace("\n", "\\n", StringComparison.Ordinal)
+        .Replace("\t", "\\t", StringComparison.Ordinal);
 
     // ------------- Types -------------
 

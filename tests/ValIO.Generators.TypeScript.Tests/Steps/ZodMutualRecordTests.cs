@@ -38,8 +38,8 @@ public sealed class ZodMutualRecordTests
             {
                 var destination = Path.Combine(temporary, file.RelativePath);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                var contents = file.Content.Replace("from 'zod/v4'", "from 'zod4'", StringComparison.Ordinal)
-                    .Replace("from 'zod'", "from 'zod3'", StringComparison.Ordinal);
+                var contents = file.Content.Replace("from \"zod/v4\"", "from \"zod4\"", StringComparison.Ordinal)
+                    .Replace("from \"zod\"", "from \"zod3\"", StringComparison.Ordinal);
                 await File.WriteAllTextAsync(destination, contents);
             }
             var alpha = Path.Combine(temporary, "models", "alpha", "alpha.schema.ts");

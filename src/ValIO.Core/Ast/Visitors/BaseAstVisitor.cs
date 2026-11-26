@@ -52,6 +52,9 @@ public abstract class BaseAstVisitor<TResult> : IBaseAstVisitor<TResult>
     /// </summary>
     public virtual TResult VisitIndexAccessExpression(IndexAccessExpressionNode node) => DefaultVisit(node);
 
+    /// <inheritdoc/>
+    public virtual TResult VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node) => DefaultVisit(node);
+
     // Универсальные декларации (промоучены из C#; см. IAstVisitor). Virtual-default по
     // прецеденту VisitTypeLiteral: генераторы, которые эти узлы не строят (TypeScript и др.),
     // ничего не замечают; C# и C++ переопределяют.

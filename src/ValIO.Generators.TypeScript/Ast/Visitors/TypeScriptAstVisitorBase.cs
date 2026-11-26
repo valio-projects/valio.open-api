@@ -38,6 +38,15 @@ public abstract class TypeScriptAstVisitorBase<TResult> : BaseAstVisitor<TResult
     public virtual TResult VisitRequestBody(RequestBodyNode node) => VisitDefault(node);
     public virtual TResult VisitResponseType(ResponseTypeNode node) => VisitDefault(node);
     
+    /// <inheritdoc/>
+    public virtual TResult VisitFunctionType(FunctionTypeNode node) => VisitDefault(node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitModuleReExport(ModuleReExportNode node) => VisitDefault(node);
+
+    /// <inheritdoc/>
+    public virtual TResult VisitImportType(ImportTypeNode node) => VisitDefault(node);
+
     // Абстрактные методы только для TypeScript узлов
     public abstract TResult VisitSourceFile(SourceFileNode node);
     public abstract TResult VisitTypeAliasDeclaration(TypeAliasDeclarationNode node);

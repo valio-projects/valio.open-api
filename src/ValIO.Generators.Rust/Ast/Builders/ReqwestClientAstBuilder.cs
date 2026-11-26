@@ -1,6 +1,9 @@
 using System.Collections.Immutable;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -34,6 +37,10 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
         return new RustFileNode(declarations: functions, uses: uses.ToImmutableList());
     }
 
+    /// <summary>Builds the declared function and its request body for one HTTP operation.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <param name="uses">The imports required by its types.</param>
+    /// <returns>The typed function declaration.</returns>
     private RustFunctionNode BuildOperationFunction(IrOperation op, SortedSet<string> uses)
     {
         var methodName = RustReservedNames.Avoid(namingConverter.ToSnakeCase(op.MethodName));
@@ -94,7 +101,7 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
                 returnInner,
                 new SimpleTypeNode(new IdentifierNode("reqwest::Error"), isPrimitive: true)));
 
-        var body = BuildBody(op, successType, isVoidReturn, isBinaryReturn);
+        var (body, result) = BuildBody(op, isVoidReturn, isBinaryReturn);
 
         return new RustFunctionNode(
             new IdentifierNode(methodName),
@@ -103,102 +110,106 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
             body,
             isAsync: true,
             visibility: "pub",
-            documentation: BuildDocstring(op));
+            documentation: BuildDocstring(op), tail: result);
     }
 
-    private IReadOnlyList<string> BuildBody(
-        IrOperation op,
-        TypeNode? successType,
-        bool isVoidReturn,
-        bool isBinaryReturn)
+    /// <summary>Builds the typed request, response bindings, and function result.</summary>
+    /// <param name="op">The source HTTP operation.</param>
+    /// <param name="isVoidReturn">Whether the response has no payload.</param>
+    /// <param name="isBinaryReturn">Whether the response body is buffered as bytes.</param>
+    /// <returns>The body statements and the tail expression returned by the function.</returns>
+    private (BlockNode Body, ExpressionNode Result) BuildBody(IrOperation op, bool isVoidReturn, bool isBinaryReturn)
     {
-        var lines = new List<string>();
+        var path = OpenApiPathExpressionBuilder.Build(op, parameter => Ref(ParameterName(parameter)));
+        var parts = path.Parts.ToList();
+        if (parts.Count > 0 && parts[0] is LiteralExpressionNode { Value: string leading })
+            parts[0] = Text(leading.TrimStart('/'));
 
-        // Build the path by substituting path params with Rust format-string holes.
-        var pathTemplate = op.Path.TrimStart('/');
-        var formatArgs = new List<string>();
-        foreach (var p in op.PathParameters)
+        var url = new InterpolatedStringExpressionNode([Ref("base_url"), Text("/"), .. parts]);
+        var method = op.HttpMethod.ToLowerInvariant();
+        var client = Ref("client");
+        var urlReference = new RustBorrowNode(Ref("url"));
+        var createRequest = method is "get" or "post" or "put" or "delete" or "patch" or "head"
+            ? Call(Member(client, method), urlReference)
+            : Call(Member(client, "request"), Member(Ref("reqwest::Method"), op.HttpMethod.ToUpperInvariant(), scope: true), urlReference);
+        var req = Ref("req");
+        var statements = new List<StatementNode>
         {
-            var snake = RustReservedNames.Avoid(namingConverter.ToSnakeCase(p.Name));
-            pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "{" + snake + "}", StringComparison.Ordinal);
-            formatArgs.Add($"{snake} = {snake}");
-        }
-
-        var pathExpr = formatArgs.Count > 0
-            ? $"format!(\"{{base_url}}/{pathTemplate}\", base_url = base_url, {string.Join(", ", formatArgs)})"
-            : $"format!(\"{{base_url}}/{pathTemplate}\", base_url = base_url)";
-
-        lines.Add($"let url = {pathExpr};");
-
-        var method = op.HttpMethod.ToLowerInvariant() switch
-        {
-            "get" => "get",
-            "post" => "post",
-            "put" => "put",
-            "delete" => "delete",
-            "patch" => "patch",
-            "head" => "head",
-            _ => "request",
+            new RustLetNode(new("url"), url, null, false),
+            new RustLetNode(new("req"), createRequest, null, op.QueryParameters.Count > 0 || op.RequestBody is not null),
         };
-
-        lines.Add($"let mut req = client.{method}(&url);");
 
         if (op.QueryParameters.Count > 0)
         {
-            lines.Add("let mut query: Vec<(&str, String)> = Vec::new();");
-            foreach (var p in op.QueryParameters)
+            var query = Ref("query");
+            statements.Add(new RustLetNode(new("query"), Call(Member(Ref("Vec"), "new", scope: true)), null, true));
+            foreach (var parameter in op.QueryParameters)
             {
-                var snake = RustReservedNames.Avoid(namingConverter.ToSnakeCase(p.Name));
-                var wireName = EscapeStringLiteral(p.Name);
-                if (p.IsRequired)
-                {
-                    lines.Add($"query.push((\"{wireName}\", format!(\"{{}}\", {snake})));");
-                }
-                else
-                {
-                    lines.Add($"if let Some(v) = &{snake} {{ query.push((\"{wireName}\", format!(\"{{}}\", v))); }}");
-                }
+                var argument = Ref(ParameterName(parameter));
+                var value = parameter.IsRequired ? argument : Ref("v");
+                var formatted = new InterpolatedStringExpressionNode([value]);
+                var entry = new RustTupleNode([Text(parameter.OriginalName), formatted]);
+                var push = new ExpressionStatementNode(Call(Member(query, "push"), entry));
+                statements.Add(parameter.IsRequired ? push :
+                    new RustIfSomeNode(new("v"), new RustBorrowNode(argument), new BlockNode([push])));
             }
-            lines.Add("req = req.query(&query);");
+            statements.Add(Assign(req, Call(Member(req, "query"), new RustBorrowNode(query))));
         }
 
-        if (op.RequestBody != null)
-        {
-            if (op.RequestBody.IsJson)
-            {
-                lines.Add("req = req.json(&body);");
-            }
-            else
-            {
-                // Treat anything else as JSON for the MVP fallback.
-                lines.Add("req = req.json(&body);");
-            }
-        }
+        if (op.RequestBody is not null)
+            statements.Add(Assign(req, Call(Member(req, "json"), new RustBorrowNode(Ref("body")))));
 
-        lines.Add("let resp = req.send().await?.error_for_status()?;");
-
+        var sent = new RustTryNode(new AwaitExpressionNode(Call(Member(req, "send"))));
+        var checkedStatus = new RustTryNode(Call(Member(sent, "error_for_status")));
         if (isVoidReturn)
         {
-            lines.Add("let _ = resp;");
-            lines.Add("Ok(())");
-        }
-        else if (isBinaryReturn)
-        {
-            lines.Add("let bytes = resp.bytes().await?;");
-            lines.Add("Ok(bytes.to_vec())");
-        }
-        else if (successType != null)
-        {
-            lines.Add("let parsed = resp.json().await?;");
-            lines.Add("Ok(parsed)");
-        }
-        else
-        {
-            lines.Add("Ok(())");
+            statements.Add(new ExpressionStatementNode(checkedStatus));
+            return (new BlockNode(statements), Call(Ref("Ok"), new RustTupleNode([])));
         }
 
-        return lines;
+        statements.Add(new RustLetNode(new("resp"), checkedStatus, null, false));
+        var decode = new RustTryNode(new AwaitExpressionNode(Call(Member(Ref("resp"), isBinaryReturn ? "bytes" : "json"))));
+        var resultName = isBinaryReturn ? "bytes" : "parsed";
+        statements.Add(new RustLetNode(new(resultName), decode, null, false));
+        var result = Ref(resultName);
+        return (new BlockNode(statements), Call(Ref("Ok"), isBinaryReturn ? Call(Member(result, "to_vec")) : result));
     }
+
+    /// <summary>Assigns a value to a mutable binding.</summary>
+    /// <param name="target">The binding being changed.</param>
+    /// <param name="value">The new value of the binding.</param>
+    /// <returns>The assignment statement.</returns>
+    private static ExpressionStatementNode Assign(ExpressionNode target, ExpressionNode value) =>
+        new(new BinaryExpressionNode(target, BinaryOperator.Assign, value));
+
+    /// <summary>Produces the emitted name shared by a formal parameter and its references.</summary>
+    /// <param name="parameter">The parameter declared in OpenAPI.</param>
+    /// <returns>The Rust identifier.</returns>
+    private string ParameterName(IrParameter parameter) => RustReservedNames.Avoid(namingConverter.ToSnakeCase(parameter.Name));
+
+    /// <summary>Creates a name reference.</summary>
+    /// <param name="name">The Rust symbol name.</param>
+    /// <returns>The reference expression.</returns>
+    private static IdentifierExpressionNode Ref(string name) => new(new IdentifierNode(name));
+
+    /// <summary>Selects an instance member or a scoped associated member.</summary>
+    /// <param name="target">The receiver or type.</param>
+    /// <param name="name">The selected identifier.</param>
+    /// <param name="scope">Whether to use Rust's scope operator.</param>
+    /// <returns>The member expression.</returns>
+    private static MemberAccessExpressionNode Member(ExpressionNode target, string name, bool scope = false) =>
+        new(target, new(name), useScopeOperator: scope);
+
+    /// <summary>Creates a call to the selected expression.</summary>
+    /// <param name="target">The function to call.</param>
+    /// <param name="arguments">The positional arguments.</param>
+    /// <returns>The invocation expression.</returns>
+    private static CallExpressionNode Call(ExpressionNode target, params ExpressionNode[] arguments) => new(target, arguments);
+
+    /// <summary>Records the wire value as a string literal node.</summary>
+    /// <param name="value">The original wire text.</param>
+    /// <returns>The literal expression.</returns>
+    private static LiteralExpressionNode Text(string value) => new(value, LiteralKind.String);
 
     private static CommentNode? BuildDocstring(IrOperation op)
     {
@@ -240,8 +251,4 @@ public sealed class ReqwestClientAstBuilder(INamingConverter namingConverter, Ru
                 break;
         }
     }
-
-    private static string EscapeStringLiteral(string s) =>
-        s.Replace("\\", "\\\\", StringComparison.Ordinal)
-         .Replace("\"", "\\\"", StringComparison.Ordinal);
 }

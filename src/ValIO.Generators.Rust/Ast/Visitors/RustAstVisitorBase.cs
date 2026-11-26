@@ -21,6 +21,21 @@ public abstract class RustAstVisitorBase<TResult> : BaseAstVisitor<TResult>, IRu
     public abstract TResult VisitRustStruct(RustStructNode node);
     public abstract TResult VisitRustEnum(RustEnumNode node);
     public abstract TResult VisitRustFunction(RustFunctionNode node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitRustBorrow(RustBorrowNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitRustTry(RustTryNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitRustTuple(RustTupleNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitRustLet(RustLetNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitRustIfSome(RustIfSomeNode node) => VisitDefault(node);
     public abstract TResult VisitRustField(RustFieldNode node);
     public abstract TResult VisitRustEnumVariant(RustEnumVariantNode node);
 

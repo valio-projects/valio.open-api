@@ -86,10 +86,9 @@ public abstract class TypeScriptClientStepBase : ICodeGenerationStep
                 ct.ThrowIfCancellationRequested();
 
                 var sourceFile = BuildOperationSourceFile(context.DocumentContext, operation, fileOrg, opts);
-                var content = Renderer.Render(sourceFile);
                 var fileName = NamingConverter.ToCamelCase(operation.OriginalMethodName);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}{FileSuffix}";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+                TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, Renderer.Render);
             }
         }
 

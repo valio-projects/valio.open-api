@@ -1,12 +1,13 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using ValIO.Core.Ast.Enums;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Generators.TypeScript.Ast.Nodes;
 using ValIO.Core.Ast.Builders;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Core.IR.Types;
 using ValIO.Core.Ast.Nodes;
-using ValIO.Core.Utilities;
 using ValIO.Generators.TypeScript.Ast.Builders;
 using ValIO.Generators.TypeScript.Ast.JsDoc;
 using ValIO.Generators.TypeScript.Options;
@@ -63,182 +64,141 @@ public class ZodSchemaRenderer : AstBuilderBase
         _exactJsonNumbers = exactJsonNumbers;
     }
 
-    // `ZodSchema` — только тип: под `verbatimModuleSyntax` его импортируем type-only (иначе TS1485),
-    // отдельной строкой от значения `z`.
-    /// <summary>Формирует импорты значений и типов с разделителем строк текущей платформы.</summary>
-    /// <value>Два объявления импорта Zod.</value>
-    private string ZodImportLine => $"import {{ z }} from '{_zodImportPath}';{Environment.NewLine}import type {{ ZodSchema }} from '{_zodImportPath}';";
-
+    /// <summary>Gets whether this profile validates UUIDs with the shared regular expression.</summary>
+    /// <value>Whether UUID schemas refer to the generated formats module.</value>
     private bool UsesUuidRegex => _uuidFormat == TypeScriptOptionIds.UuidFormat.Regex;
 
-    /// <summary>Prepends the standard generated-file JSDoc header (@file/@module/@generated) to the buffer.</summary>
-    private static void AppendFileHeader(StringBuilder sb, string fileName, string module, string description)
-    {
-        CommentGenerator.GenerateJSDocComment(sb, 0, TypeScriptDoc.FileHeader(fileName, module, description).Text);
-        sb.AppendLine();
-    }
-
-    private static string FormatsImportLine(string relativeDir) =>
-        $"import {{ {TypeScriptOptionIds.UuidFormat.RegexConstName} }} from \"{relativeDir}/{TypeScriptOptionIds.UuidFormat.ConstFileName}\";";
-    
-    /// <summary>
-    /// Renders a model schema with a checked output type and unknown external input.
-    /// </summary>
-    /// <remarks>
-    /// Design note — the schema is emitted as <c>export const XSchema: ZodSchema&lt;X&gt; = …</c>, annotated
-    /// against the <b>separately generated</b> interface <c>X</c>, instead of deriving the type from the schema
-    /// via <c>export type X = z.infer&lt;typeof XSchema&gt;</c>. Reason: the generated interface carries
-    /// <b>per-field JSDoc</b> sourced from OpenAPI <c>description</c>s (and hover docs in editors), whereas a
-    /// <c>z.infer</c>-derived type is a structural alias that <b>cannot</b> hold per-property JSDoc — those
-    /// comments would be lost. Keeping interface + schema as two artifacts (the schema annotated with the
-    /// interface) preserves documentation while the <c>ZodSchema&lt;X&gt;</c> annotation still guarantees the
-    /// schema's output type matches the interface at compile time.
-    /// </remarks>
+    /// <summary>Renders a Zod schema for a model.</summary>
     /// <param name="model">The model whose schema is rendered.</param>
     /// <param name="importPath">An optional explicit model import base path.</param>
     /// <param name="currentFileName">The current file stem used to calculate dependency paths.</param>
     /// <param name="schemasPath">The schema directory used to calculate dependency paths.</param>
-    /// <returns>The TypeScript source for the model's Zod schema.</returns>
+    /// <returns>The TypeScript source for the model schema.</returns>
+    public string RenderFromIr(IrModel model, string? importPath = null, string? currentFileName = null, string? schemasPath = null) =>
+        new TypeScriptAstRenderer([new ZodNodeRenderer()]).Render(BuildModel(model, importPath, currentFileName, schemasPath));
+
+    /// <summary>Builds the type annotation, initializer and imports for a model schema module.</summary>
+    /// <param name="model">The model whose schema is generated.</param>
+    /// <param name="importPath">An optional explicit model import base path.</param>
+    /// <param name="currentFileName">The current file stem.</param>
+    /// <param name="schemasPath">The schema output directory.</param>
+    /// <returns>The complete schema module tree.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="model"/> is null.</exception>
-    public string RenderFromIr(IrModel model, string? importPath = null, string? currentFileName = null, string? schemasPath = null)
+    internal SourceFileNode BuildModel(IrModel model, string? importPath, string? currentFileName, string? schemasPath)
     {
-        if (model == null)
-            throw new ArgumentNullException(nameof(model));
-        
-        var sb = new StringBuilder(4096);
-
-        var schemaName = $"{model.Name}Schema";
+        ArgumentNullException.ThrowIfNull(model);
+        var imports = ZodImports();
         var modelFileName = _namingConverter.ToCamelCase(model.OriginalName);
-
-        AppendFileHeader(sb, $"{modelFileName}.schema.ts", $"{_modelsPath}/{modelFileName}", $"Zod validation schema for {model.Name}.");
-        sb.AppendLine(ZodImportLine);
-        sb.AppendLine();
-
-        // Путь к модели от файла схемы. Если importPath передан — используем его как
-        // полный путь к файлу модели (без расширения), иначе строим относительный.
-        var modelImportPath = !string.IsNullOrEmpty(importPath)
+        var modelImport = !string.IsNullOrEmpty(importPath)
             ? $"{NormalizePath(importPath)}/{modelFileName}/{modelFileName}"
             : BuildModelImportPathFromSchema(currentFileName, schemasPath, modelFileName);
+        imports.Add(new ImportNode([new(model.Name)], modelImport, isTypeOnly: true));
 
-        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat, _exactJsonNumbers);
-        var zodSchema = zodBuilder.BuildZodSchemaFromIrModel(model);
-        var constraintsName = $"{model.Name}Constraints";
-        sb.AppendLine($"import type {{ {model.Name} }} from \"{modelImportPath}\";");
-        if (TypeScriptIdentifierUsage.References(zodSchema, constraintsName))
-            sb.AppendLine($"import {{ {constraintsName} }} from \"{modelImportPath}\";");
-
-        // Shared UUID regex constant (regex mode): schema sits in {schemas}/{name}/ → ../formats.
+        var builder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat, _exactJsonNumbers);
+        var schema = builder.BuildZodSchemaFromIrModel(model);
+        var constraintsName = model.Name + "Constraints";
+        if (TypeScriptIdentifierUsage.References(schema, constraintsName))
+            imports.Add(new ImportNode([new(constraintsName)], modelImport));
         if (UsesUuidRegex && UuidFormatSupport.ModelUsesUuid(model))
-            sb.AppendLine(FormatsImportLine(".."));
-
+        {
+            var formats = TypeScriptOptionIds.UuidFormat.ConstFileName;
+            imports.Add(new ImportNode([new(TypeScriptOptionIds.UuidFormat.RegexConstName)], $"../{formats}"));
+        }
         if (_exactJsonNumbers && ((model.ScalarType is { } scalar && TypeScriptExactJson.UsesNumberCodec(scalar))
-            || model.Properties.Any(p => TypeScriptExactJson.UsesNumberCodec(p.Type))
+            || model.Properties.Any(property => TypeScriptExactJson.UsesNumberCodec(property.Type))
             || model.Composition?.Types.Any(TypeScriptExactJson.UsesNumberCodec) == true))
-            sb.AppendLine(TypeScriptExactJson.ImportLine);
+        {
+            imports.Add(TypeScriptExactJson.Import());
+        }
 
-        var dependencies = ExtractDependencies(model);
-        if (dependencies.Count > 0)
+        foreach (var dependency in ExtractDependencies(model).OrderBy(name => name))
         {
-            foreach (var dep in dependencies.OrderBy(d => d))
-            {
-                var depFileName = SchemaNameToFileName(dep);
-                var relativePath = CalculateImportPath(currentFileName, depFileName, schemasPath, importPath: null);
-                sb.AppendLine($"import {{ {dep} }} from '{relativePath}';");
-            }
-            sb.AppendLine();
+            var relative = CalculateImportPath(currentFileName, SchemaNameToFileName(dependency), schemasPath, importPath: null);
+            imports.Add(new ImportNode([new(dependency)], relative));
         }
-        
-        if (!string.IsNullOrEmpty(model.Description))
-        {
-            CommentGenerator.GenerateJSDocComment(sb, 0, model.Description);
-        }
-        
-        var zodRenderer = new ZodAstRenderer();
-        var zodSchemaCode = zodRenderer.RenderSchema(zodSchema);
-        
-        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: {SchemaType(model.Name)} = {zodSchemaCode};");
-        
-        return sb.ToString();
+
+        return BuildFile(model.Name, modelFileName, model.Description,
+            $"Zod validation schema for {model.Name}.", imports, schema);
     }
-    
-    /// <summary>
-    /// Renders an enum schema with a checked output type and unknown external input.
-    /// </summary>
+
+    /// <summary>Renders an enum schema with a checked output type and unknown external input.</summary>
     /// <param name="enumModel">The enum whose schema is rendered.</param>
     /// <param name="importPath">An optional explicit enum import base path.</param>
     /// <param name="currentFileName">The current file stem used to calculate dependency paths.</param>
     /// <param name="schemasPath">The schema directory used to calculate dependency paths.</param>
-    /// <returns>The TypeScript source for the enum's Zod schema.</returns>
-    /// <exception cref="ArgumentNullException"><paramref name="enumModel"/> is null.</exception>
-    public string RenderEnumFromIr(IrEnum enumModel, string? importPath = null, string? currentFileName = null, string? schemasPath = null)
-    {
-        if (enumModel == null)
-            throw new ArgumentNullException(nameof(enumModel));
-        
-        var sb = new StringBuilder();
+    /// <returns>The TypeScript source for the enum schema.</returns>
+    public string RenderEnumFromIr(IrEnum enumModel, string? importPath = null, string? currentFileName = null, string? schemasPath = null) =>
+        new TypeScriptAstRenderer([new ZodNodeRenderer()]).Render(BuildEnum(enumModel, importPath, currentFileName, schemasPath));
 
-        var schemaName = $"{enumModel.Name}Schema";
+    /// <summary>Builds one enum schema module using the model's exported values for string enums.</summary>
+    /// <param name="enumModel">The enum whose schema is generated.</param>
+    /// <param name="importPath">An optional explicit enum import base path.</param>
+    /// <param name="currentFileName">The current file stem.</param>
+    /// <param name="schemasPath">The schema output directory.</param>
+    /// <returns>The complete enum schema module tree.</returns>
+    /// <exception cref="ArgumentNullException"><paramref name="enumModel"/> is null.</exception>
+    internal SourceFileNode BuildEnum(IrEnum enumModel, string? importPath, string? currentFileName, string? schemasPath)
+    {
+        ArgumentNullException.ThrowIfNull(enumModel);
+        var imports = ZodImports();
         var typeName = enumModel.Name;
         var enumFileName = _namingConverter.ToCamelCase(enumModel.OriginalName);
-        var isStringEnum = enumModel.BaseType == IrEnumBaseType.String;
-        var constArrayName = $"{typeName}Values";
-
-        AppendFileHeader(sb, $"{enumFileName}.schema.ts", $"{_modelsPath}/{enumFileName}", $"Zod validation schema for the {typeName} enum.");
-        sb.AppendLine(ZodImportLine);
-        sb.AppendLine();
-        var enumImportPath = !string.IsNullOrEmpty(importPath)
+        var enumImport = !string.IsNullOrEmpty(importPath)
             ? $"{NormalizePath(importPath)}/{enumFileName}/{enumFileName}"
             : BuildModelImportPathFromSchema(currentFileName, schemasPath, enumFileName);
-        sb.AppendLine($"import type {{ {typeName} }} from \"{enumImportPath}\";");
+        imports.Add(new ImportNode([new(typeName)], enumImport, isTypeOnly: true));
 
-        if (isStringEnum)
+        ExpressionNode schema;
+        if (enumModel.BaseType == IrEnumBaseType.String)
         {
-            // Переиспользуем массив значений из модели enum вместо повторного объявления:
-            // z.enum принимает кортеж строковых литералов, который даёт {Name}Values из модели.
-            sb.AppendLine($"import {{ {constArrayName} }} from \"{enumImportPath}\";");
-            sb.AppendLine();
-
-            if (!string.IsNullOrEmpty(enumModel.Description))
+            var values = new IdentifierNode(typeName + "Values");
+            imports.Add(new ImportNode([values], enumImport));
+            var factory = new MemberAccessExpressionNode(new IdentifierExpressionNode(new IdentifierNode("z")), new("enum"));
+            schema = new CallExpressionNode(factory, [new IdentifierExpressionNode(values)]);
+        }
+        else
+        {
+            var builder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
+            var zodEnum = builder.BuildZodEnum(enumModel);
+            if (_exactJsonNumbers)
             {
-                CommentGenerator.GenerateJSDocComment(sb, 0, enumModel.Description);
+                imports.Add(TypeScriptExactJson.Import());
+                schema = new ZodExpressionSchemaNode(TypeScriptExactJson.OrdinaryNumberSchema(zodEnum, integer: true));
             }
-
-            CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: {SchemaType(typeName)} = z.enum({constArrayName});");
-            return sb.ToString();
+            else
+            {
+                schema = zodEnum;
+            }
         }
 
-        if (_exactJsonNumbers)
-            sb.AppendLine(TypeScriptExactJson.ImportLine);
-
-        // Числовые enum: z.enum работает только со строками, поэтому строим схему через ZodAstBuilder.
-        // Массив значений {Name}Values здесь НЕ объявляем и НЕ реэкспортируем — единственный источник
-        // в модели enum (models/{enum}/{enum}.ts). Иначе баррел index.ts реэкспортирует {Name}Values
-        // из обоих модулей → TS2308 (ambiguous re-export). Схема не использует этот массив.
-        sb.AppendLine();
-
-        if (!string.IsNullOrEmpty(enumModel.Description))
-        {
-            CommentGenerator.GenerateJSDocComment(sb, 0, enumModel.Description);
-        }
-
-        var zodBuilder = new ZodAstBuilder(DocumentContext, _namingConverter, _typeBuilder, _useBigInt, _uuidFormat);
-        var zodEnum = zodBuilder.BuildZodEnum(enumModel);
-        var zodRenderer = new ZodAstRenderer();
-        var zodEnumCode = _exactJsonNumbers
-            ? zodRenderer.RenderSchema(new ZodExpressionSchemaNode(TypeScriptExactJson.OrdinaryNumberSchema(zodEnum, integer: true)))
-            : zodRenderer.VisitZodEnum(zodEnum);
-
-        CodeFormatter.AppendLine(sb, 0, $"export const {schemaName}: {SchemaType(typeName)} = {zodEnumCode};");
-
-        return sb.ToString();
+        return BuildFile(typeName, enumFileName, enumModel.Description,
+            $"Zod validation schema for the {typeName} enum.", imports, schema);
     }
 
-    /// <summary>Renders the selected Zod major's schema type using the canonical type AST.</summary>
-    /// <param name="outputName">The validated model or enum name.</param>
-    /// <returns>The schema annotation with an unknown input type.</returns>
-    private string SchemaType(string outputName) => new TypeScriptAstRenderer().Visit(
-        ZodSchemaTypes.Build(new SimpleTypeNode(new IdentifierNode(outputName)), _zodImportPath));
-    
+    /// <summary>Imports the Zod runtime separately from its type declarations.</summary>
+    /// <returns>The initial imports for a schema module.</returns>
+    private List<ImportNode> ZodImports() =>
+        [new([new("z")], _zodImportPath), new([new("ZodSchema")], _zodImportPath, isTypeOnly: true)];
+
+    /// <summary>Builds the module with a named, typed exported schema.</summary>
+    /// <param name="typeName">The declared schema output type.</param>
+    /// <param name="fileName">The module file stem.</param>
+    /// <param name="description">The original schema description, if any.</param>
+    /// <param name="fileDescription">The generated file header description.</param>
+    /// <param name="imports">The module dependencies.</param>
+    /// <param name="schema">The schema initializer expression.</param>
+    /// <returns>The source file tree handed to the TypeScript printer.</returns>
+    private SourceFileNode BuildFile(string typeName, string fileName, string? description, string fileDescription,
+        IReadOnlyList<ImportNode> imports, ExpressionNode schema)
+    {
+        var type = ZodSchemaTypes.Build(new SimpleTypeNode(new IdentifierNode(typeName)), _zodImportPath);
+        var declaration = new VariableDeclarationNode(new(typeName + "Schema"), type: type, initializer: schema,
+            documentation: string.IsNullOrEmpty(description) ? null : new CommentNode(description, CommentKind.JSDoc),
+            isExported: true);
+        var header = TypeScriptDoc.FileHeader($"{fileName}.schema.ts", $"{_modelsPath}/{fileName}", fileDescription);
+        return new SourceFileNode(imports: imports, declarations: [declaration], fileDocumentation: header);
+    }
+
     private IReadOnlyList<string> ExtractDependencies(IrModel model)
     {
         var dependencies = new HashSet<string>();

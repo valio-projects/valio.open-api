@@ -85,9 +85,8 @@ public sealed class TypeScriptQueryKeysStep : ICodeGenerationStep
 
                 var fileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
                 var sourceFile = builder.BuildQueryKeysSourceFile(operation, fileName, includeQueryKeys, emitCacheTags);
-                var content = _renderer.Render(sourceFile);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.query-keys.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+                TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, _renderer.Render);
             }
         }
 

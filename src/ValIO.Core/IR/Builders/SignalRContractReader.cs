@@ -10,14 +10,14 @@ namespace ValIO.Core.IR.Builders;
 internal static partial class SignalRContractReader
 {
     /// <summary>Identifies the extension containing the hub contracts.</summary>
-    private const string ExtensionName = "x-valio-signalr";
+    internal const string ExtensionName = "x-valio-signalr";
 
     /// <summary>Reads hub declarations and resolves their wire types through the existing schema builder.</summary>
     /// <param name="document">The parsed OpenAPI document and its component schemas.</param>
     /// <param name="buildType">The schema-to-IR translation used for the rest of this generation request.</param>
     /// <returns>The declared hubs, or an empty collection when the extension is absent.</returns>
     /// <exception cref="InvalidOperationException">The extension contains an invalid or ambiguous declaration.</exception>
-    internal static IReadOnlyList<IrSignalRHub> Read(OpenApiDocument document, Func<IOpenApiSchema, IrType> buildType)
+    internal static IReadOnlyList<IrSignalRHub> Read(OpenApiDocument document, Func<IOpenApiSchema, string, IrType> buildType)
     {
         if (document.Extensions?.TryGetValue(ExtensionName, out var extension) != true)
             return [];
@@ -38,8 +38,8 @@ internal static partial class SignalRContractReader
             if (!names.Add(name) || !paths.Add(path))
                 throw Invalid($"hub '{name}' repeats a name or path");
 
-            var methods = ReadCalls(hub, "methods", document, buildType);
-            var events = ReadCalls(hub, "events", document, buildType);
+            var methods = ReadCalls(hub, name, "methods", document, buildType);
+            var events = ReadCalls(hub, name, "events", document, buildType);
             if (methods.Count == 0 && events.Count == 0)
                 throw Invalid($"hub '{name}' must declare a method or an event");
 
@@ -80,12 +80,13 @@ internal static partial class SignalRContractReader
 
     /// <summary>Reads one direction without changing the declaration order of calls or their arguments.</summary>
     /// <param name="hub">The source hub object.</param>
+    /// <param name="hubName">The containing hub's wire name.</param>
     /// <param name="key">The collection name, methods or events.</param>
     /// <param name="document">The document supplying referenced schemas.</param>
     /// <param name="buildType">The shared type translation.</param>
     /// <returns>The declarations for the selected direction.</returns>
-    private static IReadOnlyList<IrSignalRCall> ReadCalls(JsonObject hub, string key, OpenApiDocument document,
-        Func<IOpenApiSchema, IrType> buildType)
+    private static IReadOnlyList<IrSignalRCall> ReadCalls(JsonObject hub, string hubName, string key, OpenApiDocument document,
+        Func<IOpenApiSchema, string, IrType> buildType)
     {
         var result = new List<IrSignalRCall>();
         var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -94,7 +95,7 @@ internal static partial class SignalRContractReader
             var declaration = ReadObject(item, key);
             var name = ReadName(declaration, key);
             if (!names.Add(name))
-                throw Invalid($"{key} contains duplicate wire name '{name}'");
+                throw Invalid($"hub '{hubName}' {key} contains duplicate wire name '{name}'");
             if (key == "methods" && name is "OnConnectedAsync" or "OnDisconnectedAsync" or "OnAuthenticationRefreshedAsync" or
                 "Dispose" or "GetType" or "ToString" or "GetHashCode" or "Equals")
                 throw Invalid($"'{name}' is reserved by the SignalR hub base class");
@@ -108,13 +109,13 @@ internal static partial class SignalRContractReader
                 var parameter = ReadObject(argument, $"argument of '{name}'");
                 var parameterName = GetString(parameter["name"]);
                 if (parameterName is null || !ParameterName().IsMatch(parameterName) || !parameterNames.Add(parameterName))
-                    throw Invalid($"'{name}' has an invalid or duplicate argument name");
+                    throw Invalid($"'{hubName}.{name}' has an invalid or duplicate argument name");
 
-                var type = ReadType(parameter["schema"], $"{name}.{parameterName}", document, buildType);
+                var type = ReadType(parameter["schema"], $"{hubName}.{name}.{parameterName}", document, buildType);
                 parameters.Add(new IrSignalRParameter(parameterName, type));
             }
 
-            var reply = declaration.ContainsKey("result") ? ReadType(declaration["result"], $"{name}.result", document, buildType) : null;
+            var reply = declaration.ContainsKey("result") ? ReadType(declaration["result"], $"{hubName}.{name}.result", document, buildType) : null;
             result.Add(new IrSignalRCall(name, parameters, reply));
         }
 
@@ -127,7 +128,7 @@ internal static partial class SignalRContractReader
     /// <param name="document">The document supplying local references.</param>
     /// <param name="buildType">The shared type translation.</param>
     /// <returns>The normalized type for the argument or result.</returns>
-    private static IrType ReadType(JsonNode? node, string member, OpenApiDocument document, Func<IOpenApiSchema, IrType> buildType)
+    private static IrType ReadType(JsonNode? node, string member, OpenApiDocument document, Func<IOpenApiSchema, string, IrType> buildType)
     {
         if (node is not JsonObject schemaObject)
             throw Invalid($"'{member}' requires a JSON schema object");
@@ -144,7 +145,7 @@ internal static partial class SignalRContractReader
                 throw Invalid($"'{member}' requires a reference to an existing local component schema");
 
             var named = new OpenApiSchemaReference(location[prefix.Length..], document);
-            return buildType(named);
+            return buildType(named, member);
         }
 
         var schema = new OpenApiJsonReader().ReadFragment<OpenApiSchema>(node, OpenApiSpecVersion.OpenApi3_1,
@@ -152,7 +153,7 @@ internal static partial class SignalRContractReader
         if (schema is null || diagnostics.Errors.Count > 0)
             throw Invalid($"'{member}' has an invalid schema: {string.Join("; ", diagnostics.Errors.Select(error => error.Message))}");
 
-        return buildType(schema);
+        return buildType(schema, member);
     }
 
     /// <summary>Returns the object containing one extension declaration.</summary>

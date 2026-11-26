@@ -26,6 +26,21 @@ public interface ICSharpAstVisitor<TResult> : IAstVisitor<TResult>
     /// <returns>The visitor-specific result.</returns>
     TResult VisitTypeOfExpression(TypeOfExpressionNode node);
 
+    /// <summary>Visits a CollectionExpression node.</summary>
+    /// <param name="node">The expression to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitCollectionExpression(CollectionExpressionNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a LambdaExpression node.</summary>
+    /// <param name="node">The expression to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitLambdaExpression(LambdaExpressionNode node) => DefaultVisit(node);
+
+    /// <summary>Visits a NullForgivingExpression node.</summary>
+    /// <param name="node">The expression to visit.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitNullForgivingExpression(NullForgivingExpressionNode node) => DefaultVisit(node);
+
     // Namespace/Class/Struct/Field — универсальные узлы Core
     // (ValIO.Core.Ast.Nodes), их Visit-методы наследуются из IAstVisitor.
 }

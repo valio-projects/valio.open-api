@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.OpenApi;
 using ValIO.Core.Interfaces;
+using ValIO.Core.IR;
 using ValIO.Core.IR.Builders;
 using ValIO.Core.Models;
 using ValIO.Core.Plugins;
@@ -89,7 +90,17 @@ public sealed class GenerationOrchestrator : IGenerationOrchestrator
         var irBuilder = new IrBuilder(schemaResolver, _namingConverter);
         var warnings = new List<string>();
         var affixOptions = BuildAffixOptions(config.NamingConvention);
-        var irDocument = irBuilder.BuildFromOpenApi(doc, warnings, affixOptions);
+        IrDocument irDocument;
+        try
+        {
+            ct.ThrowIfCancellationRequested();
+            irDocument = irBuilder.BuildFromOpenApi(doc, warnings, affixOptions);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogError(ex, "Could not resolve the OpenAPI contract");
+            return OrchestrationResult.Failure(ex.Message);
+        }
 
         foreach (var w in warnings)
             _logger.LogWarning("{Warning}", w);

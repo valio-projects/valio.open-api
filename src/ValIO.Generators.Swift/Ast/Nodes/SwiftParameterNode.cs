@@ -13,28 +13,43 @@ namespace ValIO.Generators.Swift.Ast.Nodes;
 /// </summary>
 public sealed class SwiftParameterNode : AstNode
 {
+    /// <summary>Gets the local parameter name.</summary>
+    /// <value>The identifier visible inside the function.</value>
     public IdentifierNode Name { get; }
+
+    /// <summary>Gets the declared Swift type.</summary>
+    /// <value>The formal parameter annotation.</value>
     public TypeNode Type { get; }
-    public string? DefaultValueLiteral { get; }
+
+    /// <summary>Gets the initializer for an omitted argument.</summary>
+    /// <value>The default expression when present.</value>
+    public ExpressionNode? DefaultValue { get; }
 
     /// <summary>
     /// Optional external argument label. Pass "_" to suppress the label entirely.
     /// </summary>
     public string? ExternalLabel { get; }
 
-    public override IReadOnlyList<AstNode> Children => new AstNode[] { Name, Type };
+    /// <inheritdoc/>
+    public override IReadOnlyList<AstNode> Children => DefaultValue is null ? [Name, Type] : [Name, Type, DefaultValue];
 
+    /// <summary>Creates a Swift parameter with a typed annotation and optional default.</summary>
+    /// <param name="name">The local identifier.</param>
+    /// <param name="type">The declared Swift type.</param>
+    /// <param name="defaultValue">The default expression.</param>
+    /// <param name="externalLabel">The argument label when it differs from the local name.</param>
+    /// <param name="metadata">The associated AST metadata.</param>
     public SwiftParameterNode(
         IdentifierNode name,
         TypeNode type,
-        string? defaultValueLiteral = null,
+        ExpressionNode? defaultValue = null,
         string? externalLabel = null,
         IReadOnlyDictionary<string, object>? metadata = null)
         : base(metadata)
     {
         Name = name ?? throw new ArgumentNullException(nameof(name));
         Type = type ?? throw new ArgumentNullException(nameof(type));
-        DefaultValueLiteral = defaultValueLiteral;
+        DefaultValue = defaultValue;
         ExternalLabel = externalLabel;
     }
 
@@ -45,11 +60,12 @@ public sealed class SwiftParameterNode : AstNode
         throw new NotSupportedException("Visitor must implement ISwiftAstVisitor<TResult> to visit SwiftParameterNode");
     }
 
+    /// <inheritdoc/>
     public override AstNode Clone() =>
         new SwiftParameterNode(
             (IdentifierNode)Name.Clone(),
             (TypeNode)Type.Clone(),
-            DefaultValueLiteral,
+            (ExpressionNode?)DefaultValue?.Clone(),
             ExternalLabel,
             Metadata.ToImmutableDictionary());
 }

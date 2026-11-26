@@ -1,6 +1,9 @@
 using System.Text;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -81,27 +84,22 @@ public sealed class URLSessionClientAstBuilder(INamingConverter namingConverter,
             new SwiftParameterNode(
                 new IdentifierNode("session"),
                 new SimpleTypeNode(new IdentifierNode("URLSession"), isPrimitive: true),
-                defaultValueLiteral: ".shared"),
+                defaultValue: new SwiftImplicitMemberNode(new("shared"))),
             new SwiftParameterNode(
                 new IdentifierNode("baseURL"),
                 new SimpleTypeNode(new IdentifierNode("URL"), isPrimitive: true)),
             new SwiftParameterNode(
                 new IdentifierNode("decoder"),
                 new SimpleTypeNode(new IdentifierNode("JSONDecoder"), isPrimitive: true),
-                defaultValueLiteral: "JSONDecoder()"),
+                defaultValue: Call(Ref("JSONDecoder"))),
             new SwiftParameterNode(
                 new IdentifierNode("encoder"),
                 new SimpleTypeNode(new IdentifierNode("JSONEncoder"), isPrimitive: true),
-                defaultValueLiteral: "JSONEncoder()"),
+                defaultValue: Call(Ref("JSONEncoder"))),
         };
 
-        var body = new List<string>
-        {
-            "self.session = session",
-            "self.baseURL = baseURL",
-            "self.decoder = decoder",
-            "self.encoder = encoder",
-        };
+        var body = new BlockNode(parameters.Select(parameter =>
+            (StatementNode)Assign(Member(Ref("self"), parameter.Name.Name), Ref(parameter.Name.Name))).ToArray());
 
         return new SwiftFunctionDeclarationNode(
             new IdentifierNode("init"),
@@ -144,11 +142,11 @@ public sealed class URLSessionClientAstBuilder(INamingConverter namingConverter,
         {
             SwiftTypeImportScanner.Walk(p.Type, importScan);
             var mapped = typeMapper.MapType(p.Type);
-            string? defaultValue = null;
+            ExpressionNode? defaultValue = null;
             if (!p.IsRequired)
             {
                 mapped = mapped is NullableTypeNode ? mapped : new NullableTypeNode(mapped);
-                defaultValue = "nil";
+                defaultValue = Nil();
             }
             parameters.Add(new SwiftParameterNode(
                 new IdentifierNode(SwiftReservedNames.Avoid(namingConverter.ToCamelCase(p.Name))),
@@ -200,107 +198,157 @@ public sealed class URLSessionClientAstBuilder(INamingConverter namingConverter,
         return new CommentNode(sb.ToString(), CommentKind.MultiLine);
     }
 
-    private IReadOnlyList<string> BuildMethodBody(
-        IrOperation op,
-        TypeNode? returnType,
-        bool isVoidReturn,
-        bool isBinaryReturn)
+    /// <summary>Builds URL construction, request execution and typed response decoding.</summary>
+    /// <param name="op">The operation and its ordered wire parameters.</param>
+    /// <param name="returnType">The mapped response type, when declared.</param>
+    /// <param name="isVoidReturn">Whether the method returns no body.</param>
+    /// <param name="isBinaryReturn">Whether the method returns raw data.</param>
+    /// <returns>The operation's executable Swift block.</returns>
+    private BlockNode BuildMethodBody(IrOperation op, TypeNode? returnType, bool isVoidReturn, bool isBinaryReturn)
     {
-        var lines = new List<string>();
+        var route = OpenApiPathExpressionBuilder.Build(op, parameter => Ref(ParameterName(parameter)));
+        var path = route.Parts.ToList();
+        if (path.Count > 0 && path[0] is LiteralExpressionNode { Value: string leading })
+            path[0] = Text(leading.TrimStart('/'));
 
-        // Build the path by substituting path params (using Swift string interpolation).
-        // We escape the literal portion first, then inject \(...) placeholders so the
-        // backslash that introduces Swift interpolation is not itself escaped.
-        var rawPath = op.Path.TrimStart('/');
-        var pathLiteral = EscapeStringLiteral(rawPath);
-        foreach (var p in op.PathParameters)
-        {
-            var camel = SwiftReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
-            pathLiteral = pathLiteral.Replace("{" + p.Name + "}", "\\(" + camel + ")", StringComparison.Ordinal);
-        }
-        lines.Add($"var components = URLComponents(url: baseURL.appendingPathComponent(\"{pathLiteral}\"), resolvingAgainstBaseURL: false)");
-
-        // Query parameters via URLQueryItem.
+        var appendPath = Call(Member(Ref("baseURL"), "appendingPathComponent"), new InterpolatedStringExpressionNode(path));
+        var createUrl = Call(Ref("URLComponents"), Argument("url", appendPath),
+            Argument("resolvingAgainstBaseURL", new LiteralExpressionNode(false, LiteralKind.Boolean)));
+        var statements = new List<StatementNode> { Bind("components", createUrl, mutable: op.QueryParameters.Count > 0) };
+        var components = Ref("components");
         if (op.QueryParameters.Count > 0)
         {
-            lines.Add("var queryItems: [URLQueryItem] = []");
-            foreach (var p in op.QueryParameters)
+            var queryItems = Ref("queryItems");
+            statements.Add(Bind("queryItems", new SwiftArrayExpressionNode([]), mutable: true, type: new ArrayTypeNode(Type("URLQueryItem"))));
+            foreach (var parameter in op.QueryParameters)
             {
-                var camel = SwiftReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
-                var wireName = EscapeStringLiteral(p.Name);
-                if (p.IsRequired)
-                {
-                    lines.Add($"queryItems.append(URLQueryItem(name: \"{wireName}\", value: \"\\({camel})\"))");
-                }
-                else
-                {
-                    lines.Add($"if let {camel} = {camel} {{ queryItems.append(URLQueryItem(name: \"{wireName}\", value: \"\\({camel})\")) }}");
-                }
+                var name = ParameterName(parameter);
+                var value = Ref(name);
+                var item = Call(Ref("URLQueryItem"), Argument("name", Text(parameter.OriginalName)),
+                    Argument("value", new InterpolatedStringExpressionNode([value])));
+                var add = new ExpressionStatementNode(Call(Member(queryItems, "append"), item));
+                statements.Add(parameter.IsRequired ? add :
+                    new IfStatementNode(new SwiftOptionalBindingNode(new(name), value), new BlockNode([add])));
             }
-            lines.Add("components?.queryItems = queryItems.isEmpty ? nil : queryItems");
+
+            var whenNotEmpty = new ConditionalExpressionNode(Member(queryItems, "isEmpty"), Nil(), queryItems);
+            statements.Add(Assign(Member(components, "queryItems", optional: true), whenNotEmpty));
         }
 
-        lines.Add("guard let url = components?.url else { throw URLError(.badURL) }");
-        lines.Add("var request = URLRequest(url: url)");
+        var urlBinding = new SwiftOptionalBindingNode(new("url"), Member(components, "url", optional: true));
+        statements.Add(new SwiftGuardNode([urlBinding], UrlError("badURL")));
+        var request = Ref("request");
+        statements.Add(Bind("request", Call(Ref("URLRequest"), Argument("url", Ref("url"))), mutable: true));
+        statements.Add(Assign(Member(request, "httpMethod"), Text(op.HttpMethod.ToUpperInvariant())));
 
-        var httpMethod = op.HttpMethod.ToUpperInvariant();
-        lines.Add($"request.httpMethod = \"{httpMethod}\"");
-
-        if (op.RequestBody != null)
+        if (op.RequestBody is { } body)
         {
-            if (op.RequestBody.IsJson)
-            {
-                lines.Add("request.setValue(\"application/json\", forHTTPHeaderField: \"Content-Type\")");
-                lines.Add("request.httpBody = try encoder.encode(body)");
-            }
-            else
-            {
-                // Best-effort fallback: treat as application/octet-stream.
-                lines.Add("request.setValue(\"application/octet-stream\", forHTTPHeaderField: \"Content-Type\")");
-                lines.Add("request.httpBody = try encoder.encode(body)");
-            }
+            var contentType = body.IsJson ? "application/json" : "application/octet-stream";
+            var header = Call(Member(request, "setValue"), Text(contentType), Argument("forHTTPHeaderField", Text("Content-Type")));
+            statements.Add(new ExpressionStatementNode(header));
+            var encode = Call(Member(Ref("encoder"), "encode"), Ref("body"));
+            statements.Add(Assign(Member(request, "httpBody"), new SwiftTryExpressionNode(encode)));
         }
 
-        lines.Add("let (data, response) = try await session.data(for: request)");
-        lines.Add("guard let httpResponse = response as? HTTPURLResponse, (200..<300).contains(httpResponse.statusCode) else {");
-        lines.Add("    throw URLError(.badServerResponse)");
-        lines.Add("}");
+        var send = Call(Member(Ref("session"), "data"), Argument("for", request));
+        var receive = new SwiftTryExpressionNode(new AwaitExpressionNode(send));
+        statements.Add(new SwiftBindingNode([new("data"), new("response")], receive, false, null));
+        var cast = new CastExpressionNode(Type("HTTPURLResponse"), Ref("response"), useAsOperator: true);
+        var httpResponse = new SwiftOptionalBindingNode(new("httpResponse"), cast);
+        var status = Member(Ref("httpResponse"), "statusCode");
+        var minimum = new BinaryExpressionNode(status, BinaryOperator.GreaterThanOrEqual, new LiteralExpressionNode(200, LiteralKind.Number));
+        var maximum = new BinaryExpressionNode(status, BinaryOperator.LessThan, new LiteralExpressionNode(300, LiteralKind.Number));
+        statements.Add(new SwiftGuardNode([httpResponse, new BinaryExpressionNode(minimum, BinaryOperator.LogicalAnd, maximum)],
+            UrlError("badServerResponse")));
 
+        var data = Ref("data");
         if (isVoidReturn)
         {
-            // Nothing to return; data + response intentionally unused.
-            lines.Add("_ = data");
+            statements.Add(Assign(Ref("_"), data));
         }
         else if (isBinaryReturn)
         {
-            lines.Add("return data");
+            statements.Add(new ReturnStatementNode(data));
         }
-        else if (returnType != null)
+        else if (returnType is not null)
         {
-            // Use the rendered Swift type name to drive JSONDecoder.decode.
-            var typeText = RenderType(returnType);
-            lines.Add($"return try decoder.decode({typeText}.self, from: data)");
+            var decode = Call(Member(Ref("decoder"), "decode"), new SwiftMetatypeExpressionNode(returnType), Argument("from", data));
+            statements.Add(new ReturnStatementNode(new SwiftTryExpressionNode(decode)));
         }
 
-        return lines;
+        return new BlockNode(statements);
     }
 
-    private string RenderType(TypeNode type) => type switch
-    {
-        SimpleTypeNode s => s.Name.Name + (s.IsNullable ? "?" : string.Empty),
-        ArrayTypeNode a  => $"[{RenderType(a.ElementType)}]",
-        DictionaryTypeNode d => $"[{RenderType(d.KeyType)}: {RenderType(d.ValueType)}]",
-        NullableTypeNode n => RenderType(n.InnerType) + "?",
-        _ => "AnyCodable",
-    };
+    /// <summary>Creates an exit block for an invalid transport outcome.</summary>
+    /// <param name="code">The URLError case to throw.</param>
+    /// <returns>A block containing one throw statement.</returns>
+    private static BlockNode UrlError(string code) =>
+        new([new ThrowStatementNode(Call(Ref("URLError"), new SwiftImplicitMemberNode(new(code))))]);
+
+    /// <summary>Gets the emitted identifier shared by a parameter and its references.</summary>
+    /// <param name="parameter">The source parameter.</param>
+    /// <returns>The Swift identifier.</returns>
+    private string ParameterName(IrParameter parameter) => SwiftReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name));
+
+    /// <summary>Creates a local binding with the requested mutability.</summary>
+    /// <param name="name">The name of the declared symbol.</param>
+    /// <param name="value">The initial value.</param>
+    /// <param name="mutable">Whether the value is changed later in the method.</param>
+    /// <param name="type">The explicit type when inference is insufficient.</param>
+    /// <returns>The local declaration.</returns>
+    private static SwiftBindingNode Bind(string name, ExpressionNode value, bool mutable, TypeNode? type = null) =>
+        new([new(name)], value, mutable, type);
+
+    /// <summary>Creates an assignment statement.</summary>
+    /// <param name="target">The writable value.</param>
+    /// <param name="value">The assigned value.</param>
+    /// <returns>The assignment statement.</returns>
+    private static ExpressionStatementNode Assign(ExpressionNode target, ExpressionNode value) =>
+        new(new BinaryExpressionNode(target, BinaryOperator.Assign, value));
+
+    /// <summary>Attaches a Swift argument label to a call operand.</summary>
+    /// <param name="label">The caller-facing parameter name.</param>
+    /// <param name="value">The argument expression.</param>
+    /// <returns>The labeled argument.</returns>
+    private static BinaryExpressionNode Argument(string label, ExpressionNode value) =>
+        new(Ref(label), BinaryOperator.Assign, value, isNamedArgument: true);
+
+    /// <summary>References a Swift identifier.</summary>
+    /// <param name="name">The symbol name.</param>
+    /// <returns>The reference expression.</returns>
+    private static IdentifierExpressionNode Ref(string name) => new(new IdentifierNode(name));
+
+    /// <summary>Selects a member of a Swift expression.</summary>
+    /// <param name="receiver">The receiver.</param>
+    /// <param name="name">The selected member.</param>
+    /// <param name="optional">Whether the receiver uses optional chaining.</param>
+    /// <returns>The member access expression.</returns>
+    private static MemberAccessExpressionNode Member(ExpressionNode receiver, string name, bool optional = false) =>
+        new(receiver, new(name), useOptionalChaining: optional);
+
+    /// <summary>Invokes a Swift function or constructor.</summary>
+    /// <param name="target">The callable expression.</param>
+    /// <param name="arguments">The arguments in source order.</param>
+    /// <returns>The call expression.</returns>
+    private static CallExpressionNode Call(ExpressionNode target, params ExpressionNode[] arguments) => new(target, arguments);
+
+    /// <summary>Captures source text so it will be escaped by the renderer.</summary>
+    /// <param name="value">The input text.</param>
+    /// <returns>The literal expression.</returns>
+    private static LiteralExpressionNode Text(string value) => new(value, LiteralKind.String);
+
+    /// <summary>Represents a Swift nil literal.</summary>
+    /// <returns>The nil literal expression.</returns>
+    private static LiteralExpressionNode Nil() => new(null, LiteralKind.Null);
+
+    /// <summary>References a named Swift type.</summary>
+    /// <param name="name">The type's identifier.</param>
+    /// <returns>The type reference.</returns>
+    private static SimpleTypeNode Type(string name) => new(new(name));
 
     private string ToClassName(string clientName)
     {
         var pascal = namingConverter.ToPascalCase(clientName);
         return pascal.EndsWith("Api", StringComparison.Ordinal) ? pascal : pascal + "Api";
     }
-
-    private static string EscapeStringLiteral(string s) =>
-        s.Replace("\\", "\\\\", StringComparison.Ordinal)
-         .Replace("\"", "\\\"", StringComparison.Ordinal);
 }

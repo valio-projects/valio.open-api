@@ -2,6 +2,7 @@ using System.Collections.Immutable;
 using FluentAssertions;
 using NUnit.Framework;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Generators.Rust.Ast.Nodes;
 using ValIO.Generators.Rust.Ast.Renderers;
@@ -123,6 +124,7 @@ public class RustAstRendererDirectTests
         output.Should().Contain("User,");
     }
 
+    /// <summary>Prints a structured tuple as the implicit result of an asynchronous function.</summary>
     [Test]
     public void Function_RendersAsyncFnWithResult()
     {
@@ -139,7 +141,7 @@ public class RustAstRendererDirectTests
                 new RustParameter("base_url", new SimpleTypeNode(new IdentifierNode("&str"))),
             },
             returnType: ret,
-            body: new[] { "Ok(())" });
+            tail: new CallExpressionNode(new IdentifierExpressionNode(new IdentifierNode("Ok")), [new RustTupleNode([])]));
 
         var output = _renderer.VisitRustFunction(fn);
         output.Should().Contain("pub async fn ping(client: &Client, base_url: &str) -> Result<(), reqwest::Error>");

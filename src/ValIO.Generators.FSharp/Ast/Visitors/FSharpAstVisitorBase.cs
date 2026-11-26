@@ -22,6 +22,18 @@ public abstract class FSharpAstVisitorBase<TResult> : BaseAstVisitor<TResult>, I
     public abstract TResult VisitFSharpDU(FSharpDuNode node);
     public abstract TResult VisitFSharpFunction(FSharpFunctionNode node);
 
+    /// <inheritdoc />
+    public virtual TResult VisitFSharpTaskExpression(FSharpTaskExpressionNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitFSharpAwaitBinding(FSharpAwaitBindingNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitFSharpMatchOption(FSharpMatchOptionNode node) => VisitDefault(node);
+
+    /// <inheritdoc />
+    public virtual TResult VisitFSharpApplication(FSharpApplicationNode node) => VisitDefault(node);
+
     // IAstVisitor — shared.
     public abstract TResult VisitEnumDeclaration(EnumDeclarationNode node);
     public abstract TResult VisitInterfaceDeclaration(InterfaceDeclarationNode node);

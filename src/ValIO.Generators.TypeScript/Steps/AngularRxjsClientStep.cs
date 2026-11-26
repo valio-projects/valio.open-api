@@ -65,9 +65,8 @@ public sealed class AngularRxjsClientStep : ICodeGenerationStep
             {
                 ct.ThrowIfCancellationRequested();
                 var sourceFile = builder.BuildServiceSourceFile(client, fileOrg, opts);
-                var content = _renderer.Render(sourceFile);
                 var relativePath = $"{clientsPath}/{builder.ServiceFileName(client.Name)}.service.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+                TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, _renderer.Render);
             }
         }
 

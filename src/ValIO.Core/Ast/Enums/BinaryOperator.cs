@@ -25,5 +25,11 @@ public enum BinaryOperator
     RightShift,
     Assign,
     /// <summary>Nullish coalescing (??)</summary>
-    NullishCoalescing
+    NullishCoalescing,
+    /// <summary>Passes a value as the final argument of a function.</summary>
+    Pipe,
+    /// <summary>Tests whether two operands are distinct object identities.</summary>
+    IsNot,
+    /// <summary>Tests whether two operands are the same object identity.</summary>
+    Is
 }

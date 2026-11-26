@@ -187,6 +187,10 @@ public sealed class PythonAstRenderer : PythonAstVisitorBase<string>, IPythonAst
     public override string VisitPythonFunctionDeclaration(PythonFunctionDeclarationNode node) =>
         RenderFunction(node, indent: 0);
 
+    /// <summary>Prints a declaration and indents every line of its structured body.</summary>
+    /// <param name="node">The Python function.</param>
+    /// <param name="indent">The indentation of the enclosing declaration.</param>
+    /// <returns>The function's Python source.</returns>
     private string RenderFunction(PythonFunctionDeclarationNode node, int indent)
     {
         var sb = new StringBuilder();
@@ -209,22 +213,14 @@ public sealed class PythonAstRenderer : PythonAstVisitorBase<string>, IPythonAst
             hasBody = true;
         }
 
-        if (node.Body.Count == 0)
+        if (node.Body.Statements.Count == 0)
         {
             if (!hasBody)
                 sb.AppendLine($"{Indent(bodyIndent)}pass");
             return sb.ToString();
         }
 
-        foreach (var line in node.Body)
-        {
-            if (string.IsNullOrEmpty(line))
-            {
-                sb.AppendLine();
-                continue;
-            }
-            sb.AppendLine($"{Indent(bodyIndent)}{line}");
-        }
+        sb.AppendLine(IndentLines(VisitBlock(node.Body), bodyIndent));
 
         return sb.ToString();
     }
@@ -383,10 +379,13 @@ public sealed class PythonAstRenderer : PythonAstVisitorBase<string>, IPythonAst
         return $"{op}{Visit(node.Operand)}";
     }
 
+    /// <inheritdoc/>
     public override string VisitBinaryExpression(BinaryExpressionNode node)
     {
         var left = Visit(node.Left);
         var right = Visit(node.Right);
+        if (node.IsNamedArgument)
+            return $"{left}={right}";
         if (node.Operator == BinaryOperator.Assign || node.IsAssignment)
             return $"{left} = {right}";
         var op = node.Operator switch
@@ -397,6 +396,8 @@ public sealed class PythonAstRenderer : PythonAstVisitorBase<string>, IPythonAst
             BinaryOperator.Divide => "/",
             BinaryOperator.Equal => "==",
             BinaryOperator.NotEqual => "!=",
+            BinaryOperator.Is => "is",
+            BinaryOperator.IsNot => "is not",
             BinaryOperator.LessThan => "<",
             BinaryOperator.LessThanOrEqual => "<=",
             BinaryOperator.GreaterThan => ">",
@@ -414,6 +415,39 @@ public sealed class PythonAstRenderer : PythonAstVisitorBase<string>, IPythonAst
     public override string VisitAwaitExpression(AwaitExpressionNode node) =>
         $"await {Visit(node.Expression)}";
 
+    /// <inheritdoc/>
+    public override string VisitIndexAccessExpression(IndexAccessExpressionNode node) =>
+        $"{Visit(node.Object)}[{Visit(node.Index)}]";
+
+    /// <inheritdoc/>
+    public override string VisitPythonDictionaryExpression(PythonDictionaryExpressionNode node) =>
+        "{" + string.Join(", ", node.Items.Select(item => $"{Visit(item.Key)}: {Visit(item.Value)}")) + "}";
+
+    /// <inheritdoc/>
+    public override string VisitPythonKeywordUnpack(PythonKeywordUnpackNode node) => $"**{Visit(node.Dictionary)}";
+
+    /// <inheritdoc/>
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        var segments = node.Parts.Select(part => part is LiteralExpressionNode { Value: string value }
+            ? (Text: value, IsExpression: false)
+            : (Text: Visit(part), IsExpression: true)).ToArray();
+        // Use a different delimiter from quotes in embedded arguments for Python versions before 3.12.
+        var quote = segments.Any(segment => segment.IsExpression && segment.Text.Contains('"')) ? "'" : "\"";
+        var body = string.Concat(segments.Select(segment => segment.IsExpression
+            ? "{" + segment.Text + "}"
+            : EscapeStringLiteral(segment.Text).Replace("{", "{{", StringComparison.Ordinal)
+                .Replace("}", "}}", StringComparison.Ordinal).Replace("'", quote == "'" ? "\\'" : "'", StringComparison.Ordinal)));
+        return $"f{quote}{body}{quote}";
+    }
+
+    /// <summary>Indents each line of a rendered Python block.</summary>
+    /// <param name="source">The printed block.</param>
+    /// <param name="level">The additional indentation.</param>
+    /// <returns>The indented block.</returns>
+    private static string IndentLines(string source, int level) =>
+        string.Join(Environment.NewLine, source.Split('\n').Select(line => Indent(level) + line.TrimEnd('\r')));
+
     public override string VisitCastExpression(CastExpressionNode node) =>
         // Python не имеет cast; возвращаем выражение как есть.
         Visit(node.Expression);
@@ -421,15 +455,22 @@ public sealed class PythonAstRenderer : PythonAstVisitorBase<string>, IPythonAst
     public override string VisitReturnStatement(ReturnStatementNode node) =>
         node.Value == null ? "return" : $"return {Visit(node.Value)}";
 
+    /// <inheritdoc/>
     public override string VisitIfStatement(IfStatementNode node)
     {
+        var condition = Visit(node.Condition);
+        var then = VisitBlock(node.ThenBlock);
+        if (node.ElseBlock is null && node.ThenBlock.Statements.Count == 1 && !then.Contains('\n'))
+            return $"if {condition}: {then}";
+
         var sb = new StringBuilder();
-        sb.AppendLine($"if {Visit(node.Condition)}:");
-        sb.AppendLine(Visit(node.ThenBlock));
+        sb.AppendLine($"if {condition}:");
+        sb.Append(IndentLines(then, 1));
         if (node.ElseBlock != null)
         {
+            sb.AppendLine();
             sb.AppendLine("else:");
-            sb.AppendLine(Visit(node.ElseBlock));
+            sb.Append(IndentLines(VisitBlock(node.ElseBlock), 1));
         }
         return sb.ToString();
     }

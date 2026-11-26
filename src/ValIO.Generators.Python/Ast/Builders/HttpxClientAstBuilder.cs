@@ -1,8 +1,9 @@
 using System.Text;
-using System.Text.Json;
 using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -119,7 +120,7 @@ public sealed class HttpxClientAstBuilder(IrDocumentContext documentContext, INa
             new IdentifierNode("__init__"),
             parameters,
             returnType: new SimpleTypeNode(new IdentifierNode("None"), isPrimitive: true),
-            body: new[] { "self._client = client" });
+            body: new BlockNode([Assign(Member(Ref("self"), "_client"), Ref("client"))]));
     }
 
     /// <summary>Builds a typed operation whose transport calls use the borrowed HTTPX pipeline.</summary>
@@ -243,108 +244,205 @@ public sealed class HttpxClientAstBuilder(IrDocumentContext documentContext, INa
     /// <summary>Builds HTTPX wire calls and validates successful typed response bodies.</summary>
     /// <param name="op">The operation with source wire names and transport metadata.</param>
     /// <param name="isAsync">Whether to await the HTTPX operation.</param>
-    /// <param name="responseModelName">The direct Pydantic response model name, if applicable.</param>
-    /// <param name="responseType">The typed successful response body.</param>
-    /// <param name="methodName">The generated method whose annotations provide container adapter types.</param>
-    /// <returns>The generated function body lines.</returns>
-    private IReadOnlyList<string> BuildMethodBody(
-        IrOperation op,
-        bool isAsync,
-        string? responseModelName,
-        IrType? responseType,
-        string methodName)
+    /// <param name="responseModelName">The direct Pydantic response model, if any.</param>
+    /// <param name="responseType">The declared success payload.</param>
+    /// <param name="methodName">The generated method whose annotations supply adapter types.</param>
+    /// <returns>The function statements in execution order.</returns>
+    private BlockNode BuildMethodBody(IrOperation op, bool isAsync, string? responseModelName, IrType? responseType, string methodName)
     {
-        var lines = new List<string>();
-
-        var pathExpr = ToFStringPath(op.Path, op.PathParameters);
-        var awaitKeyword = isAsync ? "await " : "";
-        var httpMethod = op.HttpMethod.ToLowerInvariant();
-        var requestArgs = new List<string> { pathExpr };
-
+        var statements = new List<StatementNode>();
+        var path = OpenApiPathExpressionBuilder.Build(op, PathParameter);
+        var arguments = new List<ExpressionNode> { path };
         if (op.QueryParameters.Count > 0)
         {
-            lines.Add("params = {}");
-            foreach (var p in op.QueryParameters)
-            {
-                var pyName = PythonKeywords.Avoid(namingConverter.ToSnakeCase(p.Name));
-                if (p.IsRequired)
-                    lines.Add($"params[{JsonSerializer.Serialize(p.OriginalName)}] = {pyName}");
-                else
-                    lines.Add($"if {pyName} is not None: params[{JsonSerializer.Serialize(p.OriginalName)}] = {pyName}");
-            }
-            requestArgs.Add("params=params");
+            statements.AddRange(WriteWireParameters("params", op.QueryParameters, toString: false));
+            arguments.Add(Keyword("params", Ref("params")));
         }
-
         if (op.HeaderParameters.Count > 0)
         {
-            lines.Add("headers = {}");
-            foreach (var parameter in op.HeaderParameters)
-            {
-                var parameterName = PythonKeywords.Avoid(namingConverter.ToSnakeCase(parameter.Name));
-                var assignment = $"headers[{JsonSerializer.Serialize(parameter.OriginalName)}] = str({parameterName})";
-                lines.Add(parameter.IsRequired ? assignment : $"if {parameterName} is not None: {assignment}");
-            }
-            requestArgs.Add("headers=headers");
+            statements.AddRange(WriteWireParameters("headers", op.HeaderParameters, toString: true));
+            arguments.Add(Keyword("headers", Ref("headers")));
         }
 
-        if (op.RequestBody != null)
+        if (op.RequestBody is { } requestBody)
         {
-            if (op.RequestBody.IsJson || (op.RequestBody.ContentType == null))
+            var body = Ref("body");
+            if (requestBody.IsJson || requestBody.ContentType is null)
             {
-                var bodyExpression = $"TypeAdapter(get_type_hints(self.{methodName})[\"body\"]).dump_python(body, mode=\"json\", by_alias=True, exclude_unset=True)";
-                if (op.RequestBody.IsRequired) requestArgs.Add($"json={bodyExpression}");
+                var adapter = TypeAdapter(methodName, "body");
+                var encoded = Call(Member(adapter, "dump_python"), body, Keyword("mode", Text("json")),
+                    Keyword("by_alias", Boolean(true)), Keyword("exclude_unset", Boolean(true)));
+                if (requestBody.IsRequired)
+                {
+                    arguments.Add(Keyword("json", encoded));
+                }
                 else
                 {
-                    lines.Add($"body_args = {{\"json\": {bodyExpression}}} if body is not None else {{}}");
-                    requestArgs.Add("**body_args");
+                    var optional = new ConditionalExpressionNode(Present(body),
+                        new PythonDictionaryExpressionNode([(Text("json"), encoded)]), new PythonDictionaryExpressionNode([]));
+                    statements.Add(Local("body_args", optional));
+                    arguments.Add(new PythonKeywordUnpackNode(Ref("body_args")));
                 }
-            }
-            else if (op.RequestBody.IsFormUrlEncoded)
-            {
-                requestArgs.Add("data=body");
-            }
-            else if (op.RequestBody.IsMultipartFormData)
-            {
-                requestArgs.Add("files=body");
             }
             else
             {
-                requestArgs.Add("content=body");
+                var argument = requestBody.IsFormUrlEncoded ? "data" : requestBody.IsMultipartFormData ? "files" : "content";
+                arguments.Add(Keyword(argument, body));
             }
         }
 
-        var argList = string.Join(", ", requestArgs);
-        lines.Add($"response = {awaitKeyword}self._client.{httpMethod}({argList})");
-        lines.Add("response.raise_for_status()");
-        lines.Add("if response.status_code in (204, 205) or response.request.method == \"HEAD\": return None");
+        var client = Member(Ref("self"), "_client");
+        var send = new CallExpressionNode(Member(client, op.HttpMethod.ToLowerInvariant()), arguments);
+        statements.Add(Local("response", isAsync ? new AwaitExpressionNode(send) : send));
+        var response = Ref("response");
+        statements.Add(new ExpressionStatementNode(Call(Member(response, "raise_for_status"))));
 
-        if (responseType != null)
+        var status = Member(response, "status_code");
+        var request = Member(response, "request");
+        var bodylessStatus = new BinaryExpressionNode(Equal(status, Number(204)), BinaryOperator.LogicalOr, Equal(status, Number(205)));
+        var bodyless = new BinaryExpressionNode(bodylessStatus, BinaryOperator.LogicalOr, Equal(Member(request, "method"), Text("HEAD")));
+        statements.Add(new IfStatementNode(bodyless, new BlockNode([new ReturnStatementNode(None())])));
+
+        var json = Call(Member(response, "json"));
+        ExpressionNode value;
+        if (responseModelName is not null)
         {
-            if (responseModelName != null)
+            var validate = Member(Ref(responseModelName), "model_validate");
+            if (responseType is IrNullableType or IrOptionalType)
             {
-                if (responseType is IrNullableType || responseType is IrOptionalType)
-                    lines.Add($"return None if response.json() is None else {responseModelName}.model_validate(response.json())");
-                else lines.Add($"return {responseModelName}.model_validate(response.json())");
-            }
-            else if (responseType is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Void or IrPrimitiveKind.Null })
-            {
-                lines.Add("return None");
-            }
-            else if (responseType is IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File })
-            {
-                lines.Add("return response.content");
+                statements.Add(Local("payload", json));
+                var payload = Ref("payload");
+                var absent = new BinaryExpressionNode(payload, BinaryOperator.Is, None());
+                value = new ConditionalExpressionNode(absent, None(), Call(validate, payload));
             }
             else
-            {
-                lines.Add($"return TypeAdapter(get_type_hints(self.{methodName})[\"return\"]).validate_python(response.json())");
-            }
+                value = Call(validate, json);
         }
         else
         {
-            lines.Add("return None");
+            value = responseType switch
+            {
+                null or IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Void or IrPrimitiveKind.Null } => None(),
+                IrPrimitiveType { PrimitiveKind: IrPrimitiveKind.Binary or IrPrimitiveKind.ByteArray or IrPrimitiveKind.File } =>
+                    Member(response, "content"),
+                _ => Call(Member(TypeAdapter(methodName, "return"), "validate_python"), json),
+            };
         }
-        return lines;
+        statements.Add(new ReturnStatementNode(value));
+        return new BlockNode(statements);
     }
+
+    /// <summary>Places present arguments in a wire dictionary, retaining their original names.</summary>
+    /// <param name="dictionary">The local dictionary identifier.</param>
+    /// <param name="parameters">The query or header parameter declarations.</param>
+    /// <param name="toString">Whether transport values must be strings.</param>
+    /// <returns>The declaration followed by the assignments for supplied values.</returns>
+    private IEnumerable<StatementNode> WriteWireParameters(string dictionary, IEnumerable<IrParameter> parameters, bool toString)
+    {
+        yield return Local(dictionary, new PythonDictionaryExpressionNode([]));
+        foreach (var parameter in parameters)
+        {
+            var argument = Ref(ParameterName(parameter));
+            var target = new IndexAccessExpressionNode(Ref(dictionary), Text(parameter.OriginalName));
+            var assignment = Assign(target, toString ? Call(Ref("str"), argument) : argument);
+            yield return parameter.IsRequired ? assignment : new IfStatementNode(Present(argument), new BlockNode([assignment]));
+        }
+    }
+
+    /// <summary>Converts textual placeholders to path segments through percent encoding.</summary>
+    /// <param name="parameter">The operation parameter referenced by the path.</param>
+    /// <returns>The formatted argument expression.</returns>
+    private ExpressionNode PathParameter(IrParameter parameter)
+    {
+        var value = Ref(ParameterName(parameter));
+        return IrTypeQueries.UnwrapNullableOptional(parameter.Type) is IrPrimitiveType
+            { PrimitiveKind: IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number }
+            ? value : Call(Ref("quote"), Call(Ref("str"), value), Keyword("safe", Text("")));
+    }
+
+    /// <summary>Uses the operation annotation as the Pydantic adapter's exact expected type.</summary>
+    /// <param name="method">The generated operation identifier.</param>
+    /// <param name="annotation">The annotation key to use.</param>
+    /// <returns>The adapter constructor call.</returns>
+    private static CallExpressionNode TypeAdapter(string method, string annotation)
+    {
+        var hints = Call(Ref("get_type_hints"), Member(Ref("self"), method));
+        var expected = new IndexAccessExpressionNode(hints, Text(annotation));
+        return Call(Ref("TypeAdapter"), expected);
+    }
+
+    /// <summary>Gets the generated identifier shared by a formal parameter and its references.</summary>
+    /// <param name="parameter">The wire parameter.</param>
+    /// <returns>The valid Python name.</returns>
+    private string ParameterName(IrParameter parameter) => PythonKeywords.Avoid(namingConverter.ToSnakeCase(parameter.Name));
+
+    /// <summary>Creates a local binding for the supplied value.</summary>
+    /// <param name="name">The local variable name.</param>
+    /// <param name="initializer">The expression assigned to the variable.</param>
+    /// <returns>The local declaration.</returns>
+    private static VariableDeclarationStatementNode Local(string name, ExpressionNode initializer) =>
+        new(new(name), initializer: initializer);
+
+    /// <summary>Assigns a Python expression to a destination.</summary>
+    /// <param name="target">The variable, field or subscript.</param>
+    /// <param name="value">The expression written to it.</param>
+    /// <returns>The assignment statement.</returns>
+    private static ExpressionStatementNode Assign(ExpressionNode target, ExpressionNode value) =>
+        new(new BinaryExpressionNode(target, BinaryOperator.Assign, value));
+
+    /// <summary>Binds a named argument at a call site.</summary>
+    /// <param name="name">The argument name.</param>
+    /// <param name="value">The supplied value.</param>
+    /// <returns>The keyword argument expression.</returns>
+    private static BinaryExpressionNode Keyword(string name, ExpressionNode value) =>
+        new(Ref(name), BinaryOperator.Assign, value, isNamedArgument: true);
+
+    /// <summary>Tests whether a value is distinct from None.</summary>
+    /// <param name="value">The optional value.</param>
+    /// <returns>The presence test expression.</returns>
+    private static BinaryExpressionNode Present(ExpressionNode value) => new(value, BinaryOperator.IsNot, None());
+
+    /// <summary>Compares two Python values for equality.</summary>
+    /// <param name="left">The observed value.</param>
+    /// <param name="right">The expected value.</param>
+    /// <returns>The equality expression.</returns>
+    private static BinaryExpressionNode Equal(ExpressionNode left, ExpressionNode right) => new(left, BinaryOperator.Equal, right);
+
+    /// <summary>References a Python identifier.</summary>
+    /// <param name="name">The identifier in scope.</param>
+    /// <returns>The reference expression.</returns>
+    private static IdentifierExpressionNode Ref(string name) => new(new IdentifierNode(name));
+
+    /// <summary>Selects a member of a Python expression.</summary>
+    /// <param name="expression">The receiver.</param>
+    /// <param name="name">The member name.</param>
+    /// <returns>The selected member.</returns>
+    private static MemberAccessExpressionNode Member(ExpressionNode expression, string name) => new(expression, new(name));
+
+    /// <summary>Invokes a Python expression with positional and keyword arguments.</summary>
+    /// <param name="target">The callable expression.</param>
+    /// <param name="arguments">The call arguments.</param>
+    /// <returns>The invocation expression.</returns>
+    private static CallExpressionNode Call(ExpressionNode target, params ExpressionNode[] arguments) => new(target, arguments);
+
+    /// <summary>Captures a wire string for literal escaping.</summary>
+    /// <param name="value">The original wire value.</param>
+    /// <returns>A string literal expression.</returns>
+    private static LiteralExpressionNode Text(string value) => new(value, LiteralKind.String);
+
+    /// <summary>Captures an HTTP status as a number.</summary>
+    /// <param name="value">The numeric HTTP status.</param>
+    /// <returns>The number literal expression.</returns>
+    private static LiteralExpressionNode Number(int value) => new(value, LiteralKind.Number);
+
+    /// <summary>Represents a constant boolean value.</summary>
+    /// <param name="value">The flag value.</param>
+    /// <returns>The boolean literal expression.</returns>
+    private static LiteralExpressionNode Boolean(bool value) => new(value, LiteralKind.Boolean);
+
+    /// <summary>Represents the Python None singleton.</summary>
+    /// <returns>The null literal expression.</returns>
+    private static LiteralExpressionNode None() => new(null, LiteralKind.Null);
 
     /// <summary>Finds a direct declaration reference beneath presence wrappers.</summary>
     /// <param name="type">The response type to inspect.</param>
@@ -367,24 +465,6 @@ public sealed class HttpxClientAstBuilder(IrDocumentContext documentContext, INa
         if (inner is UnionTypeNode existing)
             return new UnionTypeNode(existing.Types.Concat(new[] { (TypeNode)new SimpleTypeNode(new IdentifierNode("None"), isPrimitive: true) }).ToList());
         return new UnionTypeNode(new[] { inner, (TypeNode)new SimpleTypeNode(new IdentifierNode("None"), isPrimitive: true) });
-    }
-
-    /// <summary>Substitutes source path placeholders using safe generated parameter identifiers.</summary>
-    /// <param name="path">The source wire path template.</param>
-    /// <param name="pathParams">The operation's declared path parameters.</param>
-    /// <returns>A Python f-string expression with escaped textual parameter values.</returns>
-    private string ToFStringPath(string path, IReadOnlyList<IrParameter> pathParams)
-    {
-        var result = path;
-        foreach (var p in pathParams)
-        {
-            var snake = PythonKeywords.Avoid(namingConverter.ToSnakeCase(p.Name));
-            var value = IrTypeQueries.UnwrapNullableOptional(p.Type) is IrPrimitiveType
-                { PrimitiveKind: IrPrimitiveKind.Integer or IrPrimitiveKind.Long or IrPrimitiveKind.Number }
-                ? snake : $"quote(str({snake}), safe='')";
-            result = result.Replace("{" + p.OriginalName + "}", "{" + value + "}", StringComparison.Ordinal);
-        }
-        return $"f\"{result}\"";
     }
 
     /// <summary>Collects runtime and standard-library imports needed by request and response annotations.</summary>

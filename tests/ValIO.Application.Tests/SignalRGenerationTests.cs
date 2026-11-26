@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -75,16 +76,18 @@ public sealed class SignalRGenerationTests
         var result = await GenerateAsync(config);
         result.Success.Should().BeTrue(result.ErrorMessage);
         var files = result.Files.ToDictionary(file => file.RelativePath, file => file.Content);
-        files["signalr/supportSignalR.ts"].Should()
+        var support = Regex.Replace(files["signalr/supportSignalR.ts"], @"\s+", " ");
+        support.Should()
             .Contain("import type { WireRealtimeResult } from \"../custom/models/realtimeResult/realtimeResult\"")
-            .And.Contain("connection.invoke<WireRealtimeResult>(\"SubscribeTicket\", _ticketId)")
+            .And.Contain("connection.invoke<WireRealtimeResult>( \"SubscribeTicket\", _ticketId )")
             .And.Contain("_message: WireSupportChanged, _attempt: number | null")
-            .And.Contain("connection.off(\"SupportChanged\", handler)")
-            .And.Contain("WalletChanged(handler: () => void)");
+            .And.Contain("connection.off( \"SupportChanged\", handler )")
+            .And.Contain("WalletChanged: (handler: () => void)");
         files["index.ts"].Should().Contain("./signalr/supportSignalR").And.Contain("./signalr/notificationsSignalR");
-        files["signalr/notificationsSignalR.ts"].Should()
+        var notifications = Regex.Replace(files["signalr/notificationsSignalR.ts"], @"\s+", " ");
+        notifications.Should()
             .Contain("export const notificationsHubPath = \"/hubs/notifications\"")
-            .And.Contain("connection.on(\"PaymentsChanged\", handler)")
+            .And.Contain("connection.on( \"PaymentsChanged\", handler )")
             .And.NotContain("SubscribeTicket");
     }
 
@@ -139,10 +142,11 @@ public sealed class SignalRGenerationTests
     {
         var source = OpenApiFixture.Read(Fixture).Replace(sourceText, replacement, StringComparison.Ordinal);
 
-        var error = Assert.ThrowsAsync<InvalidOperationException>(async () =>
-            await GenerateAsync(new GenerationConfiguration { LanguageId = "csharp" }, source));
+        var result = await GenerateAsync(new GenerationConfiguration { LanguageId = "csharp" }, source);
 
-        error!.Message.Should().Contain("x-valio-signalr").And.Contain(expected);
+        result.Success.Should().BeFalse();
+        result.Files.Should().BeEmpty();
+        result.ErrorMessage.Should().Contain("x-valio-signalr").And.Contain(expected);
     }
 
     /// <summary>Runs the real pipeline against a temporary input file using the production plugin registration.</summary>

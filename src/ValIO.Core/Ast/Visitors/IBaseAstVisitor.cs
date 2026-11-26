@@ -46,6 +46,11 @@ public interface IBaseAstVisitor<TResult>
     TResult VisitCallExpression(CallExpressionNode node);
     TResult VisitMemberAccessExpression(MemberAccessExpressionNode node);
     TResult VisitIndexAccessExpression(IndexAccessExpressionNode node);
+
+    /// <summary>Visits a string containing both literal text and evaluated expressions.</summary>
+    /// <param name="node">The string interpolation expression.</param>
+    /// <returns>The visitor-specific result.</returns>
+    TResult VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node) => DefaultVisit(node);
     TResult VisitUnaryExpression(UnaryExpressionNode node);
     TResult VisitBinaryExpression(BinaryExpressionNode node);
     TResult VisitConditionalExpression(ConditionalExpressionNode node);

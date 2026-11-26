@@ -1,6 +1,9 @@
 using System.Text;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Ast.Nodes.Types;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
@@ -175,12 +178,11 @@ public sealed class OkHttpClientAstBuilder(INamingConverter namingConverter, Kot
             new IdentifierNode(methodName),
             parameters,
             returnType,
-            body,
             isSuspend: true,
             annotations: null,
             visibility: null,
             documentation: BuildOperationDocstring(op),
-            isExpressionBody: true);
+            expressionBody: body);
     }
 
     /// <summary>Preserves operation descriptions in generated Kotlin documentation.</summary>
@@ -199,121 +201,178 @@ public sealed class OkHttpClientAstBuilder(INamingConverter namingConverter, Kot
         return new CommentNode(sb.ToString(), CommentKind.MultiLine);
     }
 
-    /// <summary>Builds the legacy operation body using the structured cancellation adapter for transport execution.</summary>
+    /// <summary>Builds a structured OkHttp request and decodes its response inside the cancellation-aware call.</summary>
     /// <param name="op">The source operation.</param>
     /// <param name="responseModelName">The direct response model name.</param>
     /// <param name="responseModelNameForList">The response collection element model name.</param>
     /// <param name="isVoidReturn">Whether the operation has no response payload.</param>
-    /// <param name="isBinaryReturn">Whether the response is represented by raw bytes.</param>
-    /// <returns>The operation body lines consumed by the legacy AST contract.</returns>
-    private IReadOnlyList<string> BuildMethodBody(
-        IrOperation op,
-        string? responseModelName,
-        string? responseModelNameForList,
-        bool isVoidReturn,
-        bool isBinaryReturn)
+    /// <param name="isBinaryReturn">Whether to return response bytes.</param>
+    /// <returns>The coroutine context expression with its nested response lambda.</returns>
+    private ExpressionNode BuildMethodBody(IrOperation op, string? responseModelName, string? responseModelNameForList,
+        bool isVoidReturn, bool isBinaryReturn)
     {
-        // Lines are emitted WITHOUT outer indentation — the renderer adds the
-        // function-body indent. Inside the withContext lambda we still need a
-        // one-level offset relative to the outer function body, so we use a
-        // single 4-space indent within those lines.
-        const string Inner = "    ";
+        var route = OpenApiPathExpressionBuilder.Build(op, parameter =>
+            Ref(KotlinReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name))));
+        var path = route.Parts.ToList();
+        if (path.Count > 0 && path[0] is LiteralExpressionNode { Value: string leading })
+            path[0] = Text(leading.TrimStart('/'));
 
-        var lines = new List<string>
+        var urlBuilder = Ref("urlBuilder");
+        var statements = new List<StatementNode>
         {
-            "withContext(Dispatchers.IO) {",
-            $"{Inner}val urlBuilder = baseUrl.newBuilder()",
+            Let("urlBuilder", Call(Member(Ref("baseUrl"), "newBuilder"))),
+            Statement(Call(Member(urlBuilder, "addPathSegments"), new InterpolatedStringExpressionNode(path))),
         };
 
-        // Path template — replace {name} with ${name} (Kotlin string templates).
-        var pathTemplate = op.Path;
-        foreach (var p in op.PathParameters)
+        foreach (var parameter in op.QueryParameters)
         {
-            var camel = KotlinReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
-            pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "${" + camel + "}", StringComparison.Ordinal);
-        }
-        var trimmedPath = pathTemplate.TrimStart('/');
-        lines.Add($"{Inner}urlBuilder.addPathSegments(\"{EscapeStringLiteral(trimmedPath)}\")");
-
-        // Query parameters.
-        foreach (var p in op.QueryParameters)
-        {
-            var camel = KotlinReservedNames.Avoid(namingConverter.ToCamelCase(p.Name));
-            if (p.IsRequired)
-                lines.Add($"{Inner}urlBuilder.addQueryParameter(\"{EscapeStringLiteral(p.Name)}\", {camel}.toString())");
-            else
-                lines.Add($"{Inner}if ({camel} != null) urlBuilder.addQueryParameter(\"{EscapeStringLiteral(p.Name)}\", {camel}.toString())");
+            var argument = Ref(KotlinReservedNames.Avoid(namingConverter.ToCamelCase(parameter.Name)));
+            var add = Statement(Call(Member(urlBuilder, "addQueryParameter"),
+                Text(parameter.OriginalName), Call(Member(argument, "toString"))));
+            var present = new BinaryExpressionNode(argument, BinaryOperator.NotEqual, Null());
+            statements.Add(parameter.IsRequired ? add : new IfStatementNode(present, new BlockNode([add])));
         }
 
-        lines.Add($"{Inner}val url = urlBuilder.build()");
-        lines.Add($"{Inner}val requestBuilder = Request.Builder().url(url)");
+        statements.Add(Let("url", Call(Member(urlBuilder, "build"))));
+        var createRequest = Call(Member(Ref("Request"), "Builder"));
+        statements.Add(Let("requestBuilder", Call(Member(createRequest, "url"), Ref("url"))));
 
-        var httpMethod = op.HttpMethod.ToUpperInvariant();
-        if (op.RequestBody != null)
+        var requestBuilder = Ref("requestBuilder");
+        var verb = op.HttpMethod.ToUpperInvariant();
+        ExpressionNode requestBody = Null();
+        if (op.RequestBody is { } sourceBody)
         {
-            if (op.RequestBody.IsJson)
+            if (sourceBody.IsJson)
             {
-                var bodyModelName = TryGetSimpleModelName(op.RequestBody.Type);
-                if (bodyModelName != null)
-                {
-                    lines.Add($"{Inner}val jsonBody = json.encodeToString({bodyModelName}.serializer(), body)");
-                    lines.Add($"{Inner}val requestBody = jsonBody.toRequestBody(\"application/json\".toMediaType())");
-                }
-                else
-                {
-                    // Fallback: rely on the polymorphic default serializer.
-                    lines.Add($"{Inner}val jsonBody = json.encodeToString(body)");
-                    lines.Add($"{Inner}val requestBody = jsonBody.toRequestBody(\"application/json\".toMediaType())");
-                }
+                var model = TryGetSimpleModelName(sourceBody.Type);
+                var json = Member(Ref("json"), "encodeToString");
+                var body = Ref("body");
+                var encode = model is null ? Call(json, body) : Call(json, Serializer(model), body);
+                statements.Add(Let("jsonBody", encode));
+                statements.Add(Let("requestBody", ToRequestBody(Ref("jsonBody"), "application/json")));
             }
             else
             {
-                // Non-JSON body codecs retain their existing representation in this cancellation slice.
-                lines.Add($"{Inner}val requestBody = (body?.toString() ?: \"\").toRequestBody(\"application/octet-stream\".toMediaType())");
+                var plain = Coalesce(Call(Member(Ref("body"), "toString", safe: true)), Text(""));
+                statements.Add(Let("requestBody", ToRequestBody(plain, "application/octet-stream")));
             }
-            lines.Add($"{Inner}requestBuilder.method(\"{httpMethod}\", requestBody)");
+            requestBody = Ref("requestBody");
         }
-        else if (httpMethod is "POST" or "PUT" or "PATCH" or "DELETE")
+        else if (verb is "POST" or "PUT" or "PATCH" or "DELETE")
         {
-            lines.Add($"{Inner}requestBuilder.method(\"{httpMethod}\", \"\".toRequestBody(\"application/json\".toMediaType()))");
+            requestBody = ToRequestBody(Text(""), "application/json");
         }
-        else
+        statements.Add(Statement(Call(Member(requestBuilder, "method"), Text(verb), requestBody)));
+        statements.Add(Let("request", Call(Member(requestBuilder, "build"))));
+
+        var execute = Call(Ref(KotlinCancellableCallAstBuilder.MethodName), Ref("request"));
+        var use = new KotlinTrailingLambdaCallNode(Call(Member(execute, "use")),
+            BuildResponse(responseModelName, responseModelNameForList, isVoidReturn, isBinaryReturn), new("response"));
+        statements.Add(Statement(use));
+        return new KotlinTrailingLambdaCallNode(Call(Ref("withContext"), Member(Ref("Dispatchers"), "IO")),
+            new BlockNode(statements));
+    }
+
+    /// <summary>Checks the response and turns the received payload into the declared value.</summary>
+    /// <param name="model">The direct response model, if present.</param>
+    /// <param name="listModel">The response list element model, if present.</param>
+    /// <param name="isVoidReturn">Whether completion itself is the result.</param>
+    /// <param name="isBinaryReturn">Whether the caller receives raw bytes.</param>
+    /// <returns>The statements and result inside the resource scope.</returns>
+    private static BlockNode BuildResponse(string? model, string? listModel, bool isVoidReturn, bool isBinaryReturn)
+    {
+        var response = Ref("response");
+        var failure = new UnaryExpressionNode(UnaryOperator.LogicalNot, Member(response, "isSuccessful"));
+        var message = new InterpolatedStringExpressionNode([Text("HTTP "), Member(response, "code"), Text(": "), Member(response, "message")]);
+        var statements = new List<StatementNode>
         {
-            lines.Add($"{Inner}requestBuilder.method(\"{httpMethod}\", null)");
-        }
-
-        lines.Add($"{Inner}val request = requestBuilder.build()");
-        lines.Add($"{Inner}{KotlinCancellableCallAstBuilder.MethodName}(request).use {{ response ->");
-        lines.Add($"{Inner}{Inner}if (!response.isSuccessful) error(\"HTTP ${{response.code}}: ${{response.message}}\")");
-
+            new IfStatementNode(failure, new BlockNode([Statement(Call(Ref("error"), message))])),
+        };
+        var responseBody = Member(response, "body");
         if (isVoidReturn)
         {
-            lines.Add($"{Inner}{Inner}Unit");
+            statements.Add(Statement(Ref("Unit")));
         }
         else if (isBinaryReturn)
         {
-            lines.Add($"{Inner}{Inner}response.body?.bytes() ?: ByteArray(0)");
-        }
-        else if (responseModelName != null)
-        {
-            lines.Add($"{Inner}{Inner}val raw = response.body?.string() ?: error(\"Empty body\")");
-            lines.Add($"{Inner}{Inner}json.decodeFromString({responseModelName}.serializer(), raw)");
-        }
-        else if (responseModelNameForList != null)
-        {
-            lines.Add($"{Inner}{Inner}val raw = response.body?.string() ?: error(\"Empty body\")");
-            lines.Add($"{Inner}{Inner}json.decodeFromString(kotlinx.serialization.builtins.ListSerializer({responseModelNameForList}.serializer()), raw)");
+            var fallback = Call(Ref("ByteArray"), new LiteralExpressionNode(0, LiteralKind.Number));
+            statements.Add(Statement(Coalesce(Call(Member(responseBody, "bytes", safe: true)), fallback)));
         }
         else
         {
-            // Plain primitive — caller may need to parse the body manually.
-            lines.Add($"{Inner}{Inner}response.body?.string() ?: error(\"Empty body\")");
+            var raw = Coalesce(Call(Member(responseBody, "string", safe: true)), Call(Ref("error"), Text("Empty body")));
+            if (model is null && listModel is null)
+            {
+                statements.Add(Statement(raw));
+            }
+            else
+            {
+                statements.Add(Let("raw", raw));
+                ExpressionNode codec = model is not null ? Serializer(model) :
+                    Call(Ref("kotlinx.serialization.builtins.ListSerializer"), Serializer(listModel!));
+                statements.Add(Statement(Call(Member(Ref("json"), "decodeFromString"), codec, Ref("raw"))));
+            }
         }
-
-        lines.Add($"{Inner}}}");
-        lines.Add("}");
-        return lines;
+        return new BlockNode(statements);
     }
+
+    /// <summary>Builds the serialization call on a known model type.</summary>
+    /// <param name="model">The referenced Kotlin model.</param>
+    /// <returns>The call returning a serializer.</returns>
+    private static CallExpressionNode Serializer(string model) => Call(Member(Ref(model), "serializer"));
+
+    /// <summary>Converts a string to an OkHttp body with the given media type.</summary>
+    /// <param name="source">The body content.</param>
+    /// <param name="mime">The wire media type.</param>
+    /// <returns>The body conversion call.</returns>
+    private static CallExpressionNode ToRequestBody(ExpressionNode source, string mime) =>
+        Call(Member(source, "toRequestBody"), Call(Member(Text(mime), "toMediaType")));
+
+    /// <summary>Builds a fallback for a null expression.</summary>
+    /// <param name="value">The expression to evaluate first.</param>
+    /// <param name="fallback">The expression evaluated for null.</param>
+    /// <returns>The Kotlin Elvis operation.</returns>
+    private static BinaryExpressionNode Coalesce(ExpressionNode value, ExpressionNode fallback) =>
+        new(value, BinaryOperator.NullishCoalescing, fallback);
+
+    /// <summary>Declares an immutable binding inside a Kotlin block.</summary>
+    /// <param name="name">The binding identifier.</param>
+    /// <param name="value">The initialization expression.</param>
+    /// <returns>The declaration statement.</returns>
+    private static VariableDeclarationStatementNode Let(string name, ExpressionNode value) => new(new(name), initializer: value);
+
+    /// <summary>Evaluates a statement or the final value of a block.</summary>
+    /// <param name="expression">The value to evaluate.</param>
+    /// <returns>The statement that contains the expression.</returns>
+    private static ExpressionStatementNode Statement(ExpressionNode expression) => new(expression);
+
+    /// <summary>References an identifier or qualified Kotlin symbol.</summary>
+    /// <param name="name">The emitted name.</param>
+    /// <returns>The identifier expression.</returns>
+    private static IdentifierExpressionNode Ref(string name) => new(new IdentifierNode(name));
+
+    /// <summary>Selects a Kotlin member with ordinary or null-safe access.</summary>
+    /// <param name="target">The receiver.</param>
+    /// <param name="name">The requested member.</param>
+    /// <param name="safe">Whether to short-circuit for a null receiver.</param>
+    /// <returns>The member expression.</returns>
+    private static MemberAccessExpressionNode Member(ExpressionNode target, string name, bool safe = false) =>
+        new(target, new(name), useOptionalChaining: safe);
+
+    /// <summary>Invokes a selected method or constructor.</summary>
+    /// <param name="target">The callable expression.</param>
+    /// <param name="arguments">The positional arguments.</param>
+    /// <returns>The invocation node.</returns>
+    private static CallExpressionNode Call(ExpressionNode target, params ExpressionNode[] arguments) => new(target, arguments);
+
+    /// <summary>Captures a wire value as data for the Kotlin printer.</summary>
+    /// <param name="value">The original text.</param>
+    /// <returns>A string literal expression.</returns>
+    private static LiteralExpressionNode Text(string value) => new(value, LiteralKind.String);
+
+    /// <summary>Represents the Kotlin null literal.</summary>
+    /// <returns>A null literal expression.</returns>
+    private static LiteralExpressionNode Null() => new(null, LiteralKind.Null);
 
     /// <summary>Finds a model reference beneath nullable or optional wrappers.</summary>
     /// <param name="type">The response type.</param>
@@ -345,11 +404,4 @@ public sealed class OkHttpClientAstBuilder(INamingConverter namingConverter, Kot
         var pascal = namingConverter.ToPascalCase(clientName);
         return pascal.EndsWith("Api", StringComparison.Ordinal) ? pascal : pascal + "Api";
     }
-
-    /// <summary>Escapes source values embedded in legacy Kotlin string literals.</summary>
-    /// <param name="s">The unescaped value.</param>
-    /// <returns>The escaped literal contents.</returns>
-    private static string EscapeStringLiteral(string s) =>
-        s.Replace("\\", "\\\\", StringComparison.Ordinal)
-         .Replace("\"", "\\\"", StringComparison.Ordinal);
 }

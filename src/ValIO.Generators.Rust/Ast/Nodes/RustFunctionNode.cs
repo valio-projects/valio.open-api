@@ -57,8 +57,7 @@ public sealed class RustParameter : IEquatable<RustParameter>
 /// <summary>
 /// Rust function declaration:
 ///   <c>pub async fn name(params) -&gt; Result&lt;R, reqwest::Error&gt; { body }</c>
-/// Body lines are pre-rendered strings (kept minimal — full expression AST is
-/// not warranted for this MVP).
+/// Carries the ordered statements and the optional final value expression.
 /// </summary>
 public sealed class RustFunctionNode : DeclarationNode
 {
@@ -68,8 +67,13 @@ public sealed class RustFunctionNode : DeclarationNode
     /// <summary>Return type. Null = unit (omitted in source).</summary>
     public TypeNode? ReturnType { get; }
 
-    /// <summary>Body lines (pre-rendered, without outer indent).</summary>
-    public IReadOnlyList<string> Body { get; }
+    /// <summary>Gets the statements executed by the function.</summary>
+    /// <value>The function body AST.</value>
+    public BlockNode Body { get; }
+
+    /// <summary>Gets the final expression returned without a trailing semicolon.</summary>
+    /// <value>The implicit result expression, if present.</value>
+    public ExpressionNode? Tail { get; }
 
     /// <summary>True for <c>async fn</c>.</summary>
     public bool IsAsync { get; }
@@ -77,6 +81,7 @@ public sealed class RustFunctionNode : DeclarationNode
     /// <summary>Visibility (default <c>pub</c>).</summary>
     public string Visibility { get; }
 
+    /// <inheritdoc />
     public override IReadOnlyList<AstNode> Children
     {
         get
@@ -86,24 +91,38 @@ public sealed class RustFunctionNode : DeclarationNode
             foreach (var p in Parameters)
                 children.Add(p.Type);
             if (ReturnType != null) children.Add(ReturnType);
+            children.Add(Body);
+            if (Tail is not null) children.Add(Tail);
             return children;
         }
     }
 
+    /// <summary>Creates a Rust function declaration.</summary>
+    /// <param name="name">The function name.</param>
+    /// <param name="parameters">The positional parameters.</param>
+    /// <param name="returnType">The optional result type.</param>
+    /// <param name="body">The executable body.</param>
+    /// <param name="isAsync">Whether the function can await.</param>
+    /// <param name="visibility">The Rust visibility token.</param>
+    /// <param name="documentation">The optional rustdoc comment.</param>
+    /// <param name="metadata">The optional node metadata.</param>
+    /// <param name="tail">The implicit result of the function.</param>
     public RustFunctionNode(
         IdentifierNode name,
         IReadOnlyList<RustParameter>? parameters = null,
         TypeNode? returnType = null,
-        IReadOnlyList<string>? body = null,
+        BlockNode? body = null,
         bool isAsync = true,
         string visibility = "pub",
         CommentNode? documentation = null,
-        IReadOnlyDictionary<string, object>? metadata = null)
+        IReadOnlyDictionary<string, object>? metadata = null,
+        ExpressionNode? tail = null)
         : base(name, documentation, attributes: null, metadata)
     {
         Parameters = parameters?.ToImmutableList() ?? ImmutableList<RustParameter>.Empty;
         ReturnType = returnType;
-        Body = body?.ToImmutableList() ?? ImmutableList<string>.Empty;
+        Body = body ?? new BlockNode();
+        Tail = tail;
         IsAsync = isAsync;
         Visibility = visibility;
     }
@@ -115,14 +134,16 @@ public sealed class RustFunctionNode : DeclarationNode
         throw new NotSupportedException("Visitor must implement IRustAstVisitor<TResult> to visit RustFunctionNode");
     }
 
+    /// <inheritdoc />
     public override AstNode Clone() =>
         new RustFunctionNode(
             (IdentifierNode)Name.Clone(),
             Parameters.Select(p => new RustParameter(p.Name, (TypeNode)p.Type.Clone())).ToImmutableList(),
             ReturnType != null ? (TypeNode)ReturnType.Clone() : null,
-            Body.ToImmutableList(),
+            (BlockNode)Body.Clone(),
             IsAsync,
             Visibility,
             Documentation != null ? (CommentNode)Documentation.Clone() : null,
-            Metadata.ToImmutableDictionary());
+            Metadata.ToImmutableDictionary(),
+            (ExpressionNode?)Tail?.Clone());
 }

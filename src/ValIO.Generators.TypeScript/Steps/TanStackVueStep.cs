@@ -56,9 +56,8 @@ public sealed class TanStackVueStep : ICodeGenerationStep
                 var isMutation = operation.HttpMethod is "POST" or "PUT" or "PATCH" or "DELETE";
                 var fileName = _namingConverter.ToCamelCase(operation.OriginalMethodName);
                 var sourceFile = hookBuilder.BuildHookSourceFile(operation, fileName, clientSuffix, isMutation);
-                var content = _renderer.Render(sourceFile);
                 var relativePath = $"{clientsPath}/{fileName}/{fileName}.query.ts";
-                context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+                TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, _renderer.Render);
             }
         }
 

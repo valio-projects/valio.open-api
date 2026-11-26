@@ -244,7 +244,7 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
     public override string VisitKotlinFunctionDeclaration(KotlinFunctionDeclarationNode node) =>
         RenderFunction(node, indent: 0);
 
-    /// <summary>Renders a function using its selected structured or text-backed body representation.</summary>
+    /// <summary>Renders a function with its block or result expression.</summary>
     /// <param name="node">The function declaration.</param>
     /// <param name="indent">The surrounding declaration indentation level.</param>
     /// <returns>The complete function declaration.</returns>
@@ -279,42 +279,18 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
             sb.AppendLine(prefix + "}");
             return sb.ToString();
         }
-        if (node.Body.Count == 0)
+        var signature = $"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation}";
+        if (node.ExpressionBody is { } expression)
         {
-            sb.AppendLine($"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation}");
-            return sb.ToString();
+            var lines = Visit(expression).Split('\n');
+            sb.AppendLine($"{signature} = {lines[0]}");
+            foreach (var line in lines.Skip(1))
+                sb.AppendLine(prefix + line.TrimEnd('\r'));
         }
-
-        if (node.IsExpressionBody)
+        else
         {
-            // Expression body: `fun name(...): Type = expression`.
-            // The first body line is appended right after `= `. Continuation
-            // lines align with the function's own indent — builders are
-            // expected to manage any further nesting (lambdas, etc.).
-            sb.Append($"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation} = ");
-            for (var i = 0; i < node.Body.Count; i++)
-            {
-                var line = node.Body[i];
-                if (i == 0)
-                    sb.AppendLine(line);
-                else
-                    sb.AppendLine($"{prefix}{line}");
-            }
-            return sb.ToString();
+            sb.AppendLine(signature);
         }
-
-        sb.AppendLine($"{prefix}{header} {node.Name.Name}({paramText}){returnAnnotation} {{");
-        var blockIndent = indent + 1;
-        foreach (var line in node.Body)
-        {
-            if (string.IsNullOrEmpty(line))
-            {
-                sb.AppendLine();
-                continue;
-            }
-            sb.AppendLine($"{Indent(blockIndent)}{line}");
-        }
-        sb.AppendLine($"{prefix}}}");
         return sb.ToString();
     }
 
@@ -426,8 +402,41 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
         return $"{target}{typeArgument}({args})";
     }
 
-    public override string VisitMemberAccessExpression(MemberAccessExpressionNode node) =>
-        $"{Visit(node.Object)}.{node.Member.Name}";
+    /// <inheritdoc/>
+    public override string VisitMemberAccessExpression(MemberAccessExpressionNode node)
+    {
+        var receiver = Visit(node.Object);
+        if (node.Object is BinaryExpressionNode or ConditionalExpressionNode)
+            receiver = $"({receiver})";
+        return $"{receiver}{(node.UseOptionalChaining ? "?." : ".")}{node.Member.Name}";
+    }
+
+    /// <inheritdoc/>
+    public override string VisitKotlinTrailingLambdaCall(KotlinTrailingLambdaCallNode node)
+    {
+        var target = node.Call.Arguments.Count == 0 && node.Call.GenericTypeArgument is null
+            ? Visit(node.Call.Target)
+            : VisitCallExpression(node.Call);
+        var parameter = node.Parameter is null ? "" : $" {node.Parameter.Name} ->";
+        var body = IndentLines(VisitBlock(node.Body), 1);
+        return $"{target} {{{parameter}\n{body}\n}}";
+    }
+
+    /// <inheritdoc/>
+    public override string VisitInterpolatedStringExpression(InterpolatedStringExpressionNode node)
+    {
+        var parts = node.Parts.Select(part => part is LiteralExpressionNode { Value: string literal }
+            ? EscapeStringLiteral(literal)
+            : "$" + "{" + Visit(part) + "}");
+        return $"\"{string.Concat(parts)}\"";
+    }
+
+    /// <summary>Indents a structured Kotlin block without changing its statements.</summary>
+    /// <param name="source">The printed block.</param>
+    /// <param name="level">The extra indentation level.</param>
+    /// <returns>The indented block.</returns>
+    private static string IndentLines(string source, int level) =>
+        string.Join("\n", source.Split('\n').Select(line => Indent(level) + line.TrimEnd('\r')));
 
     public override string VisitUnaryExpression(UnaryExpressionNode node)
     {
@@ -440,6 +449,7 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
         return $"{op}{Visit(node.Operand)}";
     }
 
+    /// <inheritdoc/>
     public override string VisitBinaryExpression(BinaryExpressionNode node)
     {
         var left = Visit(node.Left);
@@ -460,6 +470,7 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
             BinaryOperator.GreaterThanOrEqual => ">=",
             BinaryOperator.LogicalAnd => "&&",
             BinaryOperator.LogicalOr => "||",
+            BinaryOperator.NullishCoalescing => "?:",
             _ => throw new NotSupportedException($"Operator {node.Operator} not supported in Kotlin renderer")
         };
         return $"{left} {op} {right}";
@@ -478,16 +489,17 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
     public override string VisitReturnStatement(ReturnStatementNode node) =>
         node.Value == null ? "return" : $"return {Visit(node.Value)}";
 
+    /// <inheritdoc/>
     public override string VisitIfStatement(IfStatementNode node)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"if ({Visit(node.Condition)}) {{");
-        sb.AppendLine(Visit(node.ThenBlock));
+        sb.AppendLine(IndentLines(Visit(node.ThenBlock), 1));
         sb.Append("}");
         if (node.ElseBlock != null)
         {
             sb.AppendLine(" else {");
-            sb.AppendLine(Visit(node.ElseBlock));
+            sb.AppendLine(IndentLines(Visit(node.ElseBlock), 1));
             sb.Append("}");
         }
         return sb.ToString();
@@ -590,9 +602,13 @@ public sealed class KotlinAstRenderer : KotlinAstVisitorBase<string>, IKotlinAst
         };
     }
 
+    /// <summary>Escapes Kotlin string content without interpreting dollar signs as interpolation.</summary>
+    /// <param name="s">The literal text segment.</param>
+    /// <returns>The escaped content without delimiters.</returns>
     private static string EscapeStringLiteral(string s) =>
         s.Replace("\\", "\\\\", StringComparison.Ordinal)
          .Replace("\"", "\\\"", StringComparison.Ordinal)
+         .Replace("$", "\\$", StringComparison.Ordinal)
          .Replace("\n", "\\n", StringComparison.Ordinal)
          .Replace("\r", "\\r", StringComparison.Ordinal);
 }

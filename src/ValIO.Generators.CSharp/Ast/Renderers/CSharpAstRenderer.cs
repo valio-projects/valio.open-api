@@ -31,6 +31,11 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         _sb.Clear();
         _indentLevel = 0;
         
+        if (node.FileHeader is not null)
+            RenderComment(_sb, node.FileHeader, _indentLevel);
+        if (node.EnableNullable)
+            CodeFormatter.AppendLine(_sb, _indentLevel, "#nullable enable");
+
         // Рендерим using директивы
         if (node.Usings.Count > 0)
         {
@@ -352,6 +357,18 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
 
     /// <inheritdoc />
     public override string VisitTypeOfExpression(TypeOfExpressionNode node) => $"typeof({RenderType(node.TargetType)})";
+
+    /// <inheritdoc />
+    public override string VisitCollectionExpression(CollectionExpressionNode node) => $"[{string.Join(", ", node.Elements.Select(Visit))}]";
+
+    /// <inheritdoc />
+    public override string VisitLambdaExpression(LambdaExpressionNode node) => $"{node.Parameter.Name} => {Visit(node.Body)}";
+
+    /// <inheritdoc />
+    public override string VisitNullForgivingExpression(NullForgivingExpressionNode node) => $"{Visit(node.Operand)}!";
+
+    /// <inheritdoc />
+    public override string VisitIndexAccessExpression(IndexAccessExpressionNode node) => $"{Visit(node.Object)}[{Visit(node.Index)}]";
 
     public override string VisitIdentifierExpression(IdentifierExpressionNode node)
     {
@@ -877,6 +894,10 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
     /// <param name="sb">The generated source buffer.</param>
     /// <param name="node">The method declaration.</param>
     /// <param name="indentLevel">The enclosing indentation depth.</param>
+    /// <summary>Writes a method declaration, its signature and its optional body.</summary>
+    /// <param name="sb">The output buffer.</param>
+    /// <param name="node">The method to render.</param>
+    /// <param name="indentLevel">The declaration indentation.</param>
     private void RenderMethod(StringBuilder sb, MethodDeclarationNode node, int indentLevel)
     {
         if (node.UseInheritDoc)
@@ -885,7 +906,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         }
         else if (node.Documentation != null || node.RemarksDocumentation != null || node.ReturnsDocumentation != null)
         {
-            var paramDocs = node.Parameters.Select(p => (p.Name.Name, p.Documentation?.Text)).ToList();
+            var paramDocs = node.Parameters.Select(p => (p.Name.Name.TrimStart('@'), p.Documentation?.Text)).ToList();
             CommentGenerator.GenerateXmlCommentWithParams(sb, indentLevel, node.Documentation?.Text,
                 paramDocs, node.ReturnsDocumentation, node.RemarksDocumentation);
         }
@@ -901,6 +922,7 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         
         // Проверяем, нужно ли добавить override
         var overrideKeyword = node.IsOverride ? "override " : "";
+        var memberModifier = node.IsAbstract ? "abstract " : node.IsStatic ? "static " : "";
         
         // Проверяем, есть ли generic параметры
         var genericParams = "";
@@ -909,14 +931,10 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
             genericParams = $"<{string.Join(", ", node.GenericTypeParameters)}>";
         }
         
-        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{overrideKeyword}{asyncKeyword}{returnType}{node.Name.Name}{genericParams}({parameters})");
+        CodeFormatter.AppendLine(sb, indentLevel, $"{modifiers}{memberModifier}{overrideKeyword}{asyncKeyword}{returnType}{node.Name.Name}{genericParams}({parameters}){(node.IsInterfaceMethod || node.IsAbstract ? ";" : "")}");
         
-        // Для методов интерфейса не добавляем тело, только точку с запятой
-        if (node.IsInterfaceMethod)
-        {
-            CodeFormatter.AppendLine(sb, indentLevel, ";");
+        if (node.IsInterfaceMethod || node.IsAbstract)
             return;
-        }
         
         // Тело метода
         if (node.Body != null && node.Body.Statements.Count > 0)
@@ -1173,11 +1191,15 @@ public class CSharpAstRenderer : CSharpAstVisitorBase<string>, ICSharpAstRendere
         return string.IsNullOrEmpty(result) ? "" : $"{result} ";
     }
     
+    /// <summary>Gets the modifiers of a class in declaration order.</summary>
+    /// <param name="node">The class to render.</param>
+    /// <returns>The modifiers preceding the class keyword.</returns>
     private IReadOnlyList<string> GetClassModifiers(ClassDeclarationNode node)
     {
         var modifiers = new List<string>();
         if (node.IsStatic) modifiers.Add("static");
         if (node.IsSealed) modifiers.Add("sealed");
+        if (node.IsAbstract) modifiers.Add("abstract");
         if (node.IsPartial) modifiers.Add("partial");
         return modifiers;
     }

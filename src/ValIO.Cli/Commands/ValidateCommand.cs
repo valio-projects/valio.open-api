@@ -1,15 +1,20 @@
 using System.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using ValIO.Core.Interfaces;
+using ValIO.Core.IR.Builders;
+using ValIO.Core.Services;
 using ValIO.Parsers.Interfaces;
 
 namespace ValIO.Cli.Commands;
 
 /// <summary>
-/// Validates an OpenAPI schema file or URL by parsing it and printing basic info.
+/// Validates an OpenAPI schema and its optional SignalR extension.
 /// </summary>
 public sealed class ValidateCommand : Command
 {
+    /// <summary>Creates a validation command using the same schema lowering as generation.</summary>
+    /// <param name="serviceProvider">The shared command services.</param>
     public ValidateCommand(IServiceProvider serviceProvider)
         : base("validate", "Validate OpenAPI schema")
     {
@@ -37,9 +42,13 @@ public sealed class ValidateCommand : Command
             {
                 logger.LogInformation("Validating OpenAPI schema from: {Schema}", schema);
 
-                var document = Uri.TryCreate(schema, UriKind.Absolute, out _)
+                var document = Uri.TryCreate(schema, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https" or "file"
                     ? await parser.ParseFromUrlAsync(schema)
                     : await parser.ParseFromFileAsync(schema);
+
+                var resolver = new CachingSchemaResolver(new SchemaResolver(document));
+                var builder = new IrBuilder(resolver, serviceProvider.GetRequiredService<INamingConverter>());
+                builder.ValidateSignalR(document);
 
                 logger.LogInformation("OpenAPI schema is valid");
                 logger.LogInformation("API Title: {Title}", document.Info?.Title);

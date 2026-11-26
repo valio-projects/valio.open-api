@@ -151,8 +151,8 @@ public sealed class IdentityZodUuidContractTests
             var context = await Generate("zod-contract.json", version);
             var schema = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.schema.ts", StringComparison.Ordinal)).Content;
             var model = context.GeneratedFiles.First(f => f.RelativePath.Replace('\\', '/').EndsWith("models/contract/contract.ts", StringComparison.Ordinal)).Content;
-            schema = schema.Replace("from 'zod/v4'", "from 'zod4'", StringComparison.Ordinal)
-                .Replace("from 'zod'", "from 'zod3'", StringComparison.Ordinal);
+            schema = schema.Replace("from \"zod/v4\"", "from \"zod4\"", StringComparison.Ordinal)
+                .Replace("from \"zod\"", "from \"zod3\"", StringComparison.Ordinal);
             await File.WriteAllTextAsync(Path.Combine(temporary, "contract.ts"), model);
             var schemaPath = Path.Combine(temporary, "contract.schema.ts");
             await File.WriteAllTextAsync(schemaPath, schema);

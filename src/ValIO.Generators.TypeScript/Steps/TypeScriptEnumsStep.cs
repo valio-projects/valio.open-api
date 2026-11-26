@@ -41,12 +41,11 @@ public sealed class TypeScriptEnumsStep : ICodeGenerationStep
         foreach (var irEnum in context.IrDocument.Enums)
         {
             var sourceFile = builder.BuildSourceFile(irEnum, fileOrganization: fileOrg);
-            var content = _renderer.Render(sourceFile);
             var fileName = _namingConverter.ToCamelCase(irEnum.OriginalName);
             var relativePath = fileOrg.SeparateModels
                 ? $"{modelsPath}/{fileName}/{fileName}.ts"
                 : $"{modelsPath}/{fileName}.ts";
-            context.GeneratedFiles.Add(new GeneratedFile(relativePath, content));
+            TypeScriptModuleFiles.Emit(context, relativePath, sourceFile, _renderer.Render);
         }
 
         return Task.CompletedTask;

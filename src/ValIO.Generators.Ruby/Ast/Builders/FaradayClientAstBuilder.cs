@@ -1,6 +1,8 @@
-using System.Text;
+using ValIO.Core.Ast.Builders;
 using ValIO.Core.Ast.Enums;
 using ValIO.Core.Ast.Nodes;
+using ValIO.Core.Ast.Nodes.Expressions;
+using ValIO.Core.Ast.Nodes.Statements;
 using ValIO.Core.Interfaces;
 using ValIO.Core.IR;
 using ValIO.Generators.Ruby.Ast.Nodes;
@@ -10,9 +12,11 @@ namespace ValIO.Generators.Ruby.Ast.Builders;
 /// <summary>
 /// Builds a Ruby <c>class</c> named <c>{Tag}Service</c> wrapping a Faraday
 /// connection for one <see cref="IrClient"/>. Each <see cref="IrOperation"/>
-/// becomes a <c>def</c> with body lines that issue a Faraday request and
+/// becomes a <c>def</c> that issues a Faraday request and
 /// return the parsed response body.
 /// </summary>
+/// <param name="namingConverter">The naming policy for Ruby declarations.</param>
+/// <param name="typeMapper">The mapper used by other Ruby artifacts.</param>
 public sealed class FaradayClientAstBuilder(INamingConverter namingConverter, RubyIrTypeMapper typeMapper)
 {
 
@@ -39,36 +43,34 @@ public sealed class FaradayClientAstBuilder(INamingConverter namingConverter, Ru
         return new RubyFileNode(classes: [classNode], requires: requires);
     }
 
-    private static RubyMethodNode BuildInitializer()
-    {
-        var parameters = new List<string> { "conn" };
-        var body = new List<string> { "@conn = conn" };
-        return new RubyMethodNode(
-            new IdentifierNode("initialize"),
-            parameters,
-            body);
-    }
+    /// <summary>Builds the constructor that stores the supplied Faraday connection.</summary>
+    /// <returns>The connection initializer.</returns>
+    private static RubyMethodNode BuildInitializer() =>
+        new(new("initialize"), [new(new("conn"), type: null)], new BlockNode([Assign(Ref("@conn"), Ref("conn"))]));
 
+    /// <summary>Creates a Faraday service method for one HTTP operation.</summary>
+    /// <param name="op">The source operation.</param>
+    /// <returns>The method and its request statements.</returns>
     private RubyMethodNode BuildOperationMethod(IrOperation op)
     {
         var methodName = namingConverter.ToSnakeCase(op.MethodName);
-        var parameters = new List<string>();
+        var parameters = new List<ParameterDeclarationNode>();
 
         foreach (var p in op.PathParameters)
         {
-            parameters.Add(namingConverter.ToSnakeCase(p.Name));
+            parameters.Add(new(new(namingConverter.ToSnakeCase(p.Name)), type: null));
         }
 
         if (op.RequestBody != null)
         {
-            parameters.Add("body");
+            parameters.Add(new(new("body"), type: null));
         }
 
         foreach (var p in op.QueryParameters)
         {
             var snake = namingConverter.ToSnakeCase(p.Name);
             // All query params get a `nil` default to keep the call site flexible.
-            parameters.Add($"{snake}: nil");
+            parameters.Add(new(new(snake), type: null, defaultValue: new LiteralExpressionNode(null, LiteralKind.Null)));
         }
 
         var body = BuildMethodBody(op);
@@ -80,72 +82,84 @@ public sealed class FaradayClientAstBuilder(INamingConverter namingConverter, Ru
             documentation: BuildOperationDocstring(op));
     }
 
-    private static CommentNode? BuildOperationDocstring(IrOperation op)
+    /// <summary>Captures public operation documentation without formatting source syntax.</summary>
+    /// <param name="op">The original HTTP operation.</param>
+    /// <returns>The summary and description, with the route as fallback.</returns>
+    private static CommentNode BuildOperationDocstring(IrOperation op)
     {
-        var sb = new StringBuilder();
-        if (!string.IsNullOrWhiteSpace(op.Summary)) sb.Append(op.Summary!.Trim());
-        if (!string.IsNullOrWhiteSpace(op.Description))
-        {
-            if (sb.Length > 0) sb.AppendLine().AppendLine();
-            sb.Append(op.Description!.Trim());
-        }
-        if (sb.Length == 0) sb.Append($"{op.HttpMethod} {op.Path}");
-        return new CommentNode(sb.ToString(), CommentKind.MultiLine);
+        var parts = new[] { op.Summary, op.Description }.Where(part => !string.IsNullOrWhiteSpace(part))
+            .Select(part => part!.Trim()).ToArray();
+        var description = parts.Length == 0 ? $"{op.HttpMethod} {op.Path}" : string.Join("\n\n", parts);
+        return new CommentNode(description, CommentKind.MultiLine);
     }
 
-    private IReadOnlyList<string> BuildMethodBody(IrOperation op)
+    /// <summary>Builds the HTTP request block and the response body expression.</summary>
+    /// <param name="op">The current HTTP operation.</param>
+    /// <returns>The executable statements for the generated method.</returns>
+    private BlockNode BuildMethodBody(IrOperation op)
     {
-        var lines = new List<string>();
+        var path = OpenApiPathExpressionBuilder.Build(op, parameter => Ref(namingConverter.ToSnakeCase(parameter.Name)));
+        var verb = op.HttpMethod.ToLowerInvariant();
+        var call = new CallExpressionNode(Member(Ref("@conn"), verb), [path]);
+        var request = Ref("req");
+        var block = new List<StatementNode>();
 
-        // Build the path by substituting path params using Ruby string interpolation.
-        var pathTemplate = op.Path;
-        foreach (var p in op.PathParameters)
+        foreach (var parameter in op.QueryParameters)
         {
-            var snake = namingConverter.ToSnakeCase(p.Name);
-            pathTemplate = pathTemplate.Replace("{" + p.Name + "}", "#{" + snake + "}", StringComparison.Ordinal);
+            var value = Ref(namingConverter.ToSnakeCase(parameter.Name));
+            var slot = new IndexAccessExpressionNode(Member(request, "params"), Text(parameter.OriginalName));
+            block.Add(UnlessNil(value, Assign(slot, value)));
         }
 
-        var httpMethod = op.HttpMethod.ToLowerInvariant();
-        var hasQuery = op.QueryParameters.Count > 0;
-        var hasBody = op.RequestBody != null;
-
-        // Use a block form so we can set query/body cleanly.
-        lines.Add($"response = @conn.{httpMethod}(\"{EscapeDoubleQuoted(pathTemplate)}\") do |req|");
-
-        if (hasQuery)
+        if (op.RequestBody is { } requestBody)
         {
-            foreach (var p in op.QueryParameters)
+            var body = Ref("body");
+            ExpressionNode encoded = body;
+            if (requestBody.IsJson)
             {
-                var snake = namingConverter.ToSnakeCase(p.Name);
-                var wireName = EscapeSingleQuoted(p.Name);
-                lines.Add($"  req.params['{wireName}'] = {snake} unless {snake}.nil?");
+                var contentType = new IndexAccessExpressionNode(Member(request, "headers"), Text("Content-Type"));
+                block.Add(Assign(contentType, Text("application/json")));
+                encoded = new CallExpressionNode(Member(Ref("JSON"), "generate"), [body]);
             }
+            block.Add(UnlessNil(body, Assign(Member(request, "body"), encoded)));
         }
 
-        if (hasBody)
-        {
-            if (op.RequestBody!.IsJson)
-            {
-                lines.Add("  req.headers['Content-Type'] = 'application/json'");
-                lines.Add("  req.body = JSON.generate(body) unless body.nil?");
-            }
-            else
-            {
-                lines.Add("  req.body = body unless body.nil?");
-            }
-        }
-
-        if (!hasQuery && !hasBody)
-        {
-            // Empty block: emit a no-op comment so the do/end is non-empty.
-            lines.Add("  # no parameters");
-        }
-
-        lines.Add("end");
-        lines.Add("response.body");
-
-        return lines;
+        var send = new RubyCallWithBlockNode(call, new("req"), new BlockNode(block));
+        return new BlockNode([
+            new VariableDeclarationStatementNode(new("response"), initializer: send),
+            new ExpressionStatementNode(Member(Ref("response"), "body")),
+        ]);
     }
+
+    /// <summary>Builds a Ruby assignment expression as a statement.</summary>
+    /// <param name="target">The destination of the assignment.</param>
+    /// <param name="value">The assigned value.</param>
+    /// <returns>The assignment statement.</returns>
+    private static ExpressionStatementNode Assign(ExpressionNode target, ExpressionNode value) =>
+        new(new BinaryExpressionNode(target, BinaryOperator.Assign, value));
+
+    /// <summary>Skips an optional write when its source value is nil.</summary>
+    /// <param name="value">The value tested for nil.</param>
+    /// <param name="statement">The write to execute for a present value.</param>
+    /// <returns>A Ruby postfix condition.</returns>
+    private static RubyUnlessStatementNode UnlessNil(ExpressionNode value, StatementNode statement) =>
+        new(statement, Member(value, "nil?"));
+
+    /// <summary>Selects a member of the given Ruby value.</summary>
+    /// <param name="target">The receiver.</param>
+    /// <param name="name">The selected member.</param>
+    /// <returns>The member access expression.</returns>
+    private static MemberAccessExpressionNode Member(ExpressionNode target, string name) => new(target, new(name));
+
+    /// <summary>References a Ruby name in the current scope.</summary>
+    /// <param name="name">The identifier or instance variable.</param>
+    /// <returns>The reference expression.</returns>
+    private static IdentifierExpressionNode Ref(string name) => new(new IdentifierNode(name));
+
+    /// <summary>Captures wire text before it is escaped by the renderer.</summary>
+    /// <param name="value">The original text.</param>
+    /// <returns>A string literal.</returns>
+    private static LiteralExpressionNode Text(string value) => new(value, LiteralKind.String);
 
     private string ToServiceClassName(string clientName)
     {
@@ -153,11 +167,4 @@ public sealed class FaradayClientAstBuilder(INamingConverter namingConverter, Ru
         return pascal.EndsWith("Service", StringComparison.Ordinal) ? pascal : pascal + "Service";
     }
 
-    private static string EscapeDoubleQuoted(string s) =>
-        s.Replace("\\", "\\\\", StringComparison.Ordinal)
-         .Replace("\"", "\\\"", StringComparison.Ordinal);
-
-    private static string EscapeSingleQuoted(string s) =>
-        s.Replace("\\", "\\\\", StringComparison.Ordinal)
-         .Replace("'", "\\'", StringComparison.Ordinal);
 }

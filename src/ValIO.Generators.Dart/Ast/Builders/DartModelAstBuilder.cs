@@ -51,7 +51,6 @@ public sealed class DartModelAstBuilder(INamingConverter namingConverter, DartIr
             new IdentifierNode(className),
             returnType: null,
             parameters: ctorParams,
-            bodyLines: null,
             isAsync: false,
             isStatic: false,
             isConstructor: true);
