@@ -179,6 +179,10 @@ ValIO.sln
 └── Examples/                      — sample OpenAPI schemas + outputs
 ```
 
+## SignalR
+
+ValIO can generate C# and TypeScript DTOs and clients for ASP.NET Core SignalR. A C# profile can also generate strongly typed hub bases. [SignalR contract and profile examples](docs/SIGNALR_GENERATION.md)
+
 ## Documentation
 
 Full documentation lives at <https://valio-projects.github.io/valio.open-api/>.

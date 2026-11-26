@@ -23,6 +23,7 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
     public IReadOnlyList<string> LanguageAliases => ["ts", "typescript"];
     public IGeneratorOptionsDescriptor OptionsDescriptor { get; } = new TypeScriptOptionsDescriptor();
 
+    /// <inheritdoc />
     public ICodeGenerationPipeline CreatePipeline(IServiceProvider services)
     {
         var namingConverter = services.GetRequiredService<INamingConverter>();
@@ -59,6 +60,7 @@ public sealed class TypeScriptGeneratorPlugin : IGeneratorPlugin
             new TanStackSolidStep(namingConverter, nodeRenderers),
             new TanStackSvelteStep(namingConverter, nodeRenderers),
             new MswStep(namingConverter, nodeRenderers),
+            new TypeScriptSignalRStep(namingConverter, nodeRenderers),
             new TypeScriptIndexStep(),
         };
         return new CodeGenerationPipeline(steps);

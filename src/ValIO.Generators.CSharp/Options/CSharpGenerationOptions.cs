@@ -14,6 +14,10 @@ public sealed class CSharpGenerationOptions
     /// <value>True for the supported nullable-aware generation mode.</value>
     public bool NullableReferenceTypes { get; set; } = true;
 
+    /// <summary>Enables typed ASP.NET Core hub bases for declared SignalR contracts.</summary>
+    /// <value>False when only models or clients are required.</value>
+    public bool GenerateSignalRHubs { get; set; }
+
     /// <summary>Gets or sets whether generated properties use setters or init accessors.</summary>
     /// <value>The emitted property accessor kind.</value>
     public PropertyAccessorType PropertyAccessor { get; set; } = PropertyAccessorType.Set;

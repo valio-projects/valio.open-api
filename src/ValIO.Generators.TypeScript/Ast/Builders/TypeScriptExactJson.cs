@@ -121,7 +121,7 @@ internal static class TypeScriptExactJson
     /// <param name="document">The model declarations shared by the current SDK.</param>
     /// <param name="visited">The model names already expanded during this search.</param>
     /// <returns>Whether the type contains an exact numeric scalar.</returns>
-    private static bool HasExact(IrType type, IrDocumentContext document, HashSet<string> visited) => Unwrap(type) switch
+    internal static bool HasExact(IrType type, IrDocumentContext document, HashSet<string> visited) => Unwrap(type) switch
     {
         IrPrimitiveType primitive => IsExact(primitive),
         IrArrayType array => HasExact(array.ElementType, document, visited),
@@ -133,6 +133,8 @@ internal static class TypeScriptExactJson
             (model.ScalarType is { } scalar && HasExact(scalar, document, visited))
             || model.Properties.Any(property => HasExact(property.Type, document, visited))
             || model.Composition?.Types.Any(variant => HasExact(variant, document, visited)) == true,
+        IrModelReference reference when document.EnumsByName.TryGetValue(reference.ModelName, out var enumType) =>
+            enumType.BaseType == IrEnumBaseType.Integer && enumType.OriginalSchema?.Format is "int64" or "uint64",
         _ => false,
     };
 

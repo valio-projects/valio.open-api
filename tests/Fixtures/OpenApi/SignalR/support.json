@@ -1,0 +1,47 @@
+{
+  "openapi": "3.1.0",
+  "info": { "title": "Support SignalR", "version": "1.0.0" },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "RealtimeResult": {
+        "type": "object",
+        "required": ["succeeded"],
+        "properties": { "succeeded": { "type": "boolean" } }
+      },
+      "SupportChanged": {
+        "type": "object",
+        "required": ["visibleSequence"],
+        "properties": { "visibleSequence": { "type": "string" } }
+      }
+    }
+  },
+  "x-valio-signalr": {
+    "hubs": [
+      {
+        "name": "Support", "path": "/hubs/support",
+        "methods": [
+          { "name": "SubscribeTicket",
+            "parameters": [{ "name": "ticketId", "schema": { "type": "string", "format": "uuid" } }],
+            "result": { "$ref": "#/components/schemas/RealtimeResult" } },
+          { "name": "Heartbeat" }
+        ],
+        "events": [
+          { "name": "SupportChanged", "parameters": [
+            { "name": "message", "schema": { "$ref": "#/components/schemas/SupportChanged" } },
+            { "name": "attempt", "schema": { "type": ["integer", "null"] } }
+          ] },
+          { "name": "WalletChanged" }
+        ]
+      },
+      {
+        "name": "Notifications", "path": "/hubs/notifications",
+        "events": [
+          { "name": "InboxChanged" },
+          { "name": "WalletChanged" },
+          { "name": "PaymentsChanged" }
+        ]
+      }
+    ]
+  }
+}

@@ -71,6 +71,8 @@ public class IrBuilder
         foreach (var complete in completeMediaTypes)
             complete();
 
+        var signalRHubs = SignalRContractReader.Read(document, schema => BuildType(schema, document));
+
         // Inline models are declarations and participate in dependency ordering.
         IReadOnlyList<IrModel> allModels = models.Concat(_inlineModels.Values).ToList();
         IReadOnlyList<IrEnum> allEnums = enums;
@@ -78,10 +80,15 @@ public class IrBuilder
 
         // Rename declarations and references before building their dependency graph.
         if (affixOptions is { IsNoOp: false })
+        {
             (allModels, allEnums, allClients) =
                 IrNameAffixer.Apply(allModels, allEnums, allClients, affixOptions, _namingConverter);
+            signalRHubs = IrNameAffixer.ApplyToSignalRHubs(signalRHubs, allModels, allEnums);
+        }
 
-        var typeDependencies = new IrTypeDependencyGraphBuilder().Build(allModels, allEnums);
+        var dependencyBuilder = new IrTypeDependencyGraphBuilder();
+        SignalRContractReader.ValidateReferences(signalRHubs, allModels, allEnums, dependencyBuilder);
+        var typeDependencies = dependencyBuilder.Build(allModels, allEnums);
 
         return new IrDocument
         {
@@ -89,6 +96,7 @@ public class IrBuilder
             Models = allModels,
             Enums = allEnums,
             Clients = allClients,
+            SignalRHubs = signalRHubs,
             TypeDependencies = typeDependencies
         };
     }
